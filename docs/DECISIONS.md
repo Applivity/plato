@@ -127,3 +127,7 @@ without the founder present. This file set is that doctrine.
 - Trademark sweep before public release (D16).
 - License decision at M4 (D19).
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
+- Correction (verified during setup): GitHub account `applivity-com` is a
+  personal user account, not an Organization. Repo target URL unchanged:
+  github.com/applivity-com/plato. Automation tokens need the `repo`
+  scope for repo creation and push.

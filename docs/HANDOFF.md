@@ -21,9 +21,10 @@ may not be available when you work; everything you need is in this repo.
 ## Environment prerequisites (verified facts)
 
 - macOS. Git 2.50.1 present.
-- **Node.js is NOT installed.** Install LTS (≥ 20) first, e.g.
-  `brew install nvm && nvm install --lts`, or the official installer.
-  Then enable pnpm: `corepack enable && corepack prepare pnpm@latest --activate`.
+- Node.js v24.19.0 (LTS) installed via nvm 0.40.7; nvm init appended to
+  `~/.zshrc`. pnpm 11.23.0 installed globally. If a terminal reports
+  `node: command not found`, open a fresh terminal or run
+  `. ~/.nvm/nvm.sh` first.
 - Verify with `node -v && pnpm -v` before scaffolding.
 
 ## Your first job: M0 checklist
