@@ -12,11 +12,12 @@ may not be available when you work; everything you need is in this repo.
 ## Current repository state
 
 - Location: `/Users/ai/Desktop/applivity-harness` (local name differs from
-  the future GitHub repo name `plato`; push under `applivity-com/plato`).
+  the GitHub repo name; canonical remote is
+  `https://github.com/applivity-com/plato`, private, default branch
+  `main`). Note: `applivity-com` is a personal user account, not an org.
 - Contains: documentation only. No code exists yet. You are likely here to
   start M0.
-- Git: initialized with this docs commit. Identity on this machine:
-  `ukhan <umair1808@gmail.com>`.
+- Git identity on this machine: `ukhan <umair1808@gmail.com>`.
 
 ## Environment prerequisites (verified facts)
 
