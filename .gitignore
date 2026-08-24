@@ -1,2 +1,42 @@
-# macOS
+# --- Secrets (mirrors the deny-list in docs/ARCHITECTURE.md) ---
+# Never commit key material or local environment files.
+.env*
+*.keystore
+*.jks
+keystore.properties
+local.properties
+secrets.*
+
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+
+# --- TypeScript build output ---
+dist/
+out/
+build/
+*.tsbuildinfo
+
+# --- Test & coverage ---
+coverage/
+
+# --- VS Code extension packaging ---
+*.vsix
+
+# --- VS Code local workspace state (keep shared settings if added later) ---
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# --- Misc editor / OS noise ---
 .DS_Store
+Thumbs.db
+.idea/
+
