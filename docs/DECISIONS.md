@@ -121,12 +121,30 @@ release; both publisher accounts already exist.
 not chat history, so any developer or AI agent can continue the work
 without the founder present. This file set is that doctrine.
 
+**D21 — M0 scaffolding choices (A-first-code, delegated).** Founder left
+implementation details to the assistant; recorded here per doctrine.
+(a) Provider access via the official `@anthropic-ai/sdk` in
+`core/src/providers` — mainstream, heavily documented, matches D02.
+(b) One addition to the ARCHITECTURE tree: `core/src/security/` holds the
+secret deny-list filter. It guards every tool and context builder, so it
+needs a cross-cutting home; flagged here as the only tree deviation.
+(c) Unit tests run with vitest (mainstream, zero-config, D02). Nothing
+else new: no bundler, no framework, tsc project references only.
+
 ## Open items carried forward
 
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0
   via nvm 0.40.7 and pnpm 11.23.0 installed and verified; see HANDOFF
   prerequisites.
 - Trademark sweep before public release (D16).
+- **SECRET AUDIT before any public release or repo visibility change**
+  (D15, ARCHITECTURE security invariant 2). Sweep everything that leaves
+  the machine: repo history, VSIX/npm artifacts, transcripts, docs,
+  screenshots, demo repos. Known live exposure:
+  `/Users/ai/Desktop/HcadPublicAndroid-demo` carries `keystore.properties`
+  and `local.properties` in its working tree that its own `.gitignore`
+  does not cover. If that repo is ever made public: rotate those secrets
+  and purge history FIRST.
 - License decision at M4 (D19).
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
 - Correction (verified during setup): GitHub account `applivity-com` is a
