@@ -131,6 +131,34 @@ needs a cross-cutting home; flagged here as the only tree deviation.
 (c) Unit tests run with vitest (mainstream, zero-config, D02). Nothing
 else new: no bundler, no framework, tsc project references only.
 
+**D22 — M1 tool-loop choices (delegated).** (a) Loop uses Anthropic's
+native tool-use API (`tools` + `tool_use`/`tool_result`), non-streaming
+per turn; assistant text is forwarded per turn. Structured calls beat
+prompt-hacked JSON; streaming adds risk with no M1 demo value. (b)
+`apply_diff` uses SEARCH/REPLACE exact-match blocks (Aider-style);
+re-applying an identical block is a no-op success (idempotence is in the
+ARCHITECTURE test list); ambiguous matches are rejected, never guessed.
+(c) Modes are one permission-policy table (`decide`) over a single loop;
+approvals surface to the shell through one async callback. `plan`: reads
+only. `edit`: reads auto, writes approve-once-per-session (cache lives in
+the shell), shell denied. `act`: writes/shell per-action clicks. `auto`:
+everything auto-approved under a hard turn cap. All modes turn-capped.
+(d) list/search ships as two tools (`list_dir`, `grep`) for clean JSON
+schemas; capability surface unchanged from D05. (e) git tool accepts only
+`status`/`diff` verbs (read-only, per D05). (f) Known limitation, carried
+to M2: shell output is not content-scanned for secrets yet; M1 refuses
+commands that reference deny-list filenames and relies on approvals.
+
+**D23 — edit vs act boundary.** The line is command execution plus memory
+of consent. `edit`: no shell, ever; the first approved write to a file
+consents for that file for the session. `act`: shell available; every
+write and every command needs its own click; nothing is remembered.
+Rationale: file edits are reviewable as diffs and revertible with git;
+executed commands are neither, so they never inherit prior consent.
+`auto` removes clicks entirely (turn cap remains the backstop); `plan`
+cannot mutate. UI should label these so the difference is visible at
+pick time.
+
 ## Open items carried forward
 
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0

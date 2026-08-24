@@ -1,13 +1,19 @@
 /**
- * Plato VS Code shell. Thin by contract (ARCHITECTURE.md): commands,
+ * Plato VS Code shell — thin by contract (ARCHITECTURE.md): commands,
  * SecretStorage, webview host. Logic lives in @applivity/plato-core.
  */
 import * as vscode from 'vscode';
-import { runSinglePrompt } from '@applivity/plato-core';
+import { runAgentLoop } from '@applivity/plato-core';
+import type { ApprovalRequest, Mode } from '@applivity/plato-core';
+import { chatHtml } from './webview.js';
 
 const SECRET_KEY = 'plato.anthropicApiKey';
 
-export function activate(ctx: vscode.ExtensionContext) {
+export function activate(ctx: vscode.ExtensionContext): void {
+  // One chat panel per window; re-running the command reveals it instead
+  // of spawning a blank second one.
+  let live: vscode.WebviewPanel | undefined;
+
   ctx.subscriptions.push(
     vscode.commands.registerCommand('plato.setApiKey', async () => {
       const input = await vscode.window.showInputBox({
@@ -19,150 +25,213 @@ export function activate(ctx: vscode.ExtensionContext) {
       if (input && input.trim().length > 0) {
         await ctx.secrets.store(SECRET_KEY, input.trim());
         void vscode.window.showInformationMessage(
-          'Plato: API key stored in SecretStorage.'
+          'Plato: API key stored in SecretStorage.',
         );
       }
-    })
+    }),
   );
 
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('plato.openChat', async () => {
+    vscode.commands.registerCommand('plato.openChat', () => {
+      if (live) {
+        live.reveal(vscode.ViewColumn.Beside);
+        return;
+      }
       const panel = vscode.window.createWebviewPanel(
         'platoChat',
         'Plato Chat',
         vscode.ViewColumn.Beside,
-        { enableScripts: true, localResourceRoots: [] }
+        {
+          enableScripts: true,
+          // Keep the DOM (and chat log) when the tab is hidden.
+          retainContextWhenHidden: true,
+        },
       );
-      panel.webview.html = chatHtml(panel.webview);
-
-      // Streamed answers flow core -> here -> webview via postMessage.
-      const send = (type: string, text: string) =>
-        void panel.webview.postMessage({ type, text });
-
-      panel.webview.onDidReceiveMessage(async (m) => {
-        if (m?.type !== 'ask') {
-          return;
-        }
-        const apiKey = await ctx.secrets.get(SECRET_KEY);
-        if (!apiKey) {
-          const set = await vscode.window.showErrorMessage(
-            'Plato needs an Anthropic API key first.',
-            'Set API Key'
-          );
-          if (set === 'Set API Key') {
-            await vscode.commands.executeCommand('plato.setApiKey');
-          }
-          return;
-        }
-        const folders = vscode.workspace.workspaceFolders;
-        const root = folders?.[0]?.uri.fsPath;
-        if (!root) {
-          void vscode.window.showErrorMessage(
-            'Open a folder before asking Plato.'
-          );
-          return;
-        }
-        try {
-          await runSinglePrompt({ workspaceRoot: root, prompt: m.text }, apiKey, (d) =>
-            send('delta', d)
-          ).then((full) => send('done', full));
-        } catch (err) {
-          // Never echo raw provider errors; they can embed request hints.
-          send('error', 'Provider request failed. Check the API key and network.');
+      panel.onDidDispose(() => {
+        if (live === panel) {
+          live = undefined;
         }
       });
-    })
+      live = panel;
+      panel.webview.html = chatHtml();
+      new ChatHost(panel, ctx);
+    }),
   );
 }
 
-export function deactivate() {}
+type PendingResolve = (v: boolean) => void;
 
-function chatHtml(webview: vscode.Webview): string {
-  const nonce = getNonce();
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-<title>Plato</title>
-<style>
-  body { margin:0; padding:12px; font-family:var(--vscode-font-family);
-         color:var(--vscode-editor-foreground); display:flex;
-         flex-direction:column; height:calc(100vh - 24px); box-sizing:border-box; }
-  #log { flex:1; overflow-y:auto; white-space:pre-wrap; line-height:1.5; }
-  #bar { display:flex; gap:8px; margin-top:8px; }
-  #q { flex:1; padding:6px 8px; background:var(--vscode-input-background);
-       color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border); }
-  button { padding:6px 14px; background:var(--vscode-button-background);
-           color:var(--vscode-button-foreground); border:none; cursor:pointer; }
-  .hint { opacity:.7; font-size:.9em; margin-bottom:8px; }
-</style>
-</head>
-<body>
-<div id="log"><div class="hint">Ask about the current workspace. Set your Anthropic key with "Plato: Set Anthropic API Key" once.</div></div>
-<div id="bar">
-  <input id="q" type="text" placeholder="e.g. What does this project do?" />
-  <button id="go">Send</button>
-</div>
-<script nonce="${nonce}">
-  const vsapi = acquireVsCodeApi();
-  const log = document.getElementById('log');
-  const q = document.getElementById('q');
-  document.getElementById('go').addEventListener('click', ask);
-  q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { ask(); } });
+const LOG_KEY = 'plato.chatLog';
+const LOG_MAX = 400;
 
-  function ask() {
-    const text = q.value.trim();
-    if (!text) { return; }
-    append('You', text);
-    q.value = '';
-    vsapi.postMessage({ type: 'ask', text });
+/**
+ * Persisted chat entries. The log lives in workspaceState (survives
+ * window reloads and restarts); the webview renders whatever it is given.
+ */
+type Entry =
+  | { k: 'msg'; cls: string; who: string; text: string }
+  | { k: 'tool'; tool: string; phase: string }
+  | { k: 'card-open'; tool: string; preview: string }
+  | { k: 'card-done'; title: string; preview: string };
+
+class ChatHost {
+  private mode: Mode = 'act';
+  private readonly sessionWrites = new Set<string>();
+  private pendingApproval: PendingResolve | null = null;
+  private replyBuffer = '';
+  private readonly log: Entry[];
+
+  constructor(
+    private readonly panel: vscode.WebviewPanel,
+    private readonly ctx: vscode.ExtensionContext,
+  ) {
+    this.log = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
+    this.panel.webview.onDidReceiveMessage(
+      (m: { type?: string; [k: string]: unknown }) => {
+        if (m.type === 'mode' && typeof m.value === 'string') {
+          this.mode = m.value as Mode;
+          this.sessionWrites.clear();
+          this.send('notice', `Mode: ${this.mode}`);
+          return;
+        }
+        if (m.type === 'approve') {
+          const resolve = this.pendingApproval;
+          this.pendingApproval = null;
+          const ok = m.value === 'yes';
+          resolve?.(ok);
+          this.push({
+            k: 'msg',
+            cls: 'you',
+            who: 'You',
+            text: ok ? '[allowed]' : '[denied]',
+          });
+          return;
+        }
+        if (m.type === 'ask' && typeof m.text === 'string') {
+          this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
+          void this.run(m.text);
+        }
+        // The webview asks for the log once its script is live; posting
+        // earlier races page load and the message is dropped.
+        if (m.type === 'ready') {
+          void panel.webview.postMessage({ type: 'restore', log: this.log });
+        }
+      },
+    );
   }
 
-  window.addEventListener('message', (e) => {
-    const m = e.data;
-    if (m.type === 'delta') { stream(m.text); }
-    else if (m.type === 'done') { finish(m.text.length ? '' : '(empty answer)'); }
-    else if (m.type === 'error') { finish(); append('Error', m.text); }
-  });
-
-  let streaming = false;
-  function stream(delta) {
-    streaming = true;
-    let el = document.getElementById('streaming');
-    if (!el) { el = append('Plato', ''); el.id = 'streaming'; }
-    el.textContent += delta;
-    log.scrollTop = log.scrollHeight;
+  private send(type: string, text?: unknown): void {
+    void this.panel.webview.postMessage({ type, text });
   }
-  function finish(notes) {
-    if (streaming || notes) {
-      let el = document.getElementById('streaming');
-      if (!el) { el = append('Plato', ''); }
-      if (notes) { el.textContent += notes; }
-      el.removeAttribute('id');
+
+  private push(entry: Entry): void {
+    this.log.push(entry);
+    if (this.log.length > LOG_MAX) {
+      this.log.splice(0, this.log.length - LOG_MAX);
     }
-    streaming = false;
-    log.scrollTop = log.scrollHeight;
+    void this.ctx.workspaceState.update(LOG_KEY, this.log);
   }
-  function append(who, text) {
-    const div = document.createElement('div');
-    div.textContent = who + ': ' + text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-    return div;
+
+  private async run(task: string): Promise<void> {
+    const apiKey = await this.ctx.secrets.get(SECRET_KEY);
+    if (!apiKey) {
+      const set = await vscode.window.showErrorMessage(
+        'Plato needs an Anthropic API key first.',
+        'Set API Key',
+      );
+      if (set === 'Set API Key') {
+        await vscode.commands.executeCommand('plato.setApiKey');
+      }
+      return;
+    }
+    this.replyBuffer = '';
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      this.send('error', 'Open a folder before asking Plato.');
+      return;
+    }
+    try {
+      const result = await runAgentLoop({
+        root,
+        task,
+        mode: this.mode,
+        apiKey,
+        approve: (req) => this.approve(req),
+        onText: (t) => {
+          if (t.trim().length > 0) {
+            this.replyBuffer += t;
+            this.send('delta', t);
+          }
+        },
+        onToolEvent: (e) => {
+          void this.panel.webview.postMessage({
+            type: 'tool',
+            tool: e.tool,
+            phase: e.phase,
+            ok: e.ok,
+          });
+          if (e.phase === 'done' || e.phase === 'denied' || e.phase === 'declined') {
+            this.push({ k: 'tool', tool: e.tool, phase: e.phase });
+          }
+        },
+      });
+      if (this.replyBuffer.trim().length > 0) {
+        this.push({
+          k: 'msg',
+          cls: 'bot',
+          who: 'Plato',
+          text: this.replyBuffer,
+        });
+        this.replyBuffer = '';
+      }
+      this.send('done', result.stoppedByCap ? 'stopped at turn cap' : '');
+    } catch {
+      this.send('error', 'Provider request failed. Check the API key and network.');
+      this.push({
+        k: 'msg',
+        cls: 'bot',
+        who: 'Error',
+        text: 'Provider request failed. Check the API key and network.',
+      });
+    }
   }
-</script>
-</body>
-</html>`;
+
+  private async approve(req: ApprovalRequest): Promise<boolean> {
+    // edit mode: writes are approve-once-per-session per file (D22c)
+    if (this.mode === 'edit' && isWriteTool(req.tool)) {
+      const key = String(req.args['path'] ?? '');
+      if (this.sessionWrites.has(key)) {
+        return true;
+      }
+      const ok = await this.promptCard(req);
+      if (ok) {
+        this.sessionWrites.add(key);
+        this.send('notice', `Session-approved future edits to ${key}`);
+      }
+      return ok;
+    }
+    return this.promptCard(req);
+  }
+
+  private promptCard(req: ApprovalRequest): Promise<boolean> {
+    this.push({
+      k: 'card-open',
+      tool: req.tool,
+      preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
+    });
+    return new Promise((resolve) => {
+      this.pendingApproval = resolve;
+      void this.panel.webview.postMessage({
+        type: 'approval',
+        tool: req.tool,
+        preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
+      });
+    });
+  }
 }
 
-function getNonce(): string {
-  let n = '';
-  const chars =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    n += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return n;
+function isWriteTool(tool: string): boolean {
+  return tool === 'write_file' || tool === 'apply_diff';
 }
+
+export function deactivate(): void {}
