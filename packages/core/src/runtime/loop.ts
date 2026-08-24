@@ -16,11 +16,13 @@ import { MAX_TURNS, secretRefusal } from './modes.js';
 const SYSTEM_PROMPT =
   'You are Plato, an AI coding agent working inside the user workspace. ' +
   'Use the provided tools to inspect and change files. Prefer apply_diff ' +
-  'for edits and write_file only for new files. Before editing, enumerate ' +
-  'every defect you plan to fix so nothing is missed. After applying ' +
-  'changes, re-read each changed region to verify the result, and report ' +
-  'anything you could not confirm. Stop and summarize once the task is ' +
-  'complete. Never touch secrets or ignore errors silently.';
+  'for edits and write_file only for new files. When you find defects, ' +
+  'enumerate them briefly, then fix them immediately with tool calls in ' +
+  'the same run — never stop to ask whether to proceed; write approval ' +
+  'is enforced by the UI, so the user always confirms changes. After ' +
+  'applying changes, re-read each changed region to verify the result, ' +
+  'and report anything you could not confirm. Stop and summarize once ' +
+  'the task is complete. Never touch secrets or ignore errors silently.';
 
 export interface ApprovalRequest {
   tool: string;
@@ -81,7 +83,8 @@ async function buildApprovalPreview(
 export interface LoopOptions {
   root: string;
   task: string;
-  mode: Mode;
+  /** Read live before every tool decision, so mid-run mode switches apply. */
+  getMode: () => Mode;
   apiKey: string;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
@@ -161,7 +164,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
 
       const decision = decide(
         name as Parameters<typeof decide>[0],
-        opts.mode,
+        opts.getMode(),
       );
       let allowed = decision === 'allow';
 
@@ -169,7 +172,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         results.push({
           type: 'tool_result',
           tool_use_id: call.id,
-          content: `blocked: ${name} is not permitted in ${opts.mode} mode`,
+          content: `blocked: ${name} is not permitted in ${opts.getMode()} mode`,
           is_error: true,
         });
         opts.onToolEvent?.({ tool: name, args, phase: 'denied' });

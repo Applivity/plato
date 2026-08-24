@@ -154,9 +154,9 @@ class ChatHost {
       const result = await runAgentLoop({
         root,
         task,
-        mode: this.mode,
         apiKey,
         approve: (req) => this.approve(req),
+        getMode: () => this.mode,
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;
