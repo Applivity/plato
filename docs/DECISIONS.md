@@ -123,7 +123,9 @@ without the founder present. This file set is that doctrine.
 
 ## Open items carried forward
 
-- Node.js not installed on the build machine (see HANDOFF prerequisites).
+- Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0
+  via nvm 0.40.7 and pnpm 11.23.0 installed and verified; see HANDOFF
+  prerequisites.
 - Trademark sweep before public release (D16).
 - License decision at M4 (D19).
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
