@@ -1,0 +1,9 @@
+packages:
+  - 'packages/*'
+
+# pnpm 11+: approve dependency build scripts (map of name -> bool).
+allowBuilds:
+  esbuild: true
+  '@vscode/vsce-sign': true
+  keytar: true
+

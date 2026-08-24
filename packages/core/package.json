@@ -1,0 +1,20 @@
+{
+  "name": "@applivity/plato-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plato core agent library — no VS Code imports allowed",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

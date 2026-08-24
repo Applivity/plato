@@ -1,0 +1,16 @@
+{
+  "name": "plato",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plato — AI coding agent with live mid-flight supervision (Applivity)",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.23.0",
+  "scripts": {
+    "build": "tsc -b && pnpm --filter plato-vscode run bundle",
+    "test": "pnpm -r --workspace-concurrency=1 test"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.1",
+    "typescript": "5.9.2"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "outDir": "out",
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../.cache/tsc/vscode.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src/**/*"]
+}

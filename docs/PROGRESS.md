@@ -27,21 +27,25 @@ Current focus: M0 scaffold and extension minimum (see checklist below).
 
 ## M0 checklist (from HANDOFF)
 
-- [ ] Monorepo scaffold: pnpm workspaces, `packages/core` + `packages/vscode`,
+- [x] Monorepo scaffold: pnpm workspaces, `packages/core` + `packages/vscode`,
       TypeScript project references (ARCHITECTURE.md layout).
-- [ ] Extension activates on command.
-- [ ] Opens webview chat panel.
-- [ ] Stores Anthropic key in `vscode.SecretStorage`.
-- [ ] Sends one prompt with workspace-root file listing as context.
-- [ ] Streams the answer back into the panel.
+- [x] Extension activates on command (`plato.openChat`, `plato.setApiKey`).
+- [x] Opens webview chat panel.
+- [x] Stores Anthropic key in `vscode.SecretStorage`.
+- [x] Sends one prompt with workspace-root file listing as context
+      (secret deny-list enforced in the walker; unit-tested).
+- [x] Streams the answer back into the panel.
 - [ ] Done gate: unpacked extension installed in VS Code;
       `/Users/ai/Desktop/HcadPublicAndroid-demo` open;
       "What does this project do?" answered correctly and grounded.
+      - [x] VSIX built and installed locally (`applivity.plato-vscode`)
+      - [ ] Founder runs the demo (API key entry is manual by design)
 
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-24 | (this commit) | M0 | Monorepo scaffold + extension minimum: pnpm workspaces, TS project refs, core (secret filter, walker, Anthropic streaming provider, single-prompt runner), vscode shell (webview chat, SecretStorage); VSIX packaged and installed locally | `tsc -b` clean; 9/9 vitest; vsce package OK; `code --install-extension` OK |
 | 2026-08-24 | (this commit) | docs | Added PROGRESS.md tracker; recorded public-release secret-audit open item; recorded D21 scaffolding decisions | review |
 | 2026-08-24 | 6d8428b | docs | Corrected local repo path to `plato`; marked toolchain setup resolved | diff review |
 | 2026-08-24 | 053d93a | repo | Expanded .gitignore: secret deny-list, node/pnpm, TS output, VSIX, logs | `git check-ignore` probes |

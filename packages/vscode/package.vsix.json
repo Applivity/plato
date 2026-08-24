@@ -1,0 +1,29 @@
+{
+  "name": "plato",
+  "displayName": "Plato",
+  "description": "AI coding agent with live mid-flight supervision.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "applivity",
+  "license": "SEE LICENSE IN docs/DECISIONS.md",
+  "engines": {
+    "vscode": "^1.103.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "plato.openChat",
+        "title": "Plato: Open Chat"
+      },
+      {
+        "command": "plato.setApiKey",
+        "title": "Plato: Set Anthropic API Key"
+      }
+    ]
+  }
+}
