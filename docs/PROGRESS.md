@@ -60,14 +60,19 @@ Current focus: M1 — full tool loop, modes/approvals, diff rendering.
 - [x] Secret guard on every tool call (deny-list paths + command text).
 - [x] Shell rewrite: mode picker, approval cards with rendered diffs,
       session approval cache in the shell (core stays stateless).
-- [ ] Founder demo: inject trivial bug into a scratch file in
+- [x] Founder demo: inject trivial bug into a scratch file in
       HcadPublicAndroid-demo, ask Plato to fix it in edit mode, approve
       via diff card. Closes M1.
+      - [x] Founder confirmed 2026-08-24: edit mode identified all three
+            planted bugs; prompt corrected so Plato fixes without stopping
+            to ask; founder's act→edit mid-run switch exposed a snapshot-
+            mode bug, fixed via live getMode(). M1 closed.
 
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-24 | (this commit) | M1 | Run-visibility UX from founder feedback: live status chip in header ("working Ns · read_file…", pulses; green "✓ done" state persists after finish); explicit completion entry "✓ done in Xs · N tool calls" appended to transcript; smart auto-scroll follows output only when already near bottom, never yanks while reading; host now reports duration + tool count with done event | `tsc -b` clean; 23/23 vitest; VSIX @0.2.5 packaged + installed; chip/completion markers verified in bundle |
 | 2026-08-24 | (this commit) | M1 | Mid-run mode switches now apply immediately: loop reads mode live via getMode() callback instead of a snapshot taken at run start (founder trial: act→edit switch mid-run kept old policy). Confirmed-by-design: act asks per action with no memory; edit asks once per file per session. Version 0.2.4 | `tsc -b` clean; 23/23 vitest; VSIX @0.2.4 packaged + installed; getMode marker in bundle |
 | 2026-08-24 | (this commit) | M1 | Prompt fix from founder trial: Plato enumerated bugs then stopped to ask permission; system prompt now says fix immediately in the same run since the UI enforces write approval anyway. Founder confirmed edit mode identified all planted bugs (3/3). Version 0.2.3 | `tsc -b` clean; 23/23 vitest; VSIX packaged + installed |
 | 2026-08-24 | (this commit) | M1 | Durable chat log: conversation persisted to workspaceState and restored on every panel open (survives reloads/restarts; panel DOM also kept while hidden); UI rebuilt — proper input area (textarea + styled Send), mode header pills, colored diff cards; Plato replies now recorded too; XSS-hardened rendering (text nodes by default, HTML only for host-built tool labels/diffs) | `tsc -b` clean; 23/23 vitest; VSIX packaged + installed (@0.2.2); persistence + CSP markers verified in installed bundle |

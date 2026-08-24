@@ -145,6 +145,8 @@ class ChatHost {
       return;
     }
     this.replyBuffer = '';
+    const started = Date.now();
+    let toolsUsed = 0;
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       this.send('error', 'Open a folder before asking Plato.');
@@ -164,6 +166,9 @@ class ChatHost {
           }
         },
         onToolEvent: (e) => {
+          if (e.phase === 'done') {
+            toolsUsed += 1;
+          }
           void this.panel.webview.postMessage({
             type: 'tool',
             tool: e.tool,
@@ -184,7 +189,11 @@ class ChatHost {
         });
         this.replyBuffer = '';
       }
-      this.send('done', result.stoppedByCap ? 'stopped at turn cap' : '');
+      this.send('done', {
+        note: result.stoppedByCap ? 'stopped at turn cap' : '',
+        secs: Math.max(1, Math.round((Date.now() - started) / 1000)),
+        tools: toolsUsed,
+      });
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');
       this.push({

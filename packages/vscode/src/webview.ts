@@ -80,6 +80,17 @@ export function chatHtml(): string {
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
+  #st { margin-left:auto; display:none; align-items:center; gap:5px;
+        font-size:11px; color:var(--pl-muted); white-space:nowrap; }
+  #st.on { display:flex; }
+  #st.done { color:var(--vscode-testing-iconPassed, #73c991); }
+  #st .dot { width:7px; height:7px; border-radius:50%;
+             background:var(--pl-accent); animation:pulse 1.2s infinite; }
+  #st.done .dot { animation:none;
+                  background:var(--vscode-testing-iconPassed, #73c991); }
+  @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
+  .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
+             padding-left:8px; color:var(--pl-muted); font-size:12px; }
 </style>
 </head>
 <body>
@@ -89,6 +100,7 @@ export function chatHtml(): string {
   <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
   <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
   <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
+  <span id="st"></span>
 </header>
 <div id="log"></div>
 <footer>
@@ -102,7 +114,26 @@ export function chatHtml(): string {
   let mode = 'act';
   let busy = false;
   let streaming = false;
+  let runT0 = 0;
+  let lastAct = '';
   vsapi.postMessage({ type: 'ready' });
+
+  function chipOn(txt, doneKind) {
+    const st = document.getElementById('st');
+    st.className = doneKind ? 'on done' : 'on';
+    st.innerHTML = '<span class="dot"></span>' + esc(txt);
+  }
+  function chipOff() {
+    const st = document.getElementById('st');
+    st.className = '';
+    st.textContent = '';
+  }
+  function refreshChip() {
+    if (!busy || !runT0) { return; }
+    const s = Math.floor((Date.now() - runT0) / 1000);
+    chipOn('working ' + s + 's' + (lastAct ? ' \u00b7 ' + lastAct : ''), false);
+  }
+  setInterval(refreshChip, 1000);
 
   for (const b of document.querySelectorAll('header button')) {
     if (b.classList.contains('on')) { mode = b.dataset.m; }
@@ -128,6 +159,9 @@ export function chatHtml(): string {
     addMsg('you', 'You', text);
     q.value = '';
     busy = true;
+    runT0 = Date.now();
+    lastAct = 'thinking';
+    refreshChip();
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
@@ -135,17 +169,34 @@ export function chatHtml(): string {
     const m = e.data;
     switch (m.type) {
       case 'restore': render(m.log); break;
-      case 'delta': stream(m.text); break;
+      case 'delta': stream(m.text); lastAct = 'writing'; refreshChip(); break;
       case 'notice': addMsg('sys', 'Plato', m.text); break;
-      case 'tool': addMsg('tool', null,
-        '<code>' + esc(m.tool) + '</code> ' + esc(m.phase), true); break;
-      case 'approval': showCard(m); break;
-      case 'done':
-        finish();
-        if (!streaming) { addMsg('sys', 'Plato', '(done' + (m.text ? ' — ' + m.text : '') + ')'); }
+      case 'tool':
+        addMsg('tool', null,
+          '<code>' + esc(m.tool) + '</code> ' + esc(m.phase), true);
+        lastAct = String(m.tool);
+        refreshChip();
         break;
+      case 'approval':
+        showCard(m);
+        lastAct = 'waiting for you';
+        refreshChip();
+        break;
+      case 'done': {
+        finish();
+        const i = m.text || {};
+        const line = '\u2713 done in ' + (i.secs ?? '?') + 's \u00b7 '
+          + (i.tools ?? 0) + ' tool calls'
+          + (i.note ? ' \u2014 ' + i.note : '');
+        addMsg('fin', null, line);
+        chipOn('\u2713 done in ' + (i.secs ?? '?') + 's', true);
+        runT0 = 0;
+        break;
+      }
       case 'error':
         finish();
+        chipOff();
+        runT0 = 0;
         addMsg('bot', 'Error', m.text);
         break;
     }
@@ -153,7 +204,10 @@ export function chatHtml(): string {
 
   function render(entries) {
     log.textContent = '';
+    stick = true;
     for (const t of entries) { appendEntry(t); }
+    chipOff();
+    runT0 = 0;
     scroll();
   }
 
@@ -264,7 +318,13 @@ export function chatHtml(): string {
                     .replace(/>/g, '&gt;');
   }
 
-  function scroll() { log.scrollTop = log.scrollHeight; }
+  // Follow new output only while the user is already near the bottom;
+  // never yank the view if they scrolled up to read.
+  let stick = true;
+  log.addEventListener('scroll', () => {
+    stick = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+  });
+  function scroll() { if (stick) { log.scrollTop = log.scrollHeight; } }
 </script>
 </body>
 </html>`;
