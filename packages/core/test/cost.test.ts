@@ -29,6 +29,22 @@ describe('estimateCost', () => {
     expect(q.usd).toBeCloseTo(5.5, 6);
   });
 
+  it('resolves prices through arbitrary connection prefixes (D26a)', () => {
+    const q = estimateCost('litellm:deepseek-chat', {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    });
+    // deepseek is not in the table → honest zero.
+    expect(q).toEqual({ usd: 0, estimated: false });
+
+    const q2 = estimateCost('litellm:gpt-4o', {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    });
+    expect(q2.estimated).toBe(true);
+    expect(q2.usd).toBeCloseTo(2.5, 6);
+  });
+
   it('handles realistic small runs', () => {
     const q = estimateCost('anthropic:claude-sonnet-4-5', {
       inputTokens: 12_000,

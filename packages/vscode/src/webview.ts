@@ -150,14 +150,7 @@ export function chatHtml(): string {
   <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
   <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
   <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
-  <select id="msel" title="Model (provider:model)">
-    <option value="anthropic:claude-sonnet-4-5">Claude Sonnet 4.5</option>
-    <option value="anthropic:claude-opus-4-1">Claude Opus 4.1</option>
-    <option value="anthropic:claude-3-5-haiku-latest">Claude Haiku 3.5</option>
-    <option value="openai:gpt-4o">GPT-4o</option>
-    <option value="openai:gpt-4o-mini">GPT-4o mini</option>
-    <option value="openai:o4-mini">o4-mini</option>
-  </select>
+  <select id="msel" title="Model (connection:model)"></select>
   <span id="st"></span>
   <button id="new" title="Start a new chat (clears this conversation)">＋</button>
 </header>
@@ -276,6 +269,16 @@ export function chatHtml(): string {
   window.addEventListener('message', (e) => {
     const m = e.data;
     switch (m.type) {
+      case 'models': {
+        msel.textContent = '';
+        for (const it of m.items || []) {
+          const o = document.createElement('option');
+          o.value = String(it.value);
+          o.textContent = String(it.label);
+          msel.appendChild(o);
+        }
+        break;
+      }
       case 'restore':
         render(m.log);
         if (
@@ -303,6 +306,7 @@ export function chatHtml(): string {
         const i = m.text || {};
         const line = '\u2713 done in ' + (i.secs ?? '?') + 's \u00b7 '
           + (i.tools === 1 ? '1 tool call' : (i.tools ?? 0) + ' tool calls')
+          + (i.tok ? ' \u00b7 ' + i.tok : '')
           + (i.cost ? ' \u00b7 ' + i.cost : '')
           + (i.note ? ' \u2014 ' + i.note : '');
         addMsg('fin', null, line);

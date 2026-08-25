@@ -216,19 +216,37 @@ MCP stdio client. Team profiles stay early-M4 unless room remains.
 (g) Non-goals this milestone: vision/image inputs, agent-authored HTML
 beyond the renderer subset, mid-run model switching.
 
+**D26 — Connections, key management, cost honesty (delegated).**
+(a) Named connection profiles replace the single global OpenAI base URL:
+`plato.connections` is an array of `{id, kind: 'anthropic'|'openai',
+baseUrl?, models?}`. Defaults `anthropic` (native) and `openai`
+(api.openai.com/v1) are pre-seeded unless the user defines their own
+with those ids. Model refs become `<connection-id>:<model>`; the id
+selects base URL and key slot, `kind` selects the adapter. Adding a
+provider is data, not code — any number of compatible endpoints
+coexist (founder need: LiteLLM + OpenRouter side by side).
+(b) Keys stay in SecretStorage under `plato.providers.<connectionId>
+.apiKey`; the legacy `plato.anthropicApiKey` slot remains a fallback
+for the default anthropic connection only. New command
+`Plato: Manage API Keys`: QuickPick lists every configured connection
+with ●set/○missing status → Set or Clear. No key value is ever
+displayed.
+(c) Cost honesty (founder-flagged): flat price tables cannot see cache
+tiers (Anthropic cache-read ≈10% of input), off-peak windows
+(DeepSeek), or router-side discounts (LiteLLM) — so per-provider dollar
+accuracy is NOT pursued. Done cards lead with exact token totals;
+the dollar figure is demoted to `≈$x` and omitted when unknown.
+Known limitations recorded rather than modeled. Future candidate:
+OpenRouter's authoritative `usage.cost` passthrough.
+(d) Non-goal: modeling cache/off-peak price schedules.
+
 ## Open items carried forward
 
-- **Provider matrix unscheduled (gap flagged 2026-08-25):** D07 promises
-  OpenAI-compatible endpoints alongside Anthropic native, but only
-  `claude-sonnet-4-5` is wired (D22a bound the loop to native Anthropic
-  tool-use) and no milestone ever scheduled the rest. Needed: provider
-  abstraction (canonical tool/message/usage types + adapters), per-
-  provider SecretStorage keys, model selection, reasoning controls
-  (reasoning_effort / extended thinking; thinking tokens bill as output
-  — cost table must account). **Founder decision 2026-08-25:** all of it
-  lands as ONE M3 workstream, opened by a D25 decision pass (abstraction
-  shape, adapter surface, key storage, model/reasoning UX, cost handling)
-  before any code. Until then Anthropic-native only.
+- **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
+  abstraction) and D26 (connection profiles, per-connection keys).**
+  Founder decision 2026-08-25 kept it as one M3 workstream, D25/D26
+  decisions before code. Remaining from the original note: OpenRouter
+  authoritative-cost passthrough (D26c future candidate).
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0
   via nvm 0.40.7 and pnpm 11.23.0 installed and verified; see HANDOFF
   prerequisites.

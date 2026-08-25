@@ -17,28 +17,23 @@ export interface CostQuote {
   estimated: boolean;
 }
 
-/** USD per million tokens: [input, output]. */
+/** USD per million tokens: [input, output], keyed by BARE model name. */
 const PRICE_PER_MTOK: Record<string, [number, number]> = {
-  'anthropic:claude-sonnet-4-5': [3, 15],
-  'anthropic:claude-opus-4-1': [15, 75],
-  'anthropic:claude-3-5-haiku-latest': [0.8, 4],
-  'openai:gpt-4o': [2.5, 10],
-  'openai:gpt-4o-mini': [0.15, 0.6],
-  'openai:o4-mini': [1.1, 4.4],
-};
-
-/** Pre-abstraction ids (kept so old transcripts still price). */
-const LEGACY_ALIASES: Record<string, string> = {
-  'claude-sonnet-4-5': 'anthropic:claude-sonnet-4-5',
-  'claude-opus-4-1': 'anthropic:claude-opus-4-1',
-  'claude-3-5-haiku-latest': 'anthropic:claude-3-5-haiku-latest',
+  'claude-sonnet-4-5': [3, 15],
+  'claude-opus-4-1': [15, 75],
+  'claude-3-5-haiku-latest': [0.8, 4],
+  'gpt-4o': [2.5, 10],
+  'gpt-4o-mini': [0.15, 0.6],
+  'o4-mini': [1.1, 4.4],
 };
 
 export function estimateCost(model: string, usage: Usage): CostQuote {
-  const key = PRICE_PER_MTOK[model]
-    ? model
-    : LEGACY_ALIASES[model];
-  const price = key ? PRICE_PER_MTOK[key] : undefined;
+  // Connection refs ('litellm:gpt-4o') resolve by their bare model part.
+  const bare = model.includes(':') ? model.slice(model.indexOf(':') + 1) : model;
+  const price =
+    PRICE_PER_MTOK[bare] ??
+    PRICE_PER_MTOK[model] ?? // legacy bare ids without prefix
+    undefined;
   if (!price) {
     return { usd: 0, estimated: false };
   }

@@ -9,8 +9,9 @@ import {
   TranscriptWriter,
   RunController,
   createProvider,
-  parseModelRef,
+  splitModelRef,
   modelSupportsReasoning,
+  MODEL_CATALOG,
   renderMarkdown,
 } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
@@ -18,6 +19,61 @@ import { chatHtml } from './webview.js';
 import { join } from 'node:path';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
+
+interface ConnectionConfig {
+  id: string;
+  kind: 'anthropic' | 'openai';
+  baseUrl?: string;
+  /** Optional explicit dropdown entries (bare model names). */
+  models?: string[];
+}
+
+/** Reads plato.connections and seeds the built-in defaults (D26a). */
+function readConnections(): ConnectionConfig[] {
+  const raw = vscode.workspace.getConfiguration('plato').get<unknown>(
+    'connections',
+    [],
+  );
+  const list: ConnectionConfig[] = [];
+  if (Array.isArray(raw)) {
+    for (const row of raw as Record<string, unknown>[]) {
+      const id = typeof row['id'] === 'string' ? row['id'] : '';
+      const kind =
+        row['kind'] === 'anthropic'
+          ? ('anthropic' as const)
+          : row['kind'] === 'openai'
+            ? ('openai' as const)
+            : null;
+      if (!id || !kind) {
+        continue;
+      }
+      const baseUrl = typeof row['baseUrl'] === 'string' ? row['baseUrl'] : undefined;
+      const models = Array.isArray(row['models'])
+        ? (row['models'] as unknown[]).filter(
+            (x): x is string => typeof x === 'string',
+          )
+        : undefined;
+      list.push({ id, kind, baseUrl, models });
+    }
+  }
+  const ids = new Set(list.map((c) => c.id));
+  if (!ids.has('anthropic')) {
+    list.unshift({ id: 'anthropic', kind: 'anthropic' });
+  }
+  if (!ids.has('openai')) {
+    list.push({
+      id: 'openai',
+      kind: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+    });
+  }
+  return list;
+}
+
+/** Exact token facts beat estimated dollars (D26c). */
+function fmtTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k tok` : `${n} tok`;
+}
 
 export function activate(ctx: vscode.ExtensionContext): void {
   // One chat panel per window; re-running the command reveals it instead
@@ -28,14 +84,15 @@ export function activate(ctx: vscode.ExtensionContext): void {
   ctx.subscriptions.push(
     vscode.commands.registerCommand(
       'plato.setApiKey',
-      async (providerArg?: string) => {
+      async (connectionArg?: string) => {
+        const ids = readConnections().map((c) => c.id);
         const pick =
-          providerArg === 'anthropic' || providerArg === 'openai'
-            ? providerArg
-            : await vscode.window.showQuickPick(['anthropic', 'openai'], {
-                placeHolder: 'Which provider is this key for?',
+          connectionArg && ids.includes(connectionArg)
+            ? connectionArg
+            : await vscode.window.showQuickPick(ids, {
+                placeHolder: 'Which connection is this key for?',
               });
-        if (pick !== 'anthropic' && pick !== 'openai') {
+        if (!pick) {
           return;
         }
         const input = await vscode.window.showInputBox({
@@ -44,10 +101,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
           ignoreFocusOut: true,
         });
         if (input && input.trim().length > 0) {
-          await ctx.secrets.store(
-            `plato.providers.${pick}.apiKey`,
-            input.trim(),
-          );
+          await ctx.secrets.store(`plato.providers.${pick}.apiKey`, input.trim());
           if (pick === 'anthropic') {
             // Keep the legacy slot in sync for pre-0.3.0 fallbacks.
             await ctx.secrets.store(LEGACY_KEY, input.trim());
@@ -58,6 +112,41 @@ export function activate(ctx: vscode.ExtensionContext): void {
         }
       },
     ),
+  );
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('plato.manageKeys', async () => {
+      const conns = readConnections();
+      const pick = await vscode.window.showQuickPick(
+        conns.map((c) => ({
+          label: c.id,
+          description: `${c.kind}${c.baseUrl ? ' · ' + c.baseUrl : ''}`,
+          connId: c.id,
+        })),
+        { placeHolder: 'Manage API key for which connection?' },
+      );
+      if (!pick) {
+        return;
+      }
+      const slot = `plato.providers.${pick.connId}.apiKey`;
+      const has = (await ctx.secrets.get(slot)) !== undefined;
+      const action = await vscode.window.showQuickPick(
+        has ? ['Set key', 'Clear key'] : ['Set key'],
+        {
+          placeHolder: `Key status for ${pick.connId}: ${
+            has ? '\u25CF set' : '\u25CB missing'
+          }`,
+        },
+      );
+      if (action === 'Set key') {
+        await vscode.commands.executeCommand('plato.setApiKey', pick.connId);
+      } else if (action === 'Clear key') {
+        await ctx.secrets.delete(slot);
+        void vscode.window.showInformationMessage(
+          `Plato: key cleared for ${pick.connId}.`,
+        );
+      }
+    }),
   );
 
   ctx.subscriptions.push(
@@ -140,15 +229,14 @@ class ChatHost {
           return;
         }
         if (m.type === 'model' && typeof m.value === 'string') {
-          const parsed = parseModelRef(m.value);
-          if (parsed) {
+          if (this.resolveConnection(m.value)) {
             this.modelOverride = m.value;
             void this.panel.webview.postMessage({
               type: 'notice',
               text: `Model set to ${m.value}`,
             });
           } else {
-            this.send('error', `Unknown model ref "${m.value}"`);
+            this.send('error', `Unknown connection in "${m.value}"`);
           }
           return;
         }
@@ -213,6 +301,10 @@ class ChatHost {
               : e,
           );
           void panel.webview.postMessage({
+            type: 'models',
+            items: this.modelItems(),
+          });
+          void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
             model: this.effectiveModel(),
@@ -270,6 +362,42 @@ class ChatHost {
     );
   }
 
+  private resolveConnection(ref: string): ConnectionConfig | null {
+    const parts = splitModelRef(ref);
+    if (!parts) {
+      return null;
+    }
+    return (
+      readConnections().find((c) => c.id === parts.connectionId) ?? null
+    );
+  }
+
+  /** Dropdown entries: declared models, else catalog defaults per kind. */
+  private modelItems(): { value: string; label: string }[] {
+    const items: { value: string; label: string }[] = [];
+    for (const c of readConnections()) {
+      if (c.models && c.models.length > 0) {
+        for (const m of c.models) {
+          const entry = MODEL_CATALOG.find((e) => e.id === m);
+          items.push({
+            value: `${c.id}:${m}`,
+            label: `${c.id}:${m}${entry ? ' · ' + entry.label : ''}`,
+          });
+        }
+        continue;
+      }
+      const family = MODEL_CATALOG.filter((e) =>
+        c.kind === 'anthropic'
+          ? e.id.startsWith('claude')
+          : !e.id.startsWith('claude'),
+      );
+      for (const e of family) {
+        items.push({ value: `${c.id}:${e.id}`, label: `${c.id}:${e.id}` });
+      }
+    }
+    return items;
+  }
+
   private reasoningFor():
     | { effort: 'low' | 'medium' | 'high' }
     | undefined {
@@ -281,32 +409,34 @@ class ChatHost {
   }
 
   private async run(task: string): Promise<void> {
-    // Resolve the composite model ref and its provider key (D25c/d).
+    // Resolve the composite ref to a connection profile (D26a).
     const ref = this.effectiveModel();
-    const parsed = parseModelRef(ref);
-    if (!parsed) {
+    const parts = splitModelRef(ref);
+    const conn = parts
+      ? readConnections().find((c) => c.id === parts.connectionId) ?? null
+      : null;
+    if (!conn) {
       this.send(
         'error',
-        `Bad model "${ref}" — use the provider:model form, e.g. anthropic:claude-sonnet-4-5.`,
+        `Unknown connection in "${ref}". Configured: ${readConnections()
+          .map((c) => c.id)
+          .join(', ')}.`,
       );
       return;
     }
     let apiKey = await this.ctx.secrets.get(
-      `plato.providers.${parsed.provider}.apiKey`,
+      `plato.providers.${conn.id}.apiKey`,
     );
-    if (!apiKey && parsed.provider === 'anthropic') {
+    if (!apiKey && conn.id === 'anthropic') {
       apiKey = await this.ctx.secrets.get(LEGACY_KEY);
     }
     if (!apiKey) {
       const set = await vscode.window.showErrorMessage(
-        `Plato needs an API key for ${parsed.provider}.`,
+        `Plato needs an API key for ${conn.id}.`,
         'Set API Key',
       );
       if (set === 'Set API Key') {
-        await vscode.commands.executeCommand(
-          'plato.setApiKey',
-          parsed.provider,
-        );
+        await vscode.commands.executeCommand('plato.setApiKey', conn.id);
       }
       return;
     }
@@ -336,18 +466,15 @@ class ChatHost {
         getMode: () => this.mode,
         bus,
         controller: this.controller,
-        provider: createProvider(parsed.provider, {
+        provider: createProvider(conn.kind, {
           apiKey,
           baseUrl:
-            parsed.provider === 'openai'
-              ? vscode.workspace.getConfiguration('plato').get<string>(
-                  'openAiBaseUrl',
-                  'https://api.openai.com/v1',
-                )
+            conn.kind === 'openai'
+              ? conn.baseUrl ?? 'https://api.openai.com/v1'
               : undefined,
         }),
         model: ref,
-        ...(modelSupportsReasoning(ref)
+        ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
         onText: (t) => {
@@ -390,7 +517,8 @@ class ChatHost {
               : '',
         secs: Math.max(1, Math.round((Date.now() - started) / 1000)),
         tools: toolsUsed,
-        cost: result.costUsd > 0 ? `$${result.costUsd.toFixed(4)}` : '',
+        tok: fmtTokens(result.inputTokens + result.outputTokens),
+        cost: result.costUsd > 0 ? `\u2248$${result.costUsd.toFixed(4)}` : '',
       });
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');

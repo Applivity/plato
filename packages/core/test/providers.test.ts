@@ -8,36 +8,37 @@ import {
 } from '../src/providers/registry.js';
 
 describe('parseModelRef', () => {
-  it('parses valid composite refs', () => {
-    expect(parseModelRef('anthropic:claude-sonnet-4-5')).toEqual({
-      provider: 'anthropic',
+  const KNOWN = ['anthropic', 'openai', 'litellm'];
+  it('parses refs whose connection id is configured', () => {
+    expect(parseModelRef('anthropic:claude-sonnet-4-5', KNOWN)).toEqual({
+      connectionId: 'anthropic',
       model: 'claude-sonnet-4-5',
     });
-    expect(parseModelRef('openai:gpt-4o')).toEqual({
-      provider: 'openai',
+    expect(parseModelRef('litellm:gpt-4o', KNOWN)).toEqual({
+      connectionId: 'litellm',
       model: 'gpt-4o',
     });
   });
 
-  it('rejects unknown providers and malformed refs', () => {
-    expect(parseModelRef('mistral:mixtral')).toBeNull();
-    expect(parseModelRef('claude-sonnet-4-5')).toBeNull();
-    expect(parseModelRef('openai:')).toBeNull();
-    expect(parseModelRef('')).toBeNull();
+  it('rejects unconfigured connections and malformed refs', () => {
+    expect(parseModelRef('mistral:mixtral', KNOWN)).toBeNull();
+    expect(parseModelRef('claude-sonnet-4-5', KNOWN)).toBeNull();
+    expect(parseModelRef('openai:', KNOWN)).toBeNull();
+    expect(parseModelRef('', KNOWN)).toBeNull();
   });
 });
 
-describe('catalog', () => {
-  it('finds entries by exact composite id', () => {
-    expect(findModel('openai:o4-mini')?.label).toBe('o4-mini');
-    expect(findModel('anthropic:claude-opus-4-1')?.reasoning).toBe(true);
-    expect(findModel('openai:nope')).toBeUndefined();
+describe('catalog (bare model names)', () => {
+  it('finds entries by bare name regardless of connection', () => {
+    expect(findModel('o4-mini')?.label).toBe('o4-mini');
+    expect(findModel('claude-opus-4-1')?.reasoning).toBe(true);
+    expect(findModel('nope')).toBeUndefined();
   });
 
   it('flags reasoning only for catalog models that support it', () => {
-    expect(modelSupportsReasoning('anthropic:claude-sonnet-4-5')).toBe(true);
-    expect(modelSupportsReasoning('openai:gpt-4o')).toBe(false);
-    expect(modelSupportsReasoning('openai:totally-custom')).toBe(false);
+    expect(modelSupportsReasoning('claude-sonnet-4-5')).toBe(true);
+    expect(modelSupportsReasoning('gpt-4o')).toBe(false);
+    expect(modelSupportsReasoning('totally-custom')).toBe(false);
   });
 
   it('prices every catalog entry', () => {
