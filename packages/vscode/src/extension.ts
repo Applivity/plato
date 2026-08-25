@@ -3,9 +3,10 @@
  * SecretStorage, webview host. Logic lives in @applivity/plato-core.
  */
 import * as vscode from 'vscode';
-import { runAgentLoop } from '@applivity/plato-core';
+import { runAgentLoop, AgentBus, TranscriptWriter } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
+import { join } from 'node:path';
 
 const SECRET_KEY = 'plato.anthropicApiKey';
 
@@ -152,6 +153,13 @@ class ChatHost {
       this.send('error', 'Open a folder before asking Plato.');
       return;
     }
+    // M2: every run is transcribed under <root>/.plato/runs/ (D24c).
+    const bus = new AgentBus();
+    const writer = new TranscriptWriter(join(root, '.plato', 'runs'), {
+      task,
+      root,
+    });
+    writer.attach(bus);
     try {
       const result = await runAgentLoop({
         root,
@@ -159,6 +167,7 @@ class ChatHost {
         apiKey,
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
+        bus,
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;
@@ -190,9 +199,15 @@ class ChatHost {
         this.replyBuffer = '';
       }
       this.send('done', {
-        note: result.stoppedByCap ? 'stopped at turn cap' : '',
+        note:
+          result.reason === 'cap'
+            ? 'stopped at turn cap'
+            : result.reason === 'cancelled'
+              ? 'cancelled'
+              : '',
         secs: Math.max(1, Math.round((Date.now() - started) / 1000)),
         tools: toolsUsed,
+        cost: result.costUsd > 0 ? `$${result.costUsd.toFixed(4)}` : '',
       });
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');
@@ -202,6 +217,8 @@ class ChatHost {
         who: 'Error',
         text: 'Provider request failed. Check the API key and network.',
       });
+    } finally {
+      writer.close();
     }
   }
 

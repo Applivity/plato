@@ -68,10 +68,35 @@ Current focus: M1 — full tool loop, modes/approvals, diff rendering.
             to ask; founder's act→edit mid-run switch exposed a snapshot-
             mode bug, fixed via live getMode(). M1 closed.
 
+## M2 checklist
+
+- [x] D24 recorded before code (bus semantics, observer mailbox,
+      transcript format, cost rules, MCP trim to early M3).
+- [x] Event bus (`core/src/runtime/bus.ts`): typed discriminated-union
+      events, listener isolation, loop as single emitter; legacy shell
+      callbacks bridged onto the bus (public surface unchanged).
+- [x] Observer inbox (`RunController`): guidance queues FIFO and is
+      injected at safe points (between turns/tool calls); pause blocks
+      until resume; cancel stops after the in-flight tool call.
+- [x] Transcripts: one JSONL file per run under `<root>/.plato/runs/`,
+      header line first (schemaVersion 1), on by default; secret-safe by
+      whitelist — tool args, approval previews and raw outputs are never
+      written to disk.
+- [x] Cost meter: per-turn `usage` events plus run totals returned in
+      LoopResult and shown on the completion card ("✓ done … · $0.0042");
+      unknown models quote $0 flagged not-estimated (D24d).
+- [x] Unit coverage: bus delivery/isolation/unsubscribe, controller
+      guidance/pause/cancel gates, cost math incl. unknown model,
+      transcript whitelist + header + post-close silence (37 total).
+- [ ] Founder check: run any task, confirm `.plato/runs/*.jsonl` exists,
+      contains no secrets/previews, and cost appears on the done card.
+- [ ] MCP stdio client → early M3 (D24e trim recorded).
+
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-24 | (this commit) | M2 | Event bus + observer mailbox + transcripts + cost meter per D24: typed bus with isolated listeners, loop single-emitter with legacy callbacks bridged; RunController guidance/pause/cancel honored at safe points; JSONL transcripts per run under .plato/runs/ (secret-safe whitelist, header schemaVersion 1); usage/cost per turn and run, cost on completion card. MCP trimmed to early M3. Version 0.2.6 | `tsc -b --force` clean; 37/37 vitest (14 new: bus/controller/cost/transcript); VSIX @0.2.6 packaged + installed; transcript/cost/bus markers verified in bundle |
 | 2026-08-24 | (this commit) | M1 | Run-visibility UX from founder feedback: live status chip in header ("working Ns · read_file…", pulses; green "✓ done" state persists after finish); explicit completion entry "✓ done in Xs · N tool calls" appended to transcript; smart auto-scroll follows output only when already near bottom, never yanks while reading; host now reports duration + tool count with done event | `tsc -b` clean; 23/23 vitest; VSIX @0.2.5 packaged + installed; chip/completion markers verified in bundle |
 | 2026-08-24 | (this commit) | M1 | Mid-run mode switches now apply immediately: loop reads mode live via getMode() callback instead of a snapshot taken at run start (founder trial: act→edit switch mid-run kept old policy). Confirmed-by-design: act asks per action with no memory; edit asks once per file per session. Version 0.2.4 | `tsc -b` clean; 23/23 vitest; VSIX @0.2.4 packaged + installed; getMode marker in bundle |
 | 2026-08-24 | (this commit) | M1 | Prompt fix from founder trial: Plato enumerated bugs then stopped to ask permission; system prompt now says fix immediately in the same run since the UI enforces write approval anyway. Founder confirmed edit mode identified all planted bugs (3/3). Version 0.2.3 | `tsc -b` clean; 23/23 vitest; VSIX packaged + installed |

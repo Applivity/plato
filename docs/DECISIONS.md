@@ -159,6 +159,31 @@ executed commands are neither, so they never inherit prior consent.
 cannot mutate. UI should label these so the difference is visible at
 pick time.
 
+**D24 — M2 event bus, transcripts, cost (delegated).**
+(a) One synchronous in-process pub-sub bus in core (`runtime/bus.ts`).
+Events are a typed discriminated union; listeners are isolated — a
+throwing listener is swallowed, never breaks the run. The loop is the
+single emitter; the M1 shell callbacks (`onText`, `onToolEvent`) become
+bridge subscribers so the public surface is unchanged.
+(b) Observer injection (D10) enters now as a first-class inbound mailbox
+on `RunController`: `guidance` queues FIFO and is injected as user-role
+text at the next safe point; `pause` blocks at safe points until
+`resume`; `cancel` stops after the in-flight tool call finishes. Safe
+points are between API turns and between tool calls. Killing a tool
+mid-execution is deferred (child-process teardown is M3 work).
+(c) Transcripts: JSONL, header line first (`schemaVersion` 1), one line
+per event, one file per run under `<root>/.plato/runs/`, on by default
+(per D09 they power cost, observer feed, debugging). Secret-safety by
+construction: the writer whitelists fields — tool arguments, approval
+previews, and raw outputs are never written (file content can carry
+secrets); full-fidelity capture is future opt-in behind redaction.
+(d) Cost meter: hardcoded per-MTok USD prices for models Plato uses;
+unknown model quotes $0 flagged `estimated:false`. Usage accumulates per
+turn (`usage` events) and per run (`LoopResult` + `run-completed`).
+Display-only — never authoritative for billing; prices drift.
+(e) MCP client (D06) trimmed to early M3: largest surface, least M2 demo
+value. Recorded as a decision, not drift.
+
 ## Open items carried forward
 
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0

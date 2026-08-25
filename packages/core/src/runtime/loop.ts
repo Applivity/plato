@@ -12,6 +12,8 @@ import { M0_MODEL } from '../providers/anthropic.js';
 import { decide } from './modes.js';
 import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
+import { AgentBus, RunController } from './bus.js';
+import { estimateCost } from './cost.js';
 
 const SYSTEM_PROMPT =
   'You are Plato, an AI coding agent working inside the user workspace. ' +
@@ -96,28 +98,111 @@ export interface LoopOptions {
     phase: 'requested' | 'allowed' | 'denied' | 'declined' | 'done';
     ok?: boolean;
   }) => void;
+  /**
+   * Optional M2 event bus (D24a); one is created internally when omitted
+   * and legacy callbacks above are bridged onto it.
+   */
+  bus?: AgentBus;
+  /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
+  controller?: RunController;
 }
 
 export interface LoopResult {
   finalText: string;
   turns: number;
-  stoppedByCap: boolean;
+  /** Why the run ended: natural completion, turn cap, or observer cancel. */
+  reason: 'complete' | 'cap' | 'cancelled';
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
 }
 
 export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
+  const bus = opts.bus ?? new AgentBus();
+  const ctrl = opts.controller ?? new RunController();
+  const runId = `${Date.now().toString(36)}${Math.random()
+    .toString(36)
+    .slice(2, 6)}`;
+
+  // Legacy shell callbacks ride the bus (D24a): one emission path.
+  if (opts.onText) {
+    bus.on((e) => {
+      if (e.type === 'text') {
+        opts.onText!(e.text);
+      }
+    });
+  }
+  if (opts.onToolEvent) {
+    bus.on((e) => {
+      if (e.type === 'tool-event' && e.args !== undefined) {
+        opts.onToolEvent!({
+          tool: e.tool,
+          args: e.args as ToolArgs,
+          phase: e.phase,
+          ok: e.ok,
+        });
+      }
+    });
+  }
+
   const client = new Anthropic({ apiKey: opts.apiKey });
   const messages: MessageParam[] = [
     { role: 'user', content: opts.task },
   ];
   let finalText = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let costUsd = 0;
+  let reason: LoopResult['reason'] = 'complete';
+  let capNote = false;
+  let stopAfterTools = false;
+  const pendingGuidance: string[] = [];
 
-  for (let turn = 1; turn <= MAX_TURNS; turn++) {
-    const res = await client.messages.create({
-      model: M0_MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: toolDeclarations(),
-      messages,
+  bus.emit({ type: 'run-started', runId, task: opts.task, model: M0_MODEL });
+
+  let turn = 1;
+  for (; turn <= MAX_TURNS; turn++) {
+    // Safe point (D24b): honour cancel/pause and drain observer guidance.
+    if (!(await ctrl.gate())) {
+      reason = 'cancelled';
+      break;
+    }
+    pendingGuidance.push(...ctrl.drainGuidance());
+    bus.emit({ type: 'turn-started', runId, turn });
+
+    let res;
+    try {
+      res = await client.messages.create({
+        model: M0_MODEL,
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        tools: toolDeclarations(),
+        messages,
+      });
+    } catch (e) {
+      bus.emit({
+        type: 'run-failed',
+        runId,
+        error: e instanceof Error ? e.message : 'provider error',
+      });
+      throw e;
+    }
+
+    const used = res.usage ?? { input_tokens: 0, output_tokens: 0 };
+    const quote = estimateCost(M0_MODEL, {
+      inputTokens: used.input_tokens,
+      outputTokens: used.output_tokens,
+    });
+    inputTokens += used.input_tokens;
+    outputTokens += used.output_tokens;
+    costUsd += quote.usd;
+    bus.emit({
+      type: 'usage',
+      runId,
+      turn,
+      inputTokens: used.input_tokens,
+      outputTokens: used.output_tokens,
+      costUsd: quote.usd,
     });
 
     messages.push({ role: 'assistant', content: res.content });
@@ -130,21 +215,25 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     for (const block of res.content) {
       if (block.type === 'text') {
         finalText += block.text;
-        opts.onText?.(block.text);
+        bus.emit({ type: 'text', runId, text: block.text });
       }
     }
 
     if (toolUses.length === 0 || turn === MAX_TURNS) {
-      const stoppedByCap = toolUses.length > 0;
-      if (stoppedByCap) {
-        finalText += '\n[plato] turn cap reached; stopping.';
-        opts.onText?.('\n[plato] turn cap reached; stopping.');
-      }
-      return { finalText, turns: turn, stoppedByCap };
+      reason = toolUses.length > 0 ? 'cap' : 'complete';
+      capNote = reason === 'cap';
+      break;
     }
 
     const results: ToolResultBlockParam[] = [];
     for (const call of toolUses) {
+      // Safe point between tool calls (D24b).
+      if (!(await ctrl.gate())) {
+        reason = 'cancelled';
+        stopAfterTools = true;
+        break;
+      }
+      pendingGuidance.push(...ctrl.drainGuidance());
       const name = call.name;
       const args = (call.input ?? {}) as ToolArgs;
 
@@ -175,14 +264,16 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
           content: `blocked: ${name} is not permitted in ${opts.getMode()} mode`,
           is_error: true,
         });
-        opts.onToolEvent?.({ tool: name, args, phase: 'denied' });
+        bus.emit({ type: 'tool-event', runId, tool: name, phase: 'denied', args });
         continue;
       }
 
       if (decision === 'ask') {
-        opts.onToolEvent?.({ tool: name, args, phase: 'requested' });
+        bus.emit({ type: 'tool-event', runId, tool: name, phase: 'requested', args });
         const preview = await buildApprovalPreview(opts.root, name, args);
+        bus.emit({ type: 'approval-requested', runId, tool: name, preview });
         allowed = await opts.approve({ tool: name, args, preview });
+        bus.emit({ type: 'approval-decided', runId, tool: name, allowed });
         if (!allowed) {
           results.push({
             type: 'tool_result',
@@ -190,22 +281,24 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
             content: 'user declined this action',
             is_error: true,
           });
-          opts.onToolEvent?.({ tool: name, args, phase: 'declined' });
+          bus.emit({ type: 'tool-event', runId, tool: name, phase: 'declined', args });
           continue;
         }
       }
 
       if (decision === 'allow') {
-        opts.onToolEvent?.({ tool: name, args, phase: 'requested' });
+        bus.emit({ type: 'tool-event', runId, tool: name, phase: 'requested', args });
       }
-      opts.onToolEvent?.({ tool: name, args, phase: 'allowed' });
+      bus.emit({ type: 'tool-event', runId, tool: name, phase: 'allowed', args });
 
       const outcome = await executeTool(opts.root, name, args);
-      opts.onToolEvent?.({
+      bus.emit({
+        type: 'tool-event',
+        runId,
         tool: name,
-        args,
         phase: 'done',
         ok: outcome.ok,
+        args,
       });
       results.push({
         type: 'tool_result',
@@ -215,8 +308,31 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       });
     }
 
-    messages.push({ role: 'user', content: results });
+    if (stopAfterTools) {
+      break;
+    }
+
+    // Flush queued observer guidance into the next user turn (D24b);
+    // tool_result and text blocks may share one user message.
+    const userContent: ContentBlockParam[] = [...results];
+    for (const g of pendingGuidance.splice(0)) {
+      userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
+    }
+    messages.push({ role: 'user', content: userContent });
   }
 
-  return { finalText, turns: MAX_TURNS, stoppedByCap: true };
+  if (capNote) {
+    finalText += '\n[plato] turn cap reached; stopping.';
+    bus.emit({ type: 'text', runId, text: '\n[plato] turn cap reached; stopping.' });
+  }
+  bus.emit({
+    type: 'run-completed',
+    runId,
+    reason,
+    turns: turn,
+    inputTokens,
+    outputTokens,
+    costUsd,
+  });
+  return { finalText, turns: turn, reason, inputTokens, outputTokens, costUsd };
 }
