@@ -88,14 +88,19 @@ Current focus: M1 — full tool loop, modes/approvals, diff rendering.
 - [x] Unit coverage: bus delivery/isolation/unsubscribe, controller
       guidance/pause/cancel gates, cost math incl. unknown model,
       transcript whitelist + header + post-close silence (37 total).
-- [ ] Founder check: run any task, confirm `.plato/runs/*.jsonl` exists,
-      contains no secrets/previews, and cost appears on the done card.
+- [x] Founder check PASSED 2026-08-25: transcript written under
+      .plato/runs/ with schemaVersion-1 header, per-turn usage, complete
+      event arc; args/previews absent from disk (whitelist verified by
+      founder-inspected file); cost shown on done card ($0.0133 run,
+      math reconciled against the price table). Remaining open item:
+      MCP stdio client → early M3 (D24e).
 - [ ] MCP stdio client → early M3 (D24e trim recorded).
 
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-25 | (this commit) | M2/shell | Completion-card pluralization ("1 tool call" vs "tool calls"). M2 founder check passed and recorded: transcript whitelist verified by founder inspection, cost reconciled against price table. Version 0.2.8 | `tsc -b --force` clean; 37/37 vitest; bundle in gate; VSIX @0.2.8 installed; marker grep |
 | 2026-08-24 | (this commit) | M2/shell | New-chat mechanism (founder request): "Plato: New Chat" palette command + ＋ button in chat header; modal confirm, clears persisted workspaceState log, resets per-session write consents (new chat = new session per D23), blanks webview via restore handshake; refuses while a run is active. Process fix: VSIX packaging must run after esbuild bundle (0.2.7 first cut shipped a stale bundle — caught by marker grep) | `tsc -b --force` clean; 37/37 vitest; bundle step in gate; VSIX @0.2.7 packaged + installed; newChat/confirm markers verified in installed bundle |
 | 2026-08-24 | (this commit) | M2 | Event bus + observer mailbox + transcripts + cost meter per D24: typed bus with isolated listeners, loop single-emitter with legacy callbacks bridged; RunController guidance/pause/cancel honored at safe points; JSONL transcripts per run under .plato/runs/ (secret-safe whitelist, header schemaVersion 1); usage/cost per turn and run, cost on completion card. MCP trimmed to early M3. Version 0.2.6 | `tsc -b --force` clean; 37/37 vitest (14 new: bus/controller/cost/transcript); VSIX @0.2.6 packaged + installed; transcript/cost/bus markers verified in bundle |
 | 2026-08-24 | (this commit) | M1 | Run-visibility UX from founder feedback: live status chip in header ("working Ns · read_file…", pulses; green "✓ done" state persists after finish); explicit completion entry "✓ done in Xs · N tool calls" appended to transcript; smart auto-scroll follows output only when already near bottom, never yanks while reading; host now reports duration + tool count with done event | `tsc -b` clean; 23/23 vitest; VSIX @0.2.5 packaged + installed; chip/completion markers verified in bundle |

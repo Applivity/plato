@@ -190,7 +190,7 @@ export function chatHtml(): string {
         finish();
         const i = m.text || {};
         const line = '\u2713 done in ' + (i.secs ?? '?') + 's \u00b7 '
-          + (i.tools ?? 0) + ' tool calls'
+          + (i.tools === 1 ? '1 tool call' : (i.tools ?? 0) + ' tool calls')
           + (i.cost ? ' \u00b7 ' + i.cost : '')
           + (i.note ? ' \u2014 ' + i.note : '');
         addMsg('fin', null, line);
