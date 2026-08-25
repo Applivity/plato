@@ -184,6 +184,38 @@ Display-only — never authoritative for billing; prices drift.
 (e) MCP client (D06) trimmed to early M3: largest surface, least M2 demo
 value. Recorded as a decision, not drift.
 
+**D25 — M3 execution choices (delegated).**
+(a) Chat rendering: assistant replies render as Markdown through a safe
+mini-renderer in core (`format/markdown.ts`) — escape FIRST, then a
+fixed subset: fenced code blocks (with language label), inline code,
+bold, italic, #-headings, bullet/ordered lists, blockquotes, paragraphs,
+and http(s)-only links. Raw HTML never passes through; no renderer
+dependency is added (supply-chain discipline per D02/D15 posture). The
+host converts once per turn and at restore; the webview only inserts
+host-built HTML.
+(b) Provider abstraction: canonical message/tool-call/usage types with
+two adapters behind one interface — AnthropicNative (current behavior)
+and OpenAICompatible (chat-completions tool calling; covers
+OpenAI/OpenRouter/Ollama/custom baseURL per D07). The M2 bus stays
+provider-neutral; adapters emit into it.
+(c) Keys: per-provider entries in VS Code SecretStorage
+(`plato.providers.<id>.apiKey`); the legacy `plato.anthropicApiKey` is
+honored/migrated so founders see no break.
+(d) Model & reasoning UX: workspace setting for the default model plus a
+header dropdown of known models; reasoning controls (`reasoning_effort`
+for OpenAI-style, extended-thinking budget for Anthropic) as per-model
+settings; invalid combinations rejected at request-build time. Model is
+fixed at run start (no mid-run switching this milestone).
+(e) Cost: price table keyed by model id across providers;
+reasoning/thinking tokens count as output tokens; unknown models stay
+$0/unestimated (D24d rule stands).
+(f) Build order within M3: markdown rendering first (founder-flagged) →
+observer supervision UI (guidance/pause/cancel over RunController) →
+provider abstraction + model/reasoning UX → transcript replay view →
+MCP stdio client. Team profiles stay early-M4 unless room remains.
+(g) Non-goals this milestone: vision/image inputs, agent-authored HTML
+beyond the renderer subset, mid-run model switching.
+
 ## Open items carried forward
 
 - **Provider matrix unscheduled (gap flagged 2026-08-25):** D07 promises

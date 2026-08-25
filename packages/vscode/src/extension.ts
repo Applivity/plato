@@ -3,7 +3,12 @@
  * SecretStorage, webview host. Logic lives in @applivity/plato-core.
  */
 import * as vscode from 'vscode';
-import { runAgentLoop, AgentBus, TranscriptWriter } from '@applivity/plato-core';
+import {
+  runAgentLoop,
+  AgentBus,
+  TranscriptWriter,
+  renderMarkdown,
+} from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { join } from 'node:path';
@@ -134,7 +139,14 @@ class ChatHost {
         // The webview asks for the log once its script is live; posting
         // earlier races page load and the message is dropped.
         if (m.type === 'ready') {
-          void panel.webview.postMessage({ type: 'restore', log: this.log });
+          // Decorate bot entries with host-rendered markdown for the
+          // restore path (D25a); raw text stays the stored truth.
+          const decorated = this.log.map((e) =>
+            e.k === 'msg' && e.cls === 'bot'
+              ? { ...e, html: renderMarkdown(e.text) }
+              : e,
+          );
+          void panel.webview.postMessage({ type: 'restore', log: decorated });
         }
       },
     );
@@ -217,7 +229,8 @@ class ChatHost {
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;
-            this.send('delta', t);
+            // Host renders cumulative markdown once per turn (D25a).
+            this.send('md', renderMarkdown(this.replyBuffer));
           }
         },
         onToolEvent: (e) => {

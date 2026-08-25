@@ -91,6 +91,36 @@ export function chatHtml(): string {
   @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
+  .msg.bot p { margin:.35em 0; }
+  .msg.bot .md-h { font-weight:600; margin:.7em 0 .25em; line-height:1.3; }
+  .msg.bot .md-h1 { font-size:15px; }
+  .msg.bot .md-h2 { font-size:14px; }
+  .msg.bot .md-h3 { font-size:13px; }
+  .msg.bot .md-h4 { font-size:12.5px; }
+  .msg.bot ul, .msg.bot ol { margin:.35em 0; padding-left:1.4em; }
+  .msg.bot li { margin:.15em 0; }
+  .msg.bot blockquote { margin:.4em 0; padding:.1em .8em;
+                        border-left:2px solid var(--pl-border);
+                        color:var(--pl-muted); }
+  .msg.bot blockquote p { margin:.15em 0; }
+  .msg.bot code { background:var(--vscode-textCodeBlock-background,
+                              rgba(128,128,128,.09));
+                  font-family:var(--vscode-editor-font-family,monospace);
+                  font-size:12px; padding:1px 4px; border-radius:3px; }
+  .msg.bot a { color:var(--vscode-textLink-foreground); }
+  .md-code { margin:.5em 0; border:1px solid var(--pl-border);
+             border-radius:5px; overflow:hidden; }
+  .md-code .md-lang { display:block; padding:3px 9px; font-size:10px;
+                      letter-spacing:.06em; text-transform:uppercase;
+                      color:var(--pl-muted);
+                      background:var(--vscode-editorWidget-background,
+                                      rgba(128,128,128,.12)); }
+  .md-code pre { margin:0; padding:8px 10px; overflow-x:auto;
+                 font-family:var(--vscode-editor-font-family,monospace);
+                 font-size:11.5px; line-height:1.5;
+                 background:var(--vscode-textCodeBlock-background,
+                                rgba(128,128,128,.09)); }
+  .md-code pre code { background:none; padding:0; font-size:inherit; }
 </style>
 </head>
 <body>
@@ -173,7 +203,7 @@ export function chatHtml(): string {
     const m = e.data;
     switch (m.type) {
       case 'restore': render(m.log); break;
-      case 'delta': stream(m.text); lastAct = 'writing'; refreshChip(); break;
+      case 'md': streamHtml(String(m.html || '')); lastAct = 'writing'; refreshChip(); break;
       case 'notice': addMsg('sys', 'Plato', m.text); break;
       case 'tool':
         addMsg('tool', null,
@@ -218,7 +248,13 @@ export function chatHtml(): string {
 
   function appendEntry(t) {
     switch (t.k) {
-      case 'msg': addMsg(t.cls || 'bot', t.who, String(t.text)); break;
+      case 'msg':
+        if (t.cls === 'bot' && t.html) {
+          addMsg('bot', t.who, String(t.html), true);
+        } else {
+          addMsg(t.cls || 'bot', t.who, String(t.text));
+        }
+        break;
       case 'tool': addMsg('tool', null,
         '<code>' + esc(t.tool) + '</code> ' + esc(t.phase), true); break;
       case 'card-open': showCard(t, false); break;
@@ -238,17 +274,17 @@ export function chatHtml(): string {
     div.appendChild(body);
     log.appendChild(div);
     scroll();
-    return body;
+    return div;
   }
 
-  function stream(delta) {
+  function streamHtml(html) {
     streaming = true;
     let el = document.getElementById('streaming');
     if (!el) {
       el = addMsg('bot', 'Plato', '');
       el.id = 'streaming';
     }
-    el.textContent += delta;
+    el.innerHTML = html; // host-built, escape-first (D25a)
     scroll();
   }
 
