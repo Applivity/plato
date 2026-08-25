@@ -260,7 +260,7 @@ export function chatHtml(): string {
     const m = e.data;
     switch (m.type) {
       case 'restore': render(m.log); break;
-      case 'md': streamHtml(String(m.html || '')); lastAct = 'writing'; refreshChip(); break;
+      case 'md': streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
       case 'notice': addMsg('sys', 'Plato', m.text); break;
       case 'tool':
         addMsg('tool', null,
