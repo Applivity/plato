@@ -108,9 +108,15 @@ One combined workstream, per founder decision 2026-08-25:
       Pause/Resume + Cancel in the panel, wired to `RunController`
       (shipped 0.2.10; fresh inbox per run; cancel also declines a
       waiting approval so it takes effect immediately).
-- [ ] Provider abstraction + model selection + reasoning controls
-      (D25b–e): AnthropicNative + OpenAICompatible adapters,
-      per-provider SecretStorage keys, thinking-tokens-as-output cost.
+- [x] Provider abstraction + model selection + reasoning controls
+      (D25b–e): canonical turn contract in core/providers/types.ts;
+      AnthropicNative + OpenAICompat adapters (fetch-based, baseUrl
+      covers OpenRouter/Ollama/self-hosted); registry catalog with
+      capability flags; per-provider SecretStorage keys
+      (plato.providers.<id>.apiKey) with legacy-slot fallback; header
+      model dropdown + plato.model/plato.reasoning/plato.openAiBaseUrl
+      settings; cost table re-keyed to composite ids with legacy aliases;
+      thinking tokens bill as output by protocol shape. Shipped 0.3.0.
 - [ ] Transcript replay view over `.plato/runs/*.jsonl`.
 - [ ] MCP stdio client (trimmed here from M2, D24e).
 
@@ -121,6 +127,7 @@ One combined workstream, per founder decision 2026-08-25:
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-25 | (this commit) | M3 | Provider abstraction (D25b–e), fulfills D07: canonical turn types; loop is provider-blind (Anthropic SDK dependency removed from loop/schemas); AnthropicNative adapter preserves exact behavior incl. extended-thinking budgets; OpenAICompat fetch adapter (function tools ↔ canonical tool_use, tool role mapping, reasoning_effort, readable HTTP errors); registry catalog (6 models, reasoning flags, $/MTok); per-provider SecretStorage keys w/ legacy fallback + provider-aware Set API Key QuickPick; header model dropdown (session override over plato.model setting); reasoning setting gated by catalog flag; cost table composite-keyed w/ legacy aliases. Version 0.3.0 | `tsc -b --force` clean (strict caught: stale apiKey field left in LoopOptions, untyped extra spread, index-access — all fixed); 59/59 vitest (11 new: ref parsing, catalog, auth/URL/body/reasoning/tool-mapping via mocked fetch, non-200 errors); bundle→package→install; openai/catalog/key markers in bundle |
 | 2026-08-25 | (this commit) | M3 | Fix: live Plato replies rendered blank since 0.2.9 — host sent markdown as `text` field, webview read `html`; restore path decorated correctly which masked it (founder hit via pause→guidance→resume run showing events but no reply). One-line field fix; observer flow otherwise confirmed working end-to-end by the same trial (guidance reached model, run completed). Version 0.2.11 | `tsc -b --force` clean; 48/48 vitest; bundle grep proves `case 'md'` uses `m.text`, no `m.html`; VSIX @0.2.11 installed |
 | 2026-08-25 | (this commit) | M3 | Observer supervision UI (D25f item 2, product thesis live): while a run is active the panel shows a guidance box (injected at next safe point), Pause/Resume, and Cancel; cancel also auto-declines a waiting approval so it acts immediately; done card reports 'cancelled'. Fresh RunController per run so a prior cancel cannot leak into later runs. Version 0.2.10 | `tsc -b --force` clean; 48/48 vitest; bundle→package→install gate; observer markers verified in installed bundle |
 | 2026-08-25 | (this commit) | M3 | D25 recorded (M3 execution choices: safe markdown renderer; provider abstraction w/ AnthropicNative+OpenAICompatible adapters; per-provider SecretStorage keys; model/reasoning UX; thinking-tokens-as-output cost rule; build order markdown→observer UI→providers→replay→MCP). Markdown rendering shipped (founder-flagged): escape-first mini-renderer in core `format/markdown.ts` — fenced code w/ lang label, inline code, bold/italic, headings, lists, blockquotes, http(s)-only links, no raw-HTML passthrough, zero new dependencies; host renders per-turn and at restore, webview inserts host-built HTML only. Version 0.2.9 | `tsc -b --force` clean (2 strict-mode errors caught & fixed); 48/48 vitest (11 new renderer tests incl. XSS + scheme-whitelist); bundle before package; VSIX @0.2.9 installed; renderer markers in installed bundle |

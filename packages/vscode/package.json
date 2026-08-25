@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.2.11",
+  "version": "0.3.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -27,13 +27,34 @@
       },
       {
         "command": "plato.setApiKey",
-        "title": "Plato: Set Anthropic API Key"
+        "title": "Plato: Set API Key"
       },
       {
         "command": "plato.newChat",
         "title": "Plato: New Chat"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Plato",
+      "properties": {
+        "plato.model": {
+          "type": "string",
+          "default": "anthropic:claude-sonnet-4-5",
+          "description": "Default model as provider:model (e.g. openai:gpt-4o-mini). The header dropdown overrides this per chat."
+        },
+        "plato.reasoning": {
+          "type": "string",
+          "enum": ["off", "low", "medium", "high"],
+          "default": "off",
+          "description": "Reasoning effort for models that support it (o4-mini, Claude extended thinking). Ignored otherwise."
+        },
+        "plato.openAiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL for OpenAI-compatible endpoints (OpenRouter, Ollama, self-hosted)."
+        }
+      }
+    }
   },
   "dependencies": {
     "@applivity/plato-core": "workspace:*"

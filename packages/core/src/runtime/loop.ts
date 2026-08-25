@@ -2,13 +2,17 @@
  * M1 agent loop (D22a): native tool-use over one runtime. Modes gate each
  * call through decide(); approvals surface through the injected callback.
  */
-import Anthropic from '@anthropic-ai/sdk';
-import type { ContentBlockParam, MessageParam, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import type { ToolArgs } from '../tools/execute.js';
 import type { DiffBlock } from '../tools/diff.js';
-import { M0_MODEL } from '../providers/anthropic.js';
+import type {
+  CanonicalContent,
+  CanonicalMessage,
+  ChatProvider,
+  ReasoningConfig,
+  ToolResultBlock,
+} from '../providers/types.js';
 import { decide } from './modes.js';
 import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
@@ -87,7 +91,6 @@ export interface LoopOptions {
   task: string;
   /** Read live before every tool decision, so mid-run mode switches apply. */
   getMode: () => Mode;
-  apiKey: string;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
@@ -105,6 +108,12 @@ export interface LoopOptions {
   bus?: AgentBus;
   /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
   controller?: RunController;
+  /** Bound provider adapter (D25b). Replaces the old apiKey field. */
+  provider: ChatProvider;
+  /** Composite model ref, e.g. 'anthropic:claude-sonnet-4-5'. */
+  model: string;
+  /** Reasoning config; only attach for catalog-flagged models. */
+  reasoning?: ReasoningConfig;
 }
 
 export interface LoopResult {
@@ -145,9 +154,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     });
   }
 
-  const client = new Anthropic({ apiKey: opts.apiKey });
-  const messages: MessageParam[] = [
-    { role: 'user', content: opts.task },
+  const client = opts.provider;
+  const messages: CanonicalMessage[] = [
+    { role: 'user', content: [{ type: 'text', text: opts.task }] },
   ];
   let finalText = '';
   let inputTokens = 0;
@@ -158,7 +167,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
 
-  bus.emit({ type: 'run-started', runId, task: opts.task, model: M0_MODEL });
+  bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
   let turn = 1;
   for (; turn <= MAX_TURNS; turn++) {
@@ -172,12 +181,13 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
 
     let res;
     try {
-      res = await client.messages.create({
-        model: M0_MODEL,
-        max_tokens: 4096,
+      res = await client.completeTurn({
+        model: opts.model,
         system: SYSTEM_PROMPT,
         tools: toolDeclarations(),
         messages,
+        maxTokens: 4096,
+        reasoning: opts.reasoning,
       });
     } catch (e) {
       bus.emit({
@@ -188,27 +198,27 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       throw e;
     }
 
-    const used = res.usage ?? { input_tokens: 0, output_tokens: 0 };
-    const quote = estimateCost(M0_MODEL, {
-      inputTokens: used.input_tokens,
-      outputTokens: used.output_tokens,
-    });
-    inputTokens += used.input_tokens;
-    outputTokens += used.output_tokens;
+    const used = {
+      inputTokens: res.usage.inputTokens,
+      outputTokens: res.usage.outputTokens,
+    };
+    const quote = estimateCost(opts.model, used);
+    inputTokens += used.inputTokens;
+    outputTokens += used.outputTokens;
     costUsd += quote.usd;
     bus.emit({
       type: 'usage',
       runId,
       turn,
-      inputTokens: used.input_tokens,
-      outputTokens: used.output_tokens,
+      inputTokens: used.inputTokens,
+      outputTokens: used.outputTokens,
       costUsd: quote.usd,
     });
 
     messages.push({ role: 'assistant', content: res.content });
 
     const toolUses = res.content.filter(
-      (b): b is Extract<ContentBlockParam, { type: 'tool_use' }> =>
+      (b): b is Extract<CanonicalContent, { type: 'tool_use' }> =>
         b.type === 'tool_use',
     );
 
@@ -225,7 +235,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       break;
     }
 
-    const results: ToolResultBlockParam[] = [];
+    const results: ToolResultBlock[] = [];
     for (const call of toolUses) {
       // Safe point between tool calls (D24b).
       if (!(await ctrl.gate())) {
@@ -244,9 +254,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       if (refusal !== null) {
         results.push({
           type: 'tool_result',
-          tool_use_id: call.id,
+          toolUseId: call.id,
           content: refusal,
-          is_error: true,
+          isError: true,
         });
         continue;
       }
@@ -260,9 +270,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       if (decision === 'deny') {
         results.push({
           type: 'tool_result',
-          tool_use_id: call.id,
+          toolUseId: call.id,
           content: `blocked: ${name} is not permitted in ${opts.getMode()} mode`,
-          is_error: true,
+          isError: true,
         });
         bus.emit({ type: 'tool-event', runId, tool: name, phase: 'denied', args });
         continue;
@@ -277,9 +287,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         if (!allowed) {
           results.push({
             type: 'tool_result',
-            tool_use_id: call.id,
+            toolUseId: call.id,
             content: 'user declined this action',
-            is_error: true,
+            isError: true,
           });
           bus.emit({ type: 'tool-event', runId, tool: name, phase: 'declined', args });
           continue;
@@ -302,9 +312,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       });
       results.push({
         type: 'tool_result',
-        tool_use_id: call.id,
+        toolUseId: call.id,
         content: outcome.output,
-        is_error: !outcome.ok,
+        isError: !outcome.ok,
       });
     }
 
@@ -314,7 +324,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
 
     // Flush queued observer guidance into the next user turn (D24b);
     // tool_result and text blocks may share one user message.
-    const userContent: ContentBlockParam[] = [...results];
+    const userContent: (CanonicalContent | ToolResultBlock)[] = [...results];
     for (const g of pendingGuidance.splice(0)) {
       userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
     }

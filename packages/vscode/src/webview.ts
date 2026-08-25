@@ -33,6 +33,11 @@ export function chatHtml(): string {
   header button:hover { border-color:var(--pl-border); }
   header button.on { background:var(--vscode-button-background);
                      color:var(--vscode-button-foreground); }
+  header select { font-family:var(--vscode-font-family); font-size:11px;
+                  margin-left:auto; padding:2px 6px; border-radius:6px;
+                  border:1px solid var(--pl-border);
+                  background:var(--vscode-dropdown-background);
+                  color:var(--vscode-dropdown-foreground); outline:none; }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
   .observer { display:none; gap:6px; padding:6px 10px; align-items:center;
               border-top:1px dashed var(--pl-border); }
@@ -95,7 +100,7 @@ export function chatHtml(): string {
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
-  #st { margin-left:auto; display:none; align-items:center; gap:5px;
+  #st { display:none; align-items:center; gap:5px;
         font-size:11px; color:var(--pl-muted); white-space:nowrap; }
   #st.on { display:flex; }
   #st.done { color:var(--vscode-testing-iconPassed, #73c991); }
@@ -145,6 +150,14 @@ export function chatHtml(): string {
   <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
   <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
   <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
+  <select id="msel" title="Model (provider:model)">
+    <option value="anthropic:claude-sonnet-4-5">Claude Sonnet 4.5</option>
+    <option value="anthropic:claude-opus-4-1">Claude Opus 4.1</option>
+    <option value="anthropic:claude-3-5-haiku-latest">Claude Haiku 3.5</option>
+    <option value="openai:gpt-4o">GPT-4o</option>
+    <option value="openai:gpt-4o-mini">GPT-4o mini</option>
+    <option value="openai:o4-mini">o4-mini</option>
+  </select>
   <span id="st"></span>
   <button id="new" title="Start a new chat (clears this conversation)">＋</button>
 </header>
@@ -206,6 +219,10 @@ export function chatHtml(): string {
 
   // Observer controls (D25f): live while a run is active.
   const obs = document.getElementById('obs');
+  const msel = document.getElementById('msel');
+  msel.addEventListener('change', () => {
+    vsapi.postMessage({ type: 'model', value: msel.value });
+  });
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
@@ -259,7 +276,15 @@ export function chatHtml(): string {
   window.addEventListener('message', (e) => {
     const m = e.data;
     switch (m.type) {
-      case 'restore': render(m.log); break;
+      case 'restore':
+        render(m.log);
+        if (
+          typeof m.model === 'string' &&
+          Array.from(msel.options).some((o) => o.value === m.model)
+        ) {
+          msel.value = String(m.model);
+        }
+        break;
       case 'md': streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
       case 'notice': addMsg('sys', 'Plato', m.text); break;
       case 'tool':

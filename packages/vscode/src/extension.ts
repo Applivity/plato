@@ -8,13 +8,16 @@ import {
   AgentBus,
   TranscriptWriter,
   RunController,
+  createProvider,
+  parseModelRef,
+  modelSupportsReasoning,
   renderMarkdown,
 } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { join } from 'node:path';
 
-const SECRET_KEY = 'plato.anthropicApiKey';
+const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 
 export function activate(ctx: vscode.ExtensionContext): void {
   // One chat panel per window; re-running the command reveals it instead
@@ -23,20 +26,38 @@ export function activate(ctx: vscode.ExtensionContext): void {
   let host: ChatHost | undefined;
 
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('plato.setApiKey', async () => {
-      const input = await vscode.window.showInputBox({
-        prompt:
-          'Anthropic API key (stored in VS Code SecretStorage, never in settings or files)',
-        password: true,
-        ignoreFocusOut: true,
-      });
-      if (input && input.trim().length > 0) {
-        await ctx.secrets.store(SECRET_KEY, input.trim());
-        void vscode.window.showInformationMessage(
-          'Plato: API key stored in SecretStorage.',
-        );
-      }
-    }),
+    vscode.commands.registerCommand(
+      'plato.setApiKey',
+      async (providerArg?: string) => {
+        const pick =
+          providerArg === 'anthropic' || providerArg === 'openai'
+            ? providerArg
+            : await vscode.window.showQuickPick(['anthropic', 'openai'], {
+                placeHolder: 'Which provider is this key for?',
+              });
+        if (pick !== 'anthropic' && pick !== 'openai') {
+          return;
+        }
+        const input = await vscode.window.showInputBox({
+          prompt: `${pick} API key (stored in VS Code SecretStorage, never in settings or files)`,
+          password: true,
+          ignoreFocusOut: true,
+        });
+        if (input && input.trim().length > 0) {
+          await ctx.secrets.store(
+            `plato.providers.${pick}.apiKey`,
+            input.trim(),
+          );
+          if (pick === 'anthropic') {
+            // Keep the legacy slot in sync for pre-0.3.0 fallbacks.
+            await ctx.secrets.store(LEGACY_KEY, input.trim());
+          }
+          void vscode.window.showInformationMessage(
+            `Plato: ${pick} API key stored.`,
+          );
+        }
+      },
+    ),
   );
 
   ctx.subscriptions.push(
@@ -102,6 +123,7 @@ class ChatHost {
   private pendingApproval: PendingResolve | null = null;
   private replyBuffer = '';
   private running = false;
+  private modelOverride: string | null = null;
   private readonly log: Entry[];
 
   constructor(
@@ -115,6 +137,19 @@ class ChatHost {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
           this.send('notice', `Mode: ${this.mode}`);
+          return;
+        }
+        if (m.type === 'model' && typeof m.value === 'string') {
+          const parsed = parseModelRef(m.value);
+          if (parsed) {
+            this.modelOverride = m.value;
+            void this.panel.webview.postMessage({
+              type: 'notice',
+              text: `Model set to ${m.value}`,
+            });
+          } else {
+            this.send('error', `Unknown model ref "${m.value}"`);
+          }
           return;
         }
         if (m.type === 'approve') {
@@ -177,7 +212,11 @@ class ChatHost {
               ? { ...e, html: renderMarkdown(e.text) }
               : e,
           );
-          void panel.webview.postMessage({ type: 'restore', log: decorated });
+          void panel.webview.postMessage({
+            type: 'restore',
+            log: decorated,
+            model: this.effectiveModel(),
+          });
         }
       },
     );
@@ -221,15 +260,53 @@ class ChatHost {
     await this.panel.webview.postMessage({ type: 'restore', log: [] });
   }
 
+  /** Session override, else the plato.model workspace setting. */
+  private effectiveModel(): string {
+    return (
+      this.modelOverride ??
+      vscode.workspace
+        .getConfiguration('plato')
+        .get<string>('model', 'anthropic:claude-sonnet-4-5')
+    );
+  }
+
+  private reasoningFor():
+    | { effort: 'low' | 'medium' | 'high' }
+    | undefined {
+    const v = vscode.workspace.getConfiguration('plato').get<string>(
+      'reasoning',
+      'off',
+    );
+    return v === 'off' ? undefined : { effort: v as 'low' | 'medium' | 'high' };
+  }
+
   private async run(task: string): Promise<void> {
-    const apiKey = await this.ctx.secrets.get(SECRET_KEY);
+    // Resolve the composite model ref and its provider key (D25c/d).
+    const ref = this.effectiveModel();
+    const parsed = parseModelRef(ref);
+    if (!parsed) {
+      this.send(
+        'error',
+        `Bad model "${ref}" — use the provider:model form, e.g. anthropic:claude-sonnet-4-5.`,
+      );
+      return;
+    }
+    let apiKey = await this.ctx.secrets.get(
+      `plato.providers.${parsed.provider}.apiKey`,
+    );
+    if (!apiKey && parsed.provider === 'anthropic') {
+      apiKey = await this.ctx.secrets.get(LEGACY_KEY);
+    }
     if (!apiKey) {
       const set = await vscode.window.showErrorMessage(
-        'Plato needs an Anthropic API key first.',
+        `Plato needs an API key for ${parsed.provider}.`,
         'Set API Key',
       );
       if (set === 'Set API Key') {
-        await vscode.commands.executeCommand('plato.setApiKey');
+        await vscode.commands.executeCommand(
+          'plato.setApiKey',
+          parsed.provider,
+        );
       }
       return;
     }
@@ -255,11 +332,24 @@ class ChatHost {
       const result = await runAgentLoop({
         root,
         task,
-        apiKey,
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
         bus,
         controller: this.controller,
+        provider: createProvider(parsed.provider, {
+          apiKey,
+          baseUrl:
+            parsed.provider === 'openai'
+              ? vscode.workspace.getConfiguration('plato').get<string>(
+                  'openAiBaseUrl',
+                  'https://api.openai.com/v1',
+                )
+              : undefined,
+        }),
+        model: ref,
+        ...(modelSupportsReasoning(ref)
+          ? { reasoning: this.reasoningFor() }
+          : {}),
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;

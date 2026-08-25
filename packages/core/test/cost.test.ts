@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { estimateCost } from '../src/runtime/cost.js';
 
 describe('estimateCost', () => {
-  it('prices claude-sonnet-4-5 at $3/$15 per MTok', () => {
-    const q = estimateCost('claude-sonnet-4-5', {
+  it('prices anthropic:claude-sonnet-4-5 at $3/$15 per MTok', () => {
+    const q = estimateCost('anthropic:claude-sonnet-4-5', {
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
     });
@@ -11,13 +11,30 @@ describe('estimateCost', () => {
     expect(q.usd).toBeCloseTo(18, 6);
   });
 
-  it('handles realistic small runs', () => {
+  it('still prices legacy bare ids (old transcripts)', () => {
     const q = estimateCost('claude-sonnet-4-5', {
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    });
+    expect(q.estimated).toBe(true);
+    expect(q.usd).toBeCloseTo(3, 6);
+  });
+
+  it('prices openai models from the extended table', () => {
+    const q = estimateCost('openai:o4-mini', {
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+    });
+    expect(q.estimated).toBe(true);
+    expect(q.usd).toBeCloseTo(5.5, 6);
+  });
+
+  it('handles realistic small runs', () => {
+    const q = estimateCost('anthropic:claude-sonnet-4-5', {
       inputTokens: 12_000,
       outputTokens: 800,
     });
     expect(q.estimated).toBe(true);
-    // 12000*3 + 800*15 = 36000 + 12000 = 48000 millionths of a dollar.
     expect(q.usd).toBeCloseTo(0.048, 6);
   });
 
@@ -29,3 +46,4 @@ describe('estimateCost', () => {
     expect(q).toEqual({ usd: 0, estimated: false });
   });
 });
+
