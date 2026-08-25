@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -28,6 +28,10 @@
       {
         "command": "plato.setApiKey",
         "title": "Plato: Set Anthropic API Key"
+      },
+      {
+        "command": "plato.newChat",
+        "title": "Plato: New Chat"
       }
     ]
   },

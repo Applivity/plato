@@ -101,6 +101,7 @@ export function chatHtml(): string {
   <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
   <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
   <span id="st"></span>
+  <button id="new" title="Start a new chat (clears this conversation)">＋</button>
 </header>
 <div id="log"></div>
 <footer>
@@ -148,6 +149,9 @@ export function chatHtml(): string {
   }
 
   document.getElementById('go').addEventListener('click', ask);
+  document.getElementById('new').addEventListener('click', () => {
+    vsapi.postMessage({ type: 'newChat' });
+  });
   q.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
   });

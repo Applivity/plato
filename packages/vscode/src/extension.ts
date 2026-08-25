@@ -14,6 +14,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // One chat panel per window; re-running the command reveals it instead
   // of spawning a blank second one.
   let live: vscode.WebviewPanel | undefined;
+  let host: ChatHost | undefined;
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('plato.setApiKey', async () => {
@@ -51,11 +52,24 @@ export function activate(ctx: vscode.ExtensionContext): void {
       panel.onDidDispose(() => {
         if (live === panel) {
           live = undefined;
+          host = undefined;
         }
       });
       live = panel;
       panel.webview.html = chatHtml();
-      new ChatHost(panel, ctx);
+      host = new ChatHost(panel, ctx);
+    }),
+  );
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('plato.newChat', async () => {
+      if (host) {
+        await host.newChat();
+        return;
+      }
+      // No panel yet: drop any stored conversation, then open fresh.
+      await ctx.workspaceState.update(LOG_KEY, []);
+      await vscode.commands.executeCommand('plato.openChat');
     }),
   );
 }
@@ -80,6 +94,7 @@ class ChatHost {
   private readonly sessionWrites = new Set<string>();
   private pendingApproval: PendingResolve | null = null;
   private replyBuffer = '';
+  private running = false;
   private readonly log: Entry[];
 
   constructor(
@@ -108,6 +123,10 @@ class ChatHost {
           });
           return;
         }
+        if (m.type === 'newChat') {
+          void this.newChat();
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -131,6 +150,32 @@ class ChatHost {
       this.log.splice(0, this.log.length - LOG_MAX);
     }
     void this.ctx.workspaceState.update(LOG_KEY, this.log);
+  }
+
+  /**
+   * Start a new conversation: confirm, clear the persisted log, reset the
+   * per-session write consents (a new chat is a new session, D23), and
+   * blank the webview. Refuses while a run is active.
+   */
+  async newChat(): Promise<void> {
+    if (this.running) {
+      this.send('notice', 'A run is active — wait for it to finish before starting a new chat.');
+      return;
+    }
+    const pick = await vscode.window.showWarningMessage(
+      'Start a new chat? The current conversation will be cleared.',
+      { modal: true },
+      'New Chat',
+    );
+    if (pick !== 'New Chat') {
+      return;
+    }
+    this.log.length = 0;
+    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    this.sessionWrites.clear();
+    this.pendingApproval = null;
+    this.replyBuffer = '';
+    await this.panel.webview.postMessage({ type: 'restore', log: [] });
   }
 
   private async run(task: string): Promise<void> {
@@ -160,6 +205,7 @@ class ChatHost {
       root,
     });
     writer.attach(bus);
+    this.running = true;
     try {
       const result = await runAgentLoop({
         root,
@@ -218,6 +264,7 @@ class ChatHost {
         text: 'Provider request failed. Check the API key and network.',
       });
     } finally {
+      this.running = false;
       writer.close();
     }
   }
