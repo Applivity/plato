@@ -100,15 +100,20 @@ Current focus: M1 — full tool loop, modes/approvals, diff rendering.
 
 One combined workstream, per founder decision 2026-08-25:
 
-- **D25 first** (decisions before code): provider abstraction shape —
-  canonical message/tool-call/usage types, Anthropic-native +
-  OpenAI-compatible adapters (fulfills D07), per-provider SecretStorage
-  keys, model selection UX, reasoning controls (reasoning_effort /
-  extended thinking), cost-meter handling for thinking tokens.
-- Observer supervision UI riding the M2 bus: guidance box, pause/resume,
-  cancel wired to `RunController` (mailbox already live in core).
-- Transcript replay view over `.plato/runs/*.jsonl`.
-- MCP stdio client (trimmed here from M2, D24e).
+- [x] **D25 decisions pass** (provider abstraction shape, adapters, keys,
+      model/reasoning UX, cost handling, build order, non-goals).
+- [x] Markdown rendering of assistant replies (safe escape-first renderer
+      in core; shipped 0.2.9, founder-confirmed visible).
+- [x] Observer supervision UI riding the M2 bus: mid-run guidance box +
+      Pause/Resume + Cancel in the panel, wired to `RunController`
+      (shipped 0.2.10; fresh inbox per run; cancel also declines a
+      waiting approval so it takes effect immediately).
+- [ ] Provider abstraction + model selection + reasoning controls
+      (D25b–e): AnthropicNative + OpenAICompatible adapters,
+      per-provider SecretStorage keys, thinking-tokens-as-output cost.
+- [ ] Transcript replay view over `.plato/runs/*.jsonl`.
+- [ ] MCP stdio client (trimmed here from M2, D24e).
+
 - Team profiles (`.aplivity/teams.yaml`, D11) if the milestone holds;
   otherwise early M4.
 
@@ -116,6 +121,7 @@ One combined workstream, per founder decision 2026-08-25:
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-25 | (this commit) | M3 | Observer supervision UI (D25f item 2, product thesis live): while a run is active the panel shows a guidance box (injected at next safe point), Pause/Resume, and Cancel; cancel also auto-declines a waiting approval so it acts immediately; done card reports 'cancelled'. Fresh RunController per run so a prior cancel cannot leak into later runs. Version 0.2.10 | `tsc -b --force` clean; 48/48 vitest; bundle→package→install gate; observer markers verified in installed bundle |
 | 2026-08-25 | (this commit) | M3 | D25 recorded (M3 execution choices: safe markdown renderer; provider abstraction w/ AnthropicNative+OpenAICompatible adapters; per-provider SecretStorage keys; model/reasoning UX; thinking-tokens-as-output cost rule; build order markdown→observer UI→providers→replay→MCP). Markdown rendering shipped (founder-flagged): escape-first mini-renderer in core `format/markdown.ts` — fenced code w/ lang label, inline code, bold/italic, headings, lists, blockquotes, http(s)-only links, no raw-HTML passthrough, zero new dependencies; host renders per-turn and at restore, webview inserts host-built HTML only. Version 0.2.9 | `tsc -b --force` clean (2 strict-mode errors caught & fixed); 48/48 vitest (11 new renderer tests incl. XSS + scheme-whitelist); bundle before package; VSIX @0.2.9 installed; renderer markers in installed bundle |
 | 2026-08-25 | (this commit) | M2/shell | Completion-card pluralization ("1 tool call" vs "tool calls"). M2 founder check passed and recorded: transcript whitelist verified by founder inspection, cost reconciled against price table. Version 0.2.8 | `tsc -b --force` clean; 37/37 vitest; bundle in gate; VSIX @0.2.8 installed; marker grep |
 | 2026-08-24 | (this commit) | M2/shell | New-chat mechanism (founder request): "Plato: New Chat" palette command + ＋ button in chat header; modal confirm, clears persisted workspaceState log, resets per-session write consents (new chat = new session per D23), blanks webview via restore handshake; refuses while a run is active. Process fix: VSIX packaging must run after esbuild bundle (0.2.7 first cut shipped a stale bundle — caught by marker grep) | `tsc -b --force` clean; 37/37 vitest; bundle step in gate; VSIX @0.2.7 packaged + installed; newChat/confirm markers verified in installed bundle |

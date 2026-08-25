@@ -34,6 +34,21 @@ export function chatHtml(): string {
   header button.on { background:var(--vscode-button-background);
                      color:var(--vscode-button-foreground); }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
+  .observer { display:none; gap:6px; padding:6px 10px; align-items:center;
+              border-top:1px dashed var(--pl-border); }
+  .observer.on { display:flex; }
+  .observer #g { flex:1; padding:5px 9px; font-family:var(--vscode-font-family);
+                 font-size:12px; border-radius:5px; border:1px solid var(--pl-border);
+                 background:var(--vscode-input-background);
+                 color:var(--vscode-input-foreground); outline:none; }
+  .observer button { padding:5px 10px; cursor:pointer; border:none;
+                     border-radius:4px; font-size:11.5px;
+                     background:var(--vscode-button-secondaryBackground,#3a3d41);
+                     color:var(--vscode-button-secondaryForeground,#ddd); }
+  .observer #gsend { background:var(--vscode-button-background);
+                     color:var(--vscode-button-foreground); }
+  .observer #cx { color:var(--vscode-testing-iconFailed,#f14c4c); }
+  .observer button:disabled { opacity:.45; cursor:default; }
   footer { display:flex; gap:8px; padding:10px 12px;
            border-top:1px solid var(--pl-border);
            background:var(--vscode-editor-background); align-items:flex-end; }
@@ -134,6 +149,12 @@ export function chatHtml(): string {
   <button id="new" title="Start a new chat (clears this conversation)">＋</button>
 </header>
 <div id="log"></div>
+<div id="obs">
+  <input id="g" placeholder="Guide Plato mid-run… (injected at the next safe point)">
+  <button id="gsend" title="Send guidance">Send</button>
+  <button id="pp" title="Pause at the next safe point">Pause</button>
+  <button id="cx" title="Stop after the current tool call">Cancel</button>
+</div>
 <footer>
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <button id="go" title="Send">Send</button>
@@ -182,6 +203,41 @@ export function chatHtml(): string {
   document.getElementById('new').addEventListener('click', () => {
     vsapi.postMessage({ type: 'newChat' });
   });
+
+  // Observer controls (D25f): live while a run is active.
+  const obs = document.getElementById('obs');
+  const g = document.getElementById('g');
+  const pp = document.getElementById('pp');
+  const cx = document.getElementById('cx');
+  let paused = false;
+  function setObs(on) { obs.classList.toggle('on', on); }
+  document.getElementById('gsend').addEventListener('click', sendGuidance);
+  g.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); sendGuidance(); }
+  });
+  function sendGuidance() {
+    const text = g.value.trim();
+    if (!text || !busy) { return; }
+    vsapi.postMessage({ type: 'guidance', text: text });
+    addMsg('you', 'You', '[guide] ' + text);
+    g.value = '';
+  }
+  pp.addEventListener('click', () => {
+    if (!busy) { return; }
+    paused = !paused;
+    vsapi.postMessage({ type: paused ? 'pause' : 'resume' });
+    pp.textContent = paused ? 'Resume' : 'Pause';
+    lastAct = paused ? 'paused' : 'resuming';
+    refreshChip();
+  });
+  cx.addEventListener('click', () => {
+    if (!busy || cx.disabled) { return; }
+    cx.disabled = true;
+    pp.disabled = true;
+    lastAct = 'cancelling';
+    refreshChip();
+    vsapi.postMessage({ type: 'cancel' });
+  });
   q.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
   });
@@ -196,6 +252,7 @@ export function chatHtml(): string {
     runT0 = Date.now();
     lastAct = 'thinking';
     refreshChip();
+    setObs(true);
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
@@ -293,6 +350,11 @@ export function chatHtml(): string {
     if (el) { el.removeAttribute('id'); }
     streaming = false;
     busy = false;
+    setObs(false);
+    paused = false;
+    pp.textContent = 'Pause';
+    pp.disabled = false;
+    cx.disabled = false;
     scroll();
   }
 

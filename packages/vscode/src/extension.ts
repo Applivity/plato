@@ -7,6 +7,7 @@ import {
   runAgentLoop,
   AgentBus,
   TranscriptWriter,
+  RunController,
   renderMarkdown,
 } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
@@ -97,6 +98,7 @@ type Entry =
 class ChatHost {
   private mode: Mode = 'act';
   private readonly sessionWrites = new Set<string>();
+  private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
   private replyBuffer = '';
   private running = false;
@@ -130,6 +132,35 @@ class ChatHost {
         }
         if (m.type === 'newChat') {
           void this.newChat();
+          return;
+        }
+        // Observer controls (D25f): effective at the loop's safe points.
+        if (m.type === 'guidance' && typeof m.text === 'string') {
+          if (this.running && m.text.trim().length > 0) {
+            this.controller.sendGuidance(m.text);
+            this.push({
+              k: 'msg',
+              cls: 'you',
+              who: 'You',
+              text: `[guide] ${m.text}`,
+            });
+          }
+          return;
+        }
+        if (m.type === 'pause' && this.running) {
+          this.controller.pause();
+          return;
+        }
+        if (m.type === 'resume' && this.running) {
+          this.controller.resume();
+          return;
+        }
+        if (m.type === 'cancel' && this.running) {
+          // Unblock a waiting approval too, so cancel takes effect now.
+          const r = this.pendingApproval;
+          this.pendingApproval = null;
+          r?.(false);
+          this.controller.cancel();
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
@@ -217,6 +248,8 @@ class ChatHost {
       root,
     });
     writer.attach(bus);
+    // Fresh inbox per run: a previous run's cancel must not leak forward.
+    this.controller = new RunController();
     this.running = true;
     try {
       const result = await runAgentLoop({
@@ -226,6 +259,7 @@ class ChatHost {
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
         bus,
+        controller: this.controller,
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;
