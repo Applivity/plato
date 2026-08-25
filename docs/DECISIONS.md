@@ -186,6 +186,17 @@ value. Recorded as a decision, not drift.
 
 ## Open items carried forward
 
+- **Provider matrix unscheduled (gap flagged 2026-08-25):** D07 promises
+  OpenAI-compatible endpoints alongside Anthropic native, but only
+  `claude-sonnet-4-5` is wired (D22a bound the loop to native Anthropic
+  tool-use) and no milestone ever scheduled the rest. Needed: provider
+  abstraction (canonical tool/message/usage types + adapters), per-
+  provider SecretStorage keys, model selection, reasoning controls
+  (reasoning_effort / extended thinking; thinking tokens bill as output
+  — cost table must account). **Founder decision 2026-08-25:** all of it
+  lands as ONE M3 workstream, opened by a D25 decision pass (abstraction
+  shape, adapter surface, key storage, model/reasoning UX, cost handling)
+  before any code. Until then Anthropic-native only.
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0
   via nvm 0.40.7 and pnpm 11.23.0 installed and verified; see HANDOFF
   prerequisites.

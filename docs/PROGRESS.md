@@ -96,6 +96,22 @@ Current focus: M1 — full tool loop, modes/approvals, diff rendering.
       MCP stdio client → early M3 (D24e).
 - [ ] MCP stdio client → early M3 (D24e trim recorded).
 
+## M3 scope (planned, not started)
+
+One combined workstream, per founder decision 2026-08-25:
+
+- **D25 first** (decisions before code): provider abstraction shape —
+  canonical message/tool-call/usage types, Anthropic-native +
+  OpenAI-compatible adapters (fulfills D07), per-provider SecretStorage
+  keys, model selection UX, reasoning controls (reasoning_effort /
+  extended thinking), cost-meter handling for thinking tokens.
+- Observer supervision UI riding the M2 bus: guidance box, pause/resume,
+  cancel wired to `RunController` (mailbox already live in core).
+- Transcript replay view over `.plato/runs/*.jsonl`.
+- MCP stdio client (trimmed here from M2, D24e).
+- Team profiles (`.aplivity/teams.yaml`, D11) if the milestone holds;
+  otherwise early M4.
+
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
