@@ -259,13 +259,6 @@ export function chatHtml(): string {
     vsapi.postMessage({ type: 'newChat' });
   });
 
-  // Observer controls (D25f): live while a run is active.
-  const obs = document.getElementById('obs');
-  const msel = document.getElementById('msel');
-  msel.addEventListener('change', () => {
-    vsapi.postMessage({ type: 'model', value: msel.value });
-  });
-
   // Settings page (D27).
   const obs = document.getElementById('obs');
   const gear = document.getElementById('gear');
@@ -412,6 +405,7 @@ export function chatHtml(): string {
 
     scroll();
   }
+  // Model select + observer controls (D25f/D26d).
   const msel = document.getElementById('msel');
   msel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'model', value: msel.value });
