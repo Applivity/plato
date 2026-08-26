@@ -299,36 +299,64 @@ class ChatHost {
           return;
         }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
-          const ok = await this.addConnection({
-            id: m.connId,
-            kind: m.kind === 'anthropic' ? 'anthropic' : 'openai',
-            baseUrl:
-              typeof m.baseUrl === 'string' && m.baseUrl.length > 0
-                ? m.baseUrl
-                : undefined,
-          });
-          if (ok) {
-            const id = m.connId;
-            let has = await this.ctx.secrets.get(
-              `plato.providers.${id}.apiKey`,
-            );
-            if (!has) {
-              await this.promptForKey(id);
-              has = await this.ctx.secrets.get(`plato.providers.${id}.apiKey`);
-            }
-            if (has) {
-              await this.fetchAndStoreModels(id);
-            } else {
-              void this.sendSettings(
-                'Connection added — set a key to enable and fetch models.',
+          try {
+            const ok = await this.addConnection({
+              id: m.connId,
+              kind: m.kind === 'anthropic' ? 'anthropic' : 'openai',
+              baseUrl:
+                typeof m.baseUrl === 'string' && m.baseUrl.length > 0
+                  ? m.baseUrl
+                  : undefined,
+            });
+            if (ok) {
+              const id = m.connId;
+              let has = await this.ctx.secrets.get(
+                `plato.providers.${id}.apiKey`,
               );
+              if (!has) {
+                await this.promptForKey(id);
+                has = await this.ctx.secrets.get(`plato.providers.${id}.apiKey`);
+              }
+              if (has) {
+                await this.fetchAndStoreModels(id);
+              } else {
+                void this.sendSettings(
+                  'Connection added — set a key to enable and fetch models.',
+                );
+              }
             }
+          } catch (e) {
+            void this.sendSettings(
+              'Add failed \u2014 ' +
+                (e instanceof Error ? e.message : String(e)),
+            );
           }
           return;
         }
         if (m.type === 'settings-key' && typeof m.connId === 'string') {
           await this.promptForKey(m.connId);
           void this.sendSettings();
+          return;
+        }
+        if (m.type === 'settings-models' && typeof m.connId === 'string') {
+          const sel = Array.isArray(m.models)
+            ? (m.models as unknown[]).filter(
+                (x): x is string => typeof x === 'string',
+              )
+            : [];
+          const user = rawUserConnections();
+          const idx = user.findIndex((u) => u.id === m.connId);
+          if (idx >= 0 && user[idx]) {
+            user[idx].models = sel;
+          } else {
+            user.push({ id: m.connId, kind: 'openai', models: sel });
+          }
+          await vscode.workspace.getConfiguration('plato').update(
+            'connections',
+            user,
+            vscode.ConfigurationTarget.Global,
+          );
+          void this.sendSettings('Models updated.');
           return;
         }
         if (m.type === 'settings-fetch' && typeof m.connId === 'string') {
@@ -423,6 +451,17 @@ class ChatHost {
         models: c.models ?? [],
         keyStatus,
         builtin: !userRaw.has(c.id),
+        // Full selectable pool: stored set + catalog defaults for kind.
+        all: [
+          ...new Set([
+            ...(c.models ?? []),
+            ...MODEL_CATALOG.filter((e) =>
+              c.kind === 'anthropic'
+                ? e.id.startsWith('claude')
+                : !e.id.startsWith('claude'),
+            ).map((e) => e.id),
+          ]),
+        ].sort(),
       });
     }
     void this.panel.webview.postMessage({

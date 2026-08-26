@@ -149,6 +149,14 @@ export function chatHtml(): string {
   .conn .cstat.set { color:var(--vscode-testing-iconPassed,#73c991); }
   .conn .cbase, .conn .cmodels { font-size:11px; color:var(--pl-muted);
                                  word-break:break-all; margin-top:2px; }
+  .conn details { margin-top:6px; font-size:11px; }
+  .conn summary { cursor:pointer; color:var(--pl-muted);
+                  font-size:11.5px; }
+  .conn .mopt { display:flex; align-items:center; gap:6px;
+                padding:2px 4px; cursor:pointer; }
+  .conn .mopt:hover { background:var(--vscode-list-hoverBackground,
+                                       rgba(128,128,128,.12)); }
+  .conn .mopt input { margin:0; }
   .conn .cbtns { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
   .sbtn { padding:3px 10px; font-size:11.5px; cursor:pointer; border:none;
           border-radius:4px;
@@ -342,8 +350,32 @@ export function chatHtml(): string {
       ));
       card.appendChild(r1);
       if (c.baseUrl) { card.appendChild(el('div', 'cbase', String(c.baseUrl))); }
-      if (c.models && c.models.length > 0) {
-        card.appendChild(el('div', 'cmodels', 'models: ' + c.models.join(', ')));
+      // Model multi-select (D29): collapsible checkbox list; only checked
+      // ones appear in the chat dropdown.
+      if (c.all && c.all.length > 0) {
+        const det = document.createElement('details');
+        const sum = el('summary', null,
+            'Models (' + (c.models || []).length + ' selected)');
+        det.appendChild(sum);
+        const box = el('div', 'modellist');
+        const saved = new Set(c.models || []);
+        for (const mid of c.all) {
+          const lbl = el('label', 'mopt', null);
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = String(mid);
+          cb.checked = saved.has(String(mid));
+          lbl.appendChild(cb);
+          lbl.appendChild(el('span', null, String(mid)));
+          box.appendChild(lbl);
+        }
+        box.addEventListener('change', () => {
+          const chosen = Array.from(box.querySelectorAll('input:checked'))
+            .map((i) => String(i.value));
+          vsapi.postMessage({ type: 'settings-models', connId: c.id, models: chosen });
+        });
+        det.appendChild(box);
+        card.appendChild(det);
       }
       const btns = el('div', 'cbtns');
       btns.appendChild(sbtn('Set key', () => {
@@ -413,13 +445,20 @@ export function chatHtml(): string {
     add.appendChild(sbtn('Add connection', () => {
       const id = fid.value.trim();
       if (!id) { return; }
-      vsapi.postMessage({
-        type: 'settings-add',
-        connId: id,
-        kind: fkind.value,
-        baseUrl: fbase.value.trim(),
-        models: fmodels.value.trim(),
-      });
+      try {
+        vsapi.postMessage({
+          type: 'settings-add',
+          connId: id,
+          kind: fkind.value,
+          baseUrl: fbase.value.trim(),
+        });
+      } catch (err) {
+        // Never fail silently (0.5.1 bug was an uncaught webview throw).
+        const f = el('div', 'note');
+        f.style.padding = '6px 10px';
+        f.textContent = 'Add failed: ' + String(err);
+        add.appendChild(f);
+      }
     }));
     sec1.appendChild(add);
     sec1.appendChild(el(
