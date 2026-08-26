@@ -66,13 +66,23 @@ function readConnections(): ConnectionConfig[] {
   const list = rawUserConnections();
   const ids = new Set(list.map((c) => c.id));
   if (!ids.has('anthropic')) {
-    list.unshift({ id: 'anthropic', kind: 'anthropic' });
+    list.unshift({
+      id: 'anthropic',
+      kind: 'anthropic',
+      // Sensible starting set; Refresh models replaces it with live data.
+      models: MODEL_CATALOG.filter((e) => e.id.startsWith('claude')).map(
+        (e) => e.id,
+      ),
+    });
   }
   if (!ids.has('openai')) {
     list.push({
       id: 'openai',
       kind: 'openai',
       baseUrl: 'https://api.openai.com/v1',
+      models: MODEL_CATALOG.filter((e) => !e.id.startsWith('claude')).map(
+        (e) => e.id,
+      ),
     });
   }
   return list;
@@ -292,8 +302,16 @@ class ChatHost {
         }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
           try {
+            // Auto-unique the derived id instead of erroring (D29 UX).
+            let id = m.connId;
+            const taken = new Set(rawUserConnections().map((u) => u.id.toLowerCase()));
+            let n = 2;
+            while (taken.has(id.toLowerCase())) {
+              id = `${m.connId}-${n}`;
+              n += 1;
+            }
             const ok = await this.addConnection({
-              id: m.connId,
+              id,
               kind: m.kind === 'anthropic' ? 'anthropic' : 'openai',
               baseUrl:
                 typeof m.baseUrl === 'string' && m.baseUrl.length > 0
@@ -301,7 +319,6 @@ class ChatHost {
                   : undefined,
             });
             if (ok) {
-              const id = m.connId;
               // Inline key from the form (D29c): transient pass-through.
               if (
                 typeof m.apiKey === 'string' &&
@@ -447,17 +464,6 @@ class ChatHost {
         models: c.models ?? [],
         keyStatus,
         builtin: !userRaw.has(c.id),
-        // Full selectable pool: stored set + catalog defaults for kind.
-        all: [
-          ...new Set([
-            ...(c.models ?? []),
-            ...MODEL_CATALOG.filter((e) =>
-              c.kind === 'anthropic'
-                ? e.id.startsWith('claude')
-                : !e.id.startsWith('claude'),
-            ).map((e) => e.id),
-          ]),
-        ].sort(),
       });
     }
     void this.panel.webview.postMessage({
@@ -621,23 +627,13 @@ class ChatHost {
     );
   }
 
-  /** Dropdown entries grouped by provider (D29); bare model labels. */
+  /** Dropdown entries grouped by provider (D29); only connections that
+ *  have a model set appear — fetched lists are the source of truth. */
   private modelItems(): { value: string; label: string; group: string }[] {
     const items: { value: string; label: string; group: string }[] = [];
     for (const c of readConnections()) {
-      if (c.models && c.models.length > 0) {
-        for (const m of c.models) {
-          items.push({ value: `${c.id}:${m}`, label: m, group: c.id });
-        }
-        continue;
-      }
-      const family = MODEL_CATALOG.filter((e) =>
-        c.kind === 'anthropic'
-          ? e.id.startsWith('claude')
-          : !e.id.startsWith('claude'),
-      );
-      for (const e of family) {
-        items.push({ value: `${c.id}:${e.id}`, label: e.id, group: c.id });
+      for (const m of c.models ?? []) {
+        items.push({ value: `${c.id}:${m}`, label: m, group: c.id });
       }
     }
     return items;

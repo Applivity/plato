@@ -351,21 +351,21 @@ export function chatHtml(): string {
       ));
       card.appendChild(r1);
       if (c.baseUrl) { card.appendChild(el('div', 'cbase', String(c.baseUrl))); }
-      // Model multi-select (D29): collapsible checkbox list; only checked
-      // ones appear in the chat dropdown.
-      if (c.all && c.all.length > 0) {
+      // Model multi-select (D29): collapsible checkbox list of FETCHED models
+      // only — catalog guesses never appear here.
+      const pool = c.models || [];
+      if (pool.length > 0) {
         const det = document.createElement('details');
         const sum = el('summary', null,
-            'Models (' + (c.models || []).length + ' selected)');
+            'Models (' + pool.length + ' selected)');
         det.appendChild(sum);
         const box = el('div', 'modellist');
-        const saved = new Set(c.models || []);
-        for (const mid of c.all) {
+        for (const mid of pool) {
           const lbl = el('label', 'mopt', null);
           const cb = document.createElement('input');
           cb.type = 'checkbox';
           cb.value = String(mid);
-          cb.checked = saved.has(String(mid));
+          cb.checked = true;
           lbl.appendChild(cb);
           lbl.appendChild(el('span', null, String(mid)));
           box.appendChild(lbl);
@@ -377,6 +377,12 @@ export function chatHtml(): string {
         });
         det.appendChild(box);
         card.appendChild(det);
+      } else {
+        card.appendChild(el(
+          'div',
+          'cmodels',
+          'No models yet \u2014 set a key and use \u21BB Refresh models.',
+        ));
       }
       const btns = el('div', 'cbtns');
       btns.appendChild(sbtn('Set key', () => {
@@ -413,15 +419,14 @@ export function chatHtml(): string {
     ]);
     pfrow.appendChild(ppick);
     add.appendChild(pfrow);
-    const frow1 = el('div', 'frow');
-    const fid = el('input'); fid.placeholder = 'id (e.g. litellm)';
-    frow1.appendChild(fid);
+    // No id field (D29): the id is derived from the preset choice, or from
+    // the base-URL hostname for custom endpoints — users never see it.
     const fkind = sel([
       { value: 'openai', label: 'OpenAI-compatible' },
       { value: 'anthropic', label: 'Anthropic native' },
     ]);
-    frow1.appendChild(fkind);
-    add.appendChild(frow1);
+    fkind.value = 'openai';
+    add.appendChild(fkind);
         const fbase = el('input');
     fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
     add.appendChild(fbase);
@@ -435,7 +440,6 @@ export function chatHtml(): string {
     ppick.addEventListener('change', () => {
       const pre = (d.presets || []).find((p) => p.value === ppick.value);
       if (pre) {
-        fid.value = String(pre.value);
         fkind.value = String(pre.kind);
         fbase.value = String(pre.baseUrl);
       }
@@ -446,14 +450,23 @@ export function chatHtml(): string {
       'Models are fetched automatically from this URL after adding.',
     ));
     add.appendChild(sbtn('Add connection', () => {
-      const id = fid.value.trim();
-      if (!id) { return; }
+      const base = fbase.value.trim();
+      if (!base) { return; }
+      // Derive the connection id: preset id, else URL hostname.
+      let id = String(ppick.value || '');
+      if (!id) {
+        try {
+          id = new URL(base).hostname.split('.')[0].replace(/[^a-z0-9_-]/gi, '') || 'provider';
+        } catch {
+          id = 'provider';
+        }
+      }
       try {
         vsapi.postMessage({
           type: 'settings-add',
           connId: id,
           kind: fkind.value,
-          baseUrl: fbase.value.trim(),
+          baseUrl: base,
           apiKey: fkey.value,
         });
         fkey.value = ''; // transient: never linger in the DOM
