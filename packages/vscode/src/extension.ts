@@ -369,7 +369,12 @@ class ChatHost {
             user,
             vscode.ConfigurationTarget.Global,
           );
-          void this.sendSettings('Models updated.');
+          // Silent save (D29): refresh only the chat dropdown payload —
+          // a full settings re-render would close the open details list.
+          void this.panel.webview.postMessage({
+            type: 'models',
+            items: this.modelItems(),
+          });
           return;
         }
         if (m.type === 'settings-fetch' && typeof m.connId === 'string') {

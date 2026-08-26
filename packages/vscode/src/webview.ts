@@ -371,9 +371,13 @@ export function chatHtml(): string {
           box.appendChild(lbl);
         }
         box.addEventListener('change', () => {
-          const chosen = Array.from(box.querySelectorAll('input:checked'))
+          const boxes = Array.from(box.querySelectorAll('input'));
+          const chosen = boxes
+            .filter((i) => i.checked)
             .map((i) => String(i.value));
           vsapi.postMessage({ type: 'settings-models', connId: c.id, models: chosen });
+          // Local counter update; host saves silently (no re-render).
+          sum.textContent = 'Models (' + chosen.length + ' selected)';
         });
         det.appendChild(box);
         card.appendChild(det);
