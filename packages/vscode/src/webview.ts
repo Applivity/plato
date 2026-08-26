@@ -67,21 +67,14 @@ export function chatHtml(): string {
          background:transparent; color:var(--pl-muted); }
   #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
-  .observer { display:none; gap:6px; padding:6px 10px; align-items:center;
-              border-top:1px dashed var(--pl-border); }
-  .observer.on { display:flex; }
-  .observer #g { flex:1; padding:5px 9px; font-family:var(--vscode-font-family);
-                 font-size:12px; border-radius:5px; border:1px solid var(--pl-border);
-                 background:var(--vscode-input-background);
-                 color:var(--vscode-input-foreground); outline:none; }
-  .observer button { padding:5px 10px; cursor:pointer; border:none;
-                     border-radius:4px; font-size:11.5px;
-                     background:var(--vscode-button-secondaryBackground,#3a3d41);
-                     color:var(--vscode-button-secondaryForeground,#ddd); }
-  .observer #gsend { background:var(--vscode-button-background);
-                     color:var(--vscode-button-foreground); }
-  .observer #cx { color:var(--vscode-testing-iconFailed,#f14c4c); }
-  .observer button:disabled { opacity:.45; cursor:default; }
+  #pp, #cx { height:34px; padding:0 12px; border:none; border-radius:6px;
+             font-size:12px; cursor:pointer; align-self:flex-end;
+             background:var(--vscode-button-secondaryBackground,#3a3d41);
+             color:var(--vscode-button-secondaryForeground,#ddd); }
+  #pp:hover, #cx:hover { opacity:.85; }
+  #cx { color:var(--vscode-testing-iconFailed,#f14c4c); }
+  #pp[hidden], #cx[hidden] { display:none; }
+  #pp:disabled, #cx:disabled { opacity:.45; cursor:default; }
   footer { display:flex; gap:8px; padding:10px 12px;
            border-top:1px solid var(--pl-border);
            background:var(--vscode-editor-background); align-items:flex-end; }
@@ -178,11 +171,20 @@ export function chatHtml(): string {
   .conn details { margin-top:6px; font-size:11px; }
   .conn summary { cursor:pointer; color:var(--pl-muted);
                   font-size:11.5px; }
+  .conn .modellist { display:grid; grid-template-columns:1fr 1fr;
+                     gap:1px 10px; margin-top:5px;
+                     max-height:220px; overflow-y:auto;
+                     border:1px solid var(--pl-border); border-radius:5px;
+                     padding:5px 7px;
+                     background:var(--vscode-input-background); }
   .conn .mopt { display:flex; align-items:center; gap:6px;
-                padding:2px 4px; cursor:pointer; }
+                padding:2px 4px; cursor:pointer; font-size:11px;
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .conn .mopt:hover { background:var(--vscode-list-hoverBackground,
                                        rgba(128,128,128,.12)); }
-  .conn .mopt input { margin:0; }
+  .conn .mopt input { margin:0; flex:none; }
+  .conn .mopt span { overflow:hidden; text-overflow:ellipsis; }
+  .conn .mbtns { grid-column:1 / -1; display:flex; gap:6px; margin-top:4px; }
   .conn .cbtns { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
   .sbtn { padding:3px 10px; font-size:11.5px; cursor:pointer; border:none;
           border-radius:4px;
@@ -257,14 +259,10 @@ export function chatHtml(): string {
   </div>
 </header>
 <div id="log"></div>
-<div id="obs">
-  <input id="g" placeholder="Guide Plato mid-run… (injected at the next safe point)">
-  <button id="gsend" title="Send guidance">Send</button>
-  <button id="pp" title="Pause at the next safe point">Pause</button>
-  <button id="cx" title="Stop after the current tool call">Cancel</button>
-</div>
 <footer>
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
+  <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
+  <button id="cx" title="Stop after the current tool call" hidden>Cancel</button>
   <button id="go" title="Send">Send</button>
 </footer>
 <div id="settingsPage">
@@ -327,7 +325,6 @@ export function chatHtml(): string {
   });
 
   // Settings page (D27).
-  const obs = document.getElementById('obs');
   const gear = document.getElementById('gear');
   gear.addEventListener('click', () => {
     vsapi.postMessage({ type: 'openSettings' });
@@ -531,13 +528,14 @@ export function chatHtml(): string {
       ));
       card.appendChild(r1);
       if (c.baseUrl) { card.appendChild(el('div', 'cbase', String(c.baseUrl))); }
-      // Model multi-select (D29): collapsible checkbox list of FETCHED models
-      // only — catalog guesses never appear here.
-      const pool = c.models || [];
+      // Model multi-select (D29): pool = fetched list (never shrinks);
+      // OK commits the ticked subset, Cancel reverts.
+      const pool = c.all || c.models || [];
+      const selected = new Set(c.models || []);
       if (pool.length > 0) {
         const det = document.createElement('details');
         const sum = el('summary', null,
-            'Models (' + pool.length + ' selected)');
+            'Models (' + selected.size + ' of ' + pool.length + ')');
         det.appendChild(sum);
         const box = el('div', 'modellist');
         for (const mid of pool) {
@@ -545,20 +543,31 @@ export function chatHtml(): string {
           const cb = document.createElement('input');
           cb.type = 'checkbox';
           cb.value = String(mid);
-          cb.checked = true;
+          cb.checked = selected.has(String(mid));
           lbl.appendChild(cb);
           lbl.appendChild(el('span', null, String(mid)));
           box.appendChild(lbl);
         }
-        box.addEventListener('change', () => {
-          const boxes = Array.from(box.querySelectorAll('input'));
-          const chosen = boxes
+        const rowBtns = el('div', 'mbtns');
+        const okB = sbtn('OK', () => {
+          const chosen = Array.from(box.querySelectorAll('input'))
             .filter((i) => i.checked)
             .map((i) => String(i.value));
-          vsapi.postMessage({ type: 'settings-models', connId: c.id, models: chosen });
-          // Local counter update; host saves silently (no re-render).
-          sum.textContent = 'Models (' + chosen.length + ' selected)';
+          vsapi.postMessage({
+            type: 'settings-models',
+            connId: c.id,
+            models: chosen,
+          });
+          sum.textContent = 'Models (' + chosen.length + ' of ' + pool.length + ')';
         });
+        const cancelB = sbtn('Cancel', () => {
+          for (const cb of Array.from(box.querySelectorAll('input'))) {
+            cb.checked = selected.has(String(cb.value));
+          }
+        });
+        rowBtns.appendChild(okB);
+        rowBtns.appendChild(cancelB);
+        box.appendChild(rowBtns);
         det.appendChild(box);
         card.appendChild(det);
       } else {
@@ -724,17 +733,21 @@ export function chatHtml(): string {
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
   let paused = false;
-  function setObs(on) { obs.classList.toggle('on', on); }
-  document.getElementById('gsend').addEventListener('click', sendGuidance);
-  g.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); sendGuidance(); }
-  });
+  // Unified footer (D29d): while busy, the main input IS the guide box.
+  const GUIDE_PLACEHOLDER =
+    'Guide Plato mid-run\u2026 (injected at the next safe point)';
+  const ASK_PLACEHOLDER = q.placeholder;
+  function setRunUi(on) {
+    pp.hidden = !on;
+    cx.hidden = !on;
+    q.placeholder = on ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER;
+  }
   function sendGuidance() {
-    const text = g.value.trim();
+    const text = q.value.trim();
     if (!text || !busy) { return; }
     vsapi.postMessage({ type: 'guidance', text: text });
     addMsg('you', 'You', '[guide] ' + text);
-    g.value = '';
+    q.value = '';
   }
   pp.addEventListener('click', () => {
     if (!busy) { return; }
@@ -757,7 +770,7 @@ export function chatHtml(): string {
   });
 
   function ask() {
-    if (busy) { return; }
+    if (busy) { sendGuidance(); return; }
     const text = q.value.trim();
     if (!text) { return; }
     addMsg('you', 'You', text);
@@ -766,7 +779,7 @@ export function chatHtml(): string {
     runT0 = Date.now();
     lastAct = 'thinking';
     refreshChip();
-    setObs(true);
+    setRunUi(true);
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
@@ -900,7 +913,7 @@ export function chatHtml(): string {
     if (el) { el.removeAttribute('id'); }
     streaming = false;
     busy = false;
-    setObs(false);
+    setRunUi(false);
     paused = false;
     pp.textContent = 'Pause';
     pp.disabled = false;

@@ -29,8 +29,10 @@ interface ConnectionConfig {
   id: string;
   kind: 'anthropic' | 'openai';
   baseUrl?: string;
-  /** Optional explicit dropdown entries (bare model names). */
+  /** Selected models (the chat dropdown). */
   models?: string[];
+  /** Full fetched pool (picker source; selection never shrinks it). */
+  allModels?: string[];
 }
 
 /** Parses ONLY user-defined entries from plato.connections (no seeds). */
@@ -58,7 +60,12 @@ function rawUserConnections(): ConnectionConfig[] {
             (x): x is string => typeof x === 'string',
           )
         : undefined;
-      list.push({ id, kind, baseUrl, models });
+      const allModels = Array.isArray(row['allModels'])
+        ? (row['allModels'] as unknown[]).filter(
+            (x): x is string => typeof x === 'string',
+          )
+        : undefined;
+      list.push({ id, kind, baseUrl, models, allModels });
     }
   }
   return list;
@@ -412,8 +419,16 @@ class ChatHost {
           const idx = user.findIndex((u) => u.id === m.connId);
           if (idx >= 0 && user[idx]) {
             user[idx].models = sel;
+            if (!user[idx].allModels) {
+              user[idx].allModels = sel;
+            }
           } else {
-            user.push({ id: m.connId, kind: 'openai', models: sel });
+            user.push({
+              id: m.connId,
+              kind: 'openai',
+              models: sel,
+              allModels: sel,
+            });
           }
           await vscode.workspace.getConfiguration('plato').update(
             'connections',
@@ -512,6 +527,8 @@ class ChatHost {
         kind: c.kind,
         baseUrl: c.baseUrl ?? '',
         models: c.models ?? [],
+        // Picker pool: fetched list when present, else the selection.
+        all: c.allModels && c.allModels.length > 0 ? c.allModels : (c.models ?? []),
         keyStatus,
         builtin: !userRaw.has(c.id),
       });
@@ -607,6 +624,7 @@ class ChatHost {
         user.push(entry);
       }
       entry.models = models;
+      entry.allModels = models; // full pool; selection edits never shrink it
       await vscode.workspace.getConfiguration('plato').update(
         'connections',
         user,
