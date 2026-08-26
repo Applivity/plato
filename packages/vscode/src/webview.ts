@@ -473,6 +473,7 @@ export function chatHtml(): string {
         }
         break;
       }
+      case 'settings': showSettings(m); break;
       case 'restore':
         render(m.log);
         if (
