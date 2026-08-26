@@ -49,6 +49,11 @@ export function chatHtml(): string {
   #msel optgroup option { color:var(--vscode-dropdown-foreground); }
   #gear { margin-left:auto; font-size:16px; line-height:1;
           padding:3px 10px; border-radius:6px; }
+  #hist { font-size:14px; padding:3px 9px; border:1px solid transparent;
+          border-radius:6px; background:transparent; cursor:pointer;
+          color:var(--pl-muted); }
+  #hist:hover { border-color:var(--pl-border);
+                color:var(--vscode-editor-foreground); }
   #rsel { font-family:var(--vscode-font-family); font-size:11px;
           padding:2px 5px; border-radius:6px;
           border:1px solid var(--pl-border);
@@ -137,6 +142,18 @@ export function chatHtml(): string {
   #settingsPage { display:none; }
   body.show-settings #settingsPage { display:flex; flex-direction:column;
                                      height:100vh; }
+  body.show-history header:not(.shead), body.show-history #log,
+  body.show-history #obs, body.show-history footer { display:none !important; }
+  #historyPage { display:none; }
+  body.show-history #historyPage { display:flex; flex-direction:column;
+                                   height:100vh; }
+  #hibody { flex:1; overflow-y:auto; padding:12px 14px; }
+  .runitem { border:1px solid var(--pl-border); border-radius:6px;
+             padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+  .runitem:hover { border-color:var(--pl-accent); }
+  .runitem .rt { font-weight:600; font-size:12px; word-break:break-word; }
+  .runitem .rm { font-size:11px; color:var(--pl-muted); margin-top:2px; }
+  .hlabel { padding:8px 12px 6px; }
   header.shead { padding:8px 12px; gap:8px; }
   header.shead button { border:1px solid var(--pl-border); border-radius:6px;
                         background:transparent; color:var(--pl-muted);
@@ -219,6 +236,7 @@ export function chatHtml(): string {
     <span class="brand">Plato</span>
     <select id="msel" title="Model for this conversation"></select>
     <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
+    <button id="hist" title="Past runs — transcript replay">🕘</button>
     <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
   </div>
   <div class="hrow hmodes">
@@ -249,6 +267,13 @@ export function chatHtml(): string {
     <span class="label">Plato Settings</span>
   </header>
   <div id="sbody"></div>
+</div>
+<div id="historyPage">
+  <header class="shead">
+    <button id="hback">‹ Back</button>
+    <span class="label" id="htitle">Past runs</span>
+  </header>
+  <div id="hibody"></div>
 </div>
 <script nonce="${nonce}">
   const vsapi = acquireVsCodeApi();
@@ -305,6 +330,125 @@ export function chatHtml(): string {
     document.body.classList.remove('show-settings');
     vsapi.postMessage({ type: 'settings-closed' });
   });
+
+  // History / transcript replay (M3).
+  const hbody = document.getElementById('hibody');
+  const htitle = document.getElementById('htitle');
+  let hRuns = [];
+  document.getElementById('hist').addEventListener('click', () => {
+    vsapi.postMessage({ type: 'openHistory' });
+  });
+  document.getElementById('hback').addEventListener('click', () => {
+    if (htitle.textContent !== 'Past runs' && hRuns.length >= 0) {
+      showHistory(hRuns); // detail -> list
+      return;
+    }
+    document.body.classList.remove('show-history');
+  });
+
+  function kfmt(n) {
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  }
+
+  function showHistory(runs) {
+    hRuns = runs || [];
+    document.body.classList.remove('show-settings');
+    document.body.classList.add('show-history');
+    htitle.textContent = 'Past runs';
+    hbody.textContent = '';
+    if (hRuns.length === 0) {
+      hbody.appendChild(el(
+        'div',
+        'note',
+        'No runs recorded yet. Every Plato run is transcribed to .plato/runs/ automatically.',
+      ));
+      return;
+    }
+    for (const r of hRuns) {
+      const item = el('div', 'runitem');
+      item.appendChild(el('div', 'rt', String(r.task || '(no task)')));
+      const meta = [
+        String(r.startedAt || '').replace('T', ' ').slice(0, 19),
+        r.reason === 'failed' ? 'failed' : '',
+        r.turns != null ? r.turns + ' turns' : '',
+        r.inputTokens != null
+          ? kfmt(Number(r.inputTokens) + Number(r.outputTokens || 0)) + ' tok'
+          : '',
+        r.costUsd > 0 ? '\u2248$' + Number(r.costUsd).toFixed(4) : '',
+      ].filter(Boolean).join(' \u00b7 ');
+      item.appendChild(el('div', 'rm', meta));
+      item.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'openRun', file: r.file });
+      });
+      hbody.appendChild(item);
+    }
+  }
+
+  function showRun(m) {
+    document.body.classList.add('show-history');
+    htitle.textContent = 'Run detail';
+    hbody.textContent = '';
+    const evs = m.events || [];
+    const meta = [];
+    let header = null;
+    for (const e of evs) {
+      if (e.kind === 'header') { header = e; continue; }
+      const line = (cls, txt, asHtml) => {
+        const d = el('div', 'msg ' + cls);
+        if (asHtml) {
+          const body = document.createElement('span');
+          body.innerHTML = txt; // host-rendered only (bot markdown)
+          d.appendChild(body);
+        } else {
+          d.textContent = txt;
+        }
+        hbody.appendChild(d);
+      };
+      switch (e.type) {
+        case 'text':
+          line('bot', String(e.html || ''), true);
+          break;
+        case 'tool-event':
+          line('tool',
+            String(e.tool) + ' \u2014 ' + String(e.phase)
+            + (e.ok === false ? ' (error)' : ''));
+          break;
+        case 'usage':
+          meta.push('turn ' + e.turn + ': '
+            + kfmt(Number(e.inputTokens) + Number(e.outputTokens))
+            + ' tok'
+            + (e.costUsd > 0 ? ' \u00b7 \u2248$' + Number(e.costUsd).toFixed(4) : ''));
+          break;
+        case 'approval-decided':
+          line('you', '[' + (e.allowed ? 'allowed' : 'denied') + ' '
+            + String(e.tool) + ']');
+          break;
+        case 'run-completed': {
+          const total = Number(e.inputTokens) + Number(e.outputTokens);
+          line('fin', '\u2713 ' + String(e.reason) + ' \u00b7 '
+            + e.turns + ' turns \u00b7 ' + kfmt(total) + ' tok'
+            + (e.costUsd > 0 ? ' \u00b7 \u2248$' + Number(e.costUsd).toFixed(4) : ''));
+          break;
+        }
+        case 'run-failed':
+          line('bot', 'Run failed: ' + String(e.error ?? ''));
+          break;
+        default:
+          break;
+      }
+    }
+    if (meta.length > 0) {
+      const d = el('div', 'msg tool');
+      d.textContent = meta.join(' \u00b7 ');
+      hbody.insertBefore(d, hbody.firstChild);
+    }
+    if (header) {
+      const d = el('div', 'msg you');
+      d.textContent = String(header.task || '');
+      hbody.insertBefore(d, hbody.firstChild);
+    }
+    scroll();
+  }
 
   function el(tag, cls, text) {
     const n = document.createElement(tag);
@@ -624,6 +768,8 @@ export function chatHtml(): string {
         break;
       }
       case 'settings': showSettings(m); break;
+      case 'history': showHistory(m.runs); break;
+      case 'run': showRun(m); break;
       case 'restore':
         render(m.log);
         if (

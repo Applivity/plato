@@ -19,6 +19,7 @@ import {
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 
@@ -302,6 +303,17 @@ class ChatHost {
           void this.sendSettings();
           return;
         }
+        if (m.type === 'openHistory') {
+          void this.panel.webview.postMessage({
+            type: 'history',
+            runs: this.listRuns(),
+          });
+          return;
+        }
+        if (m.type === 'openRun' && typeof m.file === 'string') {
+          this.openRun(m.file);
+          return;
+        }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
           try {
             // Auto-unique the derived id instead of erroring (D29 UX).
@@ -568,6 +580,86 @@ class ChatHost {
       void this.sendSettings(
         'Fetch failed \u2014 ' +
           (e instanceof Error ? e.message : 'unknown error'),
+      );
+    }
+  }
+
+  // ---- Transcript replay (M3) -------------------------------------------
+
+  private runsDir(): string | null {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return root ? join(root, '.plato', 'runs') : null;
+  }
+
+  private listRuns(): Record<string, unknown>[] {
+    const dir = this.runsDir();
+    if (!dir) {
+      return [];
+    }
+    let files: string[] = [];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort().reverse();
+    } catch {
+      return [];
+    }
+    const runs: Record<string, unknown>[] = [];
+    for (const f of files) {
+      try {
+        const lines = readFileSync(join(dir, f), 'utf8')
+          .split('\n')
+          .filter((l) => l.trim().length > 0);
+        const header = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;
+        const sum: Record<string, unknown> = {
+          file: f,
+          runId: String(header['runId'] ?? ''),
+          task: String(header['task'] ?? ''),
+          startedAt: String(header['startedAt'] ?? ''),
+        };
+        for (const l of lines.slice(1)) {
+          const e = JSON.parse(l) as Record<string, unknown>;
+          if (e['type'] === 'run-completed') {
+            sum['reason'] = e['reason'];
+            sum['turns'] = e['turns'];
+            sum['inputTokens'] = e['inputTokens'];
+            sum['outputTokens'] = e['outputTokens'];
+            sum['costUsd'] = e['costUsd'];
+          } else if (e['type'] === 'run-failed') {
+            sum['reason'] = 'failed';
+          }
+        }
+        runs.push(sum);
+      } catch {
+        // Corrupt line/file: skip, replay must never break on bad data.
+      }
+    }
+    return runs;
+  }
+
+  private openRun(file: string): void {
+    if (!/^[A-Za-z0-9._-]+\.jsonl$/.test(file) || file.includes('..')) {
+      this.send('error', 'Bad run file.');
+      return;
+    }
+    const dir = this.runsDir();
+    if (!dir) {
+      return;
+    }
+    try {
+      const lines = readFileSync(join(dir, file), 'utf8')
+        .split('\n')
+        .filter((l) => l.trim().length > 0);
+      const events = lines
+        .map((l) => JSON.parse(l) as Record<string, unknown>)
+        .map((e) =>
+          e['type'] === 'text'
+            ? { ...e, html: renderMarkdown(String(e['text'] ?? '')) }
+            : e,
+        );
+      void this.panel.webview.postMessage({ type: 'run', file, events });
+    } catch (e) {
+      this.send(
+        'error',
+        'Could not read run: ' + (e instanceof Error ? e.message : 'error'),
       );
     }
   }
