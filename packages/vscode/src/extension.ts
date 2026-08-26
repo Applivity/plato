@@ -138,21 +138,13 @@ export function activate(ctx: vscode.ExtensionContext): void {
       }
       const slot = `plato.providers.${pick.connId}.apiKey`;
       const has = (await ctx.secrets.get(slot)) !== undefined;
-      const action = await vscode.window.showQuickPick(
-        has ? ['Set key', 'Clear key'] : ['Set key'],
-        {
-          placeHolder: `Key status for ${pick.connId}: ${
-            has ? '\u25CF set' : '\u25CB missing'
-          }`,
-        },
-      );
+      const action = await vscode.window.showQuickPick(['Set key'], {
+        placeHolder: `Key status for ${pick.connId}: ${
+          has ? '\u25CF set' : '\u25CB missing'
+        }`,
+      });
       if (action === 'Set key') {
         await vscode.commands.executeCommand('plato.setApiKey', pick.connId);
-      } else if (action === 'Clear key') {
-        await ctx.secrets.delete(slot);
-        void vscode.window.showInformationMessage(
-          `Plato: key cleared for ${pick.connId}.`,
-        );
       }
     }),
   );
@@ -310,18 +302,22 @@ class ChatHost {
             });
             if (ok) {
               const id = m.connId;
-              let has = await this.ctx.secrets.get(
-                `plato.providers.${id}.apiKey`,
-              );
-              if (!has) {
-                await this.promptForKey(id);
-                has = await this.ctx.secrets.get(`plato.providers.${id}.apiKey`);
-              }
-              if (has) {
+              // Inline key from the form (D29c): transient pass-through.
+              if (
+                typeof m.apiKey === 'string' &&
+                m.apiKey.trim().length > 0
+              ) {
+                await this.ctx.secrets.store(
+                  `plato.providers.${id}.apiKey`,
+                  m.apiKey.trim(),
+                );
+                if (id === 'anthropic') {
+                  await this.ctx.secrets.store(LEGACY_KEY, m.apiKey.trim());
+                }
                 await this.fetchAndStoreModels(id);
               } else {
                 void this.sendSettings(
-                  'Connection added — set a key to enable and fetch models.',
+                  'Connection added \u2014 use Set key to enable it.',
                 );
               }
             }

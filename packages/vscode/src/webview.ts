@@ -47,7 +47,8 @@ export function chatHtml(): string {
           color:var(--vscode-dropdown-foreground); outline:none; }
   #msel optgroup { font-style:normal; color:var(--pl-muted); }
   #msel optgroup option { color:var(--vscode-dropdown-foreground); }
-  #gear { margin-left:auto; }
+  #gear { margin-left:auto; font-size:16px; line-height:1;
+          padding:3px 10px; border-radius:6px; }
   #new { border:1px solid var(--pl-border); border-radius:10px;
          padding:2px 9px; font-size:12px; cursor:pointer;
          background:transparent; color:var(--pl-muted); }
@@ -381,16 +382,11 @@ export function chatHtml(): string {
       btns.appendChild(sbtn('Set key', () => {
         vsapi.postMessage({ type: 'settings-key', connId: c.id });
       }));
-      const fb = sbtn('\u21BB Fetch models', () => {
+      const fb = sbtn('\u21BB Refresh models', () => {
         vsapi.postMessage({ type: 'settings-fetch', connId: c.id });
       });
       fb.disabled = Boolean(c.keyStatus !== 'set');
       btns.appendChild(fb);
-      if (c.keyStatus === 'set') {
-        btns.appendChild(sbtn('Clear key', () => {
-          vsapi.postMessage({ type: 'settings-clear', connId: c.id });
-        }));
-      }
       if (!c.builtin) {
         btns.appendChild(sbtn('Delete', () => {
           vsapi.postMessage({ type: 'settings-delete', connId: c.id });
@@ -426,9 +422,16 @@ export function chatHtml(): string {
     ]);
     frow1.appendChild(fkind);
     add.appendChild(frow1);
-    const fbase = el('input');
+        const fbase = el('input');
     fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
     add.appendChild(fbase);
+    // Key lives in the form (D29c): posted once to the host, stored in
+    // SecretStorage, never rendered again — transient pass-through only.
+    const fkey = el('input');
+    fkey.type = 'password';
+    fkey.placeholder = 'API key';
+    fkey.autocomplete = 'off';
+    add.appendChild(fkey);
     ppick.addEventListener('change', () => {
       const pre = (d.presets || []).find((p) => p.value === ppick.value);
       if (pre) {
@@ -440,7 +443,7 @@ export function chatHtml(): string {
     add.appendChild(el(
       'div',
       'note',
-      'Models load automatically after you add a key (\u21BB Fetch models) — no typing needed.',
+      'Models are fetched automatically from this URL after adding.',
     ));
     add.appendChild(sbtn('Add connection', () => {
       const id = fid.value.trim();
@@ -451,7 +454,9 @@ export function chatHtml(): string {
           connId: id,
           kind: fkind.value,
           baseUrl: fbase.value.trim(),
+          apiKey: fkey.value,
         });
+        fkey.value = ''; // transient: never linger in the DOM
       } catch (err) {
         // Never fail silently (0.5.1 bug was an uncaught webview throw).
         const f = el('div', 'note');
