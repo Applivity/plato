@@ -28,8 +28,8 @@ interface ConnectionConfig {
   models?: string[];
 }
 
-/** Reads plato.connections and seeds the built-in defaults (D26a). */
-function readConnections(): ConnectionConfig[] {
+/** Parses ONLY user-defined entries from plato.connections (no seeds). */
+function rawUserConnections(): ConnectionConfig[] {
   const raw = vscode.workspace.getConfiguration('plato').get<unknown>(
     'connections',
     [],
@@ -56,6 +56,12 @@ function readConnections(): ConnectionConfig[] {
       list.push({ id, kind, baseUrl, models });
     }
   }
+  return list;
+}
+
+/** Reads plato.connections and seeds the built-in defaults (D26a). */
+function readConnections(): ConnectionConfig[] {
+  const list = rawUserConnections();
   const ids = new Set(list.map((c) => c.id));
   if (!ids.has('anthropic')) {
     list.unshift({ id: 'anthropic', kind: 'anthropic' });
@@ -221,7 +227,7 @@ class ChatHost {
   ) {
     this.log = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
     this.panel.webview.onDidReceiveMessage(
-      (m: { type?: string; [k: string]: unknown }) => {
+      async (m: { type?: string; [k: string]: unknown }) => {
         if (m.type === 'mode' && typeof m.value === 'string') {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
@@ -286,6 +292,67 @@ class ChatHost {
           this.controller.cancel();
           return;
         }
+        if (m.type === 'openSettings') {
+          void this.sendSettings();
+          return;
+        }
+        if (m.type === 'settings-add' && typeof m.connId === 'string') {
+          await this.addConnection({
+            id: m.connId,
+            kind: m.kind === 'anthropic' ? 'anthropic' : 'openai',
+            baseUrl:
+              typeof m.baseUrl === 'string' && m.baseUrl.length > 0
+                ? m.baseUrl
+                : undefined,
+            models:
+              typeof m.models === 'string' && m.models.trim().length > 0
+                ? m.models.split(',').map((x) => x.trim()).filter(Boolean)
+                : undefined,
+          });
+          return;
+        }
+        if (m.type === 'settings-key' && typeof m.connId === 'string') {
+          await this.promptForKey(m.connId);
+          void this.sendSettings();
+          return;
+        }
+        if (m.type === 'settings-clear' && typeof m.connId === 'string') {
+          await this.ctx.secrets.delete(
+            `plato.providers.${m.connId}.apiKey`,
+          );
+          void this.sendSettings();
+          return;
+        }
+        if (m.type === 'settings-delete' && typeof m.connId === 'string') {
+          await vscode.workspace.getConfiguration('plato').update(
+            'connections',
+            rawUserConnections().filter((u) => u.id !== m.connId),
+            vscode.ConfigurationTarget.Global,
+          );
+          void this.sendSettings();
+          return;
+        }
+        if (
+          m.type === 'set-default-model' &&
+          typeof m.value === 'string'
+        ) {
+          await vscode.workspace.getConfiguration('plato').update(
+            'model',
+            m.value,
+            vscode.ConfigurationTarget.Global,
+          );
+          this.modelOverride = null;
+          void this.sendSettings();
+          return;
+        }
+        if (m.type === 'set-reasoning' && typeof m.value === 'string') {
+          await vscode.workspace.getConfiguration('plato').update(
+            'reasoning',
+            m.value,
+            vscode.ConfigurationTarget.Global,
+          );
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -316,6 +383,78 @@ class ChatHost {
 
   private send(type: string, text?: unknown): void {
     void this.panel.webview.postMessage({ type, text });
+  }
+
+  // ---- Settings surface (D27) -------------------------------------------
+
+  /** Builds and posts the settings snapshot; secrets never leave the host. */
+  private async sendSettings(): Promise<void> {
+    const userRaw = new Set(rawUserConnections().map((u) => u.id));
+    const connections = [];
+    for (const c of readConnections()) {
+      const keyStatus =
+        (await this.ctx.secrets.get(`plato.providers.${c.id}.apiKey`)) !==
+        undefined
+          ? 'set'
+          : 'missing';
+      connections.push({
+        id: c.id,
+        kind: c.kind,
+        baseUrl: c.baseUrl ?? '',
+        models: c.models ?? [],
+        keyStatus,
+        builtin: !userRaw.has(c.id),
+      });
+    }
+    void this.panel.webview.postMessage({
+      type: 'settings',
+      connections,
+      defaultModel: this.effectiveModel(),
+      modelItems: this.modelItems(),
+      reasoning: vscode.workspace
+        .getConfiguration('plato')
+        .get<string>('reasoning', 'off'),
+    });
+    void this.panel.webview.postMessage({
+      type: 'models',
+      items: this.modelItems(),
+    });
+  }
+
+  private async addConnection(c: ConnectionConfig): Promise<void> {
+    if (!/^[a-z0-9_-]+$/i.test(c.id)) {
+      this.send('error', 'Connection id may use letters, numbers, - and _ only.');
+      return;
+    }
+    const user = rawUserConnections();
+    if (user.some((u) => u.id.toLowerCase() === c.id.toLowerCase())) {
+      this.send('error', `Connection "${c.id}" already exists.`);
+      return;
+    }
+    user.push(c);
+    await vscode.workspace.getConfiguration('plato').update(
+      'connections',
+      user,
+      vscode.ConfigurationTarget.Global,
+    );
+    void this.sendSettings();
+  }
+
+  private async promptForKey(connId: string): Promise<void> {
+    const input = await vscode.window.showInputBox({
+      prompt: `${connId} API key (stored in SecretStorage, never displayed)`,
+      password: true,
+      ignoreFocusOut: true,
+    });
+    if (input && input.trim().length > 0) {
+      await this.ctx.secrets.store(
+        `plato.providers.${connId}.apiKey`,
+        input.trim(),
+      );
+      if (connId === 'anthropic') {
+        await this.ctx.secrets.store(LEGACY_KEY, input.trim());
+      }
+    }
   }
 
   private push(entry: Entry): void {

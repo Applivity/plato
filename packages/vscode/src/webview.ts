@@ -111,6 +111,47 @@ export function chatHtml(): string {
   @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
+  body.show-settings header:not(.shead), body.show-settings #log,
+  body.show-settings #obs, body.show-settings footer { display:none !important; }
+  #settingsPage { display:none; }
+  body.show-settings #settingsPage { display:flex; flex-direction:column;
+                                     height:100vh; }
+  header.shead { padding:8px 12px; gap:8px; }
+  header.shead button { border:1px solid var(--pl-border); border-radius:6px;
+                        background:transparent; color:var(--pl-muted);
+                        padding:2px 10px; cursor:pointer; font-size:12px; }
+  #sbody { flex:1; overflow-y:auto; padding:12px 14px; }
+  .sec { margin-bottom:18px; }
+  .sec h4 { margin:.2em 0 .55em; font-size:11px; text-transform:uppercase;
+            letter-spacing:.08em; color:var(--pl-muted); }
+  .conn { border:1px solid var(--pl-border); border-radius:6px;
+          padding:8px 10px; margin-bottom:8px; }
+  .conn .row1 { display:flex; align-items:center; gap:6px; }
+  .conn .cid { font-weight:600; }
+  .conn .ckind { font-size:10px; color:var(--pl-muted);
+                 border:1px solid var(--pl-border); border-radius:8px;
+                 padding:0 7px; }
+  .conn .cstat { margin-left:auto; font-size:11px; }
+  .conn .cstat.set { color:var(--vscode-testing-iconPassed,#73c991); }
+  .conn .cbase, .conn .cmodels { font-size:11px; color:var(--pl-muted);
+                                 word-break:break-all; margin-top:2px; }
+  .conn .cbtns { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
+  .sbtn { padding:3px 10px; font-size:11.5px; cursor:pointer; border:none;
+          border-radius:4px;
+          background:var(--vscode-button-secondaryBackground,#3a3d41);
+          color:var(--vscode-button-secondaryForeground,#ddd); }
+  .sbtn.danger { color:var(--vscode-testing-iconFailed,#f14c4c); }
+  #addForm, .prefrow { display:flex; flex-direction:column; gap:6px;
+                       border:1px dashed var(--pl-border); border-radius:6px;
+                       padding:10px; margin-bottom:10px; }
+  #addForm input, #addForm select, .prefrow select {
+      padding:5px 8px; font-size:12px; border-radius:4px;
+      border:1px solid var(--pl-border);
+      background:var(--vscode-input-background);
+      color:var(--vscode-input-foreground); outline:none; }
+  #addForm .frow { display:flex; gap:6px; } #addForm .frow > * { flex:1; }
+  .prefrow label { font-size:11px; color:var(--pl-muted); }
+  .note { font-size:11px; color:var(--pl-muted); margin-top:4px; }
   .msg.bot p { margin:.35em 0; }
   .msg.bot .md-h { font-weight:600; margin:.7em 0 .25em; line-height:1.3; }
   .msg.bot .md-h1 { font-size:15px; }
@@ -152,6 +193,7 @@ export function chatHtml(): string {
   <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
   <select id="msel" title="Model (connection:model)"></select>
   <span id="st"></span>
+  <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
   <button id="new" title="Start a new chat (clears this conversation)">＋</button>
 </header>
 <div id="log"></div>
@@ -165,6 +207,13 @@ export function chatHtml(): string {
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <button id="go" title="Send">Send</button>
 </footer>
+<div id="settingsPage">
+  <header class="shead">
+    <button id="sback">‹ Back</button>
+    <span class="label">Plato Settings</span>
+  </header>
+  <div id="sbody"></div>
+</div>
 <script nonce="${nonce}">
   const vsapi = acquireVsCodeApi();
   const log = document.getElementById('log');
@@ -212,6 +261,157 @@ export function chatHtml(): string {
 
   // Observer controls (D25f): live while a run is active.
   const obs = document.getElementById('obs');
+  const msel = document.getElementById('msel');
+  msel.addEventListener('change', () => {
+    vsapi.postMessage({ type: 'model', value: msel.value });
+  });
+
+  // Settings page (D27).
+  const obs = document.getElementById('obs');
+  const gear = document.getElementById('gear');
+  gear.addEventListener('click', () => {
+    vsapi.postMessage({ type: 'openSettings' });
+  });
+  document.getElementById('sback').addEventListener('click', () => {
+    document.body.classList.remove('show-settings');
+    vsapi.postMessage({ type: 'settings-closed' });
+  });
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) { n.className = cls; }
+    if (text !== undefined && text !== null) { n.textContent = text; }
+    return n;
+  }
+  function sbtn(label, fn, danger) {
+    const b = el('button', 'sbtn' + (danger ? ' danger' : ''), label);
+    b.addEventListener('click', fn);
+    return b;
+  }
+  function sel(options, value) {
+    const s = el('select');
+    for (const o of options) {
+      const op = el('option', null, o.label);
+      op.value = o.value;
+      s.appendChild(op);
+    }
+    if (value) { s.value = value; }
+    return s;
+  }
+
+  function showSettings(d) {
+    document.body.classList.add('show-settings');
+    const body = document.getElementById('sbody');
+    body.textContent = '';
+
+    // Connections
+    const sec1 = el('div', 'sec');
+    sec1.appendChild(el('h4', null, 'Connections'));
+    for (const c of d.connections || []) {
+      const card = el('div', 'conn');
+      const r1 = el('div', 'row1');
+      r1.appendChild(el('span', 'cid', c.id));
+      r1.appendChild(el('span', 'ckind', String(c.kind)));
+      r1.appendChild(el(
+        'span',
+        'cstat' + (c.keyStatus === 'set' ? ' set' : ''),
+        c.keyStatus === 'set' ? '\u25CF key set' : '\u25CB no key',
+      ));
+      card.appendChild(r1);
+      if (c.baseUrl) { card.appendChild(el('div', 'cbase', String(c.baseUrl))); }
+      if (c.models && c.models.length > 0) {
+        card.appendChild(el('div', 'cmodels', 'models: ' + c.models.join(', ')));
+      }
+      if (!c.builtin) {
+        const btns = el('div', 'cbtns');
+        btns.appendChild(sbtn('Set key', () => {
+          vsapi.postMessage({ type: 'settings-key', connId: c.id });
+        }));
+        if (c.keyStatus === 'set') {
+          btns.appendChild(sbtn('Clear key', () => {
+            vsapi.postMessage({ type: 'settings-clear', connId: c.id });
+          }));
+        }
+        btns.appendChild(sbtn('Delete', () => {
+          vsapi.postMessage({ type: 'settings-delete', connId: c.id });
+        }, true));
+        card.appendChild(btns);
+      } else {
+        card.appendChild(el(
+          'div',
+          'note',
+          'Built-in connection. Set a key to use it.',
+        ));
+      }
+      sec1.appendChild(card);
+    }
+
+    // Add-connection form
+    const add = el('form', null);
+    add.id = 'addForm';
+    const frow1 = el('div', 'frow');
+    const fid = el('input'); fid.placeholder = 'id (e.g. litellm)';
+    frow1.appendChild(fid);
+    const fkind = sel([
+      { value: 'openai', label: 'OpenAI-compatible' },
+      { value: 'anthropic', label: 'Anthropic native' },
+    ]);
+    frow1.appendChild(fkind);
+    add.appendChild(frow1);
+    const fbase = el('input');
+    fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
+    add.appendChild(fbase);
+    const fmodels = el('input');
+    fmodels.placeholder = 'Models, comma-separated (e.g. deepseek-chat, gpt-4o)';
+    add.appendChild(fmodels);
+    add.appendChild(sbtn('Add connection', () => {
+      const id = fid.value.trim();
+      if (!id) { return; }
+      vsapi.postMessage({
+        type: 'settings-add',
+        connId: id,
+        kind: fkind.value,
+        baseUrl: fbase.value.trim(),
+        models: fmodels.value.trim(),
+      });
+    }));
+    sec1.appendChild(add);
+    sec1.appendChild(el(
+      'div',
+      'note',
+      'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.',
+    ));
+    body.appendChild(sec1);
+
+    // Preferences
+    const sec2 = el('div', 'sec');
+    sec2.appendChild(el('h4', null, 'Defaults'));
+    const prow1 = el('div', 'prefrow');
+    prow1.appendChild(el('label', null, 'Default model'));
+    prow1.appendChild(sel(d.modelItems || [], d.defaultModel));
+    prow1.lastChild.addEventListener('change', (e) => {
+      vsapi.postMessage({ type: 'set-default-model', value: e.target.value });
+    });
+    sec2.appendChild(prow1);
+    const prow2 = el('div', 'prefrow');
+    prow2.appendChild(el('label', null, 'Reasoning effort (supported models only)'));
+    prow2.appendChild(sel(
+      [
+        { value: 'off', label: 'off' },
+        { value: 'low', label: 'low' },
+        { value: 'medium', label: 'medium' },
+        { value: 'high', label: 'high' },
+      ],
+      String(d.reasoning || 'off'),
+    ));
+    prow2.lastChild.addEventListener('change', (e) => {
+      vsapi.postMessage({ type: 'set-reasoning', value: e.target.value });
+    });
+    sec2.appendChild(prow2);
+    body.appendChild(sec2);
+
+    scroll();
+  }
   const msel = document.getElementById('msel');
   msel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'model', value: msel.value });

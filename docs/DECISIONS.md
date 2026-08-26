@@ -240,6 +240,17 @@ Known limitations recorded rather than modeled. Future candidate:
 OpenRouter's authoritative `usage.cost` passthrough.
 (d) Non-goal: modeling cache/off-peak price schedules.
 
+**D27 — In-panel settings surface (founder directive).** Plato targets
+non-technical users, so provider/connection configuration moves INTO
+the panel: a ⚙ gear toggles a Settings page listing connections (kind,
+baseUrl, models, key status ●/○) with Add/Delete for user-defined
+profiles, plus default-model and reasoning selects. Keys are entered
+through password prompts and stored ONLY in SecretStorage — values are
+never sent to or rendered in the webview; the panel shows status dots.
+Palette commands remain for power users; the panel is the primary
+surface. Amends D26(b): palette-first → panel-first. The teams config
+UI (M4) will reuse this component.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
