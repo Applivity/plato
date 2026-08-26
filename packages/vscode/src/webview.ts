@@ -278,6 +278,7 @@ export function chatHtml(): string {
   }
   function sbtn(label, fn, danger) {
     const b = el('button', 'sbtn' + (danger ? ' danger' : ''), label);
+    b.type = 'button'; // never submit an enclosing form (0.4.2 bug)
     b.addEventListener('click', fn);
     return b;
   }
@@ -315,33 +316,31 @@ export function chatHtml(): string {
       if (c.models && c.models.length > 0) {
         card.appendChild(el('div', 'cmodels', 'models: ' + c.models.join(', ')));
       }
-      if (!c.builtin) {
-        const btns = el('div', 'cbtns');
-        btns.appendChild(sbtn('Set key', () => {
-          vsapi.postMessage({ type: 'settings-key', connId: c.id });
+      const btns = el('div', 'cbtns');
+      btns.appendChild(sbtn('Set key', () => {
+        vsapi.postMessage({ type: 'settings-key', connId: c.id });
+      }));
+      if (c.keyStatus === 'set') {
+        btns.appendChild(sbtn('Clear key', () => {
+          vsapi.postMessage({ type: 'settings-clear', connId: c.id });
         }));
-        if (c.keyStatus === 'set') {
-          btns.appendChild(sbtn('Clear key', () => {
-            vsapi.postMessage({ type: 'settings-clear', connId: c.id });
-          }));
-        }
+      }
+      if (!c.builtin) {
         btns.appendChild(sbtn('Delete', () => {
           vsapi.postMessage({ type: 'settings-delete', connId: c.id });
         }, true));
-        card.appendChild(btns);
       } else {
-        card.appendChild(el(
-          'div',
-          'note',
-          'Built-in connection. Set a key to use it.',
-        ));
+        card.appendChild(el('div', 'note', 'Built-in connection.'));
       }
+      card.appendChild(btns);
       sec1.appendChild(card);
     }
 
     // Add-connection form
     const add = el('form', null);
     add.id = 'addForm';
+    // A submit would reload the webview and wipe the page (0.4.2 bug).
+    add.addEventListener('submit', (e) => { e.preventDefault(); });
     const frow1 = el('div', 'frow');
     const fid = el('input'); fid.placeholder = 'id (e.g. litellm)';
     frow1.appendChild(fid);
