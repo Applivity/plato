@@ -299,18 +299,31 @@ class ChatHost {
           return;
         }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
-          await this.addConnection({
+          const ok = await this.addConnection({
             id: m.connId,
             kind: m.kind === 'anthropic' ? 'anthropic' : 'openai',
             baseUrl:
               typeof m.baseUrl === 'string' && m.baseUrl.length > 0
                 ? m.baseUrl
                 : undefined,
-            models:
-              typeof m.models === 'string' && m.models.trim().length > 0
-                ? m.models.split(',').map((x) => x.trim()).filter(Boolean)
-                : undefined,
           });
+          if (ok) {
+            const id = m.connId;
+            let has = await this.ctx.secrets.get(
+              `plato.providers.${id}.apiKey`,
+            );
+            if (!has) {
+              await this.promptForKey(id);
+              has = await this.ctx.secrets.get(`plato.providers.${id}.apiKey`);
+            }
+            if (has) {
+              await this.fetchAndStoreModels(id);
+            } else {
+              void this.sendSettings(
+                'Connection added — set a key to enable and fetch models.',
+              );
+            }
+          }
           return;
         }
         if (m.type === 'settings-key' && typeof m.connId === 'string') {
@@ -434,15 +447,15 @@ class ChatHost {
     });
   }
 
-  private async addConnection(c: ConnectionConfig): Promise<void> {
+  private async addConnection(c: ConnectionConfig): Promise<boolean> {
     if (!/^[a-z0-9_-]+$/i.test(c.id)) {
       this.send('error', 'Connection id may use letters, numbers, - and _ only.');
-      return;
+      return false;
     }
     const user = rawUserConnections();
     if (user.some((u) => u.id.toLowerCase() === c.id.toLowerCase())) {
       this.send('error', `Connection "${c.id}" already exists.`);
-      return;
+      return false;
     }
     user.push(c);
     await vscode.workspace.getConfiguration('plato').update(
@@ -450,9 +463,7 @@ class ChatHost {
       user,
       vscode.ConfigurationTarget.Global,
     );
-    void this.sendSettings(
-      'Connection added — now \u201CSet key\u201D, then \u21BB Fetch models.',
-    );
+    return true;
   }
 
   /** Live model discovery (D28): GET /models, store ids on the profile. */
@@ -575,17 +586,13 @@ class ChatHost {
     );
   }
 
-  /** Dropdown entries: declared models, else catalog defaults per kind. */
-  private modelItems(): { value: string; label: string }[] {
-    const items: { value: string; label: string }[] = [];
+  /** Dropdown entries grouped by provider (D29); bare model labels. */
+  private modelItems(): { value: string; label: string; group: string }[] {
+    const items: { value: string; label: string; group: string }[] = [];
     for (const c of readConnections()) {
       if (c.models && c.models.length > 0) {
         for (const m of c.models) {
-          const entry = MODEL_CATALOG.find((e) => e.id === m);
-          items.push({
-            value: `${c.id}:${m}`,
-            label: `${c.id}:${m}${entry ? ' · ' + entry.label : ''}`,
-          });
+          items.push({ value: `${c.id}:${m}`, label: m, group: c.id });
         }
         continue;
       }
@@ -595,7 +602,7 @@ class ChatHost {
           : !e.id.startsWith('claude'),
       );
       for (const e of family) {
-        items.push({ value: `${c.id}:${e.id}`, label: `${c.id}:${e.id}` });
+        items.push({ value: `${c.id}:${e.id}`, label: e.id, group: c.id });
       }
     }
     return items;

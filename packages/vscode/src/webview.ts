@@ -33,11 +33,25 @@ export function chatHtml(): string {
   header button:hover { border-color:var(--pl-border); }
   header button.on { background:var(--vscode-button-background);
                      color:var(--vscode-button-foreground); }
-  header select { font-family:var(--vscode-font-family); font-size:11px;
-                  margin-left:auto; padding:2px 6px; border-radius:6px;
-                  border:1px solid var(--pl-border);
-                  background:var(--vscode-dropdown-background);
-                  color:var(--vscode-dropdown-foreground); outline:none; }
+  header { flex-direction:column; align-items:stretch; padding:8px 12px 7px;
+           gap:6px; }
+  .hrow { display:flex; align-items:center; gap:6px; width:100%; }
+  .hrow .brand { font-weight:600; font-size:12.5px; letter-spacing:.02em; }
+  .hrow .label { color:var(--pl-muted); font-size:11px; text-transform:uppercase;
+                 letter-spacing:.08em; }
+  .hrow .spacer { flex:1; }
+  #msel { flex:1; max-width:420px; font-family:var(--vscode-font-family);
+          font-size:11.5px; padding:2px 6px; border-radius:6px;
+          border:1px solid var(--pl-border);
+          background:var(--vscode-dropdown-background);
+          color:var(--vscode-dropdown-foreground); outline:none; }
+  #msel optgroup { font-style:normal; color:var(--pl-muted); }
+  #msel optgroup option { color:var(--vscode-dropdown-foreground); }
+  #gear { margin-left:auto; }
+  #new { border:1px solid var(--pl-border); border-radius:10px;
+         padding:2px 9px; font-size:12px; cursor:pointer;
+         background:transparent; color:var(--pl-muted); }
+  #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
   .observer { display:none; gap:6px; padding:6px 10px; align-items:center;
               border-top:1px dashed var(--pl-border); }
@@ -186,15 +200,21 @@ export function chatHtml(): string {
 </head>
 <body>
 <header>
-  <span class="label">Mode</span>
-  <button data-m="plan" title="Read-only: Plato can look, never touch">plan</button>
-  <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
-  <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
-  <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
-  <select id="msel" title="Model (connection:model)"></select>
-  <span id="st"></span>
-  <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
-  <button id="new" title="Start a new chat (clears this conversation)">＋</button>
+  <div class="hrow htop">
+    <span class="brand">Plato</span>
+    <select id="msel" title="Model for this conversation"></select>
+    <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
+  </div>
+  <div class="hrow hmodes">
+    <span class="label">Mode</span>
+    <button data-m="plan" title="Read-only: Plato can look, never touch">plan</button>
+    <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
+    <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
+    <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
+    <span class="spacer"></span>
+    <button id="new" title="Start a new chat (clears this conversation)">＋</button>
+    <span id="st"></span>
+  </div>
 </header>
 <div id="log"></div>
 <div id="obs">
@@ -242,10 +262,10 @@ export function chatHtml(): string {
   }
   setInterval(refreshChip, 1000);
 
-  for (const b of document.querySelectorAll('header button')) {
+  for (const b of document.querySelectorAll('header button[data-m]')) {
     if (b.classList.contains('on')) { mode = b.dataset.m; }
     b.addEventListener('click', () => {
-      for (const x of document.querySelectorAll('header button')) {
+      for (const x of document.querySelectorAll('header button[data-m]')) {
         x.classList.remove('on');
       }
       b.classList.add('on');
@@ -377,9 +397,6 @@ export function chatHtml(): string {
     const fbase = el('input');
     fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
     add.appendChild(fbase);
-    const fmodels = el('input');
-    fmodels.placeholder = 'Models, comma-separated (e.g. deepseek-chat, gpt-4o)';
-    add.appendChild(fmodels);
     ppick.addEventListener('change', () => {
       const pre = (d.presets || []).find((p) => p.value === ppick.value);
       if (pre) {
@@ -388,6 +405,11 @@ export function chatHtml(): string {
         fbase.value = String(pre.baseUrl);
       }
     });
+    add.appendChild(el(
+      'div',
+      'note',
+      'Models load automatically after you add a key (\u21BB Fetch models) — no typing needed.',
+    ));
     add.appendChild(sbtn('Add connection', () => {
       const id = fid.value.trim();
       if (!id) { return; }
@@ -496,11 +518,19 @@ export function chatHtml(): string {
     switch (m.type) {
       case 'models': {
         msel.textContent = '';
+        let og = null;
         for (const it of m.items || []) {
+          const g = String(it.group || '');
+          if (!og || og.dataset.g !== g) {
+            og = document.createElement('optgroup');
+            og.label = g;
+            og.dataset.g = g;
+            msel.appendChild(og);
+          }
           const o = document.createElement('option');
           o.value = String(it.value);
           o.textContent = String(it.label);
-          msel.appendChild(o);
+          og.appendChild(o);
         }
         break;
       }

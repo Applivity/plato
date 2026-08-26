@@ -251,6 +251,18 @@ Palette commands remain for power users; the panel is the primary
 surface. Amends D26(b): palette-first → panel-first. The teams config
 UI (M4) will reuse this component.
 
+**D29 — Provider/chat UI polish (founder directives 2026-08-25).**
+(a) Add-provider flow is fully automated: pick preset → Add → auto-prompt
+for API key → auto-fetch models. The manual comma-separated model field
+is removed; /models discovery (D28) is the only model source, populating
+a dropdown (manual entry remains only as fallback code, not UI).
+(b) The chat model dropdown groups by provider (optgroup per connection),
+labels show bare model ids, values keep `<conn>:<model>` refs. The mode
+button handler is scoped to `[data-m]` so gear/new can't hijack it.
+(c) Chat header becomes two clean rows — row 1: brand + model select +
+gear; row 2: mode pills + new-chat + status chip — to end the
+one-line-crowd (mode/model/settings/"done") complaint.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
