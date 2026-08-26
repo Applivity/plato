@@ -245,6 +245,8 @@ class ChatHost {
               type: 'notice',
               text: `Model set to ${m.value}`,
             });
+            // Capability may have changed with the model (D28 phase 2).
+            this.postModelState();
           } else {
             this.send('error', `Unknown connection in "${m.value}"`);
           }
@@ -371,10 +373,7 @@ class ChatHost {
           );
           // Silent save (D29): refresh only the chat dropdown payload —
           // a full settings re-render would close the open details list.
-          void this.panel.webview.postMessage({
-            type: 'models',
-            items: this.modelItems(),
-          });
+          this.postModelState();
           return;
         }
         if (m.type === 'settings-fetch' && typeof m.connId === 'string') {
@@ -432,10 +431,7 @@ class ChatHost {
               ? { ...e, html: renderMarkdown(e.text) }
               : e,
           );
-          void panel.webview.postMessage({
-            type: 'models',
-            items: this.modelItems(),
-          });
+          this.postModelState();
           void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
@@ -487,9 +483,24 @@ class ChatHost {
       })),
       ...(flash ? { flash } : {}),
     });
+    this.postModelState();
+  }
+
+  /** True when the effective model supports reasoning (D28 phase 2). */
+  private reasoningCapable(): boolean {
+    const parts = splitModelRef(this.effectiveModel());
+    return parts ? modelSupportsReasoning(parts.model) : false;
+  }
+
+  /** Posts grouped dropdown + reasoning state in one payload. */
+  private postModelState(): void {
     void this.panel.webview.postMessage({
       type: 'models',
       items: this.modelItems(),
+      reasoningCapable: this.reasoningCapable(),
+      reasoning: vscode.workspace
+        .getConfiguration('plato')
+        .get<string>('reasoning', 'off'),
     });
   }
 

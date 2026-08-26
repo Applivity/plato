@@ -49,6 +49,12 @@ export function chatHtml(): string {
   #msel optgroup option { color:var(--vscode-dropdown-foreground); }
   #gear { margin-left:auto; font-size:16px; line-height:1;
           padding:3px 10px; border-radius:6px; }
+  #rsel { font-family:var(--vscode-font-family); font-size:11px;
+          padding:2px 5px; border-radius:6px;
+          border:1px solid var(--pl-border);
+          background:var(--vscode-dropdown-background);
+          color:var(--vscode-dropdown-foreground); outline:none; }
+  #rsel[hidden] { display:none; }
   #new { border:1px solid var(--pl-border); border-radius:10px;
          padding:2px 9px; font-size:12px; cursor:pointer;
          background:transparent; color:var(--pl-muted); }
@@ -212,6 +218,7 @@ export function chatHtml(): string {
   <div class="hrow htop">
     <span class="brand">Plato</span>
     <select id="msel" title="Model for this conversation"></select>
+    <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
     <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
   </div>
   <div class="hrow hmodes">
@@ -521,8 +528,24 @@ export function chatHtml(): string {
   }
   // Model select + observer controls (D25f/D26d).
   const msel = document.getElementById('msel');
+  const rsel = document.getElementById('rsel');
+  rsel.appendChild((() => {
+    const s = document.createElement('option');
+    s.value = 'off';
+    s.textContent = 'reasoning: off';
+    return s;
+  })());
+  for (const v of ['low', 'medium', 'high']) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = 'reasoning: ' + v;
+    rsel.appendChild(o);
+  }
   msel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'model', value: msel.value });
+  });
+  rsel.addEventListener('change', () => {
+    vsapi.postMessage({ type: 'set-reasoning', value: rsel.value });
   });
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
@@ -592,6 +615,11 @@ export function chatHtml(): string {
           o.value = String(it.value);
           o.textContent = String(it.label);
           og.appendChild(o);
+        }
+        // Reasoning control (D28 phase 2): visible only for capable models.
+        rsel.hidden = !m.reasoningCapable;
+        if (typeof m.reasoning === 'string') {
+          rsel.value = m.reasoning;
         }
         break;
       }
