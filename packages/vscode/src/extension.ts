@@ -205,6 +205,15 @@ type PendingResolve = (v: boolean) => void;
 
 const LOG_KEY = 'plato.chatLog';
 const LOG_MAX = 400;
+const SESSIONS_KEY = 'plato.chatSessions';
+const SESSIONS_MAX = 30;
+
+interface StoredChat {
+  id: string;
+  title: string;
+  ts: string;
+  log: Entry[];
+}
 
 /**
  * Persisted chat entries. The log lives in workspaceState (survives
@@ -307,11 +316,37 @@ class ChatHost {
           void this.panel.webview.postMessage({
             type: 'history',
             runs: this.listRuns(),
+            chats: this.sessions().map((s) => ({
+              id: s.id,
+              title: s.title,
+              ts: s.ts,
+              count: s.log.filter((e) => e.k === 'msg').length,
+            })),
           });
           return;
         }
         if (m.type === 'openRun' && typeof m.file === 'string') {
           this.openRun(m.file);
+          return;
+        }
+        if (m.type === 'resumeChat' && typeof m.id === 'string') {
+          const s = this.sessions().find((x) => x.id === m.id);
+          if (s) {
+            this.log.length = 0;
+            this.log.push(...s.log.slice(-LOG_MAX));
+            void this.ctx.workspaceState.update(LOG_KEY, this.log);
+            const decorated = this.log.map((e) =>
+              e.k === 'msg' && e.cls === 'bot'
+                ? { ...e, html: renderMarkdown(e.text) }
+                : e,
+            );
+            void this.panel.webview.postMessage({
+              type: 'restore',
+              log: decorated,
+              model: this.effectiveModel(),
+            });
+            this.postModelState();
+          }
           return;
         }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
@@ -584,6 +619,44 @@ class ChatHost {
     }
   }
 
+  private sessions(): StoredChat[] {
+    return this.ctx.workspaceState.get<StoredChat[]>(SESSIONS_KEY, []);
+  }
+
+  /** Archives the current conversation (called before New Chat clears). */
+  private async archiveCurrentChat(): Promise<void> {
+    const msgs = this.log.filter((e) => e.k === 'msg');
+    if (msgs.length === 0) {
+      return;
+    }
+    const first = msgs.find((e) => e.k === 'msg' && e.cls === 'you');
+    const sessions = this.sessions();
+    sessions.unshift({
+      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      title: ((first && first.k === 'msg' ? first.text : '') || 'Chat')
+        .slice(0, 80),
+      ts: new Date().toISOString(),
+      log: [...this.log],
+    });
+    await this.ctx.workspaceState.update(
+      SESSIONS_KEY,
+      sessions.slice(0, SESSIONS_MAX),
+    );
+  }
+
+  /** Prior conversation for LLM context (text pairs, capped). */
+  private historyFor(): { role: 'user' | 'assistant'; text: string }[] {
+    return this.log
+      .slice(0, -1) // exclude the entry for the task being sent now
+      .filter((e): e is Extract<Entry, { k: 'msg' }> =>
+        e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'))
+      .slice(-12)
+      .map((e) => ({
+        role: e.cls === 'you' ? ('user' as const) : ('assistant' as const),
+        text: e.text,
+      }));
+  }
+
   // ---- Transcript replay (M3) -------------------------------------------
 
   private runsDir(): string | null {
@@ -707,6 +780,7 @@ class ChatHost {
     if (pick !== 'New Chat') {
       return;
     }
+    await this.archiveCurrentChat();
     this.log.length = 0;
     await this.ctx.workspaceState.update(LOG_KEY, this.log);
     this.sessionWrites.clear();
@@ -826,6 +900,7 @@ class ChatHost {
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
+        history: this.historyFor(),
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;

@@ -114,6 +114,12 @@ export interface LoopOptions {
   model: string;
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
+  /**
+   * Prior conversation as plain text pairs (oldest first) so resumed
+   * chats keep context. Same-role neighbors are merged; leading
+   * assistant messages are dropped to satisfy role alternation.
+   */
+  history?: { role: 'user' | 'assistant'; text: string }[];
 }
 
 export interface LoopResult {
@@ -155,9 +161,27 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   }
 
   const client = opts.provider;
-  const messages: CanonicalMessage[] = [
-    { role: 'user', content: [{ type: 'text', text: opts.task }] },
-  ];
+  const messages: CanonicalMessage[] = [];
+  let prevRole: 'user' | 'assistant' | null = null;
+  for (const h of opts.history ?? []) {
+    if (prevRole === null && h.role === 'assistant') {
+      continue; // must open with a user turn
+    }
+    const last = messages[messages.length - 1];
+    if (h.role === prevRole && last && last.content[0]?.type === 'text') {
+      last.content[0].text += '\n\n' + h.text;
+      continue;
+    }
+    messages.push({
+      role: h.role,
+      content: [{ type: 'text', text: h.text }],
+    });
+    prevRole = h.role;
+  }
+  messages.push({
+    role: 'user',
+    content: [{ type: 'text', text: opts.task }],
+  });
   let finalText = '';
   let inputTokens = 0;
   let outputTokens = 0;

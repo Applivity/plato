@@ -47,13 +47,15 @@ export function chatHtml(): string {
           color:var(--vscode-dropdown-foreground); outline:none; }
   #msel optgroup { font-style:normal; color:var(--pl-muted); }
   #msel optgroup option { color:var(--vscode-dropdown-foreground); }
-  #gear { margin-left:auto; font-size:16px; line-height:1;
-          padding:3px 10px; border-radius:6px; }
-  #hist { font-size:14px; padding:3px 9px; border:1px solid transparent;
-          border-radius:6px; background:transparent; cursor:pointer;
-          color:var(--pl-muted); }
-  #hist:hover { border-color:var(--pl-border);
-                color:var(--vscode-editor-foreground); }
+  #gear { margin-left:auto; }
+  .icn { width:14px; height:14px; fill:none; stroke:currentColor;
+         stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+         vertical-align:-2px; }
+  #hist, #gear { font-size:12px; padding:4px 9px; border:1px solid transparent;
+                 border-radius:6px; background:transparent; cursor:pointer;
+                 color:var(--pl-muted); }
+  #hist:hover, #gear:hover { border-color:var(--pl-border);
+                             color:var(--vscode-editor-foreground); }
   #rsel { font-family:var(--vscode-font-family); font-size:11px;
           padding:2px 5px; border-radius:6px;
           border:1px solid var(--pl-border);
@@ -236,8 +238,12 @@ export function chatHtml(): string {
     <span class="brand">Plato</span>
     <select id="msel" title="Model for this conversation"></select>
     <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
-    <button id="hist" title="Past runs — transcript replay">🕘</button>
-    <button id="gear" title="Settings — connections, keys, defaults">⚙</button>
+    <button id="hist" title="History">
+      <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
+    <button id="gear" title="Settings">
+      <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
   </div>
   <div class="hrow hmodes">
     <span class="label">Mode</span>
@@ -271,7 +277,7 @@ export function chatHtml(): string {
 <div id="historyPage">
   <header class="shead">
     <button id="hback">‹ Back</button>
-    <span class="label" id="htitle">Past runs</span>
+    <span class="label" id="htitle">History</span>
   </header>
   <div id="hibody"></div>
 </div>
@@ -335,12 +341,13 @@ export function chatHtml(): string {
   const hbody = document.getElementById('hibody');
   const htitle = document.getElementById('htitle');
   let hRuns = [];
+  let hChats = [];
   document.getElementById('hist').addEventListener('click', () => {
     vsapi.postMessage({ type: 'openHistory' });
   });
   document.getElementById('hback').addEventListener('click', () => {
-    if (htitle.textContent !== 'Past runs' && hRuns.length >= 0) {
-      showHistory(hRuns); // detail -> list
+    if (htitle.textContent === 'Run detail') {
+      showHistory({ runs: hRuns, chats: hChats }); // detail -> list
       return;
     }
     document.body.classList.remove('show-history');
@@ -350,38 +357,60 @@ export function chatHtml(): string {
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   }
 
-  function showHistory(runs) {
-    hRuns = runs || [];
+  function showHistory(m) {
+    hRuns = m.runs || [];
+    hChats = m.chats || [];
+    const chats = m.chats || [];
     document.body.classList.remove('show-settings');
     document.body.classList.add('show-history');
-    htitle.textContent = 'Past runs';
+    htitle.textContent = 'History';
     hbody.textContent = '';
+    if (chats.length > 0) {
+      const sec = el('div', 'sec');
+      sec.appendChild(el('h4', null, 'Chats (resume)'));
+      for (const c of chats) {
+        const item = el('div', 'runitem');
+        item.appendChild(el('div', 'rt', String(c.title || 'Chat')));
+        item.appendChild(el('div', 'rm',
+          String(c.ts || '').replace('T', ' ').slice(0, 19)
+          + ' \u00b7 ' + c.count + ' messages \u00b7 click to resume'));
+        item.addEventListener('click', () => {
+          vsapi.postMessage({ type: 'resumeChat', id: c.id });
+        });
+        sec.appendChild(item);
+      }
+      hbody.appendChild(sec);
+    }
+    const sec2 = el('div', 'sec');
+    sec2.appendChild(el('h4', null, 'Runs'));
     if (hRuns.length === 0) {
-      hbody.appendChild(el(
+      sec2.appendChild(el(
         'div',
         'note',
         'No runs recorded yet. Every Plato run is transcribed to .plato/runs/ automatically.',
       ));
-      return;
+    } else {
+      for (const r of hRuns) {
+        const item = el('div', 'runitem');
+        item.appendChild(el('div', 'rt', String(r.task || '(no task)')));
+        const meta = [
+          String(r.startedAt || '').replace('T', ' ').slice(0, 19),
+          r.reason === 'failed' ? 'failed' : '',
+          r.turns != null ? r.turns + ' turns' : '',
+          r.inputTokens != null
+            ? kfmt(Number(r.inputTokens) + Number(r.outputTokens || 0)) + ' tok'
+            : '',
+          r.costUsd > 0 ? '\u2248$' + Number(r.costUsd).toFixed(4) : '',
+        ].filter(Boolean).join(' \u00b7 ');
+        item.appendChild(el('div', 'rm', meta));
+        item.addEventListener('click', () => {
+          vsapi.postMessage({ type: 'openRun', file: r.file });
+        });
+        sec2.appendChild(item);
+      }
     }
-    for (const r of hRuns) {
-      const item = el('div', 'runitem');
-      item.appendChild(el('div', 'rt', String(r.task || '(no task)')));
-      const meta = [
-        String(r.startedAt || '').replace('T', ' ').slice(0, 19),
-        r.reason === 'failed' ? 'failed' : '',
-        r.turns != null ? r.turns + ' turns' : '',
-        r.inputTokens != null
-          ? kfmt(Number(r.inputTokens) + Number(r.outputTokens || 0)) + ' tok'
-          : '',
-        r.costUsd > 0 ? '\u2248$' + Number(r.costUsd).toFixed(4) : '',
-      ].filter(Boolean).join(' \u00b7 ');
-      item.appendChild(el('div', 'rm', meta));
-      item.addEventListener('click', () => {
-        vsapi.postMessage({ type: 'openRun', file: r.file });
-      });
-      hbody.appendChild(item);
-    }
+    hbody.appendChild(sec2);
+    scroll();
   }
 
   function showRun(m) {
@@ -771,6 +800,7 @@ export function chatHtml(): string {
       case 'history': showHistory(m.runs); break;
       case 'run': showRun(m); break;
       case 'restore':
+        document.body.classList.remove('show-settings', 'show-history');
         render(m.log);
         if (
           typeof m.model === 'string' &&
