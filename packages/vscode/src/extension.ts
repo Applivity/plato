@@ -15,6 +15,8 @@ import {
   PROVIDER_PRESETS,
   fetchModelIds,
   renderMarkdown,
+  McpServer,
+  loadMcpConfig,
 } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
@@ -878,6 +880,37 @@ class ChatHost {
       root,
     });
     writer.attach(bus);
+    // MCP servers (D06): start from <root>/mcp.yaml; failures degrade
+    // to zero tools for that server, never break the run.
+    const mcpServers: McpServer[] = [];
+    try {
+      const cfg = loadMcpConfig(root);
+      for (const [name, c] of Object.entries(cfg)) {
+        const srv = new McpServer(name, c);
+        try {
+          await srv.start(20_000);
+          mcpServers.push(srv);
+          if (srv.tools.length > 0) {
+            this.send(
+              'notice',
+              `MCP ${name}: ${srv.tools.length} tools available`,
+            );
+          }
+        } catch (e) {
+          this.send(
+            'notice',
+            `MCP ${name} failed to start — ${
+              e instanceof Error ? e.message : 'error'
+            }`,
+          );
+        }
+      }
+    } catch (e) {
+      this.send(
+        'notice',
+        `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
+      );
+    }
     // Fresh inbox per run: a previous run's cancel must not leak forward.
     this.controller = new RunController();
     this.running = true;
@@ -901,6 +934,7 @@ class ChatHost {
           ? { reasoning: this.reasoningFor() }
           : {}),
         history: this.historyFor(),
+        mcpServers,
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;
@@ -955,6 +989,9 @@ class ChatHost {
     } finally {
       this.running = false;
       writer.close();
+      for (const s of mcpServers) {
+        s.stop();
+      }
     }
   }
 

@@ -48,4 +48,15 @@ describe('secretRefusal', () => {
     ).toBeNull();
     expect(secretRefusal('grep', { pattern: 'gradle' })).toBeNull();
   });
+
+  it('unknown non-mcp tools are denied outright', () => {
+    expect(decide('totally_unknown', 'auto')).toBe('deny');
+  });
+
+  it('MCP tools are shell-class: gated/denied per mode (D06)', () => {
+    expect(decide('mcp_fake_echo', 'plan')).toBe('deny');
+    expect(decide('mcp_fake_echo', 'edit')).toBe('deny');
+    expect(decide('mcp_fake_echo', 'act')).toBe('ask');
+    expect(decide('mcp_fake_echo', 'auto')).toBe('allow');
+  });
 });

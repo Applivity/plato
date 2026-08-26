@@ -117,8 +117,12 @@ One combined workstream, per founder decision 2026-08-25:
       model dropdown + plato.model/plato.reasoning/plato.openAiBaseUrl
       settings; cost table re-keyed to composite ids with legacy aliases;
       thinking tokens bill as output by protocol shape. Shipped 0.3.0.
-- [ ] Transcript replay view over `.plato/runs/*.jsonl`.
-- [ ] MCP stdio client (trimmed here from M2, D24e).
+- [x] Transcript replay view over `.plato/runs/*.jsonl` (0.5.7).
+- [x] MCP stdio client (D06, 0.6.0): JSON-RPC over child process per
+      server from <root>/mcp.yaml (zero-dependency subset parser);
+      tools join the surface as mcp_<server>_<tool>; shell-class
+      permission gating (plan/edit deny, act ask, auto allow); dead or
+      hung servers degrade to zero tools, never break the run.
 
 - Team profiles (`.aplivity/teams.yaml`, D11) if the milestone holds;
   otherwise early M4.
@@ -127,6 +131,8 @@ One combined workstream, per founder decision 2026-08-25:
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-25 | (this commit) | M3 | MCP stdio client (D06) — closes M3's last item: JSON-RPC 2.0 over child process (initialize handshake, tools/list, tools/call, 20s startup + 60s call timeouts, clean shutdown); mcp.yaml subset parser (command/args/env, inline + block forms, line-numbered errors) with zero new dependencies; tools join the model surface as mcp_<server>_<tool> with server-prefixed descriptions; permission policy treats MCP as shell-class (plan/edit deny, act ask, auto allow); failed servers degrade to a notice, never break the run. Version 0.6.0 | `tsc -b --force` clean; 73/73 vitest (8 new: config parser cases, real-stdio fake-server handshake/list/call, MCP mode gating); bundle→package→install @0.6.0; mcp markers in installed bundle |
+
 | 2026-08-25 | (this commit) | M3 | Chat resume (founder request; D09 earlier deferral pulled forward) + History polish: archived sessions (workspaceState, capped 30) auto-created on New Chat, listed under a "Chats (resume)" section in History with one-click restore; the loop now seeds prior turns as text history (role-merged, capped 12, leading-assistant dropped) so resumed chats have real LLM context (text-level; run transcripts stay read-only/redacted). Consistent line-style icon set (history + gear replaced emoji with matching SVG), History title, run list newest-first. Version 0.5.8 | `tsc -b --force` clean; 65/65 vitest; inline parse OK; full bundle→install (stale-bundle catch: esbuild must run after tsc before package); no "Past runs" in installed bundle; resume/svgClock/seed markers verified |
 | 2026-08-25 | (this commit) | M3 | Transcript replay (D09 payoff): 🕘 History button opens Past-runs list (task, timestamp, turns, tokens, ≈$, failed flag) from .plato/runs/*.jsonl; clicking opens a read-only run detail — task first, then the event arc with markdown-rendered replies, tool lines, per-turn usage summary, approval decisions, completion/failure line. Corrupt files skipped; file param sanitized (basename + charset + no traversal). Version 0.5.7 | `tsc -b --force` clean; 65/65 vitest; inline-script parse OK; bundle→package→install @0.5.7; histBtn/runView/listFn/sanit markers in installed bundle |
 | 2026-08-25 | (this commit) | M3 | D28 phase 2 — header reasoning control: "reasoning: off/low/medium/high" selector appears in the model row only when the selected model supports reasoning (catalog flag); selection writes plato.reasoning globally and applies from the next run (Anthropic extended-thinking budgets / OpenAI reasoning_effort per existing loop support); visibility re-evaluated on every model switch. Version 0.5.6 | `tsc -b --force` clean; 65/65 vitest; inline-script parse OK; bundle→package→install @0.5.6; rsel/capableRefs/label markers verified in installed bundle |

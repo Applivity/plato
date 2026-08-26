@@ -34,9 +34,16 @@ export type Decision = 'allow' | 'ask' | 'deny';
 /**
  * Decides whether `tool` may run in `mode`. Pure function; the shell owns
  * any approve-once-per-session caching and the actual user prompts.
+ *
+ * MCP tools (`mcp_*`, D06) are unknown-capability external actions:
+ * treated as shell-class — allowed in auto, gated per-action in act,
+ * denied in plan/edit.
  */
-export function decide(tool: ToolName, mode: Mode): Decision {
-  const kind = TOOL_KIND[tool];
+export function decide(tool: string, mode: Mode): Decision {
+  const kind = TOOL_KIND[tool as ToolName] ?? (tool.startsWith('mcp_') ? 'shell' : undefined);
+  if (kind === undefined) {
+    return 'deny';
+  }
   if (mode === 'plan') {
     return kind === 'read' ? 'allow' : 'deny';
   }
@@ -59,7 +66,7 @@ export const MAX_TURNS = 40;
  * secret-bearing files. Applied to every tool call before execution.
  * Returns a short reason when refused.
  */
-export function secretRefusal(tool: ToolName, args: Record<string, unknown>): string | null {
+export function secretRefusal(tool: string, args: Record<string, unknown>): string | null {
   const candidates: string[] = [];
   for (const v of Object.values(args)) {
     if (typeof v === 'string') {

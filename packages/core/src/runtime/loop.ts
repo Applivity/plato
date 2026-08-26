@@ -6,6 +6,7 @@ import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import type { ToolArgs } from '../tools/execute.js';
 import type { DiffBlock } from '../tools/diff.js';
+import type { McpServer } from '../mcp/client.js';
 import type {
   CanonicalContent,
   CanonicalMessage,
@@ -120,6 +121,12 @@ export interface LoopOptions {
    * assistant messages are dropped to satisfy role alternation.
    */
   history?: { role: 'user' | 'assistant'; text: string }[];
+  /**
+   * Started MCP servers (D06). Their tools join the model's tool list
+   * as mcp_<server>_<tool> and route through the mode policy like
+   * shell-class actions.
+   */
+  mcpServers?: McpServer[];
 }
 
 export interface LoopResult {
@@ -191,6 +198,21 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
 
+  // Tool surface: built-ins + MCP (mcp_<server>_<tool>) (D06).
+  const mcpByTool = new Map<string, { srv: McpServer; tool: string }>();
+  const allTools = toolDeclarations();
+  for (const srv of opts.mcpServers ?? []) {
+    for (const t of srv.tools) {
+      const full = srv.fullName(t.name);
+      mcpByTool.set(full, { srv, tool: t.name });
+      allTools.push({
+        name: full,
+        description: `[${srv.serverName}] ${t.description}`,
+        parameters: t.parameters,
+      });
+    }
+  }
+
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
   let turn = 1;
@@ -208,7 +230,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       res = await client.completeTurn({
         model: opts.model,
         system: SYSTEM_PROMPT,
-        tools: toolDeclarations(),
+        tools: allTools,
         messages,
         maxTokens: 4096,
         reasoning: opts.reasoning,
@@ -325,7 +347,30 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       }
       bus.emit({ type: 'tool-event', runId, tool: name, phase: 'allowed', args });
 
-      const outcome = await executeTool(opts.root, name, args);
+      const outcome = await (async () => {
+        const mcp = mcpByTool.get(name);
+        if (mcp) {
+          try {
+            const content = (await mcp.srv.callTool(
+              mcp.tool,
+              args,
+            )) as { text?: string }[];
+            const text = content
+              .map((c) => String(c.text ?? ''))
+              .join('\n')
+              .slice(0, 8000);
+            return { ok: true, output: text || '(no output)' };
+          } catch (e) {
+            return {
+              ok: false,
+              output: `mcp tool failed: ${
+                e instanceof Error ? e.message : 'error'
+              }`,
+            };
+          }
+        }
+        return executeTool(opts.root, name, args);
+      })();
       bus.emit({
         type: 'tool-event',
         runId,
