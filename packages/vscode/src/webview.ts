@@ -67,7 +67,7 @@ export function chatHtml(): string {
          background:transparent; color:var(--pl-muted); }
   #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
-  #pp, #cx { height:34px; padding:0 12px; border:none; border-radius:6px;
+  #pp, #cx { height:44px; padding:0 14px; border:none; border-radius:6px;
              font-size:12px; cursor:pointer; align-self:flex-end;
              background:var(--vscode-button-secondaryBackground,#3a3d41);
              color:var(--vscode-button-secondaryForeground,#ddd); }
@@ -85,8 +85,9 @@ export function chatHtml(): string {
        background:var(--vscode-input-background);
        color:var(--vscode-input-foreground); }
   #q:focus { border-color:var(--pl-accent); }
-  #go { height:44px; padding:0 18px; border:none; border-radius:6px;
-        font-size:13px; cursor:pointer;
+  #go { height:44px; width:44px; padding:0; border:none; border-radius:6px;
+        display:inline-flex; align-items:center; justify-content:center;
+        cursor:pointer;
         background:var(--vscode-button-background);
         color:var(--vscode-button-foreground); }
   #go:hover { background:var(--vscode-button-hoverBackground,
@@ -263,7 +264,9 @@ export function chatHtml(): string {
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
   <button id="cx" title="Stop after the current tool call" hidden>Cancel</button>
-  <button id="go" title="Send">Send</button>
+  <button id="go" title="Send">
+    <svg class="icn" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </button>
 </footer>
 <div id="settingsPage">
   <header class="shead">
@@ -559,11 +562,13 @@ export function chatHtml(): string {
             models: chosen,
           });
           sum.textContent = 'Models (' + chosen.length + ' of ' + pool.length + ')';
+          det.open = false;
         });
         const cancelB = sbtn('Cancel', () => {
           for (const cb of Array.from(box.querySelectorAll('input'))) {
             cb.checked = selected.has(String(cb.value));
           }
+          det.open = false;
         });
         rowBtns.appendChild(okB);
         rowBtns.appendChild(cancelB);
