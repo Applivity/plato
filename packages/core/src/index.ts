@@ -4,6 +4,9 @@ export * from './tools/diff.js';
 export * from './tools/schemas.js';
 export * from './providers/types.js';
 export * from './providers/registry.js';
+export * from './providers/presets.js';
+export * from './providers/discover.js';
+
 export * from './runtime/solo.js';
 export * from './runtime/modes.js';
 export * from './runtime/loop.js';

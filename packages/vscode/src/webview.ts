@@ -297,6 +297,15 @@ export function chatHtml(): string {
     document.body.classList.add('show-settings');
     const body = document.getElementById('sbody');
     body.textContent = '';
+    if (d.flash) {
+      const f = el('div', 'note');
+      f.style.padding = '6px 10px';
+      f.style.marginBottom = '10px';
+      f.style.border = '1px solid var(--pl-border)';
+      f.style.borderRadius = '5px';
+      f.textContent = String(d.flash);
+      body.appendChild(f);
+    }
 
     // Connections
     const sec1 = el('div', 'sec');
@@ -320,6 +329,11 @@ export function chatHtml(): string {
       btns.appendChild(sbtn('Set key', () => {
         vsapi.postMessage({ type: 'settings-key', connId: c.id });
       }));
+      const fb = sbtn('\u21BB Fetch models', () => {
+        vsapi.postMessage({ type: 'settings-fetch', connId: c.id });
+      });
+      fb.disabled = Boolean(c.keyStatus !== 'set');
+      btns.appendChild(fb);
       if (c.keyStatus === 'set') {
         btns.appendChild(sbtn('Clear key', () => {
           vsapi.postMessage({ type: 'settings-clear', connId: c.id });
@@ -341,6 +355,16 @@ export function chatHtml(): string {
     add.id = 'addForm';
     // A submit would reload the webview and wipe the page (0.4.2 bug).
     add.addEventListener('submit', (e) => { e.preventDefault(); });
+    const pfrow = el('div', 'frow');
+    const ppick = sel([
+      { value: '', label: '\u2500 Start from a provider preset \u2500' },
+      ...(d.presets || []).map((p) => ({
+        value: p.value,
+        label: p.label,
+      })),
+    ]);
+    pfrow.appendChild(ppick);
+    add.appendChild(pfrow);
     const frow1 = el('div', 'frow');
     const fid = el('input'); fid.placeholder = 'id (e.g. litellm)';
     frow1.appendChild(fid);
@@ -356,6 +380,14 @@ export function chatHtml(): string {
     const fmodels = el('input');
     fmodels.placeholder = 'Models, comma-separated (e.g. deepseek-chat, gpt-4o)';
     add.appendChild(fmodels);
+    ppick.addEventListener('change', () => {
+      const pre = (d.presets || []).find((p) => p.value === ppick.value);
+      if (pre) {
+        fid.value = String(pre.value);
+        fkind.value = String(pre.kind);
+        fbase.value = String(pre.baseUrl);
+      }
+    });
     add.appendChild(sbtn('Add connection', () => {
       const id = fid.value.trim();
       if (!id) { return; }

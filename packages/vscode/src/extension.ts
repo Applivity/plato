@@ -12,6 +12,8 @@ import {
   splitModelRef,
   modelSupportsReasoning,
   MODEL_CATALOG,
+  PROVIDER_PRESETS,
+  fetchModelIds,
   renderMarkdown,
 } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
@@ -316,6 +318,10 @@ class ChatHost {
           void this.sendSettings();
           return;
         }
+        if (m.type === 'settings-fetch' && typeof m.connId === 'string') {
+          void this.fetchAndStoreModels(m.connId);
+          return;
+        }
         if (m.type === 'settings-clear' && typeof m.connId === 'string') {
           await this.ctx.secrets.delete(
             `plato.providers.${m.connId}.apiKey`,
@@ -388,7 +394,7 @@ class ChatHost {
   // ---- Settings surface (D27) -------------------------------------------
 
   /** Builds and posts the settings snapshot; secrets never leave the host. */
-  private async sendSettings(): Promise<void> {
+  private async sendSettings(flash?: string): Promise<void> {
     const userRaw = new Set(rawUserConnections().map((u) => u.id));
     const connections = [];
     for (const c of readConnections()) {
@@ -414,6 +420,13 @@ class ChatHost {
       reasoning: vscode.workspace
         .getConfiguration('plato')
         .get<string>('reasoning', 'off'),
+      presets: PROVIDER_PRESETS.map((p) => ({
+        value: p.id,
+        label: p.label,
+        kind: p.kind,
+        baseUrl: p.baseUrl,
+      })),
+      ...(flash ? { flash } : {}),
     });
     void this.panel.webview.postMessage({
       type: 'models',
@@ -437,7 +450,58 @@ class ChatHost {
       user,
       vscode.ConfigurationTarget.Global,
     );
-    void this.sendSettings();
+    void this.sendSettings(
+      'Connection added — now \u201CSet key\u201D, then \u21BB Fetch models.',
+    );
+  }
+
+  /** Live model discovery (D28): GET /models, store ids on the profile. */
+  private async fetchAndStoreModels(connId: string): Promise<void> {
+    const conn = readConnections().find((c) => c.id === connId);
+    if (!conn) {
+      this.send('error', `Unknown connection "${connId}".`);
+      return;
+    }
+    let apiKey = await this.ctx.secrets.get(
+      `plato.providers.${conn.id}.apiKey`,
+    );
+    if (!apiKey && conn.id === 'anthropic') {
+      apiKey = await this.ctx.secrets.get(LEGACY_KEY);
+    }
+    if (!apiKey) {
+      void this.sendSettings(
+        'Set the API key first (\u25CB missing), then Fetch models.',
+      );
+      return;
+    }
+    try {
+      const models = await fetchModelIds({
+        kind: conn.kind,
+        apiKey,
+        baseUrl:
+          conn.kind === 'openai'
+            ? conn.baseUrl ?? 'https://api.openai.com/v1'
+            : conn.baseUrl ?? undefined,
+      });
+      const user = rawUserConnections();
+      let entry = user.find((u) => u.id === connId);
+      if (!entry) {
+        entry = { id: connId, kind: conn.kind };
+        user.push(entry);
+      }
+      entry.models = models;
+      await vscode.workspace.getConfiguration('plato').update(
+        'connections',
+        user,
+        vscode.ConfigurationTarget.Global,
+      );
+      void this.sendSettings(`Found ${models.length} models for ${connId}.`);
+    } catch (e) {
+      void this.sendSettings(
+        'Fetch failed \u2014 ' +
+          (e instanceof Error ? e.message : 'unknown error'),
+      );
+    }
   }
 
   private async promptForKey(connId: string): Promise<void> {
