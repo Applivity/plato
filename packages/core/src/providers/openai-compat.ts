@@ -18,6 +18,7 @@ type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 interface ChatCompletionsResponse {
   choices?: {
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
       tool_calls?: {
@@ -151,6 +152,14 @@ export class OpenAICompatProvider implements ChatProvider {
         inputTokens: json.usage?.prompt_tokens ?? 0,
         outputTokens: json.usage?.completion_tokens ?? 0,
       },
+      stopReason:
+        json.choices?.[0]?.finish_reason === 'length'
+          ? 'max_tokens'
+          : json.choices?.[0]?.finish_reason === 'tool_calls'
+            ? 'tool_use'
+            : json.choices?.[0]?.finish_reason === 'stop'
+              ? 'stop'
+              : 'other',
     };
   }
 }

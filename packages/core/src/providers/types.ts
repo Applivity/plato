@@ -40,6 +40,11 @@ export interface TurnUsage {
 export interface TurnResponse {
   content: CanonicalContent[];
   usage: TurnUsage;
+  /**
+   * Why the turn ended. 'max_tokens' means the output was truncated by the
+   * token cap — callers must not treat such a turn as a complete answer.
+   */
+  stopReason?: 'stop' | 'max_tokens' | 'tool_use' | 'other';
 }
 
 export interface TurnRequest {

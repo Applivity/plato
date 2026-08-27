@@ -88,6 +88,14 @@ export class AnthropicNativeProvider implements ChatProvider {
         inputTokens: res.usage?.input_tokens ?? 0,
         outputTokens: res.usage?.output_tokens ?? 0,
       },
+      stopReason:
+        res.stop_reason === 'max_tokens'
+          ? 'max_tokens'
+          : res.stop_reason === 'tool_use'
+            ? 'tool_use'
+            : res.stop_reason === 'end_turn'
+              ? 'stop'
+              : 'other',
     };
   }
 }

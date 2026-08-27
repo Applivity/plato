@@ -194,7 +194,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let outputTokens = 0;
   let costUsd = 0;
   let reason: LoopResult['reason'] = 'complete';
-  let capNote = false;
+  let capNote: string | null = null;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
 
@@ -232,7 +232,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         system: SYSTEM_PROMPT,
         tools: allTools,
         messages,
-        maxTokens: 4096,
+        maxTokens: 16384,
         reasoning: opts.reasoning,
       });
     } catch (e) {
@@ -276,8 +276,17 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     }
 
     if (toolUses.length === 0 || turn === MAX_TURNS) {
-      reason = toolUses.length > 0 ? 'cap' : 'complete';
-      capNote = reason === 'cap';
+      // A turn truncated by the token cap is NOT a completed answer: the
+      // model may have produced no text at all (thinking ate the budget).
+      // Surface it as a cap, never as a silent 'complete'.
+      const truncated = toolUses.length === 0 && res.stopReason === 'max_tokens';
+      reason = truncated || toolUses.length > 0 ? 'cap' : 'complete';
+      capNote =
+        reason === 'cap'
+          ? truncated
+            ? '[plato] output hit the token cap; the answer may be incomplete.'
+            : '[plato] turn cap reached; stopping.'
+          : null;
       break;
     }
 
@@ -401,8 +410,8 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   }
 
   if (capNote) {
-    finalText += '\n[plato] turn cap reached; stopping.';
-    bus.emit({ type: 'text', runId, text: '\n[plato] turn cap reached; stopping.' });
+    finalText += '\n' + capNote;
+    bus.emit({ type: 'text', runId, text: '\n' + capNote });
   }
   bus.emit({
     type: 'run-completed',
