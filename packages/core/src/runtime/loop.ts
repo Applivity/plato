@@ -19,6 +19,7 @@ import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
 import { AgentBus, RunController } from './bus.js';
 import { estimateCost } from './cost.js';
+import { maxOutputFor, splitModelRef } from '../providers/registry.js';
 
 const SYSTEM_PROMPT =
   'You are Plato, an AI coding agent working inside the user workspace. ' +
@@ -213,6 +214,11 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     }
   }
 
+  // Generous default, clamped to the model's hard provider cap: asking
+  // above it is a 400 error (e.g. Haiku 3.5 tops out at 8192).
+  const bareModel = splitModelRef(opts.model)?.model ?? opts.model;
+  const maxTokens = Math.min(16384, maxOutputFor(bareModel));
+
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
   let turn = 1;
@@ -232,7 +238,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
         system: SYSTEM_PROMPT,
         tools: allTools,
         messages,
-        maxTokens: 16384,
+        maxTokens,
         reasoning: opts.reasoning,
       });
     } catch (e) {

@@ -290,6 +290,10 @@ class ChatHost {
         }
         if (m.type === 'approve-all' && typeof m.tool === 'string') {
           this.sessionApprovals.add(m.tool);
+          // The waiting card must resolve too — the loop is blocked on it.
+          const resolve = this.pendingApproval;
+          this.pendingApproval = null;
+          resolve?.(true);
           this.send('notice', `${m.tool} approved for this session`);
           return;
         }

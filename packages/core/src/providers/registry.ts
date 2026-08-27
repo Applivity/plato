@@ -17,15 +17,17 @@ export interface ModelEntry {
   /** USD per million tokens [input, output]. */
   pricePerMTok: [number, number];
   reasoning: boolean;
+  /** Hard provider cap on output tokens; requesting above it is a 400. */
+  maxOutput: number;
 }
 
 export const MODEL_CATALOG: ModelEntry[] = [
-  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true },
-  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true },
-  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false },
-  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false },
-  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false },
-  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true },
+  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true, maxOutput: 64000 },
+  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true, maxOutput: 32768 },
+  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false, maxOutput: 8192 },
+  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384 },
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384 },
+  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000 },
 ];
 
 export function splitModelRef(ref: string): {
@@ -60,6 +62,16 @@ export function findModel(bareName: string): ModelEntry | undefined {
 /** Reasoning params are only ever attached for catalog-flagged models. */
 export function modelSupportsReasoning(bareName: string): boolean {
   return findModel(bareName)?.reasoning ?? false;
+}
+
+/**
+ * Hard output cap for a model. Unknown models (discovered via /models,
+ * OpenRouter routes) get a conservative 8192 — most providers accept it,
+ * and a too-high request is a hard 400 while a too-low one merely
+ * truncates, which the loop now surfaces via stopReason.
+ */
+export function maxOutputFor(bareName: string): number {
+  return findModel(bareName)?.maxOutput ?? 8192;
 }
 
 export function createProvider(

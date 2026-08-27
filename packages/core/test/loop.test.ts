@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { runAgentLoop } from '../src/runtime/loop.js';
 import type { ChatProvider, TurnRequest, TurnResponse } from '../src/providers/types.js';
 
-function provider(turns: TurnResponse[]): ChatProvider {
+function provider(turns: TurnResponse[]): ChatProvider & { seenMaxTokens: number[] } {
   let i = 0;
+  const seenMaxTokens: number[] = [];
   return {
     id: 'anthropic',
-    async completeTurn(_req: TurnRequest): Promise<TurnResponse> {
+    seenMaxTokens,
+    async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+      seenMaxTokens.push(req.maxTokens);
       if (i >= turns.length) {
         throw new Error('unexpected extra turn');
       }
@@ -71,5 +74,29 @@ describe('runAgentLoop truncation handling', () => {
     });
     expect(r.reason).toBe('complete');
     expect(r.finalText).toBe('all done');
+  });
+
+  it('clamps maxTokens to the model hard cap (haiku 8192), never above', async () => {
+    const p = provider([
+      { content: [{ type: 'text', text: 'ok' }], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'stop' },
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      model: 'anthropic:claude-3-5-haiku-latest',
+      provider: p,
+    });
+    expect(p.seenMaxTokens[0]).toBe(8192);
+  });
+
+  it('allows the full default for models with a higher cap (sonnet)', async () => {
+    const p = provider([
+      { content: [{ type: 'text', text: 'ok' }], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'stop' },
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      model: 'anthropic:claude-sonnet-4-5',
+      provider: p,
+    });
+    expect(p.seenMaxTokens[0]).toBe(16384);
   });
 });
