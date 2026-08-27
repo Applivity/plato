@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",

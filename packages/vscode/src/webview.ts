@@ -853,6 +853,7 @@ export function chatHtml(): string {
     const m = e.data;
     switch (m.type) {
       case 'models': {
+        const current = msel.value;
         msel.textContent = '';
         let og = null;
         for (const it of m.items || []) {
@@ -872,6 +873,20 @@ export function chatHtml(): string {
         rsel.hidden = !m.reasoningCapable;
         if (typeof m.reasoning === 'string') {
           rsel.value = m.reasoning;
+        }
+        // Preserve selection across rebuilds; if it's not in the new list
+        // (e.g., a manually-typed model), add it as a hidden option so the
+        // dropdown still displays it.
+        if (current) {
+          const inList = Array.from(msel.options).some((o) => o.value === current);
+          if (!inList) {
+            const o = document.createElement('option');
+            o.value = current;
+            o.textContent = current;
+            o.style.display = 'none';
+            msel.appendChild(o);
+          }
+          msel.value = current;
         }
         break;
       }
