@@ -95,6 +95,11 @@ export function chatHtml(): string {
   #go:disabled { opacity:.5; cursor:default; }
   .msg { margin:0 0 10px; line-height:1.55; white-space:pre-wrap;
          word-break:break-word; }
+  .msg.tool-summary { color:var(--pl-muted); font-size:11px;
+                      font-family:var(--vscode-editor-font-family, monospace);
+                      background:var(--vscode-textCodeBlock-background, rgba(128,128,128,.09));
+                      padding:4px 8px; border-radius:4px;
+                      border-left:2px solid var(--pl-border); }
   .msg .who { display:block; font-size:10px; letter-spacing:.08em;
               text-transform:uppercase; color:var(--pl-muted);
               margin-bottom:2px; }
@@ -849,6 +854,39 @@ export function chatHtml(): string {
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
+  // Buffer tool events and flush as a summary line
+  let toolBuffer: { tool: string; phase: string }[] = [];
+  let toolFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flushToolBuffer() {
+    if (toolBuffer.length === 0) return;
+    
+    // Group by tool name and count
+    const counts = new Map<string, number>();
+    for (const evt of toolBuffer) {
+      counts.set(evt.tool, (counts.get(evt.tool) || 0) + 1);
+    }
+    
+    // Format: "read_file × 10 · shell × 2"
+    const parts = Array.from(counts.entries()).map(
+      ([tool, count]) => tool + ' × ' + count
+    );
+    const summary = parts.join(' · ');
+    
+    const div = document.createElement('div');
+    div.className = 'msg tool-summary';
+    div.textContent = summary;
+    log.appendChild(div);
+    scroll();
+    
+    toolBuffer = [];
+  }
+
+  function scheduleToolFlush() {
+    if (toolFlushTimer) clearTimeout(toolFlushTimer);
+    toolFlushTimer = setTimeout(flushToolBuffer, 500);
+  }
+
   window.addEventListener('message', (e) => {
     const m = e.data;
     switch (m.type) {
@@ -903,20 +941,22 @@ export function chatHtml(): string {
           msel.value = String(m.model);
         }
         break;
-      case 'md': streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
-      case 'notice': addMsg('sys', 'Plato', m.text); break;
+      case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
+      case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
       case 'tool':
-        addMsg('tool', null,
-          '<code>' + esc(m.tool) + '</code> ' + esc(m.phase), true);
+        toolBuffer.push({ tool: m.tool, phase: m.phase });
         lastAct = String(m.tool);
         refreshChip();
+        scheduleToolFlush();
         break;
       case 'approval':
+        flushToolBuffer();
         showCard(m);
         lastAct = 'waiting for you';
         refreshChip();
         break;
       case 'done': {
+        flushToolBuffer();
         finish();
         const i = m.text || {};
         const line = '\u2713 done in ' + (i.secs ?? '?') + 's \u00b7 '
@@ -1022,10 +1062,14 @@ export function chatHtml(): string {
     actions.className = 'actions';
     const yes = document.createElement('button');
     yes.textContent = 'Allow once';
+    const all = document.createElement('button');
+    all.textContent = 'Approve all ' + m.tool + ' for this session';
+    all.className = 'all';
     const no = document.createElement('button');
     no.className = 'no';
     no.textContent = 'Deny';
     yes.addEventListener('click', () => decide(true));
+    all.addEventListener('click', () => decideAll());
     no.addEventListener('click', () => decide(false));
     function decide(v) {
       vsapi.postMessage({ type: 'approve', value: v ? 'yes' : 'no' });
@@ -1033,7 +1077,14 @@ export function chatHtml(): string {
       h.textContent = h.textContent.replace('?', v ? ' — allowed' : ' — denied');
       addMsg('you', 'You', v ? '[allowed]' : '[denied]');
     }
+    function decideAll() {
+      vsapi.postMessage({ type: 'approve-all', tool: m.tool });
+      actions.remove();
+      h.textContent = h.textContent.replace('?', ' — approved for session');
+      addMsg('you', 'You', '[approved all ' + m.tool + ' for this session]');
+    }
     actions.appendChild(yes);
+    actions.appendChild(all);
     actions.appendChild(no);
     card.appendChild(actions);
     log.appendChild(card);

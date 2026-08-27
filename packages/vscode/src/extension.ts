@@ -239,6 +239,7 @@ type Entry =
 class ChatHost {
   private mode: Mode = 'act';
   private readonly sessionWrites = new Set<string>();
+  private readonly sessionApprovals = new Set<string>();
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
   private replyBuffer = '';
@@ -256,6 +257,7 @@ class ChatHost {
         if (m.type === 'mode' && typeof m.value === 'string') {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
+          this.sessionApprovals.clear();
           this.send('notice', `Mode: ${this.mode}`);
           return;
         }
@@ -284,6 +286,11 @@ class ChatHost {
             who: 'You',
             text: ok ? '[allowed]' : '[denied]',
           });
+          return;
+        }
+        if (m.type === 'approve-all' && typeof m.tool === 'string') {
+          this.sessionApprovals.add(m.tool);
+          this.send('notice', `${m.tool} approved for this session`);
           return;
         }
         if (m.type === 'newChat') {
@@ -865,6 +872,7 @@ class ChatHost {
     this.log.length = 0;
     await this.ctx.workspaceState.update(LOG_KEY, this.log);
     this.sessionWrites.clear();
+    this.sessionApprovals.clear();
     this.pendingApproval = null;
     this.replyBuffer = '';
     await this.panel.webview.postMessage({ type: 'restore', log: [] });
@@ -1172,6 +1180,12 @@ class ChatHost {
   }
 
   private promptCard(req: ApprovalRequest): Promise<boolean> {
+    // Check if this tool is already approved for this session
+    if (this.sessionApprovals.has(req.tool)) {
+      this.send('notice', `${req.tool} auto-approved (session approval)`);
+      return Promise.resolve(true);
+    }
+    
     this.push({
       k: 'card-open',
       tool: req.tool,
