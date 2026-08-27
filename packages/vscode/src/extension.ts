@@ -17,7 +17,9 @@ import {
   renderMarkdown,
   McpServer,
   loadMcpConfig,
+  ObserverAgent,
 } from '@applivity/plato-core';
+import type { DigestEntry } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { join } from 'node:path';
@@ -929,7 +931,87 @@ class ChatHost {
         `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
       );
     }
-    // Fresh inbox per run: a previous run's cancel must not leak forward.
+    // Observer-AI v1 (D30): optional second model steering the coder.
+    let observer: ObserverAgent | null = null;
+    if (vscode.workspace.getConfiguration('plato').get('observer.enable', false)) {
+      const oRef =
+        vscode.workspace
+          .getConfiguration('plato')
+          .get<string>('observer.model', '') || ref;
+      const oParts = splitModelRef(oRef);
+      const oConn = oParts
+        ? readConnections().find((c) => c.id === oParts.connectionId)
+        : undefined;
+      const oKey = oConn
+        ? (await this.ctx.secrets.get(`plato.providers.${oConn.id}.apiKey`)) ??
+          (oConn.id === 'anthropic'
+            ? await this.ctx.secrets.get(LEGACY_KEY)
+            : undefined)
+        : undefined;
+      if (oConn && oKey) {
+        observer = new ObserverAgent(
+          createProvider(oConn.kind, {
+            apiKey: oKey,
+            baseUrl: oConn.kind === 'openai' ? oConn.baseUrl : undefined,
+          }),
+          {
+            model: oRef,
+            role: vscode.workspace
+              .getConfiguration('plato')
+              .get('observer.role', ''),
+            guidance: true, // D30b: guidance tier always on
+            pause: vscode.workspace
+              .getConfiguration('plato')
+              .get('observer.pause', false),
+            cancel: vscode.workspace
+              .getConfiguration('plato')
+              .get('observer.cancel', false),
+            maxInterventions: vscode.workspace
+              .getConfiguration('plato')
+              .get('observer.maxInterventions', 5),
+          },
+        );
+        const digest: DigestEntry[] = [];
+        let observing = true;
+        bus.on((e) => {
+          if (e.type === 'tool-event') {
+            digest.push({
+              kind: 'tool',
+              text: `${e.tool} ${e.phase}${e.ok === false ? ' (error)' : ''}`,
+            });
+          } else if (e.type === 'text') {
+            observer?.noteText(e.text);
+          } else if (e.type === 'turn-started' && observing) {
+            if (e.turn > 1 && !observer?.exhausted) {
+              observing = false; // one decision at a time; re-armed below
+              void observer
+                ?.observe(task, digest)
+                .then((a) => {
+                  if (a.action === 'guidance') {
+                    this.controller.sendGuidance(a.message);
+                    this.send('notice', `[observer] guidance: ${a.message}`);
+                  } else if (a.action === 'pause') {
+                    this.controller.pause();
+                    this.send('notice', '[observer] paused the run');
+                  } else if (a.action === 'cancel') {
+                    this.controller.cancel();
+                    this.send('notice', '[observer] cancelled the run');
+                  }
+                })
+                .catch(() => undefined)
+                .finally(() => {
+                  observing = true;
+                });
+            }
+          }
+        });
+      } else {
+        this.send(
+          'notice',
+          'Observer enabled but its model/key is unavailable — continuing without it.',
+        );
+      }
+    }
     this.controller = new RunController();
     this.running = true;
     try {

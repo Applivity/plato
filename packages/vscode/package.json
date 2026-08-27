@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -66,6 +66,36 @@
           "enum": ["off", "low", "medium", "high"],
           "default": "off",
           "description": "Reasoning effort for models that support it (o4-mini, Claude extended thinking). Ignored otherwise."
+        },
+        "plato.observer.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Observer-AI (D30): a second model watches each run and can inject guidance, pause, or cancel."
+        },
+        "plato.observer.model": {
+          "type": "string",
+          "default": "",
+          "description": "Observer model as connection:model (e.g. anthropic:claude-3-5-haiku-latest). Empty = use the coder's model."
+        },
+        "plato.observer.role": {
+          "type": "string",
+          "default": "",
+          "description": "Extra instructions for the observer (appended to its system prompt)."
+        },
+        "plato.observer.pause": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the observer to pause runs at safe points."
+        },
+        "plato.observer.cancel": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow the observer to cancel runs after the in-flight tool."
+        },
+        "plato.observer.maxInterventions": {
+          "type": "number",
+          "default": 5,
+          "description": "Hard cap on observer interventions per run."
         }
       }
     }

@@ -263,6 +263,23 @@ button handler is scoped to `[data-m]` so gear/new can't hijack it.
 gear; row 2: mode pills + new-chat + status chip — to end the
 one-line-crowd (mode/model/settings/"done") complaint.
 
+**D30 — Observer-AI v1 (M4).** A second model ("observer") subscribes to
+the coder's run and steers it, per D10. (a) Trigger: at each turn
+boundary the observer receives a condensed digest of the run so far
+(task, tool events, last text) and must answer with exactly one JSON
+action: `{"action":"noop"|"guidance"|"pause"|"cancel","message"?}`.
+Actions map onto the existing RunController mailbox — no new loop
+machinery. (b) Tiers via `plato.observer.*` settings: `enable`
+(default false), `model` (connection:model ref), `role` (extra system
+text), `guidance` (default true), `pause`/`cancel` (default false),
+`maxInterventions` (default 5). Unsupported actions are ignored.
+(c) Invariant: the observer can NEVER approve tool calls — human
+approvals stay human; it only nudges, pauses, or stops. (d) Audit:
+every observer action renders in chat as `[observer] …` and rides the
+event bus/transcripts like any event. (e) v1 limitations: observer
+costs are not metered separately; digests are text-condensed, not
+full-fidelity. (f) Teams (D11) land after v1 proves out.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
