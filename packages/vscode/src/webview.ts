@@ -854,32 +854,37 @@ export function chatHtml(): string {
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
-  // Buffer tool events and flush as a summary line
+  // Tool calls collapse into one summary line ("read_file × 12 · shell × 2").
+  // Only completed calls (phase 'done') are counted, so the line always
+  // matches the done card's tool-call count. Consecutive flushes update the
+  // same line; any other message ends the chain and the next flush starts a
+  // new line.
   let toolBuffer = [];
   let toolFlushTimer = null;
+  let summaryLine = null;
+  let summaryCounts = new Map();
 
   function flushToolBuffer() {
     if (toolBuffer.length === 0) return;
-    
-    // Group by tool name and count
-    const counts = new Map();
+    const merging = summaryLine !== null && log.lastElementChild === summaryLine;
+    const counts = merging ? summaryCounts : new Map();
     for (const evt of toolBuffer) {
       counts.set(evt.tool, (counts.get(evt.tool) || 0) + 1);
     }
-    
-    // Format: "read_file × 10 · shell × 2"
-    const parts = Array.from(counts.entries()).map(
-      ([tool, count]) => tool + ' × ' + count
-    );
-    const summary = parts.join(' · ');
-    
-    const div = document.createElement('div');
-    div.className = 'msg tool-summary';
-    div.textContent = summary;
-    log.appendChild(div);
-    scroll();
-    
     toolBuffer = [];
+    summaryCounts = counts;
+    const text = Array.from(counts.entries())
+      .map((p) => p[0] + ' \u00d7 ' + p[1])
+      .join(' \u00b7 ');
+    if (merging) {
+      summaryLine.textContent = text;
+    } else {
+      summaryLine = document.createElement('div');
+      summaryLine.className = 'msg tool-summary';
+      summaryLine.textContent = text;
+      log.appendChild(summaryLine);
+    }
+    scroll();
   }
 
   function scheduleToolFlush() {
@@ -944,10 +949,13 @@ export function chatHtml(): string {
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
       case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
       case 'tool':
-        toolBuffer.push({ tool: m.tool, phase: m.phase });
+        // Only completed calls count; pending/denied phases stay in the chip.
+        if (m.phase === 'done') {
+          toolBuffer.push({ tool: m.tool, phase: m.phase });
+          scheduleToolFlush();
+        }
         lastAct = String(m.tool);
         refreshChip();
-        scheduleToolFlush();
         break;
       case 'approval':
         flushToolBuffer();
@@ -970,6 +978,7 @@ export function chatHtml(): string {
         break;
       }
       case 'error':
+        flushToolBuffer();
         finish();
         chipOff();
         runT0 = 0;
@@ -982,12 +991,16 @@ export function chatHtml(): string {
     log.textContent = '';
     stick = true;
     for (const t of entries) { appendEntry(t); }
+    flushToolBuffer();
     chipOff();
     runT0 = 0;
     scroll();
   }
 
   function appendEntry(t) {
+    // Replay uses the same collapsing rule as live runs: consecutive tool
+    // entries merge into one summary line, any other entry ends the chain.
+    if (t.k !== 'tool') { flushToolBuffer(); }
     switch (t.k) {
       case 'msg':
         if (t.cls === 'bot' && t.html) {
@@ -996,8 +1009,9 @@ export function chatHtml(): string {
           addMsg(t.cls || 'bot', t.who, String(t.text));
         }
         break;
-      case 'tool': addMsg('tool', null,
-        '<code>' + esc(t.tool) + '</code> ' + esc(t.phase), true); break;
+      case 'tool':
+        if (t.phase === 'done') { toolBuffer.push({ tool: t.tool, phase: t.phase }); }
+        break;
       case 'card-open': showCard(t, false); break;
       case 'card-done': cardDone(t); break;
     }
