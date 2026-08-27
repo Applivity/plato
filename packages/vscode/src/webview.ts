@@ -711,6 +711,67 @@ export function chatHtml(): string {
     sec2.appendChild(prow2);
     body.appendChild(sec2);
 
+    // Observer (D30 UI): second model steering runs.
+    const obs = d.observer || {};
+    const sec3 = el('div', 'sec');
+    sec3.appendChild(el('h4', null, 'Observer'));
+    const prow3 = el('div', 'prefrow');
+    const enLbl = el('label', 'mopt', 'Enable observer-AI (steers runs; never approves tools)');
+    const en = document.createElement('input');
+    en.type = 'checkbox';
+    en.checked = Boolean(obs.enable);
+    enLbl.insertBefore(en, enLbl.firstChild);
+    prow3.appendChild(enLbl);
+    sec3.appendChild(prow3);
+    const prow4 = el('div', 'prefrow');
+    prow4.appendChild(el('label', null, 'Observer model (empty = coder model)'));
+    const oSel = sel(
+      [{ value: '', label: '(same as coder)' }, ...(d.modelItems || [])],
+      String(obs.model || ''),
+    );
+    prow4.appendChild(oSel);
+    sec3.appendChild(prow4);
+    const prow5 = el('div', 'prefrow');
+    const pLbl = el('label', 'mopt', 'May pause runs');
+    const pTog = document.createElement('input');
+    pTog.type = 'checkbox';
+    pTog.checked = Boolean(obs.pause);
+    pLbl.insertBefore(pTog, pLbl.firstChild);
+    prow5.appendChild(pLbl);
+    const cLbl = el('label', 'mopt', 'May cancel runs');
+    const cTog = document.createElement('input');
+    cTog.type = 'checkbox';
+    cTog.checked = Boolean(obs.cancel);
+    cLbl.insertBefore(cTog, cLbl.firstChild);
+    prow5.appendChild(cLbl);
+    const mCap = el('input');
+    mCap.type = 'number';
+    mCap.min = '1';
+    mCap.max = '50';
+    mCap.value = String(obs.maxInterventions ?? 5);
+    mCap.title = 'Max interventions per run';
+    mCap.style.width = '70px';
+    prow5.appendChild(el('label', null, 'Max interventions/run'));
+    prow5.appendChild(mCap);
+    sec3.appendChild(prow5);
+    const saveObs = sbtn('Save observer settings', () => {
+      vsapi.postMessage({
+        type: 'set-observer',
+        enable: en.checked,
+        model: oSel.value,
+        pause: pTog.checked,
+        cancel: cTog.checked,
+        maxInterventions: Number(mCap.value),
+      });
+    });
+    sec3.appendChild(saveObs);
+    sec3.appendChild(el(
+      'div',
+      'note',
+      'Guidance is always allowed when enabled; pause/cancel need the toggles. Cap limits interventions per run.',
+    ));
+    body.appendChild(sec3);
+
     scroll();
   }
   // Model select + observer controls (D25f/D26d).

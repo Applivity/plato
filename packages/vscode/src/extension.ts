@@ -483,6 +483,48 @@ class ChatHost {
           );
           return;
         }
+        if (m.type === 'set-observer') {
+          const cfg = vscode.workspace.getConfiguration('plato');
+          if (typeof m.enable === 'boolean') {
+            await cfg.update(
+              'observer.enable',
+              m.enable,
+              vscode.ConfigurationTarget.Global,
+            );
+          }
+          if (typeof m.model === 'string') {
+            await cfg.update(
+              'observer.model',
+              m.model,
+              vscode.ConfigurationTarget.Global,
+            );
+          }
+          if (typeof m.pause === 'boolean') {
+            await cfg.update(
+              'observer.pause',
+              m.pause,
+              vscode.ConfigurationTarget.Global,
+            );
+          }
+          if (typeof m.cancel === 'boolean') {
+            await cfg.update(
+              'observer.cancel',
+              m.cancel,
+              vscode.ConfigurationTarget.Global,
+            );
+          }
+          if (typeof m.maxInterventions === 'number') {
+            await cfg.update(
+              'observer.maxInterventions',
+              Math.max(1, Math.round(m.maxInterventions)),
+              vscode.ConfigurationTarget.Global,
+            );
+          }
+          void this.sendSettings(
+            'Observer updated — applies from the next run.',
+          );
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -549,6 +591,23 @@ class ChatHost {
         kind: p.kind,
         baseUrl: p.baseUrl,
       })),
+      observer: {
+        enable: vscode.workspace
+          .getConfiguration('plato')
+          .get('observer.enable', false),
+        model: vscode.workspace
+          .getConfiguration('plato')
+          .get('observer.model', ''),
+        pause: vscode.workspace
+          .getConfiguration('plato')
+          .get('observer.pause', false),
+        cancel: vscode.workspace
+          .getConfiguration('plato')
+          .get('observer.cancel', false),
+        maxInterventions: vscode.workspace
+          .getConfiguration('plato')
+          .get('observer.maxInterventions', 5),
+      },
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
