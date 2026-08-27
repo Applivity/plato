@@ -855,14 +855,14 @@ export function chatHtml(): string {
   }
 
   // Buffer tool events and flush as a summary line
-  let toolBuffer: { tool: string; phase: string }[] = [];
-  let toolFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let toolBuffer = [];
+  let toolFlushTimer = null;
 
   function flushToolBuffer() {
     if (toolBuffer.length === 0) return;
     
     // Group by tool name and count
-    const counts = new Map<string, number>();
+    const counts = new Map();
     for (const evt of toolBuffer) {
       counts.set(evt.tool, (counts.get(evt.tool) || 0) + 1);
     }
