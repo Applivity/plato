@@ -244,6 +244,20 @@ export function chatHtml(): string {
              padding:4px 9px; vertical-align:top; }
   .md-table th { background:var(--vscode-editorWidget-background,
                                rgba(128,128,128,.12)); font-weight:600; }
+  .team-card { margin:.5em 0; padding:7px 10px; border:1px solid var(--pl-border);
+               border-radius:5px; font-size:11.5px; }
+  .team-card .team-name { font-weight:600; margin-bottom:4px; }
+  .team-card .team-member { display:flex; gap:8px; align-items:baseline;
+                            padding:1px 0; }
+  .team-card .tm-name { font-weight:600; min-width:70px; }
+  .team-card .tm-kind { font-size:10px; padding:1px 6px; border-radius:8px;
+                        text-transform:uppercase; letter-spacing:.04em; }
+  .team-card .tm-kind.is-coder { background:rgba(70,130,180,.2); }
+  .team-card .tm-kind.is-observer { background:rgba(140,100,180,.2); }
+  .team-card .tm-model { color:var(--pl-muted); }
+  .team-card .tm-tier { font-size:10px; color:var(--pl-muted);
+                        border:1px solid var(--pl-border); border-radius:8px;
+                        padding:0 5px; }
 </style>
 </head>
 <body>
@@ -954,6 +968,7 @@ export function chatHtml(): string {
         break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
       case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
+      case 'team': flushToolBuffer(); showTeam(m); break;
       case 'tool':
         // Only completed calls count; pending/denied phases stay in the chip.
         if (m.phase === 'done') {
@@ -1037,6 +1052,41 @@ export function chatHtml(): string {
     log.appendChild(div);
     scroll();
     return div;
+  }
+
+  // D31h: read-only team display. The yaml is the source of truth.
+  function showTeam(m) {
+    const card = document.createElement('div');
+    card.className = 'team-card';
+    const h = document.createElement('div');
+    h.className = 'team-name';
+    h.textContent = 'Team ' + (m.name || 'unnamed');
+    card.appendChild(h);
+    for (const mem of m.members || []) {
+      const row = document.createElement('div');
+      row.className = 'team-member';
+      const left = document.createElement('span');
+      left.className = 'tm-name';
+      left.textContent = mem.name;
+      const kind = document.createElement('span');
+      kind.className = 'tm-kind ' + (mem.kind === 'coder' ? 'is-coder' : 'is-observer');
+      kind.textContent = mem.kind;
+      const model = document.createElement('span');
+      model.className = 'tm-model';
+      model.textContent = mem.model;
+      row.appendChild(left);
+      row.appendChild(kind);
+      row.appendChild(model);
+      for (const t of mem.tiers || []) {
+        const tier = document.createElement('span');
+        tier.className = 'tm-tier';
+        tier.textContent = t;
+        row.appendChild(tier);
+      }
+      card.appendChild(row);
+    }
+    log.appendChild(card);
+    scroll();
   }
 
   function streamHtml(html) {

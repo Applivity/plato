@@ -18,8 +18,11 @@ import {
   McpServer,
   loadMcpConfig,
   ObserverAgent,
+  loadTeamConfig,
+  TeamConfigError,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
+import type { TeamMember } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { join } from 'node:path';
@@ -925,8 +928,51 @@ class ChatHost {
   }
 
   private async run(task: string): Promise<void> {
-    // Resolve the composite ref to a connection profile (D26a).
-    const ref = this.effectiveModel();
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      this.send('error', 'Open a folder before asking Plato.');
+      return;
+    }
+    // Teams (D31): teams.yaml at the root, when present, defines the team.
+    // Validation is loud — a broken file aborts the run before it starts.
+    let team: ReturnType<typeof loadTeamConfig> = null;
+    try {
+      team = loadTeamConfig(root);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'error';
+      this.send(
+        'error',
+        e instanceof TeamConfigError
+          ? msg
+          : `teams.yaml could not be read — ${msg}`,
+      );
+      return;
+    }
+    const coderMember: TeamMember | undefined = team?.members.find(
+      (m) => m.kind === 'coder',
+    );
+    if (team) {
+      this.send('notice', `Team "${team.name || 'unnamed'}" active`);
+      this.send('team', {
+        name: team.name,
+        members: team.members.map((m) => ({
+          name: m.name,
+          kind: m.kind,
+          model: m.model,
+          tiers:
+            m.kind === 'observer'
+              ? [
+                  m.guidance ?? true ? 'guidance' : '',
+                  m.pause ?? false ? 'pause' : '',
+                  m.cancel ?? false ? 'cancel' : '',
+                ].filter(Boolean)
+              : [],
+        })),
+      });
+    }
+    // Resolve the composite ref to a connection profile (D26a). The team
+    // coder's model wins over the chat dropdown choice (D31d/e).
+    const ref = coderMember?.model ?? this.effectiveModel();
     const parts = splitModelRef(ref);
     const conn = parts
       ? readConnections().find((c) => c.id === parts.connectionId) ?? null
@@ -934,7 +980,9 @@ class ChatHost {
     if (!conn) {
       this.send(
         'error',
-        `Unknown connection in "${ref}". Configured: ${readConnections()
+        `Unknown connection in "${ref}"${
+          coderMember ? ` (teams.yaml member '${coderMember.name}')` : ''
+        }. Configured: ${readConnections()
           .map((c) => c.id)
           .join(', ')}.`,
       );
@@ -959,11 +1007,6 @@ class ChatHost {
     this.replyBuffer = '';
     const started = Date.now();
     let toolsUsed = 0;
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root) {
-      this.send('error', 'Open a folder before asking Plato.');
-      return;
-    }
     // M2: every run is transcribed under <root>/.plato/runs/ (D24c).
     const bus = new AgentBus();
     const writer = new TranscriptWriter(join(root, '.plato', 'runs'), {
@@ -1002,14 +1045,50 @@ class ChatHost {
         `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
       );
     }
-    // Observer-AI v1 (D30): optional second model steering the coder.
-    let observer: ObserverAgent | null = null;
-    if (vscode.workspace.getConfiguration('plato').get('observer.enable', false)) {
-      const oRef =
-        vscode.workspace
-          .getConfiguration('plato')
-          .get<string>('observer.model', '') || ref;
-      const oParts = splitModelRef(oRef);
+    // Observers (D30 + D31): teams.yaml members when a team is present;
+    // otherwise solo mode falls back to plato.observer.* settings.
+    // The observer invariant carries over: observers NEVER approve tools.
+    const obsSpecs: {
+      name: string;
+      ref: string;
+      role: string;
+      guidance: boolean;
+      pause: boolean;
+      cancel: boolean;
+      maxInterventions: number;
+    }[] = [];
+    if (team) {
+      for (const m of team.members) {
+        if (m.kind === 'observer') {
+          obsSpecs.push({
+            name: m.name,
+            ref: m.model,
+            role: m.role ?? '',
+            guidance: m.guidance ?? true,
+            pause: m.pause ?? false,
+            cancel: m.cancel ?? false,
+            maxInterventions: m.maxInterventions ?? 5,
+          });
+        }
+      }
+    } else if (
+      vscode.workspace.getConfiguration('plato').get('observer.enable', false)
+    ) {
+      const c = vscode.workspace.getConfiguration('plato');
+      obsSpecs.push({
+        name: 'observer',
+        ref: c.get<string>('observer.model', '') || ref,
+        role: c.get('observer.role', ''),
+        guidance: true, // D30b: guidance tier always on
+        pause: c.get('observer.pause', false),
+        cancel: c.get('observer.cancel', false),
+        maxInterventions: c.get('observer.maxInterventions', 5),
+      });
+    }
+    const observers: { agent: ObserverAgent; name: string }[] = [];
+    let interventionsUsed = 0; // hard cap 5 per run across members (D31d)
+    for (const spec of obsSpecs) {
+      const oParts = splitModelRef(spec.ref);
       const oConn = oParts
         ? readConnections().find((c) => c.id === oParts.connectionId)
         : undefined;
@@ -1019,82 +1098,75 @@ class ChatHost {
             ? await this.ctx.secrets.get(LEGACY_KEY)
             : undefined)
         : undefined;
-      if (oConn && oKey) {
-        observer = new ObserverAgent(
-          createProvider(oConn.kind, {
-            apiKey: oKey,
-            baseUrl: oConn.kind === 'openai' ? oConn.baseUrl : undefined,
-          }),
-          {
-            model: oRef,
-            role: vscode.workspace
-              .getConfiguration('plato')
-              .get('observer.role', ''),
-            guidance: true, // D30b: guidance tier always on
-            pause: vscode.workspace
-              .getConfiguration('plato')
-              .get('observer.pause', false),
-            cancel: vscode.workspace
-              .getConfiguration('plato')
-              .get('observer.cancel', false),
-            maxInterventions: vscode.workspace
-              .getConfiguration('plato')
-              .get('observer.maxInterventions', 5),
-          },
-        );
-        const digest: DigestEntry[] = [];
-        let observing = true;
-        let observerErrNotified = false;
-        this.send('notice', `[observer] watching — ${oRef}`);
-        bus.on((e) => {
-          if (e.type === 'tool-event') {
-            digest.push({
-              kind: 'tool',
-              text: `${e.tool} ${e.phase}${e.ok === false ? ' (error)' : ''}`,
-            });
-          } else if (e.type === 'text') {
-            observer?.noteText(e.text);
-          } else if (e.type === 'turn-started' && observing) {
-            if (e.turn > 1 && !observer?.exhausted) {
-              observing = false; // one decision at a time; re-armed below
-              void observer
-                ?.observe(task, digest)
-                .then((a) => {
-                  if (
-                    observer !== null &&
-                    observer.lastError !== null &&
-                    !observerErrNotified
-                  ) {
-                    observerErrNotified = true;
-                    this.send(
-                      'notice',
-                      `[observer] unavailable — ${observer.lastError}`,
-                    );
-                  }
-                  if (a.action === 'guidance') {
-                    this.controller.sendGuidance(a.message);
-                    this.send('notice', `[observer] guidance: ${a.message}`);
-                  } else if (a.action === 'pause') {
-                    this.controller.pause();
-                    this.send('notice', '[observer] paused the run');
-                  } else if (a.action === 'cancel') {
-                    this.controller.cancel();
-                    this.send('notice', '[observer] cancelled the run');
-                  }
-                })
-                .catch(() => undefined)
-                .finally(() => {
-                  observing = true;
-                });
-            }
-          }
-        });
-      } else {
+      if (!oConn || !oKey) {
         this.send(
           'notice',
-          'Observer enabled but its model/key is unavailable — continuing without it.',
+          `[${spec.name}] observer unavailable — no model/key for '${spec.ref}'`,
         );
+        continue;
       }
+      const agent = new ObserverAgent(
+        createProvider(oConn.kind, {
+          apiKey: oKey,
+          baseUrl: oConn.kind === 'openai' ? oConn.baseUrl : undefined,
+        }),
+        {
+          model: spec.ref,
+          role: spec.role,
+          guidance: spec.guidance,
+          pause: spec.pause,
+          cancel: spec.cancel,
+          maxInterventions: spec.maxInterventions,
+        },
+      );
+      const name = spec.name;
+      observers.push({ agent, name });
+      const digest: DigestEntry[] = [];
+      let observing = true;
+      let errNotified = false;
+      this.send('notice', `[${name}] watching — ${spec.ref}`);
+      bus.on((e) => {
+        if (e.type === 'tool-event') {
+          digest.push({
+            kind: 'tool',
+            text: `${e.tool} ${e.phase}${e.ok === false ? ' (error)' : ''}`,
+          });
+        } else if (e.type === 'text') {
+          agent.noteText(e.text);
+        } else if (e.type === 'turn-started' && observing) {
+          if (e.turn > 1 && !agent.exhausted && interventionsUsed < 5) {
+            observing = false; // one decision at a time; re-armed below
+            void agent
+              .observe(task, digest)
+              .then((a) => {
+                if (agent.lastError !== null && !errNotified) {
+                  errNotified = true;
+                  this.send(
+                    'notice',
+                    `[${name}] unavailable — ${agent.lastError}`,
+                  );
+                }
+                if (a.action === 'guidance') {
+                  interventionsUsed += 1;
+                  this.controller.sendGuidance(a.message);
+                  this.send('notice', `[${name}] guidance: ${a.message}`);
+                } else if (a.action === 'pause') {
+                  interventionsUsed += 1;
+                  this.controller.pause();
+                  this.send('notice', `[${name}] paused the run`);
+                } else if (a.action === 'cancel') {
+                  interventionsUsed += 1;
+                  this.controller.cancel();
+                  this.send('notice', `[${name}] cancelled the run`);
+                }
+              })
+              .catch(() => undefined)
+              .finally(() => {
+                observing = true;
+              });
+          }
+        }
+      });
     }
     this.controller = new RunController();
     this.running = true;
@@ -1114,6 +1186,7 @@ class ChatHost {
               : undefined,
         }),
         model: ref,
+        role: coderMember?.role,
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
@@ -1161,9 +1234,16 @@ class ChatHost {
         tools: toolsUsed,
         tok: fmtTokens(result.inputTokens + result.outputTokens),
         cost: result.costUsd > 0 ? `\u2248$${result.costUsd.toFixed(4)}` : '',
-        obs: observer
-          ? `observer ${observer.checks} checks · ${observer.interventions} interventions`
-          : '',
+        obs:
+          observers.length > 0
+            ? `observer ${observers.reduce(
+                (s, o) => s + o.agent.checks,
+                0,
+              )} checks · ${observers.reduce(
+                (s, o) => s + o.agent.interventions,
+                0,
+              )} interventions`
+            : '',
       });
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');

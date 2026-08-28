@@ -1,0 +1,21 @@
+# Plato team definition (D31). Copy to your workspace root as teams.yaml.
+# Remove the file (or this content) to return to solo mode.
+team:
+  name: hcad-audit
+
+members:
+  # The coder does the work. Its model overrides the chat dropdown for the run.
+  - name: coder
+    model: anthropic:claude-sonnet-4-5
+    role: "You fix bugs in Android Java code. Enumerate defects, fix them, re-verify."
+    kind: coder
+
+  # Observers watch the run and steer it. They NEVER approve tool calls.
+  - name: socrates
+    kind: observer
+    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    role: "You are a skeptical senior Android reviewer."
+    guidance: true
+    pause: false
+    cancel: true
+    maxInterventions: 3

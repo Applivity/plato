@@ -114,6 +114,8 @@ export interface LoopOptions {
   provider: ChatProvider;
   /** Composite model ref, e.g. 'anthropic:claude-sonnet-4-5'. */
   model: string;
+  /** Extra system text appended for this run (D31: team coder role). */
+  role?: string;
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
   /**
@@ -235,7 +237,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     try {
       res = await client.completeTurn({
         model: opts.model,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_PROMPT + (opts.role ? `\n${opts.role}` : ''),
         tools: allTools,
         messages,
         maxTokens,

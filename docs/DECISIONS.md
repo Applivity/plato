@@ -280,8 +280,8 @@ event bus/transcripts like any event. (e) v1 limitations: observer
 costs are not metered separately; digests are text-condensed, not
 full-fidelity. (f) Teams (D11) land after v1 proves out.
 
-**D31 — Teams v1: `.aplivity/teams.yaml` (M4, drafted 2026-08-26, founder
-approval pending).** Teams generalize D30's observer into named member
+**D31 — Teams v1: `teams.yaml` (M4, approved and implemented 2026-08-26).**
+Teams generalize D30's observer into named member
 profiles. (a) *File*: `teams.yaml` at the workspace root (AMENDS D11's
 `.aplivity/teams.yaml` — `mcp.yaml` already lives at the root; one config
 directory would split config across two places; the `.aplivity/` directory

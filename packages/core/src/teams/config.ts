@@ -1,0 +1,233 @@
+/**
+ * teams.yaml reader (D31): tiny zero-dependency parser for the subset we
+ * document —
+ *   team:
+ *     name: hcad-audit
+ *   members:
+ *     - name: coder
+ *       model: anthropic:claude-sonnet-4-5
+ *       role: You fix bugs.
+ *       kind: coder
+ *     - name: socrates
+ *       kind: observer
+ *       model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+ *       guidance: true
+ *       maxInterventions: 3
+ * Anything fancier is rejected with a clear error rather than guessed.
+ * Validation is loud, never silent (D11 root cause).
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+export interface TeamMember {
+  name: string;
+  /** '<connection>:<model>' ref, required. */
+  model: string;
+  /** Extra system text for this member. */
+  role?: string;
+  kind: 'coder' | 'observer';
+  /** Observer tiers (D30); ignored for coders. */
+  guidance?: boolean;
+  pause?: boolean;
+  cancel?: boolean;
+  maxInterventions?: number;
+}
+
+export interface TeamConfig {
+  name: string;
+  members: TeamMember[];
+}
+
+export class TeamConfigError extends Error {
+  constructor(msg: string) {
+    super(msg);
+    this.name = 'TeamConfigError';
+  }
+}
+
+const BOOLS = new Set(['true', 'false']);
+
+function unquote(s: string): string {
+  const t = s.trim();
+  if (
+    (t.startsWith('"') && t.endsWith('"')) ||
+    (t.startsWith("'") && t.endsWith("'"))
+  ) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
+/** Parses teams.yaml text. Throws TeamConfigError naming file+line on any issue. */
+export function parseTeamConfig(text: string): TeamConfig {
+  const lines = text.split('\n');
+  let teamName = '';
+  const members: TeamMember[] = [];
+  /** Current member being filled, or null before the first one. */
+  let cur: TeamMember | null = null;
+  /** True between 'team:' and 'members:'. */
+  let inTeamBlock = false;
+
+  const fail = (ln: number, why: string): never => {
+    throw new TeamConfigError(`teams.yaml line ${ln + 1}: ${why}`);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i] ?? '';
+    if (raw.trim().length === 0 || raw.trim().startsWith('#')) {
+      continue;
+    }
+    const indent = raw.length - raw.trimStart().length;
+    const trimmed = raw.trim();
+
+    if (indent === 0) {
+      if (trimmed === 'team:') {
+        cur = null;
+        inTeamBlock = true;
+        continue;
+      }
+      if (trimmed === 'members:') {
+        cur = null;
+        inTeamBlock = false;
+        continue;
+      }
+      fail(i, `expected 'team:' or 'members:', got '${trimmed}'`);
+    }
+
+    // Under team: — only name: value
+    if (inTeamBlock) {
+      const m = /^name:\s*(.+)$/.exec(trimmed);
+      if (m === null) {
+        fail(i, `expected 'name: <team name>' under team:, got '${trimmed}'`);
+      }
+      teamName = unquote(m?.[1] ?? '');
+      continue;
+    }
+
+    // A member entry: "- name: coder" (name must be first).
+    if (indent === 2 && trimmed.startsWith('- ')) {
+      const body = trimmed.slice(2);
+      const kv = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(body);
+      if (kv === null) {
+        fail(i, `expected '- key: value' for a member, got '${trimmed}'`);
+      }
+      const key = kv?.[1] ?? '';
+      const val = kv?.[2] ?? '';
+      if (key !== 'name') {
+        fail(i, `'name' must be the first key of a member, got '${key}'`);
+      }
+      const n = unquote(val);
+      if (n.length === 0) {
+        fail(i, "member 'name' must not be empty");
+      }
+      if (members.some((m) => m.name === n)) {
+        fail(i, `duplicate member name '${n}'`);
+      }
+      cur = { name: n, model: '', kind: 'coder' };
+      members.push(cur);
+      continue;
+    }
+
+    // Member fields (indented under the dash).
+    if (cur !== null && indent >= 4) {
+      const kv = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(trimmed);
+      if (kv === null) {
+        fail(i, `expected 'key: value' in member '${cur.name}', got '${trimmed}'`);
+      }
+      const key = kv?.[1] ?? '';
+      const val = kv?.[2] ?? '';
+      switch (key) {
+        case 'name':
+          fail(i, `'name' must be the first key of a member`);
+        case 'model':
+          cur.model = unquote(val);
+          break;
+        case 'role':
+          cur.role = unquote(val);
+          break;
+        case 'kind': {
+          const k = unquote(val);
+          if (k !== 'coder' && k !== 'observer') {
+            fail(i, `kind must be 'coder' or 'observer', got '${k}'`);
+          }
+          cur.kind = k as 'coder' | 'observer';
+          break;
+        }
+        case 'guidance':
+        case 'pause':
+        case 'cancel': {
+          const v = unquote(val);
+          if (!BOOLS.has(v)) {
+            fail(i, `${key} must be true or false, got '${v}'`);
+          }
+          cur[key] = v === 'true';
+          break;
+        }
+        case 'maxInterventions': {
+          const n = Number(val);
+          if (!Number.isInteger(n) || n < 0) {
+            fail(i, `maxInterventions must be a non-negative integer, got '${val}'`);
+          }
+          cur.maxInterventions = n;
+          break;
+        }
+        default:
+          fail(i, `unknown key '${key}' in member '${cur.name}'`);
+      }
+      continue;
+    }
+
+    fail(i, `unexpected indentation or content: '${trimmed}'`);
+  }
+  return finishTeam(members, teamName);
+}
+
+/** Cross-member validation (D31c/f). */
+function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
+  if (members.length === 0) {
+    throw new TeamConfigError('teams.yaml: no members found under members:');
+  }
+  const coders = members.filter((m) => m.kind === 'coder');
+  if (coders.length === 0) {
+    throw new TeamConfigError('teams.yaml: no coder member — add kind: coder');
+  }
+  if (coders.length > 1) {
+    throw new TeamConfigError(
+      `teams.yaml: ${coders.length} coder members — exactly one coder is allowed (D31c)`,
+    );
+  }
+  const observers = members.filter((m) => m.kind === 'observer');
+  if (observers.length > 3) {
+    throw new TeamConfigError(
+      `teams.yaml: ${observers.length} observer members — at most 3 (D31c)`,
+    );
+  }
+  for (const m of members) {
+    if (m.model.length === 0) {
+      throw new TeamConfigError(
+        `teams.yaml: member '${m.name}' is missing 'model'`,
+      );
+    }
+    // Same semantics as splitModelRef: first ':' separates connection from
+    // model; the model part may itself contain ':' (e.g. ':free' routes).
+    const c = m.model.indexOf(':');
+    if (c <= 0 || c >= m.model.length - 1) {
+      throw new TeamConfigError(
+        `teams.yaml: member '${m.name}' model must be a '<connection>:<model>' ref, got '${m.model}'`,
+      );
+    }
+  }
+  return { name: teamName, members };
+}
+
+/** Reads and parses <root>/teams.yaml; missing file → null (solo mode). */
+export function loadTeamConfig(root: string): TeamConfig | null {
+  let text: string;
+  try {
+    text = readFileSync(join(root, 'teams.yaml'), 'utf8');
+  } catch {
+    return null; // missing file = solo mode, not an error
+  }
+  return parseTeamConfig(text);
+}
+
