@@ -258,6 +258,35 @@ export function chatHtml(): string {
   .team-card .tm-tier { font-size:10px; color:var(--pl-muted);
                         border:1px solid var(--pl-border); border-radius:8px;
                         padding:0 5px; }
+  details.sec { border:1px solid var(--pl-border); border-radius:5px;
+                margin-bottom:10px; }
+  details.sec > summary { padding:7px 10px; cursor:pointer; font-weight:600;
+                          font-size:12px; user-select:none; list-style:none; }
+  details.sec > summary::before { content:'\\25B8 '; display:inline-block;
+                   transition:transform .1s; }
+  details.sec[open] > summary::before { transform:rotate(90deg); }
+  details.sec .secbody { padding:0 10px 10px; }
+  .mrow { display:flex; gap:8px; margin:6px 0; }
+  .mcard { flex:1; border:1px solid var(--pl-border); border-radius:5px;
+           padding:8px 10px; cursor:pointer; }
+  .mcard:hover { border-color:var(--vscode-focusBorder, #666); }
+  .mcard.on { border-color:var(--vscode-focusBorder, #666);
+              background:var(--vscode-editorWidget-background,
+                              rgba(128,128,128,.12)); }
+  .mcard .mtitle { font-weight:600; font-size:12px; }
+  .mcard .mdesc { font-size:10.5px; color:var(--pl-muted); margin-top:2px; }
+  .astat { margin:6px 0; }
+  .astat .aok { font-size:11.5px; padding:5px 8px;
+                border:1px solid var(--pl-border); border-radius:4px; }
+  .astat .aerr { font-size:11.5px; padding:5px 8px; border-radius:4px;
+                 border:1px solid var(--vscode-inputValidation-errorBorder, #f66);
+                 color:var(--vscode-errorForeground, #f66); }
+  .pdesc { font-size:11px; color:var(--pl-muted); font-style:italic;
+           margin:4px 0 8px; padding:6px 8px; border-left:2px solid var(--pl-border); }
+  .orch-chip { font-size:10.5px; padding:1px 8px; border:1px solid var(--pl-border);
+               border-radius:9px; cursor:pointer; color:var(--pl-muted); }
+  .orch-chip:hover { border-color:var(--vscode-focusBorder, #666);
+                     color:var(--vscode-foreground, #ccc); }
 </style>
 </head>
 <body>
@@ -280,6 +309,7 @@ export function chatHtml(): string {
     <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
     <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
     <span class="spacer"></span>
+    <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
     <button id="new" title="Start a new chat (clears this conversation)">＋</button>
     <span id="st"></span>
   </div>
@@ -361,6 +391,25 @@ export function chatHtml(): string {
     document.body.classList.remove('show-settings');
     vsapi.postMessage({ type: 'settings-closed' });
   });
+
+  // Orchestration chip (D32e): always shows the active mode; one click to
+  // Settings → Orchestration.
+  const orchChip = document.getElementById('orchChip');
+  orchChip.addEventListener('click', () => {
+    vsapi.postMessage({ type: 'openSettings' });
+  });
+  function syncOrchChip(o) {
+    const mode = o.mode || 'solo';
+    if (mode === 'academy') {
+      const nm = o.academy && o.academy.name ? ':' + o.academy.name : '';
+      orchChip.textContent = '\u2727 academy' + nm;
+    } else if (mode === 'duo') {
+      const p = (o.personas || []).find((x) => x.id === (o.persona || 'aristotle'));
+      orchChip.textContent = '\u25D0 duo' + (p ? ' \u00b7 ' + p.name : '');
+    } else {
+      orchChip.textContent = '\u25CF solo';
+    }
+  }
 
   // History / transcript replay (M3).
   const hbody = document.getElementById('hibody');
@@ -540,10 +589,135 @@ export function chatHtml(): string {
       f.textContent = String(d.flash);
       body.appendChild(f);
     }
+    syncOrchChip(d.orchestration || {});
+
+    // Collapsible section wrapper (D32d): <details> like the Models picker.
+    const collapsible = (title, open) => {
+      const det = document.createElement('details');
+      det.className = 'sec';
+      if (open) { det.open = true; }
+      det.appendChild(el('summary', null, title));
+      const inner = el('div', 'secbody');
+      det.appendChild(inner);
+      body.appendChild(det);
+      return inner;
+    };
+
+    // Orchestration (D32): Solo / Duo / Academy — the first thing you see.
+    const orch = d.orchestration || {};
+    const secO = collapsible('Orchestration', true);
+    const MODES = [
+      { id: 'solo', label: 'Solo', desc: 'Plato alone. No philosopher watching.' },
+      { id: 'duo', label: 'Duo', desc: 'Plato + one philosopher steering the run.' },
+      { id: 'academy', label: 'Academy', desc: 'The council from academy.yaml (worker + up to 3 philosophers).' },
+    ];
+    const modeRow = el('div', 'mrow');
+    for (const mode of MODES) {
+      const card = el('div', 'mcard' + (orch.mode === mode.id ? ' on' : ''));
+      const pick = () => {
+        vsapi.postMessage({ type: 'set-orchestration', mode: mode.id });
+      };
+      card.addEventListener('click', pick);
+      card.appendChild(el('div', 'mtitle', mode.label));
+      card.appendChild(el('div', 'mdesc', mode.desc));
+      modeRow.appendChild(card);
+    }
+    secO.appendChild(modeRow);
+    // Academy status: parsed members or the loud error.
+    const st = orch.academy || {};
+    const stBox = el('div', 'astat');
+    if (st.available) {
+      stBox.appendChild(el(
+        'div', 'aok',
+        'academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
+          (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
+      ));
+    } else if (st.error) {
+      stBox.appendChild(el('div', 'aerr', String(st.error)));
+    } else {
+      stBox.appendChild(el(
+        'div', 'note',
+        'No academy.yaml yet. Academy mode needs one at the workspace root.',
+      ));
+    }
+    secO.appendChild(stBox);
+    secO.appendChild(el(
+      'div', 'note',
+      'The setting decides \u2014 a stray academy.yaml never takes over a run. Applies from the next run.',
+    ));
+
+    // Duo: the philosopher and its model (D32c). Shown in Duo mode; the
+    // persona is the role prompt (D32b).
+    const duoSec = collapsible('Duo \u2014 philosopher', orch.mode === 'duo');
+    const personas = orch.personas || [];
+    const prowP = el('div', 'prefrow');
+    prowP.appendChild(el('label', null, 'Philosopher'));
+    const pSel = sel(
+      personas.map((p) => ({ value: p.id, label: p.name + ' \u2014 ' + p.epithet })),
+      String(orch.persona || 'aristotle'),
+    );
+    prowP.appendChild(pSel);
+    duoSec.appendChild(prowP);
+    const pDesc = el('div', 'pdesc');
+    const syncPDesc = () => {
+      const p = personas.find((x) => x.id === pSel.value);
+      pDesc.textContent = p ? p.role : '';
+    };
+    syncPDesc();
+    pSel.addEventListener('change', syncPDesc);
+    duoSec.appendChild(pDesc);
+    pSel.addEventListener('change', () => {
+      vsapi.postMessage({ type: 'set-duo-persona', persona: pSel.value });
+    });
+    const obs = d.observer || {};
+    const prow4 = el('div', 'prefrow');
+    prow4.appendChild(el('label', null, 'Philosopher model (empty = worker model)'));
+    const oSel = sel(
+      [{ value: '', label: '(same as worker)' }, ...(d.modelItems || [])],
+      String(obs.model || ''),
+    );
+    prow4.appendChild(oSel);
+    duoSec.appendChild(prow4);
+    const prow5 = el('div', 'prefrow');
+    const pLbl = el('label', 'mopt', 'May pause runs');
+    const pTog = document.createElement('input');
+    pTog.type = 'checkbox';
+    pTog.checked = Boolean(obs.pause);
+    pLbl.insertBefore(pTog, pLbl.firstChild);
+    prow5.appendChild(pLbl);
+    const cLbl = el('label', 'mopt', 'May cancel runs');
+    const cTog = document.createElement('input');
+    cTog.type = 'checkbox';
+    cTog.checked = Boolean(obs.cancel);
+    cLbl.insertBefore(cTog, cLbl.firstChild);
+    prow5.appendChild(cLbl);
+    const mCap = el('input');
+    mCap.type = 'number';
+    mCap.min = '1';
+    mCap.max = '50';
+    mCap.value = String(obs.maxInterventions ?? 5);
+    mCap.title = 'Max interventions per run';
+    mCap.style.width = '70px';
+    prow5.appendChild(el('label', null, 'Max interventions/run'));
+    prow5.appendChild(mCap);
+    duoSec.appendChild(prow5);
+    duoSec.appendChild(sbtn('Save duo settings', () => {
+      vsapi.postMessage({
+        type: 'set-observer',
+        enable: true,
+        model: oSel.value,
+        pause: pTog.checked,
+        cancel: cTog.checked,
+        maxInterventions: Number(mCap.value),
+      });
+    }));
+    duoSec.appendChild(el(
+      'div', 'note',
+      'Guidance is always allowed; pause/cancel need the toggles. The persona role prompt can be overridden in settings.json (plato.observer.role).',
+    ));
 
     // Connections
-    const sec1 = el('div', 'sec');
-    sec1.appendChild(el('h4', null, 'Connections'));
+    const sec1 = collapsible('Connections', false);
     for (const c of d.connections || []) {
       const card = el('div', 'conn');
       const r1 = el('div', 'row1');
@@ -707,11 +881,9 @@ export function chatHtml(): string {
       'note',
       'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.',
     ));
-    body.appendChild(sec1);
 
     // Preferences
-    const sec2 = el('div', 'sec');
-    sec2.appendChild(el('h4', null, 'Defaults'));
+    const sec2 = collapsible('Defaults', false);
     const prow1 = el('div', 'prefrow');
     prow1.appendChild(el('label', null, 'Default model'));
     prow1.appendChild(sel(d.modelItems || [], d.defaultModel));
@@ -734,68 +906,6 @@ export function chatHtml(): string {
       vsapi.postMessage({ type: 'set-reasoning', value: e.target.value });
     });
     sec2.appendChild(prow2);
-    body.appendChild(sec2);
-
-    // Observer (D30 UI): second model steering runs.
-    const obs = d.observer || {};
-    const sec3 = el('div', 'sec');
-    sec3.appendChild(el('h4', null, 'Observer'));
-    const prow3 = el('div', 'prefrow');
-    const enLbl = el('label', 'mopt', 'Enable observer-AI (steers runs; never approves tools)');
-    const en = document.createElement('input');
-    en.type = 'checkbox';
-    en.checked = Boolean(obs.enable);
-    enLbl.insertBefore(en, enLbl.firstChild);
-    prow3.appendChild(enLbl);
-    sec3.appendChild(prow3);
-    const prow4 = el('div', 'prefrow');
-    prow4.appendChild(el('label', null, 'Observer model (empty = coder model)'));
-    const oSel = sel(
-      [{ value: '', label: '(same as coder)' }, ...(d.modelItems || [])],
-      String(obs.model || ''),
-    );
-    prow4.appendChild(oSel);
-    sec3.appendChild(prow4);
-    const prow5 = el('div', 'prefrow');
-    const pLbl = el('label', 'mopt', 'May pause runs');
-    const pTog = document.createElement('input');
-    pTog.type = 'checkbox';
-    pTog.checked = Boolean(obs.pause);
-    pLbl.insertBefore(pTog, pLbl.firstChild);
-    prow5.appendChild(pLbl);
-    const cLbl = el('label', 'mopt', 'May cancel runs');
-    const cTog = document.createElement('input');
-    cTog.type = 'checkbox';
-    cTog.checked = Boolean(obs.cancel);
-    cLbl.insertBefore(cTog, cLbl.firstChild);
-    prow5.appendChild(cLbl);
-    const mCap = el('input');
-    mCap.type = 'number';
-    mCap.min = '1';
-    mCap.max = '50';
-    mCap.value = String(obs.maxInterventions ?? 5);
-    mCap.title = 'Max interventions per run';
-    mCap.style.width = '70px';
-    prow5.appendChild(el('label', null, 'Max interventions/run'));
-    prow5.appendChild(mCap);
-    sec3.appendChild(prow5);
-    const saveObs = sbtn('Save observer settings', () => {
-      vsapi.postMessage({
-        type: 'set-observer',
-        enable: en.checked,
-        model: oSel.value,
-        pause: pTog.checked,
-        cancel: cTog.checked,
-        maxInterventions: Number(mCap.value),
-      });
-    });
-    sec3.appendChild(saveObs);
-    sec3.appendChild(el(
-      'div',
-      'note',
-      'Guidance is always allowed when enabled; pause/cancel need the toggles. Cap limits interventions per run.',
-    ));
-    body.appendChild(sec3);
 
     scroll();
   }
@@ -916,6 +1026,12 @@ export function chatHtml(): string {
     const m = e.data;
     switch (m.type) {
       case 'models': {
+        syncOrchChip({
+          mode: m.orchestration,
+          academy: m.academy,
+          persona: m.persona,
+          personas: [],
+        });
         const current = msel.value;
         msel.textContent = '';
         let og = null;
@@ -1069,7 +1185,7 @@ export function chatHtml(): string {
       left.className = 'tm-name';
       left.textContent = mem.name;
       const kind = document.createElement('span');
-      kind.className = 'tm-kind ' + (mem.kind === 'coder' ? 'is-coder' : 'is-observer');
+      kind.className = 'tm-kind ' + (mem.kind === 'worker' ? 'is-coder' : 'is-observer');
       kind.textContent = mem.kind;
       const model = document.createElement('span');
       model.className = 'tm-model';

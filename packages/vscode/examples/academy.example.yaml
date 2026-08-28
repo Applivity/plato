@@ -1,0 +1,22 @@
+# Plato academy definition (D31/D32). Copy to your workspace root as
+# academy.yaml. Activate in Settings → Orchestration → Academy.
+# Delete the file (or switch back to Solo/Duo) to leave Academy mode.
+academy:
+  name: hcad-audit
+
+members:
+  # The worker does the work. Its model overrides the chat dropdown for the run.
+  - name: plato
+    model: anthropic:claude-sonnet-4-5
+    role: "You fix bugs in Android Java code. Enumerate defects, fix them, re-verify."
+    kind: worker
+
+  # Philosophers watch the run and steer it. They NEVER approve tool calls.
+  - name: aristotle
+    kind: philosopher
+    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    role: "You are a skeptical senior reviewer. Judge only from evidence."
+    guidance: true
+    pause: false
+    cancel: true
+    maxInterventions: 3

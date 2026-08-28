@@ -18,6 +18,7 @@ export * from './mcp/client.js';
 export * from './mcp/config.js';
 export * from './runtime/observer.js';
 export * from './teams/config.js';
+export * from './teams/personas.js';
 
 
 

@@ -1,15 +1,15 @@
 /**
- * teams.yaml reader (D31): tiny zero-dependency parser for the subset we
- * document —
- *   team:
+ * academy.yaml reader (D31/D32): tiny zero-dependency parser for the subset
+ * we document —
+ *   academy:
  *     name: hcad-audit
  *   members:
- *     - name: coder
+ *     - name: plato
  *       model: anthropic:claude-sonnet-4-5
  *       role: You fix bugs.
- *       kind: coder
- *     - name: socrates
- *       kind: observer
+ *       kind: worker
+ *     - name: aristotle
+ *       kind: philosopher
  *       model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
  *       guidance: true
  *       maxInterventions: 3
@@ -25,8 +25,8 @@ export interface TeamMember {
   model: string;
   /** Extra system text for this member. */
   role?: string;
-  kind: 'coder' | 'observer';
-  /** Observer tiers (D30); ignored for coders. */
+  kind: 'worker' | 'philosopher';
+  /** Philosopher tiers (D30); ignored for workers. */
   guidance?: boolean;
   pause?: boolean;
   cancel?: boolean;
@@ -45,6 +45,7 @@ export class TeamConfigError extends Error {
   }
 }
 
+
 const BOOLS = new Set(['true', 'false']);
 
 function unquote(s: string): string {
@@ -58,18 +59,18 @@ function unquote(s: string): string {
   return t;
 }
 
-/** Parses teams.yaml text. Throws TeamConfigError naming file+line on any issue. */
+/** Parses academy.yaml text. Throws TeamConfigError naming file+line on any issue. */
 export function parseTeamConfig(text: string): TeamConfig {
   const lines = text.split('\n');
   let teamName = '';
   const members: TeamMember[] = [];
   /** Current member being filled, or null before the first one. */
   let cur: TeamMember | null = null;
-  /** True between 'team:' and 'members:'. */
+  /** True between 'academy:' and 'members:'. */
   let inTeamBlock = false;
 
   const fail = (ln: number, why: string): never => {
-    throw new TeamConfigError(`teams.yaml line ${ln + 1}: ${why}`);
+    throw new TeamConfigError(`academy.yaml line ${ln + 1}: ${why}`);
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -81,7 +82,7 @@ export function parseTeamConfig(text: string): TeamConfig {
     const trimmed = raw.trim();
 
     if (indent === 0) {
-      if (trimmed === 'team:') {
+      if (trimmed === 'academy:' || trimmed === 'team:') {
         cur = null;
         inTeamBlock = true;
         continue;
@@ -91,7 +92,7 @@ export function parseTeamConfig(text: string): TeamConfig {
         inTeamBlock = false;
         continue;
       }
-      fail(i, `expected 'team:' or 'members:', got '${trimmed}'`);
+      fail(i, `expected 'academy:' or 'members:', got '${trimmed}'`);
     }
 
     // Under team: — only name: value
@@ -123,7 +124,7 @@ export function parseTeamConfig(text: string): TeamConfig {
       if (members.some((m) => m.name === n)) {
         fail(i, `duplicate member name '${n}'`);
       }
-      cur = { name: n, model: '', kind: 'coder' };
+      cur = { name: n, model: '', kind: 'worker' };
       members.push(cur);
       continue;
     }
@@ -147,10 +148,16 @@ export function parseTeamConfig(text: string): TeamConfig {
           break;
         case 'kind': {
           const k = unquote(val);
-          if (k !== 'coder' && k !== 'observer') {
-            fail(i, `kind must be 'coder' or 'observer', got '${k}'`);
+          if (k === 'coder' || k === 'observer') {
+            fail(
+              i,
+              `kind '${k}' was renamed — use 'worker' or 'philosopher' (D32)`,
+            );
           }
-          cur.kind = k as 'coder' | 'observer';
+          if (k !== 'worker' && k !== 'philosopher') {
+            fail(i, `kind must be 'worker' or 'philosopher', got '${k}'`);
+          }
+          cur.kind = k as 'worker' | 'philosopher';
           break;
         }
         case 'guidance':
@@ -182,30 +189,32 @@ export function parseTeamConfig(text: string): TeamConfig {
   return finishTeam(members, teamName);
 }
 
-/** Cross-member validation (D31c/f). */
+/** Cross-member validation (D31c/D32f). */
 function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
   if (members.length === 0) {
-    throw new TeamConfigError('teams.yaml: no members found under members:');
+    throw new TeamConfigError('academy.yaml: no members found under members:');
   }
-  const coders = members.filter((m) => m.kind === 'coder');
-  if (coders.length === 0) {
-    throw new TeamConfigError('teams.yaml: no coder member — add kind: coder');
-  }
-  if (coders.length > 1) {
+  const workers = members.filter((m) => m.kind === 'worker');
+  if (workers.length === 0) {
     throw new TeamConfigError(
-      `teams.yaml: ${coders.length} coder members — exactly one coder is allowed (D31c)`,
+      'academy.yaml: no worker member — add kind: worker',
     );
   }
-  const observers = members.filter((m) => m.kind === 'observer');
-  if (observers.length > 3) {
+  if (workers.length > 1) {
     throw new TeamConfigError(
-      `teams.yaml: ${observers.length} observer members — at most 3 (D31c)`,
+      `academy.yaml: ${workers.length} worker members — exactly one worker is allowed (D31c)`,
+    );
+  }
+  const philosophers = members.filter((m) => m.kind === 'philosopher');
+  if (philosophers.length > 3) {
+    throw new TeamConfigError(
+      `academy.yaml: ${philosophers.length} philosopher members — at most 3 (D31c)`,
     );
   }
   for (const m of members) {
     if (m.model.length === 0) {
       throw new TeamConfigError(
-        `teams.yaml: member '${m.name}' is missing 'model'`,
+        `academy.yaml: member '${m.name}' is missing 'model'`,
       );
     }
     // Same semantics as splitModelRef: first ':' separates connection from
@@ -213,21 +222,31 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
     const c = m.model.indexOf(':');
     if (c <= 0 || c >= m.model.length - 1) {
       throw new TeamConfigError(
-        `teams.yaml: member '${m.name}' model must be a '<connection>:<model>' ref, got '${m.model}'`,
+        `academy.yaml: member '${m.name}' model must be a '<connection>:<model>' ref, got '${m.model}'`,
       );
     }
   }
   return { name: teamName, members };
 }
 
-/** Reads and parses <root>/teams.yaml; missing file → null (solo mode). */
+/** Reads and parses <root>/academy.yaml; missing file → null (solo mode). */
 export function loadTeamConfig(root: string): TeamConfig | null {
   let text: string;
   try {
-    text = readFileSync(join(root, 'teams.yaml'), 'utf8');
+    text = readFileSync(join(root, 'academy.yaml'), 'utf8');
   } catch {
     return null; // missing file = solo mode, not an error
   }
   return parseTeamConfig(text);
+}
+
+/** Old-name check: reports a leftover teams.yaml so nothing is silently ignored. */
+export function hasLegacyTeamsYaml(root: string): boolean {
+  try {
+    readFileSync(join(root, 'teams.yaml'), 'utf8');
+    return true;
+  } catch {
+    return false;
+  }
 }
 

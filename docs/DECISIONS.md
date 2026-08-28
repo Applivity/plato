@@ -314,8 +314,8 @@ parse errors — acceptable). (h) *UI*: read-only team display in the panel
 truth, no visual editor (D11 defers it). Founder to confirm (a)–(h)
 before implementation; open sub-questions: none blocking.
 
-**D32 — Orchestration modes & philosopher personas (M4, drafted 2026-08-26,
-founder approval pending).** Fixes terminology before M4 closeout and makes
+**D32 — Orchestration modes & philosopher personas (M4, approved and
+implemented 2026-08-26).** Fixes terminology before M4 closeout and makes
 orchestration an explicit user choice instead of file presence.
 (a) *Terms*: the worker (formerly "coder") does the work; philosophers
 (formerly "observers") watch and steer. Modes: **Solo** (Plato alone),

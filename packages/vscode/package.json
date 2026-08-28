@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -67,6 +67,18 @@
           "default": "off",
           "description": "Reasoning effort for models that support it (o4-mini, Claude extended thinking). Ignored otherwise."
         },
+        "plato.orchestration": {
+          "type": "string",
+          "enum": ["solo", "duo", "academy"],
+          "default": "solo",
+          "description": "Orchestration mode (D32): solo = Plato alone; duo = worker + one philosopher; academy = the council defined in academy.yaml."
+        },
+        "plato.duo.persona": {
+          "type": "string",
+          "enum": ["aristotle", "heraclitus", "diogenes", "pythagoras", "thales"],
+          "default": "aristotle",
+          "description": "Philosopher persona for Duo mode (D32): role prompt the watcher uses."
+        },
         "plato.observer.enable": {
           "type": "boolean",
           "default": false,
@@ -101,7 +113,7 @@
     },
     "configurationDefaults": {
       "yaml.schemas": {
-        "%applivity.plato-vscode/schemas/teams.schema.json": "teams.yaml"
+        "%applivity.plato-vscode/schemas/academy.schema.json": "academy.yaml"
       }
     }
   },

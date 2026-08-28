@@ -3,17 +3,18 @@ import {
   parseTeamConfig,
   loadTeamConfig,
 } from '../src/teams/config.js';
+import { PERSONAS, findPersona } from '../src/teams/personas.js';
 
 const VALID = `
-team:
+academy:
   name: hcad-audit
 members:
-  - name: coder
+  - name: plato
     model: anthropic:claude-sonnet-4-5
     role: "You fix Android Java bugs."
-    kind: coder
-  - name: socrates
-    kind: observer
+    kind: worker
+  - name: aristotle
+    kind: philosopher
     model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
     role: "A skeptical senior reviewer."
     guidance: true
@@ -23,21 +24,21 @@ members:
 `;
 
 describe('parseTeamConfig', () => {
-  it('parses a full valid team with coder + observer tiers', () => {
+  it('parses a full valid academy with worker + philosopher tiers', () => {
     const t = parseTeamConfig(VALID);
     expect(t.name).toBe('hcad-audit');
     expect(t.members.length).toBe(2);
-    const coder = t.members[0]!;
-    expect(coder).toMatchObject({
-      name: 'coder',
+    const worker = t.members[0]!;
+    expect(worker).toMatchObject({
+      name: 'plato',
       model: 'anthropic:claude-sonnet-4-5',
       role: 'You fix Android Java bugs.',
-      kind: 'coder',
+      kind: 'worker',
     });
-    const obs = t.members[1]!;
-    expect(obs).toMatchObject({
-      name: 'socrates',
-      kind: 'observer',
+    const phil = t.members[1]!;
+    expect(phil).toMatchObject({
+      name: 'aristotle',
+      kind: 'philosopher',
       guidance: true,
       pause: false,
       cancel: true,
@@ -45,13 +46,24 @@ describe('parseTeamConfig', () => {
     });
   });
 
-  it('defaults kind to coder and applies D30 tier defaults when omitted', () => {
+  it('accepts the legacy team: header (renamed but tolerated)', () => {
+    const t = parseTeamConfig(`
+team:
+  name: legacy
+members:
+  - name: w
+    model: anthropic:claude-sonnet-4-5
+`);
+    expect(t.name).toBe('legacy');
+  });
+
+  it('defaults kind to worker when omitted', () => {
     const t = parseTeamConfig(`
 members:
   - name: solo
     model: anthropic:claude-sonnet-4-5
 `);
-    expect(t.members[0]!.kind).toBe('coder');
+    expect(t.members[0]!.kind).toBe('worker');
     expect(t.members.length).toBe(1);
   });
 
@@ -78,18 +90,18 @@ members:
     ).toThrowError(/duplicate member name 'x'/);
   });
 
-  it('rejects zero coders (observers only)', () => {
+  it('rejects zero workers (philosophers only)', () => {
     expect(() =>
       parseTeamConfig(`
 members:
   - name: watchman
-    kind: observer
+    kind: philosopher
     model: anthropic:claude-3-5-haiku-latest
 `),
-    ).toThrowError(/no coder member/);
+    ).toThrowError(/no worker member/);
   });
 
-  it('rejects two coders (D31c: exactly one)', () => {
+  it('rejects two workers (D31c: exactly one)', () => {
     expect(() =>
       parseTeamConfig(`
 members:
@@ -98,19 +110,19 @@ members:
   - name: b
     model: anthropic:claude-opus-4-1
 `),
-    ).toThrowError(/exactly one coder/);
+    ).toThrowError(/exactly one worker/);
   });
 
-  it('rejects more than three observers', () => {
+  it('rejects more than three philosophers', () => {
     const members = [1, 2, 3, 4]
       .map(
-        (n) => `  - name: o${n}
-    kind: observer
+        (n) => `  - name: p${n}
+    kind: philosopher
     model: anthropic:claude-3-5-haiku-latest`,
       )
       .join('\n');
     expect(() =>
-      parseTeamConfig(`members:\n  - name: coder
+      parseTeamConfig(`members:\n  - name: w
     model: anthropic:claude-sonnet-4-5\n${members}\n`),
     ).toThrowError(/at most 3/);
   });
@@ -120,7 +132,7 @@ members:
       parseTeamConfig(`
 members:
   - name: x
-    kind: coder
+    kind: worker
 `),
     ).toThrowError(/missing 'model'/);
   });
@@ -141,7 +153,7 @@ members:
 members:
   - name: x
     model: anthropic:claude-sonnet-4-5
-    kind: observer
+    kind: philosopher
     guidance: maybe
 `),
     ).toThrowError(/guidance must be true or false/);
@@ -149,14 +161,54 @@ members:
 
   it('rejects malformed top-level keys', () => {
     expect(() => parseTeamConfig(`agent: x`)).toThrowError(
-      /expected 'team:' or 'members:'/,
+      /expected 'academy:' or 'members:'/,
     );
   });
 
   it('rejects empty members', () => {
-    expect(() => parseTeamConfig(`team:\n  name: x\nmembers:\n`)).toThrowError(
-      /no members found/,
-    );
+    expect(() =>
+      parseTeamConfig(`academy:\n  name: x\nmembers:\n`),
+    ).toThrowError(/no members found/);
+  });
+
+  it('names the D32 rename when it sees old kind values', () => {
+    expect(() =>
+      parseTeamConfig(`
+members:
+  - name: x
+    model: anthropic:claude-sonnet-4-5
+    kind: coder
+`),
+    ).toThrowError(/renamed — use 'worker' or 'philosopher'/);
+    expect(() =>
+      parseTeamConfig(`
+members:
+  - name: x
+    model: anthropic:claude-sonnet-4-5
+    kind: observer
+`),
+    ).toThrowError(/renamed — use 'worker' or 'philosopher'/);
+  });
+});
+
+describe('personas (D32b)', () => {
+  it('ships five philosophers with distinct role prompts', () => {
+    expect(PERSONAS.map((p) => p.name)).toEqual([
+      'Aristotle',
+      'Heraclitus',
+      'Diogenes',
+      'Pythagoras',
+      'Thales',
+    ]);
+    for (const p of PERSONAS) {
+      expect(p.role.length).toBeGreaterThan(40);
+    }
+    expect(new Set(PERSONAS.map((p) => p.role)).size).toBe(5);
+  });
+
+  it('finds a persona by id', () => {
+    expect(findPersona('diogenes')?.epithet).toBe('the Cynic');
+    expect(findPersona('nope')).toBeUndefined();
   });
 });
 
@@ -166,7 +218,8 @@ describe('loadTeamConfig', () => {
   });
 
   it('loads and parses the shipped example from the repo root', () => {
-    // The repo itself ships no teams.yaml; this asserts the solo-mode default.
+    // The repo itself ships no academy.yaml; this asserts the solo-mode default.
     expect(loadTeamConfig('/Users/ai/Desktop/plato')).toBeNull();
   });
 });
+

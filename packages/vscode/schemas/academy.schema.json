@@ -1,25 +1,20 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Plato team definition (D31)",
+  "title": "Plato academy definition (D31/D32)",
   "type": "object",
-  "required": ["members"],
+  "required": [
+    "members"
+  ],
   "properties": {
-    "team": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "description": "Display name of the team"
-        }
-      },
-      "additionalProperties": false
-    },
     "members": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["name", "model"],
+        "required": [
+          "name",
+          "model"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -35,34 +30,47 @@
           },
           "kind": {
             "type": "string",
-            "enum": ["coder", "observer"],
-            "default": "coder",
-            "description": "Exactly one coder; up to 3 observers"
+            "enum": [
+              "worker",
+              "philosopher"
+            ],
+            "default": "worker",
+            "description": "Exactly one worker; up to 3 philosophers"
           },
           "guidance": {
             "type": "boolean",
             "default": true,
-            "description": "Observer tier: may inject guidance"
+            "description": "Philosopher tier: may inject guidance"
           },
           "pause": {
             "type": "boolean",
             "default": false,
-            "description": "Observer tier: may pause the run"
+            "description": "Philosopher tier: may pause the run"
           },
           "cancel": {
             "type": "boolean",
             "default": false,
-            "description": "Observer tier: may cancel the run"
+            "description": "Philosopher tier: may cancel the run"
           },
           "maxInterventions": {
             "type": "integer",
             "minimum": 0,
             "default": 5,
-            "description": "Observer tier: per-member intervention budget (run-wide cap 5)"
+            "description": "Philosopher tier: per-member intervention budget (run-wide cap 5)"
           }
         },
         "additionalProperties": false
       }
+    },
+    "academy": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Display name of the team"
+        }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

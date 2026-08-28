@@ -20,6 +20,9 @@ import {
   ObserverAgent,
   loadTeamConfig,
   TeamConfigError,
+  hasLegacyTeamsYaml,
+  PERSONAS,
+  findPersona,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
@@ -539,6 +542,44 @@ class ChatHost {
           );
           return;
         }
+        if (m.type === 'set-orchestration' && typeof m.mode === 'string') {
+          const mode =
+            m.mode === 'duo' || m.mode === 'academy' ? m.mode : 'solo';
+          // Loud at selection time too (D32a): Academy needs a valid file.
+          if (mode === 'academy') {
+            const st = this.academyStatus();
+            if (!st.available) {
+              void this.sendSettings(
+                `Academy not set — ${st.error}`,
+              );
+              return;
+            }
+          }
+          await vscode.workspace
+            .getConfiguration('plato')
+            .update(
+              'orchestration',
+              mode,
+              vscode.ConfigurationTarget.Global,
+            );
+          void this.sendSettings(
+            `Orchestration: ${mode} — applies from the next run.`,
+          );
+          return;
+        }
+        if (m.type === 'set-duo-persona' && typeof m.persona === 'string') {
+          if (findPersona(m.persona)) {
+            await vscode.workspace
+              .getConfiguration('plato')
+              .update(
+                'duo.persona',
+                m.persona,
+                vscode.ConfigurationTarget.Global,
+              );
+          }
+          void this.sendSettings('Philosopher updated — applies from the next run.');
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -622,6 +663,21 @@ class ChatHost {
           .getConfiguration('plato')
           .get('observer.maxInterventions', 5),
       },
+      orchestration: {
+        mode: vscode.workspace
+          .getConfiguration('plato')
+          .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo'),
+        persona: vscode.workspace
+          .getConfiguration('plato')
+          .get('duo.persona', 'aristotle'),
+        personas: PERSONAS.map((p) => ({
+          id: p.id,
+          name: p.name,
+          epithet: p.epithet,
+          role: p.role,
+        })),
+        academy: this.academyStatus(),
+      },
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
@@ -633,6 +689,60 @@ class ChatHost {
     return parts ? modelSupportsReasoning(parts.model) : false;
   }
 
+  /** Academy availability for the Settings page (D32): parsed file or error. */
+  private academyStatus(): {
+    available: boolean;
+    name: string;
+    members: { name: string; kind: string; model: string }[];
+    error: string;
+    legacy: boolean;
+  } {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) {
+      return { available: false, name: '', members: [], error: '', legacy: false };
+    }
+    if (hasLegacyTeamsYaml(root)) {
+      return {
+        available: false,
+        name: '',
+        members: [],
+        error: 'teams.yaml was renamed to academy.yaml (D32) — rename the file.',
+        legacy: true,
+      };
+    }
+    try {
+      const team = loadTeamConfig(root);
+      if (team === null) {
+        return {
+          available: false,
+          name: '',
+          members: [],
+          error: 'No academy.yaml at the workspace root.',
+          legacy: false,
+        };
+      }
+      return {
+        available: true,
+        name: team.name,
+        members: team.members.map((m) => ({
+          name: m.name,
+          kind: m.kind,
+          model: m.model,
+        })),
+        error: '',
+        legacy: false,
+      };
+    } catch (e) {
+      return {
+        available: false,
+        name: '',
+        members: [],
+        error: e instanceof Error ? e.message : 'error',
+        legacy: false,
+      };
+    }
+  }
+
   /** Posts grouped dropdown + reasoning state in one payload. */
   private postModelState(): void {
     void this.panel.webview.postMessage({
@@ -642,6 +752,13 @@ class ChatHost {
       reasoning: vscode.workspace
         .getConfiguration('plato')
         .get<string>('reasoning', 'off'),
+      orchestration: vscode.workspace
+        .getConfiguration('plato')
+        .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo'),
+      academy: this.academyStatus(),
+      persona: vscode.workspace
+        .getConfiguration('plato')
+        .get('duo.persona', 'aristotle'),
     });
   }
 
@@ -933,26 +1050,53 @@ class ChatHost {
       this.send('error', 'Open a folder before asking Plato.');
       return;
     }
-    // Teams (D31): teams.yaml at the root, when present, defines the team.
+    // Orchestration (D32): the SETTING decides the mode, never file presence.
+    const orchestration = vscode.workspace
+      .getConfiguration('plato')
+      .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo');
+    // Academy (D31/D32): academy.yaml at the root defines the council.
     // Validation is loud — a broken file aborts the run before it starts.
     let team: ReturnType<typeof loadTeamConfig> = null;
     try {
       team = loadTeamConfig(root);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'error';
+      if (orchestration === 'academy') {
+        this.send(
+          'error',
+          e instanceof TeamConfigError
+            ? msg
+            : `academy.yaml could not be read — ${msg}`,
+        );
+        return;
+      }
+      // Not in Academy mode: the file is present but inert. Say so once.
+      this.send(
+        'notice',
+        `academy.yaml has a problem but is not active (orchestration: ${orchestration}) — ${msg}`,
+      );
+    }
+    if (team === null && orchestration === 'academy') {
       this.send(
         'error',
-        e instanceof TeamConfigError
-          ? msg
-          : `teams.yaml could not be read — ${msg}`,
+        hasLegacyTeamsYaml(root)
+          ? 'Academy mode needs academy.yaml — teams.yaml was renamed to academy.yaml (D32). Rename the file to switch.'
+          : 'Academy mode needs an academy.yaml at the workspace root. Copy the example from the extension, or switch to Solo/Duo in Settings.',
       );
       return;
     }
-    const coderMember: TeamMember | undefined = team?.members.find(
-      (m) => m.kind === 'coder',
-    );
-    if (team) {
-      this.send('notice', `Team "${team.name || 'unnamed'}" active`);
+    if (team !== null && orchestration !== 'academy') {
+      this.send(
+        'notice',
+        `academy.yaml detected but not active (orchestration: ${orchestration}) — switch to Academy in Settings to use it.`,
+      );
+    }
+    const useAcademy = orchestration === 'academy' && team !== null;
+    const workerMember: TeamMember | undefined = useAcademy
+      ? team?.members.find((m) => m.kind === 'worker')
+      : undefined;
+    if (useAcademy && team) {
+      this.send('notice', `Academy "${team.name || 'unnamed'}" active`);
       this.send('team', {
         name: team.name,
         members: team.members.map((m) => ({
@@ -960,7 +1104,7 @@ class ChatHost {
           kind: m.kind,
           model: m.model,
           tiers:
-            m.kind === 'observer'
+            m.kind === 'philosopher'
               ? [
                   m.guidance ?? true ? 'guidance' : '',
                   m.pause ?? false ? 'pause' : '',
@@ -970,9 +1114,9 @@ class ChatHost {
         })),
       });
     }
-    // Resolve the composite ref to a connection profile (D26a). The team
-    // coder's model wins over the chat dropdown choice (D31d/e).
-    const ref = coderMember?.model ?? this.effectiveModel();
+    // Resolve the composite ref to a connection profile (D26a). The academy
+    // worker's model wins over the chat dropdown choice (D31d/e).
+    const ref = workerMember?.model ?? this.effectiveModel();
     const parts = splitModelRef(ref);
     const conn = parts
       ? readConnections().find((c) => c.id === parts.connectionId) ?? null
@@ -981,7 +1125,7 @@ class ChatHost {
       this.send(
         'error',
         `Unknown connection in "${ref}"${
-          coderMember ? ` (teams.yaml member '${coderMember.name}')` : ''
+          workerMember ? ` (academy.yaml member '${workerMember.name}')` : ''
         }. Configured: ${readConnections()
           .map((c) => c.id)
           .join(', ')}.`,
@@ -1045,9 +1189,9 @@ class ChatHost {
         `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
       );
     }
-    // Observers (D30 + D31): teams.yaml members when a team is present;
-    // otherwise solo mode falls back to plato.observer.* settings.
-    // The observer invariant carries over: observers NEVER approve tools.
+    // Philosophers (D30 + D32): academy.yaml members in Academy mode; the
+    // Duo philosopher from settings otherwise. Solo = none.
+    // Invariant unchanged: philosophers NEVER approve tool calls.
     const obsSpecs: {
       name: string;
       ref: string;
@@ -1057,9 +1201,9 @@ class ChatHost {
       cancel: boolean;
       maxInterventions: number;
     }[] = [];
-    if (team) {
+    if (useAcademy && team) {
       for (const m of team.members) {
-        if (m.kind === 'observer') {
+        if (m.kind === 'philosopher') {
           obsSpecs.push({
             name: m.name,
             ref: m.model,
@@ -1071,14 +1215,17 @@ class ChatHost {
           });
         }
       }
-    } else if (
-      vscode.workspace.getConfiguration('plato').get('observer.enable', false)
-    ) {
+    } else if (orchestration === 'duo') {
       const c = vscode.workspace.getConfiguration('plato');
+      const personaId = c.get<string>('duo.persona', 'aristotle');
+      const persona = findPersona(personaId) ?? PERSONAS[0]!;
+      const customRole = c.get('observer.role', '');
       obsSpecs.push({
-        name: 'observer',
+        name: persona.name,
         ref: c.get<string>('observer.model', '') || ref,
-        role: c.get('observer.role', ''),
+        // A custom role overrides the persona prompt; otherwise the persona
+        // IS the role (D32b).
+        role: customRole.length > 0 ? customRole : persona.role,
         guidance: true, // D30b: guidance tier always on
         pause: c.get('observer.pause', false),
         cancel: c.get('observer.cancel', false),
@@ -1186,7 +1333,7 @@ class ChatHost {
               : undefined,
         }),
         model: ref,
-        role: coderMember?.role,
+        role: workerMember?.role,
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
