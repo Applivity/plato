@@ -1350,11 +1350,27 @@ class ChatHost {
       let observing = true;
       let errNotified = false;
       this.send('notice', `[${name}] watching — ${spec.ref}`);
+      // Arg summaries in digest entries (D33+): a philosopher steering code
+      // needs to see WHICH files/commands are involved, not just tool names.
+      const argHint = (args: Record<string, unknown>): string => {
+        if (typeof args['path'] === 'string') {
+          return ` ${String(args['path']).slice(0, 120)}`;
+        }
+        if (typeof args['command'] === 'string') {
+          return ` ${String(args['command']).slice(0, 120)}`;
+        }
+        if (typeof args['pattern'] === 'string') {
+          return ` /${String(args['pattern']).slice(0, 80)}/`;
+        }
+        return '';
+      };
       bus.on((e) => {
         if (e.type === 'tool-event') {
           digest.push({
             kind: 'tool',
-            text: `${e.tool} ${e.phase}${e.ok === false ? ' (error)' : ''}`,
+            text: `${e.tool}${e.args ? argHint(e.args as Record<string, unknown>) : ''} ${
+              e.phase
+            }${e.ok === false ? ' (error)' : ''}`,
           });
         } else if (e.type === 'text') {
           agent.noteText(e.text);

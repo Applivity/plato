@@ -121,6 +121,6 @@ describe('ObserverAgent', () => {
     ]);
     expect(seen).toContain('TASK: fix the bug');
     expect(seen).toContain('[tool] grep done');
-    expect(seen).toContain('CODER LAST REPLY');
+    expect(seen).toContain('CODER RECENT REPLY');
   });
 });

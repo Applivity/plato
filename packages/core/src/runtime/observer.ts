@@ -62,11 +62,16 @@ export class ObserverAgent {
   /** Builds the condensed run digest for the model. */
   digest(task: string, entries: DigestEntry[]): string {
     const lines = [`TASK: ${task}`];
-    for (const e of entries.slice(-30)) {
+    for (const e of entries.slice(-40)) {
       lines.push(e.kind === 'tool' ? `[tool] ${e.text}` : `[${e.kind}] ${e.text}`);
     }
+    // The coder's recent narration is the strongest steering signal: it says
+    // what the coder believes it is doing. Keep the tail (most recent), not
+    // the head (D33+ enrichment: was a 600-char cap).
     if (this.lastText.length > 0) {
-      lines.push(`CODER LAST REPLY (truncated): ${this.lastText.slice(0, 600)}`);
+      lines.push(
+        `CODER RECENT REPLY (truncated to last 1500 chars): ${this.lastText.slice(-1500)}`,
+      );
     }
     return lines.join('\n');
   }
