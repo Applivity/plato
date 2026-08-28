@@ -280,6 +280,40 @@ event bus/transcripts like any event. (e) v1 limitations: observer
 costs are not metered separately; digests are text-condensed, not
 full-fidelity. (f) Teams (D11) land after v1 proves out.
 
+**D31 — Teams v1: `.aplivity/teams.yaml` (M4, drafted 2026-08-26, founder
+approval pending).** Teams generalize D30's observer into named member
+profiles. (a) *File*: `teams.yaml` at the workspace root (AMENDS D11's
+`.aplivity/teams.yaml` — `mcp.yaml` already lives at the root; one config
+directory would split config across two places; the `.aplivity/` directory
+never shipped, so nothing breaks). Missing file → solo mode, current
+behavior, zero changes. (b) *Shape* (zero-dep parser, same subset style as
+`parseMcpConfig`): top-level `team: {name}`, then `members:` list; each
+member = `name`, `model` (`<conn>:<model>` ref, required), `role` (extra
+system text), `kind: coder | observer` (default `coder`), and for
+observers the D30 tier fields `guidance`/`pause`/`cancel`/
+`maxInterventions` with the same defaults. (c) *v1 constraint (D12/D13)*:
+exactly one `coder` member and 0–3 `observer` members. Solo = no file or
+one coder member only — one code path, no separate engine. Multiple
+coders, concurrency, per-run budget caps stay out of v1 (M5 candidates).
+(d) *Mapping*: the coder's `model`/`role` override the chat model choice
+and plato's base system prompt additions for that run; each observer
+member becomes its own `ObserverAgent` on the same bus with its own
+digest and intervention budget (total cap = sum of member caps, hard-capped
+at 5 per run). The observer's invariant carries over: observers NEVER
+approve tool calls. (e) *Precedence*: `teams.yaml` present → it wins over
+`plato.observer.*` settings (the Settings → Observer section applies only
+in solo mode). (f) *Validation is loud, never silent* (D11's root cause:
+continue.dev's silent invalid config): parse errors, unknown fields,
+duplicate names, a missing coder, or an unresolvable model ref abort with
+a chat notice naming the file and line, and the run does not start with a
+half-team. (g) *Schema*: ship `teams.schema.json`; bind it via
+`yaml.schemas` configurationDefaults for `teams.yaml` (works when the YAML
+extension is installed; its absence degrades to plain editing with loud
+parse errors — acceptable). (h) *UI*: read-only team display in the panel
+(member cards: name, kind, model, tier flags) — the yaml is the source of
+truth, no visual editor (D11 defers it). Founder to confirm (a)–(h)
+before implementation; open sub-questions: none blocking.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
