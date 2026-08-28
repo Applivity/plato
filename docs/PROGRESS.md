@@ -127,10 +127,27 @@ One combined workstream, per founder decision 2026-08-25:
 - Team profiles (`.aplivity/teams.yaml`, D11) if the milestone holds;
   otherwise early M4.
 
+## Deferred / backlog (do not lose these)
+
+- **Reading experience (founder, 2026-08-26):** agent narration ("Let me examine…")
+  and the actual answer to the user are jumbled together in one stream. Needs
+  visual separation of progress-narration vs. delivered information — paragraph
+  spacing, distinct styling per message kind, in the spirit of Cline/Claude Code
+  but with Plato's own formatting. Related structural item: the host streams one
+  cumulative markdown blob into a fixed `#streaming` element, so narration and
+  tool activity cannot interleave; needs host-side reply segmentation.
+- Auto-continuation of turns truncated by the token cap (stopReason is now
+  surfaced; the loop still just stops with a note).
+- Add-connection transition animation (founder-requested, deferred twice).
+- Dead `.msg.tool` CSS rules in webview (old per-entry tool rendering removed).
+- OpenRouter authoritative `usage.cost` passthrough.
+- Secret audit + trademark sweep before public release; license decision at M4 end.
+
 ## Change log (newest first)
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-26 | (this commit) | M4/fix | GFM table rendering (founder trial: Plato's "Top 5 Bugs" table rendered as literal pipe text). Core markdown renderer (escape-first, zero deps) now supports pipe tables: header + delimiter row detection, `:--`/`:-:`/`--:` alignment (left default emits no style attr), body rows padded/trimmed to header width, inline formatting and escaping preserved inside cells (XSS test included); pipe lines without a delimiter row still render as paragraphs. Webview gains `.md-table` CSS (bordered cells, header tint, horizontal scroll). Also added a durable "Deferred / backlog" section to this file, led by the founder's reading-experience feedback (narration vs. answer separation). Version 0.7.8 | `tsc -b` clean; 91/91 vitest (6 new markdown tests: render, alignment, XSS-in-cell, inline formatting, non-table pipes, row padding); bundle→package→install @0.7.8; md-table markers in installed dist/extension.js |
 | 2026-08-26 | (this commit) | M4/fix ×2 | (1) Approve-all deadlock (founder trial: run froze forever right after clicking "approved for session" — no done, no error). The 'approve-all' handler cached the tool and sent the notice but never resolved the waiting pendingApproval promise, so the loop hung at `await approve(...)`. Fix: resolve it (true). (2) maxTokens made model-aware: catalog gained per-model `maxOutput` (haiku 8192 / sonnet 64000 / opus 32768 / gpt-4o 16384 / o4-mini 100000); loop clamps its 16384 default via new `maxOutputFor()` (unknown/discovered models → conservative 8192, since a too-high request is a hard 400 while a too-low one only truncates, which stopReason now surfaces). Without the clamp, 0.7.6's flat 16384 would 400 every turn on Haiku 3.5. Version 0.7.7 | `tsc -b` clean; 85/85 vitest (2 new clamp tests: haiku clamps to 8192, sonnet keeps 16384); `node --check` inline PASS; bundle→package→install @0.7.7; markers in installed dist/extension.js (maxOutputFor ×3, resolve?.(true) ×1) |
 | 2026-08-26 | (this commit) | M4/fix | Silent answer loss on truncation (founder trials 0.7.4/0.7.5: runs ended "done" with no final report). Root cause: loop hard-coded maxTokens 4096; canonical TurnResponse had no stopReason, so both adapters discarded the provider's truncation signal; and any no-tool-call turn was treated as 'complete' — a turn truncated mid-thinking (zero text, zero tool calls) ended the run as a normal "✓ done". Fix: stopReason added to the provider contract and mapped in AnthropicNative (stop_reason) + OpenAICompat (finish_reason='length'); loop raised maxTokens to 16384; a truncated no-tool turn now ends as reason 'cap' with a visible "[plato] output hit the token cap; the answer may be incomplete." note (same rendering path as the turn-cap note). Deferred: auto-continuation of truncated turns. Version 0.7.6 | `tsc -b` clean; 83/83 vitest (3 new loop tests: silent-truncation → cap+note, partial-answer truncation → cap+note, normal text-only turn → complete); bundle→package→install @0.7.6; markers in installed dist/extension.js (stopReason ×3, 'token cap' note, 16384) |
 | 2026-08-26 | (this commit) | M4/UX fix | Tool-summary correctness (founder trial of 0.7.4): (1) counts were events-per-call (requested+allowed+done ≈ 2.7× the call count), contradicting the done card — now only phase 'done' is counted, so `read_file × 15 · list_dir × 3` always matches "18 tool calls"; (2) each flush appended a new line (7 redundant consecutive lines in trial) — consecutive flushes now update one live line, chain broken by notices/cards/done; (3) replay rendered every tool entry as an individual line — restore now collapses through the same summary path; (4) error path now flushes so pending tool events can't leak into the next run. Known cosmetic: summaries sit below the whole reply (host streams one cumulative markdown blob into a fixed #streaming element; true interleaving needs host-side reply segmentation — deferred). Dead `.msg.tool` CSS left in place. Version 0.7.5 | `tsc -b` clean; 80/80 vitest; `node --check` inline script PASS; bundle→package→install @0.7.5; markers in installed dist/extension.js (summaryLine ×7, tool-summary ×2, flushToolBuffer ×9) |

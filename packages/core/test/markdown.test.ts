@@ -71,4 +71,51 @@ describe('renderMarkdown', () => {
     expect(out).toContain('<p>before</p>');
     expect(out).toContain('<p>after</p>');
   });
+
+  it('renders a GFM table with header and body rows', () => {
+    const out = renderMarkdown(
+      '| # | Bug | File |\n|---|-----|------|\n| 1 | SQL injection | DatabaseHelper.java |\n| 2 | HMAC charset | ApiSecurityUtility.java |',
+    );
+    expect(out).toContain('md-table');
+    expect(out).toContain('<th>Bug</th>');
+    expect(out).toContain('<td>SQL injection</td>');
+    expect(out).toContain('<td>ApiSecurityUtility.java</td>');
+    expect(out).not.toContain('|---');
+  });
+
+  it('renders alignment colons as text-align styles (left stays default)', () => {
+    const out = renderMarkdown(
+      '| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |',
+    );
+    expect(out).not.toContain('text-align:left');
+    expect(out).toContain('<th style="text-align:center">b</th>');
+    expect(out).toContain('<th style="text-align:right">c</th>');
+    expect(out).toContain('<td style="text-align:center">2</td>');
+    expect(out).toContain('<td style="text-align:right">3</td>');
+  });
+
+  it('escapes HTML inside table cells', () => {
+    const out = renderMarkdown(
+      '| x |\n|---|\n| <img src=x onerror=alert(1)> |',
+    );
+    expect(out).not.toContain('<img');
+    expect(out).toContain('&lt;img');
+  });
+
+  it('keeps inline formatting inside table cells', () => {
+    const out = renderMarkdown('| a |\n|---|\n| **bold** and `code` |');
+    expect(out).toContain('<td><strong>bold</strong> and <code>code</code></td>');
+  });
+
+  it('leaves pipe lines without a delimiter row as a paragraph', () => {
+    const out = renderMarkdown('| just | some | text\nmore');
+    expect(out).not.toContain('md-table');
+    expect(out).toContain('| just');
+  });
+
+  it('pads short body rows and trims long ones to the header width', () => {
+    const out = renderMarkdown('| a | b |\n|---|---|\n| one |\n| 1 | 2 | 3 |');
+    expect(out).toContain('<td>one</td><td></td>');
+    expect(out).not.toContain('<td>3</td>');
+  });
 });

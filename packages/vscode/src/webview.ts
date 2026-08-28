@@ -238,6 +238,12 @@ export function chatHtml(): string {
                  background:var(--vscode-textCodeBlock-background,
                                 rgba(128,128,128,.09)); }
   .md-code pre code { background:none; padding:0; font-size:inherit; }
+  .md-table { margin:.6em 0; overflow-x:auto; }
+  .md-table table { border-collapse:collapse; font-size:12px; }
+  .md-table th, .md-table td { border:1px solid var(--pl-border);
+             padding:4px 9px; vertical-align:top; }
+  .md-table th { background:var(--vscode-editorWidget-background,
+                               rgba(128,128,128,.12)); font-weight:600; }
 </style>
 </head>
 <body>

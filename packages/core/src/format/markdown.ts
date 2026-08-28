@@ -5,7 +5,8 @@
  * added, so model output can never inject markup. Raw HTML never passes
  * through. Supported subset: fenced code blocks, `inline code`, **bold**,
  * *italic*, #-headings (up to ####), -/* and 1. lists, > blockquotes,
- * paragraphs with soft breaks, and http(s)-only links. No dependencies.
+ * GFM pipe tables (with :-- alignment), paragraphs with soft breaks, and
+ * http(s)-only links. No dependencies.
  */
 
 export function escapeHtml(s: string): string {
@@ -18,6 +19,39 @@ export function escapeHtml(s: string): string {
 }
 
 const FENCE = /```([A-Za-z0-9_+\-.]*)\r?\n([\s\S]*?)```/g;
+
+/** Splits a GFM table row into trimmed cells (leading/trailing pipe dropped). */
+function splitTableRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith('|')) {
+    s = s.slice(1);
+  }
+  if (s.endsWith('|')) {
+    s = s.slice(0, -1);
+  }
+  return s.split('|').map((c) => c.trim());
+}
+
+/**
+ * Parses a delimiter row (|---|:---:|---:|). Returns per-column alignment,
+ * or null when the line is not a valid delimiter row.
+ */
+function delimiterAligns(line: string): ('left' | 'center' | 'right')[] | null {
+  const cells = splitTableRow(line);
+  if (cells.length === 0) {
+    return null;
+  }
+  const aligns: ('left' | 'center' | 'right')[] = [];
+  for (const c of cells) {
+    if (!/^:?-{1,}:?$/.test(c)) {
+      return null;
+    }
+    const l = c.startsWith(':');
+    const r = c.endsWith(':');
+    aligns.push(l && r ? 'center' : r ? 'right' : 'left');
+  }
+  return aligns;
+}
 
 export function renderMarkdown(src: string): string {
   // 1) Pull fenced code blocks out first; they must not be transformed.
@@ -64,8 +98,9 @@ export function renderMarkdown(src: string): string {
     }
   };
 
-  for (const rawLine of work.split('\n')) {
-    const line = rawLine.replace(/\s+$/, '');
+  const lines = work.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const line = (lines[i] ?? '').replace(/\s+$/, '');
     if (line.length === 0) {
       flushPara();
       flushList();
@@ -87,6 +122,48 @@ export function renderMarkdown(src: string): string {
       const level = h[1]?.length ?? 1;
       out.push(`<div class="md-h md-h${level}">${h[2] ?? ''}</div>`);
       continue;
+    }
+
+    // GFM table: a pipe row followed by a delimiter row. Cells are already
+    // escaped and inline-formatted, so they pass through as-is.
+    if (/^\s*\|/.test(line)) {
+      const aligns = delimiterAligns(lines[i + 1] ?? '');
+      const head = splitTableRow(line);
+      if (aligns !== null && head.length === aligns.length && head.length > 0) {
+        flushPara();
+        flushList();
+        const th = head
+          .map((c, j) => {
+            const a = aligns[j]!;
+            return `<th${a === 'left' ? '' : ` style="text-align:${a}"`}>${c}</th>`;
+          })
+          .join('');
+        const body: string[] = [];
+        let j = i + 2;
+        while (j < lines.length && /^\s*\|/.test(lines[j] ?? '')) {
+          const cells = splitTableRow(lines[j] ?? '');
+          while (cells.length < head.length) {
+            cells.push('');
+          }
+          body.push(
+            '<tr>' +
+              cells
+                .slice(0, head.length)
+                .map((c, k) => {
+                  const a = aligns[k]!;
+                  return `<td${a === 'left' ? '' : ` style="text-align:${a}"`}>${c}</td>`;
+                })
+                .join('') +
+              '</tr>',
+          );
+          j++;
+        }
+        out.push(
+          `<div class="md-table"><table><thead><tr>${th}</tr></thead><tbody>${body.join('')}</tbody></table></div>`,
+        );
+        i = j - 1;
+        continue;
+      }
     }
 
     const ul = /^[-*]\s+(.*)$/.exec(line);
