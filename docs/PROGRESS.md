@@ -142,12 +142,13 @@ One combined workstream, per founder decision 2026-08-25:
   renderer's zero-dependency doctrine, SVG XSS surface inside the escape-first
   webview, CSP must allow the bundled lib) vs. render-on-demand vs. status quo.
   Not a small change — decide before building.
-- **Observer digest is thin (2026-08-26):** the observer sees tool names+phases
-  and the last 600 chars of coder text — no tool arguments, no outputs, no
-  errors detail. Combined with the deliberately conservative prompt this keeps
-  interventions near zero. If "N checks · 0 interventions" persists on runs that
-  clearly warranted steering, enrich the digest (tool args summaries, error
-  outputs, full recent narration) before touching the prompt.
+- **Philosopher cost metering (2026-08-26, now clearly needed):** trial #4 ran
+  2920k coder tokens and 21 observer checks (~300 tok each on Sonnet) — the
+  philosopher's usage rides the bus but is not metered or shown. Sum it into
+  the cost table / done card.
+- ~~Observer digest is thin~~ RESOLVED 2026-08-26 (0.9.2 arg hints + recent-
+  reply tail) — validated by trial #4 where Diogenes caught no-op diff
+  thrashing and analysis paralysis mid-run (5 interventions).
 - Auto-continuation of turns truncated by the token cap (stopReason is now
   surfaced; the loop still just stops with a note).
 - Add-connection transition animation (founder-requested, deferred twice).
@@ -159,6 +160,7 @@ One combined workstream, per founder decision 2026-08-25:
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
+| 2026-08-26 | (this commit) | M4/founder-verified | **Observer thesis proven live** (founder Duo trial #4, claude-sonnet-4-5 as Diogenes on a camera2 bug-fix task): 21 checks, **5 mid-run guidance interventions**, each catching a real, verifiable worker failure — analysis paralysis after 13 read_files; no-op diff thrashing (worker admitted "I keep making no-op edits", "that was another identical diff (no-op)"); symptom-patching vs root cause (async camera2 lifecycle — worker agreed in its own narration); a strategic redirect to a shared base class. Guidance visibly changed worker behavior each time. Enabled by the 0.9.2 digest enrichment (arg hints + recent-reply window). Also verified: turn-cap note renders, guidance arrives at safe points, session approvals throughout (2920k tok run — cost metering for philosophers now clearly needed). Thin-digest backlog item RESOLVED. Remaining M4: philosopher cost metering, closeout. | Founder-pasted transcript: 5 `[Diogenes] guidance:` notices mid-run, worker acknowledgments, done card `observer 21 checks · 5 interventions — stopped at turn cap` |
 | 2026-08-26 | (this commit) | M4/observer | Tier-degraded actions counted (founder Duo trial #3: 13 checks, 0 interventions, 2 unparseable — parse telemetry fired live, but a third blind spot remained: a philosopher action whose tier is disabled (e.g. pause:false) silently became a noop, invisible in the counts). ObserverAgent now counts degraded actions; done card shows "N tier-blocked" via obsExtras() alongside "N unparseable". With this, every possible philosopher outcome is visible: checks = consults, interventions = steers, unparseable = could not answer, tier-blocked = wanted to steer but config forbade it, remainder = deliberate noops. Version 0.9.4 | `tsc -b` clean; 115/115 vitest (1 new: pause-wanted+pause-disabled counted as degraded, pause-enabled counts as intervention); `node --check` inline PASS; bundle→package→install @0.9.4; markers in installed dist/extension.js (degraded ×8, tier-blocked, obsExtras ×2) |
 | 2026-08-26 | (this commit) | M4/observer | Parse-failure telemetry (founder Duo trial #2: 5 checks, 0 interventions on a run that catalogued 10 camera bugs — still ambiguous). Blind spot found: an unparseable philosopher reply (prose with no JSON — common on free models) silently became a noop, indistinguishable from a deliberate noop. Now: ObserverAgent counts parseErrors and keeps lastRaw (first 200 chars of the reply); host sends a one-time "[name] reply not parseable as JSON (N so far)" notice per run and the done card appends "· N unparseable" when nonzero. Version 0.9.3 | `tsc -b` clean; 114/114 vitest (1 new: unparseable reply counted, lastRaw captured); `node --check` inline PASS; bundle→package→install @0.9.3; markers in installed dist/extension.js (parseErrors ×5, lastRaw ×2, unparseable ×2) |
 | 2026-08-26 | (this commit) | M4/observer | Digest enrichment (founder Duo trial: Diogenes armed, ~20 tool calls on crash-prone camera code, zero interventions — the thin-digest backlog item was the predicted cause). Philosopher digest now carries tool arg hints (path/command/pattern, 80–120 chars) from bus tool-event args, and the coder-reply window grew from first-600-chars to last-1500-chars (the tail is the recent narration — the strongest steering signal; the old head-cap showed only the run's opening words). Event window 30→40. Founder-verified in the same trial: inert academy.yaml notice, persona arm notice, session approvals without deadlock, correct tool summaries, full task closure. Version 0.9.2 | `tsc -b` clean; 113/113 vitest; `node --check` inline PASS; bundle→package→install @0.9.2; markers in installed dist/extension.js (argHint ×2, CODER RECENT REPLY, last 1500) |
