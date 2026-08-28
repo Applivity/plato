@@ -136,6 +136,12 @@ One combined workstream, per founder decision 2026-08-25:
   but with Plato's own formatting. Related structural item: the host streams one
   cumulative markdown blob into a fixed `#streaming` element, so narration and
   tool activity cannot interleave; needs host-side reply segmentation.
+- **Mermaid diagram rendering (founder, 2026-08-26):** Plato emits mermaid fences
+  (architecture diagrams); the renderer shows them as labeled code blocks, not
+  rendered diagrams. Needs its own decision: bundle mermaid.js (~1MB, breaks the
+  renderer's zero-dependency doctrine, SVG XSS surface inside the escape-first
+  webview, CSP must allow the bundled lib) vs. render-on-demand vs. status quo.
+  Not a small change — decide before building.
 - **Observer digest is thin (2026-08-26):** the observer sees tool names+phases
   and the last 600 chars of coder text — no tool arguments, no outputs, no
   errors detail. Combined with the deliberately conservative prompt this keeps
