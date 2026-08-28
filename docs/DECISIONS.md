@@ -314,6 +314,52 @@ parse errors — acceptable). (h) *UI*: read-only team display in the panel
 truth, no visual editor (D11 defers it). Founder to confirm (a)–(h)
 before implementation; open sub-questions: none blocking.
 
+**D32 — Orchestration modes & philosopher personas (M4, drafted 2026-08-26,
+founder approval pending).** Fixes terminology before M4 closeout and makes
+orchestration an explicit user choice instead of file presence.
+(a) *Terms*: the worker (formerly "coder") does the work; philosophers
+(formerly "observers") watch and steer. Modes: **Solo** (Plato alone),
+**Duo** (worker + one philosopher), **Academy** (the full council from
+config — Plato's own school; thematic lock for the product). Setting
+`plato.orchestration`: `'solo' | 'duo' | 'academy'`, default `'solo'`.
+The config file renames `teams.yaml` → `academy.yaml` and member kind
+`coder|observer` → `worker|philosopher` (0.8.0 never circulated beyond the
+founder; amends D31a/b — loud errors name the new terms so old files fail
+with a hint, not silently). Precedence: the SETTING decides, not file
+presence; an academy.yaml present but orchestration != academy shows a
+Settings hint ("academy.yaml detected — Academy available"), never hijacks
+the run. Academy selected but file missing/broken = loud error at run
+start AND at settings selection time.
+(b) *Personas*: five philosopher presets, each a name + default role
+prompt; used in the Duo picker and as copy-paste academy.yaml members:
+- **Aristotle** (default) — the empiricist: judge only from evidence in
+  the digest; flag claims without verification, conclusions without
+  observation, changes not re-checked.
+- **Heraclitus** — the watcher of change: focus on what is changing —
+  risky edits, unstable patterns, regressions introduced mid-run.
+- **Diogenes** — the Cynic: bluntly call out overcomplication, bloat,
+  and gold-plating; prefer the simple answer; one-line gotchas.
+- **Pythagoras** — the geometer: check structure, symmetry, correctness
+  — types, counts, invariants, patterns; intervene when the numbers do
+  not add up.
+- **Thales** — the first look: light first-pass review; flag only clear,
+  obvious mistakes; stay silent when uncertain (cheap-model friendly).
+(c) *Duo*: one philosopher, configured in Settings (persona preset +
+model ref + tier toggles + budget) — reuses the existing
+`plato.observer.*` storage, renamed `plato.duo.*` with migration-free
+fallback (settings never shipped beyond founder).
+(d) *Settings restructure*: collapsible `<details>` sections, order:
+Orchestration (three mode cards with one-line descriptions; Academy card
+shows the parsed member list + validation status), Duo (persona picker +
+model + tiers), Connections (collapsed by default), Defaults (collapsed).
+(e) *Header chip*: `● solo` / `◐ duo` / `⟐ academy:<name>` next to the
+mode pills, clickable → Settings → Orchestration.
+(f) *Chat*: academy run shows the member card (already shipped, renamed);
+duo shows `[Aristotle] watching — <model>`. Done-card stats unchanged,
+aggregated. Observer invariant unchanged: philosophers NEVER approve
+tool calls. Founder to confirm terminology + persona set before
+implementation.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
