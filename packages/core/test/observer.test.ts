@@ -121,6 +121,28 @@ describe('ObserverAgent', () => {
     expect(o.lastRaw).toContain('coder seems fine');
   });
 
+  it('counts tier-degraded actions (pause wanted, pause disabled)', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: '{"action":"pause"}' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const o = new ObserverAgent(p, { ...OPTS, pause: false });
+    expect(await o.observe('t', [])).toEqual({ action: 'noop' });
+    expect(o.degraded).toBe(1);
+    expect(o.interventions).toBe(0);
+    // Same reply with the tier enabled counts as an intervention.
+    const o2 = new ObserverAgent(p, { ...OPTS, pause: true });
+    const a = await o2.observe('t', []);
+    expect(a).toEqual({ action: 'pause' });
+    expect(o2.degraded).toBe(0);
+    expect(o2.interventions).toBe(1);
+  });
+
   it('digest includes task and recent tool lines', async () => {
     let seen = '';
     const p: ChatProvider = {

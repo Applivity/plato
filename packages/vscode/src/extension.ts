@@ -738,6 +738,22 @@ class ChatHost {
     return parts ? modelSupportsReasoning(parts.model) : false;
   }
 
+  /** Done-card extras for philosopher health (D33+): unparseable/degraded. */
+  private obsExtras(
+    observers: { agent: ObserverAgent; name: string }[],
+  ): string {
+    const parts: string[] = [];
+    const unparseable = observers.reduce((s, o) => s + o.agent.parseErrors, 0);
+    const degraded = observers.reduce((s, o) => s + o.agent.degraded, 0);
+    if (unparseable > 0) {
+      parts.push(`${unparseable} unparseable`);
+    }
+    if (degraded > 0) {
+      parts.push(`${degraded} tier-blocked`);
+    }
+    return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
+  }
+
   /** Example academy.yaml body for the Create-example button (D33). */
   private academyExample(model: string): string {
     return [
@@ -1491,14 +1507,7 @@ class ChatHost {
               )} checks · ${observers.reduce(
                 (s, o) => s + o.agent.interventions,
                 0,
-              )} interventions${
-                observers.reduce((s, o) => s + o.agent.parseErrors, 0) > 0
-                  ? ` · ${observers.reduce(
-                      (s, o) => s + o.agent.parseErrors,
-                      0,
-                    )} unparseable`
-                  : ''
-              }`
+              )} interventions${this.obsExtras(observers)}`
             : '',
       });
     } catch {

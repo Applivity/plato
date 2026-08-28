@@ -52,6 +52,8 @@ export class ObserverAgent {
   parseErrors = 0;
   /** First 200 chars of the last unparseable reply, for diagnostics. */
   lastRaw: string | null = null;
+  /** Actions the philosopher wanted but the tier config disabled (D33+). */
+  degraded = 0;
   private lastText = '';
 
   constructor(
@@ -126,14 +128,18 @@ export class ObserverAgent {
       this.lastRaw = raw.slice(0, 200);
       return { action: 'noop' };
     }
-    // Tier enforcement (D30b): disabled verbs degrade to noop.
+    // Tier enforcement (D30b): disabled verbs degrade to noop — but they
+    // are counted (D33+), so "0 interventions" stays explainable.
     if (parsed.action === 'guidance' && !this.opts.guidance) {
+      this.degraded += 1;
       return { action: 'noop' };
     }
     if (parsed.action === 'pause' && !this.opts.pause) {
+      this.degraded += 1;
       return { action: 'noop' };
     }
     if (parsed.action === 'cancel' && !this.opts.cancel) {
+      this.degraded += 1;
       return { action: 'noop' };
     }
     if (parsed.action !== 'noop') {
