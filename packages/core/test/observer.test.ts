@@ -104,6 +104,23 @@ describe('ObserverAgent', () => {
     expect(o.checks).toBe(3);
   });
 
+  it('counts unparseable replies as parse errors, not silent noops', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: 'The coder seems fine to me, no issues.' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const o = new ObserverAgent(p, OPTS);
+    expect(await o.observe('t', [])).toEqual({ action: 'noop' });
+    expect(o.checks).toBe(1);
+    expect(o.parseErrors).toBe(1);
+    expect(o.lastRaw).toContain('coder seems fine');
+  });
+
   it('digest includes task and recent tool lines', async () => {
     let seen = '';
     const p: ChatProvider = {

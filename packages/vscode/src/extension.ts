@@ -1349,6 +1349,7 @@ class ChatHost {
       const digest: DigestEntry[] = [];
       let observing = true;
       let errNotified = false;
+      let parseErrNotified = false;
       this.send('notice', `[${name}] watching — ${spec.ref}`);
       // Arg summaries in digest entries (D33+): a philosopher steering code
       // needs to see WHICH files/commands are involved, not just tool names.
@@ -1385,6 +1386,13 @@ class ChatHost {
                   this.send(
                     'notice',
                     `[${name}] unavailable — ${agent.lastError}`,
+                  );
+                }
+                if (agent.parseErrors > 0 && !parseErrNotified) {
+                  parseErrNotified = true;
+                  this.send(
+                    'notice',
+                    `[${name}] reply not parseable as JSON (${agent.parseErrors} so far) — try a stronger model or tighten the role prompt`,
                   );
                 }
                 if (a.action === 'guidance') {
@@ -1483,7 +1491,14 @@ class ChatHost {
               )} checks · ${observers.reduce(
                 (s, o) => s + o.agent.interventions,
                 0,
-              )} interventions`
+              )} interventions${
+                observers.reduce((s, o) => s + o.agent.parseErrors, 0) > 0
+                  ? ` · ${observers.reduce(
+                      (s, o) => s + o.agent.parseErrors,
+                      0,
+                    )} unparseable`
+                  : ''
+              }`
             : '',
       });
     } catch {

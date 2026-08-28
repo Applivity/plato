@@ -48,6 +48,10 @@ export class ObserverAgent {
   apiErrors = 0;
   /** Last provider error message, null while healthy. */
   lastError: string | null = null;
+  /** Replies that were not parseable as one-line JSON (D33+). */
+  parseErrors = 0;
+  /** First 200 chars of the last unparseable reply, for diagnostics. */
+  lastRaw: string | null = null;
   private lastText = '';
 
   constructor(
@@ -116,6 +120,10 @@ export class ObserverAgent {
 
     const parsed = this.parseAction(raw);
     if (parsed === null) {
+      // Unparseable reply (e.g. prose with no JSON). Count it so the done
+      // card can distinguish "chose noop" from "could not answer" (D33+).
+      this.parseErrors += 1;
+      this.lastRaw = raw.slice(0, 200);
       return { action: 'noop' };
     }
     // Tier enforcement (D30b): disabled verbs degrade to noop.
