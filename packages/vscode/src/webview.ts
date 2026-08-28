@@ -977,6 +977,7 @@ export function chatHtml(): string {
           + (i.tools === 1 ? '1 tool call' : (i.tools ?? 0) + ' tool calls')
           + (i.tok ? ' \u00b7 ' + i.tok : '')
           + (i.cost ? ' \u00b7 ' + i.cost : '')
+          + (i.obs ? ' \u00b7 ' + i.obs : '')
           + (i.note ? ' \u2014 ' + i.note : '');
         addMsg('fin', null, line);
         chipOn('\u2713 done in ' + (i.secs ?? '?') + 's', true);

@@ -79,6 +79,31 @@ describe('ObserverAgent', () => {
     expect(await o.observe('t', [])).toEqual({ action: 'noop' });
   });
 
+  it('counts checks and tracks provider failures for health reporting', async () => {
+    let fail = true;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        if (fail) {
+          throw new Error('observer endpoint down');
+        }
+        return { content: [{ type: 'text', text: '{"action":"noop"}' }], usage: { inputTokens: 0, outputTokens: 0 } };
+      },
+    };
+    const o = new ObserverAgent(p, OPTS);
+    await o.observe('t', []);
+    await o.observe('t', []);
+    expect(o.checks).toBe(2);
+    expect(o.apiErrors).toBe(2);
+    expect(o.lastError).toBe('observer endpoint down');
+
+    fail = false;
+    await o.observe('t', []);
+    expect(o.apiErrors).toBe(0);
+    expect(o.lastError).toBeNull();
+    expect(o.checks).toBe(3);
+  });
+
   it('digest includes task and recent tool lines', async () => {
     let seen = '';
     const p: ChatProvider = {

@@ -42,6 +42,12 @@ const SYSTEM =
 
 export class ObserverAgent {
   interventions = 0;
+  /** How many times the observer was consulted (healthy or not). */
+  checks = 0;
+  /** Consecutive provider failures; reset on the next success. */
+  apiErrors = 0;
+  /** Last provider error message, null while healthy. */
+  lastError: string | null = null;
   private lastText = '';
 
   constructor(
@@ -77,6 +83,7 @@ export class ObserverAgent {
       return { action: 'noop' };
     }
     let raw: string;
+    this.checks += 1;
     try {
       const res = await this.provider.completeTurn({
         model: this.opts.model,
@@ -94,7 +101,11 @@ export class ObserverAgent {
       });
       raw =
         res.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
-    } catch {
+      this.apiErrors = 0;
+      this.lastError = null;
+    } catch (e) {
+      this.apiErrors += 1;
+      this.lastError = e instanceof Error ? e.message : 'observer error';
       return { action: 'noop' }; // observer failure never disturbs the run
     }
 

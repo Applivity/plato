@@ -1044,6 +1044,8 @@ class ChatHost {
         );
         const digest: DigestEntry[] = [];
         let observing = true;
+        let observerErrNotified = false;
+        this.send('notice', `[observer] watching — ${oRef}`);
         bus.on((e) => {
           if (e.type === 'tool-event') {
             digest.push({
@@ -1058,6 +1060,17 @@ class ChatHost {
               void observer
                 ?.observe(task, digest)
                 .then((a) => {
+                  if (
+                    observer !== null &&
+                    observer.lastError !== null &&
+                    !observerErrNotified
+                  ) {
+                    observerErrNotified = true;
+                    this.send(
+                      'notice',
+                      `[observer] unavailable — ${observer.lastError}`,
+                    );
+                  }
                   if (a.action === 'guidance') {
                     this.controller.sendGuidance(a.message);
                     this.send('notice', `[observer] guidance: ${a.message}`);
@@ -1148,6 +1161,9 @@ class ChatHost {
         tools: toolsUsed,
         tok: fmtTokens(result.inputTokens + result.outputTokens),
         cost: result.costUsd > 0 ? `\u2248$${result.costUsd.toFixed(4)}` : '',
+        obs: observer
+          ? `observer ${observer.checks} checks · ${observer.interventions} interventions`
+          : '',
       });
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');
