@@ -20,7 +20,7 @@ import {
   ObserverAgent,
   loadTeamConfig,
   TeamConfigError,
-  hasLegacyTeamsYaml,
+  legacyConfigAtRoot,
   PERSONAS,
   findPersona,
 } from '@applivity/plato-core';
@@ -580,6 +580,55 @@ class ChatHost {
           void this.sendSettings('Philosopher updated — applies from the next run.');
           return;
         }
+        if (m.type === 'create-academy') {
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          if (!folder) {
+            return;
+          }
+          const file = vscode.Uri.joinPath(folder.uri, '.plato', 'academy.yaml');
+          try {
+            // Pre-fill the worker with the user's current default model so
+            // the example is runnable as-is (D33).
+            const model = this.effectiveModel();
+            const body = this.academyExample(model);
+            await vscode.workspace.fs.createDirectory(
+              vscode.Uri.joinPath(folder.uri, '.plato'),
+            );
+            await vscode.workspace.fs.writeFile(
+              file,
+              Buffer.from(body, 'utf8'),
+            );
+            void this.sendSettings(
+              'academy.yaml created — edit members, then pick Academy.',
+            );
+            void vscode.window.showTextDocument(file);
+          } catch (e) {
+            void this.sendSettings(
+              `Could not create academy.yaml — ${
+                e instanceof Error ? e.message : 'error'
+              }`,
+            );
+          }
+          return;
+        }
+        if (m.type === 'open-academy') {
+          const folder = vscode.workspace.workspaceFolders?.[0];
+          if (!folder) {
+            return;
+          }
+          const file = vscode.Uri.joinPath(
+            folder.uri,
+            '.plato',
+            'academy.yaml',
+          );
+          try {
+            await vscode.workspace.fs.stat(file);
+            void vscode.window.showTextDocument(file);
+          } catch {
+            void this.sendSettings('.plato/academy.yaml not found.');
+          }
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -689,7 +738,32 @@ class ChatHost {
     return parts ? modelSupportsReasoning(parts.model) : false;
   }
 
-  /** Academy availability for the Settings page (D32): parsed file or error. */
+  /** Example academy.yaml body for the Create-example button (D33). */
+  private academyExample(model: string): string {
+    return [
+      '# Plato academy (D31/D32/D33). Activate in Settings -> Orchestration -> Academy.',
+      '# The worker does the work; philosophers watch and steer. Philosophers NEVER approve tool calls.',
+      'academy:',
+      '  name: my-academy',
+      '',
+      'members:',
+      '  - name: plato',
+      '    model: ' + model,
+      '    role: "You fix bugs. Enumerate defects, fix them, re-verify."',
+      '    kind: worker',
+      '',
+      '  - name: aristotle',
+      '    kind: philosopher',
+      '    model: ' + model,
+      '    guidance: true',
+      '    pause: false',
+      '    cancel: false',
+      '    maxInterventions: 3',
+      '',
+    ].join('\n');
+  }
+
+  /** Academy availability for the Settings page (D32/D33): file or error. */
   private academyStatus(): {
     available: boolean;
     name: string;
@@ -701,12 +775,15 @@ class ChatHost {
     if (!root) {
       return { available: false, name: '', members: [], error: '', legacy: false };
     }
-    if (hasLegacyTeamsYaml(root)) {
+    // D33: configs live in .plato/ — anything at the ROOT is not ours to
+    // interpret; ask the user to move it rather than guess.
+    const legacy = legacyConfigAtRoot(root);
+    if (legacy !== null) {
       return {
         available: false,
         name: '',
         members: [],
-        error: 'teams.yaml was renamed to academy.yaml (D32) — rename the file.',
+        error: `"${legacy}" found at the workspace root — configs moved to .plato/ (D33). Move the file to .plato/academy.yaml${legacy === 'teams.yaml' ? ' (and rename it — it was renamed by D32)' : ''}.`,
         legacy: true,
       };
     }
@@ -717,7 +794,7 @@ class ChatHost {
           available: false,
           name: '',
           members: [],
-          error: 'No academy.yaml at the workspace root.',
+          error: 'No .plato/academy.yaml yet — create the example below.',
           legacy: false,
         };
       }
@@ -1077,11 +1154,12 @@ class ChatHost {
       );
     }
     if (team === null && orchestration === 'academy') {
+      const legacy = legacyConfigAtRoot(root);
       this.send(
         'error',
-        hasLegacyTeamsYaml(root)
-          ? 'Academy mode needs academy.yaml — teams.yaml was renamed to academy.yaml (D32). Rename the file to switch.'
-          : 'Academy mode needs an academy.yaml at the workspace root. Copy the example from the extension, or switch to Solo/Duo in Settings.',
+        legacy !== null
+          ? `"${legacy}" found at the workspace root — configs live in .plato/ (D33). Move it to .plato/academy.yaml${legacy === 'teams.yaml' ? ' (renamed from teams.yaml by D32)' : ''}.`
+          : 'Academy mode needs .plato/academy.yaml — create it from Settings → Orchestration → Create example, or switch to Solo/Duo.',
       );
       return;
     }

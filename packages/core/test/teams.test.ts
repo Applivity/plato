@@ -1,9 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
   parseTeamConfig,
   loadTeamConfig,
+  legacyConfigAtRoot,
 } from '../src/teams/config.js';
 import { PERSONAS, findPersona } from '../src/teams/personas.js';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+let dir: string;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'plato-academy-'));
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 const VALID = `
 academy:
@@ -214,12 +226,36 @@ describe('personas (D32b)', () => {
 
 describe('loadTeamConfig', () => {
   it('returns null for a missing file (solo mode)', () => {
-    expect(loadTeamConfig('/nonexistent-dir-xyz')).toBeNull();
+    expect(loadTeamConfig(dir)).toBeNull();
   });
 
-  it('loads and parses the shipped example from the repo root', () => {
-    // The repo itself ships no academy.yaml; this asserts the solo-mode default.
-    expect(loadTeamConfig('/Users/ai/Desktop/plato')).toBeNull();
+  it('loads .plato/academy.yaml (D33: configs live under .plato/)', () => {
+    mkdirSync(join(dir, '.plato'), { recursive: true });
+    writeFileSync(
+      join(dir, '.plato', 'academy.yaml'),
+      'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
+    );
+    const t = loadTeamConfig(dir);
+    expect(t?.members[0]?.name).toBe('w');
+    expect(t?.members[0]?.kind).toBe('worker');
+  });
+
+  it('ignores an academy.yaml at the repo ROOT (not ours to interpret)', () => {
+    writeFileSync(
+      join(dir, 'academy.yaml'),
+      'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
+    );
+    expect(loadTeamConfig(dir)).toBeNull();
+    expect(legacyConfigAtRoot(dir)).toBe('academy.yaml');
+  });
+
+  it('flags leftover teams.yaml at the root', () => {
+    writeFileSync(join(dir, 'teams.yaml'), 'x: y\n');
+    expect(legacyConfigAtRoot(dir)).toBe('teams.yaml');
+  });
+
+  it('reports no legacy files when the root is clean', () => {
+    expect(legacyConfigAtRoot(dir)).toBeNull();
   });
 });
 

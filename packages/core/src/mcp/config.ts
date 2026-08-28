@@ -127,16 +127,23 @@ function unquote(s: string): string {
   return t;
 }
 
-/** Reads and parses <root>/mcp.yaml; missing file → empty config. */
+/**
+ * Reads and parses <root>/.plato/mcp.yaml (D33: configs live under .plato/,
+ * not the repo root). Falls back to the legacy root mcp.yaml so existing
+ * setups keep working; missing everywhere → empty config.
+ */
 export function loadMcpConfig(root: string): Record<string, McpServerConfig> {
-  try {
-    return parseMcpConfig(readFileSync(join(root, 'mcp.yaml'), 'utf8'));
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
+  for (const p of [join(root, '.plato', 'mcp.yaml'), join(root, 'mcp.yaml')]) {
+    try {
+      return parseMcpConfig(readFileSync(p, 'utf8'));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw e;
+      }
+      // not at this path — try the next
     }
-    throw e;
   }
+  return {};
 }
 
 import { join } from 'node:path';

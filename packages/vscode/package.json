@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -113,7 +113,10 @@
     },
     "configurationDefaults": {
       "yaml.schemas": {
-        "%applivity.plato-vscode/schemas/academy.schema.json": "academy.yaml"
+        "%applivity.plato-vscode/schemas/academy.schema.json": [
+          "academy.yaml",
+          ".plato/academy.yaml"
+        ]
       }
     }
   },

@@ -229,24 +229,31 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
   return { name: teamName, members };
 }
 
-/** Reads and parses <root>/academy.yaml; missing file → null (solo mode). */
+/** Reads and parses <root>/.plato/academy.yaml; missing file → null (solo). */
 export function loadTeamConfig(root: string): TeamConfig | null {
   let text: string;
   try {
-    text = readFileSync(join(root, 'academy.yaml'), 'utf8');
+    text = readFileSync(join(root, '.plato', 'academy.yaml'), 'utf8');
   } catch {
     return null; // missing file = solo mode, not an error
   }
   return parseTeamConfig(text);
 }
 
-/** Old-name check: reports a leftover teams.yaml so nothing is silently ignored. */
-export function hasLegacyTeamsYaml(root: string): boolean {
-  try {
-    readFileSync(join(root, 'teams.yaml'), 'utf8');
-    return true;
-  } catch {
-    return false;
+/**
+ * Old-location check (D33): any config left at the repo ROOT is not ours to
+ * interpret. Reports which legacy file was found so the host can ask the
+ * user to move it — never silently ignored, never silently adopted.
+ */
+export function legacyConfigAtRoot(root: string): string | null {
+  for (const name of ['academy.yaml', 'teams.yaml']) {
+    try {
+      readFileSync(join(root, name), 'utf8');
+      return name;
+    } catch {
+      // not present — keep looking
+    }
   }
+  return null;
 }
 

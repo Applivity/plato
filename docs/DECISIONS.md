@@ -360,6 +360,22 @@ aggregated. Observer invariant unchanged: philosophers NEVER approve
 tool calls. Founder to confirm terminology + persona set before
 implementation.
 
+**D33 — Configs live in `.plato/` (M4, approved and implemented 2026-08-26).
+Amends D32(a)/D31(a)/D06.** Founder-flagged: a generically named
+`academy.yaml` at the repo root risks collisions with users' unrelated
+files and clutters the root. All Plato config moves into the existing
+`.plato/` namespace (transcripts already live there since M2):
+`.plato/academy.yaml` and `.plato/mcp.yaml`. Root files are NEVER
+interpreted — `legacyConfigAtRoot()` reports them so Settings/run errors
+ask the user to move them (never silent adoption, never silent ignore).
+mcp loader falls back to the legacy root `mcp.yaml` for continuity.
+Settings gains affordances (D33b): Create-example writes
+`.plato/academy.yaml` pre-filled with the current default model and opens
+it in the editor; Open jumps to the file; status re-checks on every
+Settings open. Member data stays read-only in the GUI (D11 visual-editor
+deferral unchanged) — the yaml is the interface, the buttons are the
+on-ramp.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,

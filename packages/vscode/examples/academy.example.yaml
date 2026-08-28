@@ -1,6 +1,7 @@
-# Plato academy definition (D31/D32). Copy to your workspace root as
-# academy.yaml. Activate in Settings → Orchestration → Academy.
-# Delete the file (or switch back to Solo/Duo) to leave Academy mode.
+# Plato academy definition (D31/D32/D33). Lives at .plato/academy.yaml —
+# create it with Settings → Orchestration → Create example, or copy this.
+# Activate in Settings → Orchestration → Academy; switch back to Solo/Duo
+# any time. Philosophers NEVER approve tool calls.
 academy:
   name: hcad-audit
 
@@ -11,7 +12,7 @@ members:
     role: "You fix bugs in Android Java code. Enumerate defects, fix them, re-verify."
     kind: worker
 
-  # Philosophers watch the run and steer it. They NEVER approve tool calls.
+  # Philosophers watch the run and steer it.
   - name: aristotle
     kind: philosopher
     model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free

@@ -623,22 +623,37 @@ export function chatHtml(): string {
       modeRow.appendChild(card);
     }
     secO.appendChild(modeRow);
-    // Academy status: parsed members or the loud error.
+    // Academy status: parsed members, error, or nothing yet — with the
+    // Create-example / Open affordances (D33).
     const st = orch.academy || {};
     const stBox = el('div', 'astat');
     if (st.available) {
       stBox.appendChild(el(
         'div', 'aok',
-        'academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
+        '.plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
           (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
       ));
+      const openB = sbtn('Open academy.yaml', () => {
+        vsapi.postMessage({ type: 'open-academy' });
+      });
+      stBox.appendChild(openB);
     } else if (st.error) {
       stBox.appendChild(el('div', 'aerr', String(st.error)));
+      if (!st.legacy) {
+        const mkB = sbtn('Create example', () => {
+          vsapi.postMessage({ type: 'create-academy' });
+        });
+        stBox.appendChild(mkB);
+      }
     } else {
       stBox.appendChild(el(
         'div', 'note',
-        'No academy.yaml yet. Academy mode needs one at the workspace root.',
+        'No .plato/academy.yaml yet \u2014 create the example to start a council.',
       ));
+      const mkB = sbtn('Create example', () => {
+        vsapi.postMessage({ type: 'create-academy' });
+      });
+      stBox.appendChild(mkB);
     }
     secO.appendChild(stBox);
     secO.appendChild(el(
