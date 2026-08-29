@@ -143,6 +143,25 @@ describe('ObserverAgent', () => {
     expect(o2.interventions).toBe(1);
   });
 
+  it('meters philosopher usage and prices it via the catalog (D33+)', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: '{"action":"noop"}' }],
+          usage: { inputTokens: 1000, outputTokens: 100 },
+        };
+      },
+    };
+    const o = new ObserverAgent(p, OPTS);
+    await o.observe('t', []);
+    await o.observe('t', []);
+    expect(o.inputTokens).toBe(2000);
+    expect(o.outputTokens).toBe(200);
+    // haiku 3.5: $0.8/MTok in, $4/MTok out
+    expect(o.costUsd).toBeCloseTo((2000 * 0.8 + 200 * 4) / 1_000_000, 8);
+  });
+
   it('digest includes task and recent tool lines', async () => {
     let seen = '';
     const p: ChatProvider = {

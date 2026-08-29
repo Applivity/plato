@@ -5,6 +5,7 @@
  * are injected, so everything here is unit-testable without network.
  */
 import type { ChatProvider } from '../providers/types.js';
+import { estimateCost } from './cost.js';
 
 export type ObserverAction =
   | { action: 'noop' }
@@ -54,6 +55,11 @@ export class ObserverAgent {
   lastRaw: string | null = null;
   /** Actions the philosopher wanted but the tier config disabled (D33+). */
   degraded = 0;
+  /** Metered philosopher usage (D33+): tokens across all checks. */
+  inputTokens = 0;
+  outputTokens = 0;
+  /** Estimated USD across all checks; 0 when the model is unpriced. */
+  costUsd = 0;
   private lastText = '';
 
   constructor(
@@ -112,6 +118,10 @@ export class ObserverAgent {
       });
       raw =
         res.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
+      // Philosopher cost metering (D33+): usage rides here, not the bus.
+      this.inputTokens += res.usage.inputTokens;
+      this.outputTokens += res.usage.outputTokens;
+      this.costUsd += estimateCost(this.opts.model, res.usage).usd;
       this.apiErrors = 0;
       this.lastError = null;
     } catch (e) {

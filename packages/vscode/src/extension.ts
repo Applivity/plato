@@ -745,11 +745,16 @@ class ChatHost {
     const parts: string[] = [];
     const unparseable = observers.reduce((s, o) => s + o.agent.parseErrors, 0);
     const degraded = observers.reduce((s, o) => s + o.agent.degraded, 0);
+    // Philosopher cost metering (D33+): priced via the model catalog.
+    const cost = observers.reduce((s, o) => s + o.agent.costUsd, 0);
     if (unparseable > 0) {
       parts.push(`${unparseable} unparseable`);
     }
     if (degraded > 0) {
       parts.push(`${degraded} tier-blocked`);
+    }
+    if (cost > 0) {
+      parts.push(`\u2248$${cost.toFixed(4)} watching`);
     }
     return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
   }
