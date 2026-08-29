@@ -23,7 +23,7 @@ state of the project from this file plus `git log`.
 | M3 | Teams + presets; observer injection/pause | **done** (verified 2026-08-25, incl. observer thesis) | 2026-08-26 |
 | M4 | Acceptance test, packaged VSIX, release/license decision | **in closeout** (code shipped through 0.9.8; pending D34, secret audit, trademark sweep, license decision) | 2026-08-29 |
 
-Current focus: M4 closeout — D34 tracker on remaining closeout items; then M5 planning (camera2 Academy run in the demo repo is a scratch exercise, not part of the plato change log).
+Current focus: M4 closeout — D34 tracker on remaining closeout items, then M5 planning.
 
 ## M0 checklist (from HANDOFF)
 
@@ -159,7 +159,7 @@ One combined workstream, per founder decision 2026-08-25:
 
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|
-| 2026-08-29 | (this commit) | docs | Corrected PROGRESS.md "Status at a glance" milestone table + Current focus line — the table was stale (said M2/M3/M4 "not started", M1 "in review", focus M1) while the change log already proved M1–M4 shipped through 0.9.8. Table now marks M1–M3 done (demo/verified), M4 in closeout (pending D34 + secret audit + trademark sweep + license decision per D15/D16/D19), focus updated. TRACKING-ONLY — no code. Note: the camera2 Academy run happened in the scratch demo repo HcadPublicAndroid-demo, not the plato repo — see follow-up below. | diff verified against `git log` (M1–M4 commits present) and change log rows |
+| 2026-08-29 | (this commit) | docs | Corrected PROGRESS.md "Status at a glance" milestone table + Current focus line — the table was stale (said M2/M3/M4 "not started", M1 "in review", focus M1) while the change log already proved M1–M4 shipped through 0.9.8. Table now marks M1–M3 done (demo/verified), M4 in closeout (pending D34 + secret audit + trademark sweep + license decision per D15/D16/D19), focus updated. TRACKING-ONLY — no code. | diff verified against `git log` (M1–M4 commits present) and change log rows |
 | 2026-08-29 | (this commit) | M4/UX | Two UX fixes from founder trial: (1) **Pinned run-status bar** — the "thinking…" indicator moved OUT of the scrolling `#log` into a dedicated `#statusbar` div pinned between the log and footer. It's now always visible during a run (content scrolling no longer buries it, Claude-code style); hidden on settings/history pages. (2) **Chronological reply segmentation** — founder observed guidance notices and tool summaries appeared ABOVE later narration that streamed after them (misplaced). The host now emits a `turn` message at each turn boundary, committing the current streaming segment into a finished `#log` block before the next turn/notice/tool renders — so the stream flows in true order: narration → notice/tool → narration. Version 0.9.8 | `tsc -b` clean; 118/118 vitest; `node --check` inline PASS; bundle→package→install @0.9.8; statusbar/stext/platoPulse markers in installed bundle; `case 'turn'` + `send('turn')` confirmed in source |
 | 2026-08-29 | (this commit) | M4/UX | Inline run-status indicator (Claude-style "thinking…") in the chat stream (founder: "at the start you can't tell if the process is stuck"). A new `.msg.status` row with a pulsing dot + animated dots appears in `#log` the moment a run starts — right after the user's message, where the old silent gap was — and updates live: `Plato is thinking` → `using <tool>` → `writing` → `waiting for your approval`. It mirrors the small header chip (which stays) but lives where the user is actually reading, so a quiet model call between turns can never read as a hang. Cleared on finish (done + error paths) and on history replay. Pure webview change — no core/tests affected. Version 0.9.7 | `tsc -b` clean; 118/118 vitest unchanged; `node --check` on extracted inline script PASS (setStatus/clearStatus ×8); bundle→package (`--no-dependencies`)→install @0.9.7; markers in installed dist/extension.js (Plato is thinking, waiting for your approval, platoPulse, using) |
 | 2026-08-29 | (this commit) | M4/loop | Auto-continue for truncated answers + honest stop labels + Ornith catalog row (founder: Academy runs stopped early with "output hit the token cap" on litellm:ornith-1.5-35b-a3b — diagnosed as unknown-model 8192 fallback cap, model-agnostic truncation). Now: a no-tool turn cut by the output cap does NOT end the run — the loop appends a continuation user message and issues one extra `completeTurn` (bounded: one continue per run, never loops); if the continuation also truncates it stops honestly as a cap. `LoopResult` gains `truncated?: boolean` (propagated to the `run-completed` bus event); the done-card label now distinguishes `stopped early — output hit the token cap` from `stopped at turn cap` (was always "turn cap"). Ornith 1.5 35B A3B added to the model catalog with its real limits (context 262144, max_output 32768 — from founder's provider metadata); priced [0,0] = unknown, quotes $0 estimated:false per D26c; reasoning stays false until confirmed. Catalog price-invariant test updated to skip deliberate [0,0] entries. Also fixed vsce packaging: `--no-dependencies` (pnpm node_modules breaks npm-list detection; core is esbuild-bundled so runtime detection is unneeded). Version 0.9.6 | `tsc -b` clean; 118/118 vitest (4 new loop tests: auto-continue completes on resumption with 2 API calls; double-truncation → cap+truncated; auto-continue fires at most once; cap never silent); `node --check` inline PASS; bundle→package (`--no-dependencies`)→install @0.9.6; markers in installed dist/extension.js (Continue exactly where you left off, stopped early, ornith-1.5-35b-a3b, 32768) |
@@ -222,28 +222,4 @@ One combined workstream, per founder decision 2026-08-25:
 | 2026-08-24 | 0f22cdf | docs | Corrected GitHub account-type fact (user, not org); recorded finished toolchain setup | review |
 | 2026-08-24 | 211d6e6 | docs | Blueprint, decision log, architecture, handoff authored | founder confirmation |
 
-## Open follow-ups (from the camera2 Academy run, 2026-08-29)
-
-The camera2 audit + fix run happened in the SCRATCH repo
-`HcadPublicAndroid-demo` (branch `master`), NOT in this `plato` repo, so its
-changes are not part of the plato change log. That run is a founder-visible
-product demo of Academy mode (the observer thesis), not a plato deliverable.
-
-State of that run (ground-verified against the working tree):
-
-- CameraActivity.java is modified + UNCOMMITTED (`M`, now 1230 lines). Applied
-  + verified: orientation `+360`, flash `ONE_SHOT`, Image close/null-guard in
-  onImageAvailable, openCamera semaphore acquire/release, recursion removed in
-  createCameraPreviewSession, closeCamera called. STILL OPEN: empty
-  `catch (Exception ignored)` in toggleTorch/setZoom, `grantResults[0]` length
-  guard.
-- LicenseScannerActivity.java is UNTOUCHED — all mirror fixes open (close
-  mImageReader, cancel/guard autofocus Timer, fix chooseOptimalFrameRate FPS
-  range, onSurfaceTextureDestroyed, empty catches, grantResults guard).
-- .plato/ is untracked (`??`) — academy.yaml + runs/ not version-controlled in
-  the demo repo.
-
-Recommended: finish the remaining 7 fix items and commit the demo repo, or
-park a branch with the current fixed CameraActivity so it is not lost. This
-belongs in the demo repo's own change log, not plato's.
 
