@@ -137,6 +137,8 @@ export interface LoopResult {
   turns: number;
   /** Why the run ended: natural completion, turn cap, or observer cancel. */
   reason: 'complete' | 'cap' | 'cancelled';
+  /** True when the run stopped because the output hit the token cap. */
+  truncated?: boolean;
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
@@ -198,6 +200,8 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let costUsd = 0;
   let reason: LoopResult['reason'] = 'complete';
   let capNote: string | null = null;
+  let truncatedStop = false;
+  let autoContinued = false;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
 
@@ -284,11 +288,27 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     }
 
     if (toolUses.length === 0 || turn === MAX_TURNS) {
-      // A turn truncated by the token cap is NOT a completed answer: the
-      // model may have produced no text at all (thinking ate the budget).
-      // Surface it as a cap, never as a silent 'complete'.
       const truncated = toolUses.length === 0 && res.stopReason === 'max_tokens';
+      // Auto-continue (D25f follow-up): an answer cut by the output cap is a
+      // truncated reply, NOT a completion. Ask the model to resume exactly
+      // where it stopped, then judge the continuation as a fresh turn.
+      // Bounded: one continuation per run, never more.
+      if (truncated && !autoContinued && turn < MAX_TURNS) {
+        autoContinued = true;
+        messages.push({
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '[plato] The previous reply hit the output token cap. Continue exactly where you left off — do not repeat work already written.',
+            },
+          ],
+        });
+        continue;
+      }
+      // Surface it as a cap, never as a silent 'complete'.
       reason = truncated || toolUses.length > 0 ? 'cap' : 'complete';
+      truncatedStop = truncated;
       capNote =
         reason === 'cap'
           ? truncated
@@ -429,6 +449,15 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     inputTokens,
     outputTokens,
     costUsd,
+    truncated: truncatedStop,
   });
-  return { finalText, turns: turn, reason, inputTokens, outputTokens, costUsd };
+  return {
+    finalText,
+    turns: turn,
+    reason,
+    inputTokens,
+    outputTokens,
+    costUsd,
+    truncated: truncatedStop,
+  };
 }

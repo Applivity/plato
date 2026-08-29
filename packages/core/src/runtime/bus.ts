@@ -42,6 +42,7 @@ export type AgentEvent =
       inputTokens: number;
       outputTokens: number;
       costUsd: number;
+      truncated?: boolean;
     }
   | { type: 'run-failed'; runId: string; error: string };
 

@@ -28,6 +28,11 @@ export const MODEL_CATALOG: ModelEntry[] = [
   { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384 },
   { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384 },
   { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000 },
+  // Ornith 1.5 35B A3B (LiteLLM). Verified from provider metadata:
+  // context_window 262144, max_output_tokens 32768. Priced as unknown
+  // (cost.ts has no entry; quotes $0, estimated:false) per D26c — never
+  // fake precision. reasoning stays false until confirmed supported.
+  { id: 'ornith-1.5-35b-a3b', label: 'Ornith 1.5 35B A3B', pricePerMTok: [0, 0], reasoning: false, maxOutput: 32768 },
 ];
 
 export function splitModelRef(ref: string): {

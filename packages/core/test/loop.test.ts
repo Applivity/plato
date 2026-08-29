@@ -27,38 +27,67 @@ const BASE = {
 };
 
 describe('runAgentLoop truncation handling', () => {
-  it('reports a truncated no-tool turn as a cap, never a silent complete', async () => {
-    // Reproduces the founder trial: thinking ate the whole output budget,
-    // so the turn had no text and no tool calls, and the provider flagged
-    // the token cap. The run must not claim a complete answer.
+  it('auto-continues a truncated answer and completes on the resumption', async () => {
+    // Turn 1 gets cut mid-sentence by the token cap. The loop must NOT end
+    // there: it asks the model to resume, then the continuation finishes.
+    const p = provider([
+      {
+        content: [{ type: 'text', text: 'The top bug is ' }],
+        usage: { inputTokens: 10, outputTokens: 16384 },
+        stopReason: 'max_tokens',
+      },
+      {
+        content: [{ type: 'text', text: "in saveHttpHeaderValues." }],
+        usage: { inputTokens: 20, outputTokens: 5 },
+        stopReason: 'stop',
+      },
+    ]);
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    expect(r.reason).toBe('complete');
+    expect(r.truncated).toBeFalsy();
+    expect(r.finalText).toContain('The top bug is');
+    expect(r.finalText).toContain('saveHttpHeaderValues');
+    // Two API calls happened: the truncation + one continuation.
+    expect(p.seenMaxTokens.length).toBe(2);
+  });
+
+  it('reports a double-truncated answer as a token-cap, never silent complete', async () => {
+    // Continuation is also truncated (no tool calls): give up, mark cap.
     const r = await runAgentLoop({
       ...BASE,
       provider: provider([
-        {
-          content: [],
-          usage: { inputTokens: 10, outputTokens: 16384 },
-          stopReason: 'max_tokens',
-        },
+        { content: [], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
+        { content: [], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
       ]),
     });
     expect(r.reason).toBe('cap');
+    expect(r.truncated).toBe(true);
     expect(r.finalText).toContain('token cap');
   });
 
-  it('reports a partial answer cut by the token cap as a cap with a note', async () => {
+  it('auto-continues at most once — truncating forever does not loop', async () => {
+    // First truncation triggers a continuation; a second truncation ends it.
+    const p = provider([
+      { content: [{ type: 'text', text: 'part ' }], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
+      { content: [{ type: 'text', text: ' more ' }], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
+    ]);
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    expect(r.reason).toBe('cap');
+    expect(r.truncated).toBe(true);
+    // Exactly two API calls, not three+.
+    expect(p.seenMaxTokens.length).toBe(2);
+  });
+
+  it('reports a truncated no-tool turn that never completes as a cap', async () => {
     const r = await runAgentLoop({
       ...BASE,
       provider: provider([
-        {
-          content: [{ type: 'text', text: 'The top bug is ' }],
-          usage: { inputTokens: 10, outputTokens: 16384 },
-          stopReason: 'max_tokens',
-        },
+        { content: [], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
+        { content: [], usage: { inputTokens: 10, outputTokens: 16384 }, stopReason: 'max_tokens' },
       ]),
     });
     expect(r.reason).toBe('cap');
     expect(r.finalText).toContain('token cap');
-    expect(r.finalText).toContain('The top bug is ');
   });
 
   it('still reports a natural text-only turn as complete', async () => {

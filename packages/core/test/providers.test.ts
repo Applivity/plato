@@ -41,8 +41,15 @@ describe('catalog (bare model names)', () => {
     expect(modelSupportsReasoning('totally-custom')).toBe(false);
   });
 
-  it('prices every catalog entry', () => {
+  it('prices every catalog entry that declares a price', () => {
+    // Delete-price entries ([0,0]) are deliberate: we list some models
+    // (e.g. Ornith) for maxOutput/reasoning but don't have authoritative
+    // pricing, so they quote $0 (estimated:false) per D26c — never fake
+    // precision. Assert the invariant on the models we DO price.
     for (const m of MODEL_CATALOG) {
+      if (m.pricePerMTok[0] === 0 && m.pricePerMTok[1] === 0) {
+        continue;
+      }
       expect(m.pricePerMTok[0]).toBeGreaterThan(0);
       expect(m.pricePerMTok[1]).toBeGreaterThan(0);
     }

@@ -1496,7 +1496,9 @@ class ChatHost {
       this.send('done', {
         note:
           result.reason === 'cap'
-            ? 'stopped at turn cap'
+            ? result.truncated
+              ? 'stopped early — output hit the token cap'
+              : 'stopped at turn cap'
             : result.reason === 'cancelled'
               ? 'cancelled'
               : '',
