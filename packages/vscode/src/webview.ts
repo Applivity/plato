@@ -287,6 +287,18 @@ export function chatHtml(): string {
                border-radius:9px; cursor:pointer; color:var(--pl-muted); }
   .orch-chip:hover { border-color:var(--vscode-focusBorder, #666);
                      color:var(--vscode-foreground, #ccc); }
+  /* Inline run-status row (Claude-style "thinking…"): animated pulsing dot
+     + trailing dots, lives in the chat stream so activity is visible even
+     before the first streamed text/tool line. */
+  .msg.status { display:flex; align-items:center; gap:7px; font-size:12px;
+                color:var(--pl-muted); font-style:italic; padding:2px 0; }
+  .msg.status .pdot { width:8px; height:8px; border-radius:50%; flex:none;
+                background:var(--vscode-focusBorder, #4a9eff);
+                animation:platoPulse 1.1s ease-in-out infinite; }
+  @keyframes platoPulse { 0%,100% { opacity:.2; transform:scale(.8); }
+                          50% { opacity:1; transform:scale(1.15); } }
+  .msg.status .dots::after { content:''; animation:platoDots 1.5s steps(4,end) infinite; }
+  @keyframes platoDots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
 </style>
 </head>
 <body>
@@ -364,6 +376,31 @@ export function chatHtml(): string {
     chipOn('working ' + s + 's' + (lastAct ? ' \u00b7 ' + lastAct : ''), false);
   }
   setInterval(refreshChip, 1000);
+
+  // Inline chat-stream status row (see .msg.status CSS). Mirrors the header
+  // chip but lives where the user is reading, so a quiet model call can't
+  // look like a hang. One row per run; cleared at finish/replay.
+  let statusEl = null;
+  function setStatus(text) {
+    if (!statusEl) {
+      statusEl = document.createElement('div');
+      statusEl.className = 'msg status';
+      const d = document.createElement('span');
+      d.className = 'pdot';
+      const t = document.createElement('span');
+      t.textContent = text;
+      const dots = document.createElement('span');
+      dots.className = 'dots';
+      statusEl.append(d, t, dots);
+      log.appendChild(statusEl);
+    } else {
+      statusEl.querySelector('span:nth-child(2)').textContent = text;
+    }
+    scroll();
+  }
+  function clearStatus() {
+    if (statusEl) { statusEl.remove(); statusEl = null; }
+  }
 
   for (const b of document.querySelectorAll('header button[data-m]')) {
     if (b.classList.contains('on')) { mode = b.dataset.m; }
@@ -996,6 +1033,7 @@ export function chatHtml(): string {
     lastAct = 'thinking';
     refreshChip();
     setRunUi(true);
+    setStatus('Plato is thinking');
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
@@ -1097,7 +1135,7 @@ export function chatHtml(): string {
           msel.value = String(m.model);
         }
         break;
-      case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); break;
+      case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); setStatus('writing'); break;
       case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
       case 'team': flushToolBuffer(); showTeam(m); break;
       case 'tool':
@@ -1108,12 +1146,14 @@ export function chatHtml(): string {
         }
         lastAct = String(m.tool);
         refreshChip();
+        setStatus('using ' + m.tool);
         break;
       case 'approval':
         flushToolBuffer();
         showCard(m);
         lastAct = 'waiting for you';
         refreshChip();
+        setStatus('waiting for your approval');
         break;
       case 'done': {
         flushToolBuffer();
@@ -1143,6 +1183,7 @@ export function chatHtml(): string {
   function render(entries) {
     log.textContent = '';
     stick = true;
+    clearStatus();
     for (const t of entries) { appendEntry(t); }
     flushToolBuffer();
     chipOff();
@@ -1236,6 +1277,7 @@ export function chatHtml(): string {
     if (el) { el.removeAttribute('id'); }
     streaming = false;
     busy = false;
+    clearStatus();
     setRunUi(false);
     paused = false;
     pp.textContent = 'Pause';
