@@ -1440,6 +1440,26 @@ class ChatHost {
     }
     this.controller = new RunController();
     this.running = true;
+    // Chronological reply segmentation (founder UX feedback): the reply was
+    // previously streamed as ONE growing block, so a guidance notice or tool
+    // summary injected mid-run sat ABOVE later narration that streamed after
+    // it — appearing misplaced. Now each turn boundary commits the current
+    // segment to a finished message in #log, so notices/tools land BETWEEN
+    // turns in true chronological order.
+    bus.on((e) => {
+      if (e.type === 'turn-started' && e.turn > 1) {
+        this.send('turn', {});
+        if (this.replyBuffer.trim().length > 0) {
+          this.push({
+            k: 'msg',
+            cls: 'bot',
+            who: 'Plato',
+            text: this.replyBuffer,
+          });
+          this.replyBuffer = '';
+        }
+      }
+    });
     try {
       const result = await runAgentLoop({
         root,

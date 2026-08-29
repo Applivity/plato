@@ -139,12 +139,14 @@ export function chatHtml(): string {
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
   body.show-settings header:not(.shead), body.show-settings #log,
-  body.show-settings #obs, body.show-settings footer { display:none !important; }
+  body.show-settings #obs, body.show-settings footer,
+  body.show-settings #statusbar { display:none !important; }
   #settingsPage { display:none; }
   body.show-settings #settingsPage { display:flex; flex-direction:column;
                                      height:100vh; }
   body.show-history header:not(.shead), body.show-history #log,
-  body.show-history #obs, body.show-history footer { display:none !important; }
+  body.show-history #obs, body.show-history footer,
+  body.show-history #statusbar { display:none !important; }
   #historyPage { display:none; }
   body.show-history #historyPage { display:flex; flex-direction:column;
                                    height:100vh; }
@@ -287,18 +289,25 @@ export function chatHtml(): string {
                border-radius:9px; cursor:pointer; color:var(--pl-muted); }
   .orch-chip:hover { border-color:var(--vscode-focusBorder, #666);
                      color:var(--vscode-foreground, #ccc); }
-  /* Inline run-status row (Claude-style "thinking…"): animated pulsing dot
-     + trailing dots, lives in the chat stream so activity is visible even
-     before the first streamed text/tool line. */
-  .msg.status { display:flex; align-items:center; gap:7px; font-size:12px;
-                color:var(--pl-muted); font-style:italic; padding:2px 0; }
-  .msg.status .pdot { width:8px; height:8px; border-radius:50%; flex:none;
-                background:var(--vscode-focusBorder, #4a9eff);
-                animation:platoPulse 1.1s ease-in-out infinite; }
+  /* Pinned run-status bar (Claude-code style): sits between the scrollable
+     #log and the footer, so it is ALWAYS visible during a run — content
+     scrolling below never buries it. Hidden otherwise & on settings/history. */
+  #statusbar { display:flex; align-items:center; gap:8px; padding:5px 14px;
+               border-top:1px solid var(--pl-border);
+               font-size:12px; font-style:italic; color:var(--pl-muted);
+               background:var(--vscode-editor-background); }
+  #statusbar[hidden] { display:none; }
+  #statusbar .pdot { width:8px; height:8px; border-radius:50%; flex:none;
+               background:var(--vscode-focusBorder, #4a9eff);
+               animation:platoPulse 1.1s ease-in-out infinite; }
   @keyframes platoPulse { 0%,100% { opacity:.2; transform:scale(.8); }
                           50% { opacity:1; transform:scale(1.15); } }
-  .msg.status .dots::after { content:''; animation:platoDots 1.5s steps(4,end) infinite; }
+  #statusbar .dots::after { content:''; animation:platoDots 1.5s steps(4,end) infinite; }
   @keyframes platoDots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
+  #statusbar .sbtn { margin-left:auto; font-style:normal; font-size:11px;
+               padding:2px 10px; border-radius:4px; cursor:pointer; border:none;
+               background:var(--vscode-button-secondaryBackground,#3a3d41);
+               color:var(--vscode-button-secondaryForeground,#ddd); }
 </style>
 </head>
 <body>
@@ -327,6 +336,7 @@ export function chatHtml(): string {
   </div>
 </header>
 <div id="log"></div>
+<div id="statusbar" hidden></div>
 <footer>
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
@@ -377,29 +387,34 @@ export function chatHtml(): string {
   }
   setInterval(refreshChip, 1000);
 
-  // Inline chat-stream status row (see .msg.status CSS). Mirrors the header
-  // chip but lives where the user is reading, so a quiet model call can't
-  // look like a hang. One row per run; cleared at finish/replay.
-  let statusEl = null;
+  // Pinned run-status bar (Claude-code style). Lives in #statusbar between
+  // #log and the footer, so it is ALWAYS visible during a run — future tool
+  // summaries and streamed text scroll in #log below, never bury it.
+  let statusEl = null, statusTextEl = null;
   function setStatus(text) {
+    const bar = document.getElementById('statusbar');
+    if (!bar) return;
     if (!statusEl) {
-      statusEl = document.createElement('div');
-      statusEl.className = 'msg status';
+      bar.hidden = false;
       const d = document.createElement('span');
       d.className = 'pdot';
       const t = document.createElement('span');
-      t.textContent = text;
-      const dots = document.createElement('span');
-      dots.className = 'dots';
-      statusEl.append(d, t, dots);
-      log.appendChild(statusEl);
-    } else {
-      statusEl.querySelector('span:nth-child(2)').textContent = text;
+      t.className = 'stext';
+      bar.appendChild(d);
+      bar.appendChild(t);
+      statusEl = bar;
+      statusTextEl = t;
     }
-    scroll();
+    if (statusTextEl) statusTextEl.textContent = text;
   }
   function clearStatus() {
-    if (statusEl) { statusEl.remove(); statusEl = null; }
+    const bar = document.getElementById('statusbar');
+    if (bar) {
+      bar.hidden = true;
+      bar.textContent = '';
+    }
+    statusEl = null;
+    statusTextEl = null;
   }
 
   for (const b of document.querySelectorAll('header button[data-m]')) {
@@ -1136,6 +1151,14 @@ export function chatHtml(): string {
         }
         break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); setStatus('writing'); break;
+      case 'turn': {
+        // Turn boundary: commit the ongoing stream into a finished block so
+        // the next turn and any intervening notices/logos land in order.
+        const el = document.getElementById('streaming');
+        if (el) { el.removeAttribute('id'); }
+        streaming = false;
+        break;
+      }
       case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
       case 'team': flushToolBuffer(); showTeam(m); break;
       case 'tool':
