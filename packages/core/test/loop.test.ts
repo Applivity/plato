@@ -121,8 +121,7 @@ describe('runAgentLoop truncation handling', () => {
               input: {
                 questions: [{
                   question: 'Which path?',
-                  options: ['A', 'B'],
-                  allowCustom: true
+                  options: ['A', 'B']
                 }]
               }
             }],

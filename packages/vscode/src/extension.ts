@@ -674,7 +674,6 @@ class ChatHost {
       context?: string;
       options: string[];
       recommended?: string;
-      allowCustom: boolean;
     }[];
   }): Promise<string[]> {
     return new Promise((resolve) => {

@@ -135,7 +135,6 @@ export interface LoopOptions {
       context?: string;
       options: string[];
       recommended?: string;
-      allowCustom: boolean;
     }[];
   }) => Promise<string[]>;
   /**
@@ -413,7 +412,6 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
                   ? (rec['options'] as unknown[]).map(String)
                   : [],
                 recommended: typeof rec['recommended'] === 'string' ? rec['recommended'] : undefined,
-                allowCustom: rec['allowCustom'] !== false,
               };
             });
             if (questions.length === 0) {

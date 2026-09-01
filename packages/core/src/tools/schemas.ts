@@ -103,11 +103,6 @@ export function toolDeclarations(): CanonicalTool[] {
                   type: 'string',
                   description: 'Which option you recommend (must exactly match one of the options)',
                 },
-                allowCustom: {
-                  type: 'boolean',
-                  default: true,
-                  description: 'Whether the user can type a custom answer instead of picking one',
-                },
               },
               required: ['question', 'options'],
             },

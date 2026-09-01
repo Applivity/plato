@@ -129,6 +129,7 @@ export function chatHtml(): string {
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
   .q-form { padding: 4px 10px; display:flex; flex-direction:column; gap:12px; }
+  .q-progress { font-size:11px; color:var(--pl-muted); padding:2px 0; }
   .q-block { display:flex; flex-direction:column; gap:6px; }
   .q-title { font-weight:600; font-size:12px; color:var(--vscode-foreground); }
   .q-context { font-size:11.5px; color:var(--pl-muted); line-height:1.4; margin-bottom:2px; }
@@ -1384,7 +1385,8 @@ export function chatHtml(): string {
     scroll();
   }
 
-  // D34: stacked question card — one form, one block per question.
+  // D34/D35: question card — one question at a time (stepper); the last
+  // option is always "Others" (free-text) for a custom answer.
   function showUserQuestion(m) {
     const questions = Array.isArray(m.questions) ? m.questions : [];
     if (questions.length === 0) return;
@@ -1397,31 +1399,42 @@ export function chatHtml(): string {
       : 'Plato has a question';
     card.appendChild(h);
 
-    const form = document.createElement('div');
-    form.className = 'q-form';
     const answers = new Array(questions.length).fill('');
+    const body = document.createElement('div');
+    body.className = 'q-form';
+    card.appendChild(body);
+    let idx = 0;
 
-    questions.forEach((q, qi) => {
-      const qdiv = document.createElement('div');
-      qdiv.className = 'q-block';
+    function render() {
+      body.textContent = '';
+      const q = questions[idx];
+      const options = Array.isArray(q.options) ? [...q.options] : [];
+      options.push('Others'); // always allow a custom answer
+
+      if (questions.length > 1) {
+        const prog = document.createElement('div');
+        prog.className = 'q-progress';
+        prog.textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
+        body.appendChild(prog);
+      }
+
+      const block = document.createElement('div');
+      block.className = 'q-block';
 
       const qh = document.createElement('div');
       qh.className = 'q-title';
       qh.textContent = String(q.question || '');
-      qdiv.appendChild(qh);
+      block.appendChild(qh);
 
       if (q.context) {
         const ctx = document.createElement('div');
         ctx.className = 'q-context';
         ctx.textContent = String(q.context);
-        qdiv.appendChild(ctx);
+        block.appendChild(ctx);
       }
 
       const optsDiv = document.createElement('div');
       optsDiv.className = 'q-options';
-      const opts = Array.isArray(q.options) ? [...q.options] : [];
-      const allowCustom = q.allowCustom !== false;
-      if (allowCustom) opts.push('Others');
 
       const customRow = document.createElement('div');
       customRow.className = 'q-custom-row';
@@ -1431,12 +1444,10 @@ export function chatHtml(): string {
       customInput.placeholder = 'Type your answer\u2026';
       customRow.appendChild(customInput);
 
-      customInput.addEventListener('input', () => {
-        answers[qi] = customInput.value.trim();
-        updateSubmit();
-      });
+      const prev = answers[idx] || '';
+      const prevIsOption = options.indexOf(prev) !== -1;
 
-      opts.forEach((opt) => {
+      options.forEach((opt) => {
         const isCustom = opt === 'Others';
         const row = document.createElement('div');
         row.className = 'q-option';
@@ -1447,6 +1458,15 @@ export function chatHtml(): string {
         text.textContent = String(opt) + (opt === q.recommended ? ' (recommended)' : '');
         row.appendChild(circle);
         row.appendChild(text);
+
+        // Restore a prior answer when navigating Back.
+        const selectedNow = isCustom ? (!prevIsOption && prev !== '') : (prev === opt);
+        if (selectedNow) row.classList.add('selected');
+        if (isCustom && selectedNow) {
+          customInput.value = prev;
+          customRow.style.display = 'block';
+        }
+
         row.addEventListener('click', () => {
           Array.from(optsDiv.querySelectorAll('.q-option')).forEach((r) =>
             r.classList.remove('selected'),
@@ -1455,47 +1475,65 @@ export function chatHtml(): string {
           if (isCustom) {
             customRow.style.display = 'block';
             customInput.focus();
-            answers[qi] = customInput.value.trim();
+            answers[idx] = customInput.value.trim();
           } else {
             customRow.style.display = 'none';
-            answers[qi] = String(opt);
+            answers[idx] = String(opt);
           }
-          updateSubmit();
+          updateNext();
         });
         optsDiv.appendChild(row);
       });
 
-      qdiv.appendChild(optsDiv);
-      qdiv.appendChild(customRow);
-      form.appendChild(qdiv);
-    });
+      customInput.addEventListener('input', () => {
+        answers[idx] = customInput.value.trim();
+        updateNext();
+      });
 
-    card.appendChild(form);
+      block.appendChild(optsDiv);
+      block.appendChild(customRow);
+      body.appendChild(block);
 
-    const act = document.createElement('div');
-    act.className = 'actions';
-    const sub = document.createElement('button');
-    sub.textContent = 'Submit answers';
-    sub.disabled = true;
+      const act = document.createElement('div');
+      act.className = 'actions';
+      if (questions.length > 1 && idx > 0) {
+        const back = document.createElement('button');
+        back.className = 'no';
+        back.textContent = '\u2190 Back';
+        back.addEventListener('click', () => {
+          idx -= 1;
+          render();
+        });
+        act.appendChild(back);
+      }
 
-    function updateSubmit() {
-      sub.disabled = answers.some((a) => !a);
+      const next = document.createElement('button');
+      const isLast = idx === questions.length - 1;
+      next.textContent = isLast ? 'Submit answers' : 'Next \u2192';
+      next.disabled = !answers[idx];
+      function updateNext() {
+        next.disabled = !answers[idx];
+      }
+      next.addEventListener('click', () => {
+        if (next.disabled) return;
+        if (isLast) {
+          vsapi.postMessage({ type: 'user-answer', answers });
+          card.remove();
+          questions.forEach((qq, i) =>
+            addMsg('you', 'You', String(qq.question) + ': ' + answers[i]),
+          );
+          clearStatus();
+        } else {
+          idx += 1;
+          render();
+        }
+      });
+      act.appendChild(next);
+      body.appendChild(act);
     }
 
-    sub.addEventListener('click', () => {
-      if (sub.disabled) return;
-      vsapi.postMessage({ type: 'user-answer', answers });
-      card.remove();
-      questions.forEach((q, i) =>
-        addMsg('you', 'You', String(q.question) + ': ' + answers[i]),
-      );
-      clearStatus();
-    });
-
-    act.appendChild(sub);
-    card.appendChild(act);
-
     log.appendChild(card);
+    render();
     scroll();
   }
 
