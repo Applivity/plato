@@ -53,9 +53,9 @@ export function chatHtml(): string {
   #modelBtn-label, .model-btn-label { white-space:nowrap; overflow:hidden;
                                       text-overflow:ellipsis; }
   /* D39: paired history + settings nav, right side of the header. */
-  .headnav { margin-left:auto; display:inline-flex; gap:2px; padding:2px;
+  .headnav { margin-left:auto; display:inline-flex; gap:1px; padding:3px;
              border:1px solid var(--pl-border); border-radius:6px; }
-  #hist, #gear { font-size:12px; padding:3px 7px; border:1px solid transparent;
+  #hist, #gear { font-size:12px; padding:4px 9px; border:1px solid transparent;
                  border-radius:4px; background:transparent; cursor:pointer;
                  color:var(--pl-muted); }
   #hist:hover, #gear:hover { border-color:var(--pl-border);
@@ -74,28 +74,34 @@ export function chatHtml(): string {
   .icn { width:14px; height:14px; fill:none; stroke:currentColor;
          stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
          vertical-align:-2px; }
-  #rsel { font-family:var(--vscode-font-family); font-size:11px;
-          padding:2px 5px; border-radius:6px;
-          border:1px solid var(--pl-border);
-          background:var(--vscode-dropdown-background);
-          color:var(--vscode-dropdown-foreground); outline:none; }
+  /* D39b: reasoning select stays a native <select> (the options list is
+   short and OS-handled) but the trigger is restyled to look like a
+   sibling of #modelBtn - same text-link style, no background fill.
+   Keeps the same hover and spacing so the header reads as a single
+   row of pickers. */
+  #rsel { font-family:inherit; font-size:12px; padding:3px 6px;
+          border-radius:5px; border:1px solid transparent;
+          background:transparent; color:var(--vscode-editor-foreground);
+          cursor:pointer; outline:none; }
+  #rsel:hover { background:rgba(128,128,128,.08); }
   #rsel[hidden] { display:none; }
   #new { border:1px solid var(--pl-border); border-radius:10px;
          padding:2px 9px; font-size:12px; cursor:pointer;
          background:transparent; color:var(--pl-muted); }
   #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
   #log { flex:1; overflow-y:auto; padding:10px 14px; }
-  #pp, #cx { height:44px; padding:0 14px; border:none; border-radius:6px;
-             font-size:12px; cursor:pointer; align-self:flex-end;
-             background:var(--vscode-button-secondaryBackground,#3a3d41);
-             color:var(--vscode-button-secondaryForeground,#ddd); }
-  #pp:hover, #cx:hover { opacity:.85; }
-  #cx { color:var(--vscode-testing-iconFailed,#f14c4c); }
+  /* D39b: #pp and #cx are now styled by .bar-btn (matches the other
+     controls in the composer-bar). The old 44px-tall square styling
+     is gone. */
   #pp[hidden], #cx[hidden] { display:none; }
   #pp:disabled, #cx:disabled { opacity:.45; cursor:default; }
-  footer { display:flex; gap:8px; padding:10px 12px;
+  /* D39b: footer is now a two-row stack - textarea on top, controls
+     on bottom (in .composer-bar with its own top border). The footer
+     itself no longer needs the right-side send button column. */
+  footer { display:flex; flex-direction:column; gap:0;
+           padding:8px 12px 4px;
            border-top:1px solid var(--pl-border);
-           background:var(--vscode-editor-background); align-items:flex-end; }
+           background:var(--vscode-editor-background); }
   #q { flex:1; resize:none; min-height:44px; max-height:160px;
        padding:9px 11px; font-family:var(--vscode-font-family);
        font-size:13px; line-height:1.5; border-radius:6px;
@@ -103,14 +109,9 @@ export function chatHtml(): string {
        background:var(--vscode-input-background);
        color:var(--vscode-input-foreground); }
   #q:focus { border-color:var(--pl-accent); }
-  #go { height:44px; width:44px; padding:0; border:none; border-radius:6px;
-        display:inline-flex; align-items:center; justify-content:center;
-        cursor:pointer;
-        background:var(--vscode-button-background);
-        color:var(--vscode-button-foreground); }
-  #go:hover { background:var(--vscode-button-hoverBackground,
-                               var(--vscode-button-background)); }
-  #go:disabled { opacity:.5; cursor:default; }
+  /* #go is now styled by .btn-send (with per-mode color). The old
+     44x44 square styling is gone; the send button is a normal
+     pill that lives in .composer-bar. */
   .msg { margin:0 0 10px; line-height:1.55; white-space:pre-wrap;
          word-break:break-word; }
   .msg.tool-summary { color:var(--pl-muted); font-size:11px;
@@ -529,18 +530,27 @@ export function chatHtml(): string {
                                      font-size:11px; min-width:38px;
                                      text-align:right; }
   #contextBreakdown #ctxb-cnow { font-size:11px; }
-  /* D39: composer bar - the control footer below the textarea.
-     Mode picker on the left, spacer, ring + run controls on the right.
-     Future command / attachment affordances go in .future-attach. */
-  .composer-bar { display:flex; align-items:center; gap:8px;
-                  padding:5px 4px 2px; position:relative; }
+  /* D39b: the composer is now two rows. Top row = textarea. Bottom
+     row = controls, with a visible 1px divider so it reads as a
+     distinct toolbar (Claude Code pattern). All controls live in
+     this one row, with explicit slots: left = mode picker (and
+     future commands/attachments land next to it), center = ring,
+     right = pause/cancel + send. */
+  .composer-bar { display:flex; align-items:center; gap:10px;
+                  padding:6px 6px 4px; margin-top:-1px;
+                  border-top:1px solid var(--pl-border);
+                  position:relative; min-height:36px; }
   .composer-bar .bar-spacer { flex:1; }
   .composer-bar .future-attach { display:inline-flex; gap:4px; min-width:0; }
-  .bar-btn { font-family:inherit; font-size:11px; padding:3px 8px;
+  .bar-btn { font-family:inherit; font-size:11.5px; padding:4px 10px;
              border:1px solid var(--pl-border); border-radius:4px;
              background:transparent; color:var(--pl-muted); cursor:pointer; }
   .bar-btn:hover { color:var(--vscode-editor-foreground);
                    border-color:var(--vscode-focusBorder, #6a6a6a); }
+  /* Cancel is destructive - red text. */
+  #cx.bar-btn { color:var(--vscode-testing-iconFailed, #f14c4c); }
+  #cx.bar-btn:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
+                      border-color:rgba(241,76,76,.35); }
   /* D39: mode picker trigger. Color hints at the active mode. */
   #modeBtn { display:inline-flex; align-items:center; gap:6px;
              background:transparent; border:1px solid transparent;
