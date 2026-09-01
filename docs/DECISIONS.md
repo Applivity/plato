@@ -430,6 +430,75 @@ context grew. Compaction is a *prompt-shrinking* operation: the
 visible chat log is untouched, only what we send the model is
 condensed.
 
+**D38 — Settings UI rewrite (M4.1, 0.14.0, founder directive 2026-09-01).**
+The settings page (originally shipped in D27) had grown into a wall of
+five peer-level collapsible sections with no visual hierarchy: the
+Duo section was a sibling of Connections (so it appeared in all three
+orchestration modes), the "Defaults" section duplicated controls that
+already lived in the chat header, every button was the same secondary
+style with the same text, and the threshold slider showed a stale
+label. Founder's read: "clumsy, confusing, all over the place,
+completely slop." Fix is a full rewrite of the webview page; the
+host-side `sendSettings()` payload and all message handlers are
+unchanged.
+
+(a) *Three top-level sections, not five peer-level collapsibles.*
+**Orchestration** is always-open at the top (it's the *shape* of how
+Plato works and the most important user choice). **Providers** is
+collapsed by default with the connection count in its summary line,
+auto-opened on first run when there are zero providers (so the Add
+form is visible). **Context** is collapsed. The old "Defaults"
+section is dropped entirely — default model is the chat header
+dropdown and reasoning rides the model in the same place; Settings
+should own *configuration*, the header should own *session*. The Duo
+sub-block is now rendered **inside** the Orchestration section and
+**only when `mode === 'duo'`** — fixing the "Duo section appears in
+all three modes" bug.
+
+(b) *Button taxonomy.* The old `.sbtn` (one size, one color, used
+for everything) is replaced with four explicit styles:
+`.btn-primary` (solid background, the page's one primary CTA per
+section — "Add connection" and "Set key" when missing), `.btn-
+secondary` (outlined, for routine actions — "Set key" when set,
+"Refresh", "OK", "Cancel"), `.btn-ghost` (text-only with hover
+underline, for "Create example" / "Open academy.yaml" — they read
+as *affordances*, not actions), and `.btn-danger` (red text for
+"Delete"). The "Save duo settings" button is dropped — every Duo
+control now fires `set-observer` on its own change.
+
+(c) *Connection cards get a real state pill.* The old
+`\u25CF set` / `\u25CB no key` cryptic dots are replaced with colored
+pills: green "Ready" (with a dot) when the key is set, red "No key"
+when missing. The "Built-in" footnote inside the card becomes a
+"built-in" chip in the action row; Delete moves to the same row
+when the connection is user-defined. Per-card action order:
+**Set key** (primary if missing, secondary if set) → **Refresh
+models** (disabled when no key) → **Delete** OR **built-in** chip.
+
+(d) *Typography + spacing.* Page gets a max-width 720px centered
+wrap, 24px outer padding, 28px between sections. Section heads are
+real `<h2>` with `.shead2` (uppercase 11px, weight 600, letter-
+spacing .1em) above an 11.5px `.shelp` paragraph so every section
+has its own one-sentence description. Card padding 12px 14px (was
+8px 10px), border-radius 8px (was 5–6px). Body text 12–13.5px (was
+10.5–12px crammed). Threshold slider has a live numeric read-out
+(`80% of context`) that updates on every drag (the old version
+referenced a stale `thrLabel` closure).
+
+(e) *Add-connection is a prominent CTA at the END of the Providers
+list* with a dashed border, "✚ Add a provider" header, and the
+`Add connection` button as `.btn-primary`. Replaces the old buried
+form that lived mid-section.
+
+(f) *Duo sub-block.* Persona, philosopher model, May pause / May
+cancel / Max interventions — all on a 2-column grid with labels in
+the left column. Persona change updates the live role description
+inline. All four controls fire `set-observer` (with the right
+field set per handler) on change; no Save button.
+
+(g) *Compaction section.* Mode select (Auto/Manual) and threshold
+slider (50–95%, with live read-out) in a single `.sblock`.
+
 **D37a — D37 follow-ups: catalog-only trip, model-aware summary cap, Ornith removed (M4.1, 0.13.1).**
 Three corrections to D37 raised during review:
 
