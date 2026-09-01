@@ -13,7 +13,8 @@ import {
   modelSupportsReasoning,
   MODEL_CATALOG,
   PROVIDER_PRESETS,
-  fetchModelIds,
+  fetchModelPool,
+  maxContextFor,
   renderMarkdown,
   McpServer,
   loadMcpConfig,
@@ -33,6 +34,13 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 
+interface ConnectionPoolEntry {
+  id: string;
+  /** Provider-advertised context window, if the /models payload had it. */
+  maxContext?: number;
+  maxOutput?: number;
+}
+
 interface ConnectionConfig {
   id: string;
   kind: 'anthropic' | 'openai';
@@ -41,6 +49,8 @@ interface ConnectionConfig {
   models?: string[];
   /** Full fetched pool (picker source; selection never shrinks it). */
   allModels?: string[];
+  /** D37: per-model metadata (maxContext etc.) from the fetched pool. */
+  pool?: ConnectionPoolEntry[];
 }
 
 /** Parses ONLY user-defined entries from plato.connections (no seeds). */
@@ -73,7 +83,29 @@ function rawUserConnections(): ConnectionConfig[] {
             (x): x is string => typeof x === 'string',
           )
         : undefined;
-      list.push({ id, kind, baseUrl, models, allModels });
+      const rawPool = row['pool'];
+      const pool: ConnectionPoolEntry[] | undefined = Array.isArray(rawPool)
+        ? (rawPool as unknown[])
+            .map((r): ConnectionPoolEntry | null => {
+              if (typeof r !== 'object' || r === null) {
+                return null;
+              }
+              const rec = r as Record<string, unknown>;
+              if (typeof rec['id'] !== 'string') {
+                return null;
+              }
+              const out: ConnectionPoolEntry = { id: rec['id'] };
+              if (typeof rec['maxContext'] === 'number') {
+                out.maxContext = rec['maxContext'];
+              }
+              if (typeof rec['maxOutput'] === 'number') {
+                out.maxOutput = rec['maxOutput'];
+              }
+              return out;
+            })
+            .filter((e): e is ConnectionPoolEntry => e !== null)
+        : undefined;
+      list.push({ id, kind, baseUrl, models, allModels, pool });
     }
   }
   return list;
@@ -630,6 +662,41 @@ class ChatHost {
           }
           return;
         }
+        // D37: header pill toggle for compaction mode. The Compact
+        // button posts `request-compact` instead; both share the same
+        // run-side handler below.
+        if (m.type === 'set-compaction-mode' && typeof m.mode === 'string') {
+          const mode = m.mode === 'manual' ? 'manual' : 'auto';
+          await vscode.workspace.getConfiguration('plato').update(
+            'compaction.mode',
+            mode,
+            vscode.ConfigurationTarget.Global,
+          );
+          this.postModelState();
+          return;
+        }
+        if (
+          m.type === 'set-compaction-threshold' &&
+          typeof m.value === 'number'
+        ) {
+          // Clamp to the same range the loop uses; the settings page
+          // also enforces this via the slider.
+          const t = Math.max(0.5, Math.min(0.95, m.value));
+          await vscode.workspace.getConfiguration('plato').update(
+            'compaction.threshold',
+            t,
+            vscode.ConfigurationTarget.Global,
+          );
+          this.postModelState();
+          return;
+        }
+        if (m.type === 'request-compact') {
+          if (this.running) {
+            this.controller.requestCompact();
+            this.send('notice', 'Plato will compact the conversation at the next safe point.');
+          }
+          return;
+        }
         if (m.type === 'user-answer' && Array.isArray(m.answers)) {
           const resolve = this.pendingQuestion;
           this.pendingQuestion = null;
@@ -880,7 +947,29 @@ class ChatHost {
       persona: vscode.workspace
         .getConfiguration('plato')
         .get('duo.persona', 'aristotle'),
+      // D37: live context UI state.
+      compaction: this.compactionState(),
     });
+  }
+
+  /**
+   * D37: shape used by the webview header pill + settings slider.
+   * `mode` defaults to auto so first-time users get the safe default;
+   * `threshold` is clamped to [0.5, 0.95] in the loop itself.
+   */
+  private compactionState(): { mode: 'auto' | 'manual'; threshold: number } {
+    const cfg = vscode.workspace.getConfiguration('plato');
+    const mode = cfg.get<'auto' | 'manual' | string>(
+      'compaction.mode',
+      'auto',
+    );
+    const threshold = cfg.get<number>('compaction.threshold', 0.8);
+    return {
+      mode: mode === 'manual' ? 'manual' : 'auto',
+      threshold: typeof threshold === 'number' && Number.isFinite(threshold)
+        ? threshold
+        : 0.8,
+    };
   }
 
   private async addConnection(c: ConnectionConfig): Promise<boolean> {
@@ -922,7 +1011,7 @@ class ChatHost {
       return;
     }
     try {
-      const models = await fetchModelIds({
+      const pool = await fetchModelPool({
         kind: conn.kind,
         apiKey,
         baseUrl:
@@ -930,20 +1019,33 @@ class ChatHost {
             ? conn.baseUrl ?? 'https://api.openai.com/v1'
             : conn.baseUrl ?? undefined,
       });
+      const ids = pool.map((p) => p.id);
       const user = rawUserConnections();
       let entry = user.find((u) => u.id === connId);
       if (!entry) {
         entry = { id: connId, kind: conn.kind };
         user.push(entry);
       }
-      entry.models = models;
-      entry.allModels = models; // full pool; selection edits never shrink it
+      entry.models = ids;
+      entry.allModels = ids; // full pool; selection edits never shrink it
+      // D37: persist the rich pool too so the UI can show each model's
+      // context window without re-fetching.
+      entry.pool = pool.map((p) => {
+        const e: ConnectionPoolEntry = { id: p.id };
+        if (p.maxContext !== undefined) {
+          e.maxContext = p.maxContext;
+        }
+        if (p.maxOutput !== undefined) {
+          e.maxOutput = p.maxOutput;
+        }
+        return e;
+      });
       await vscode.workspace.getConfiguration('plato').update(
         'connections',
         user,
         vscode.ConfigurationTarget.Global,
       );
-      void this.sendSettings(`Found ${models.length} models for ${connId}.`);
+      void this.sendSettings(`Found ${ids.length} models for ${connId}.`);
     } catch (e) {
       void this.sendSettings(
         'Fetch failed \u2014 ' +
@@ -1143,13 +1245,40 @@ class ChatHost {
     );
   }
 
-  /** Dropdown entries grouped by provider (D29); only connections that
- *  have a model set appear — fetched lists are the source of truth. */
-  private modelItems(): { value: string; label: string; group: string }[] {
-    const items: { value: string; label: string; group: string }[] = [];
+  /**
+   * Dropdown entries grouped by provider (D29); only connections that
+   * have a model set appear — fetched lists are the source of truth.
+   * D37: also returns the per-model `maxContext` so the header can
+   * show "200k ctx" next to the model name.
+   */
+  private modelItems(): {
+    value: string;
+    label: string;
+    group: string;
+    maxContext: number | null;
+  }[] {
+    const items: {
+      value: string;
+      label: string;
+      group: string;
+      maxContext: number | null;
+    }[] = [];
     for (const c of readConnections()) {
+      const poolByName = new Map(
+        (c.pool ?? []).map((p) => [p.id, p] as const),
+      );
       for (const m of c.models ?? []) {
-        items.push({ value: `${c.id}:${m}`, label: m, group: c.id });
+        const poolEntry = poolByName.get(m);
+        // Catalog wins (D26c stability) when the bare name is known.
+        // Otherwise fall back to what the /models payload advertised.
+        const maxContext =
+          maxContextFor(m) ?? poolEntry?.maxContext ?? null;
+        items.push({
+          value: `${c.id}:${m}`,
+          label: m,
+          group: c.id,
+          maxContext,
+        });
       }
     }
     return items;
@@ -1463,6 +1592,52 @@ class ChatHost {
     }
     this.controller = new RunController();
     this.running = true;
+    // D37: forward live context + compaction events straight to the
+    // webview. The ring + the compact-button + the post-compact notice
+    // all read from these.
+    bus.on((e) => {
+      if (e.type === 'context') {
+        void this.panel.webview.postMessage({
+          type: 'context',
+          runId: e.runId,
+          turn: e.turn,
+          maxContext: e.maxContext,
+          total: e.total,
+          system: e.system,
+          user: e.user,
+          assistant: e.assistant,
+          tool: e.tool,
+          ...(e.lastInputTokens !== undefined
+            ? { lastInputTokens: e.lastInputTokens }
+            : {}),
+        });
+      } else if (e.type === 'context-compacted') {
+        void this.panel.webview.postMessage({
+          type: 'context-compacted',
+          runId: e.runId,
+          turn: e.turn,
+          mode: e.mode,
+          beforeTokens: e.beforeTokens,
+          afterTokens: e.afterTokens,
+          summaryTokens: e.summaryTokens,
+          keptMessages: e.keptMessages,
+        });
+        // Also surface as a human-readable notice in the chat log so
+        // the user can scroll back and see when Plato compacted.
+        this.push({
+          k: 'msg',
+          cls: 'sys',
+          who: 'Plato',
+          text: `[plato] context compacted (${e.mode}) — ${fmtTokens(
+            e.beforeTokens,
+          )} \u2192 ${fmtTokens(e.afterTokens)} (summary used ${fmtTokens(
+            e.summaryTokens,
+          )} tokens)`,
+        });
+      } else if (e.type === 'notice') {
+        this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: e.text });
+      }
+    });
     // Chronological reply segmentation (founder UX feedback): the reply was
     // previously streamed as ONE growing block, so a guidance notice or tool
     // summary injected mid-run sat ABOVE later narration that streamed after
@@ -1509,6 +1684,9 @@ class ChatHost {
           : {}),
         history: this.historyFor(),
         mcpServers,
+        // D37: context compaction. Mode + threshold come from settings
+        // (the header pill toggles mode; the slider sets threshold).
+        compact: this.compactionState(),
         onText: (t) => {
           if (t.trim().length > 0) {
             this.replyBuffer += t;

@@ -19,20 +19,18 @@ export interface ModelEntry {
   reasoning: boolean;
   /** Hard provider cap on output tokens; requesting above it is a 400. */
   maxOutput: number;
+  /** Provider-advertised input context window. null = unknown. */
+  maxContext: number | null;
 }
 
 export const MODEL_CATALOG: ModelEntry[] = [
-  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true, maxOutput: 64000 },
-  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true, maxOutput: 32768 },
-  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false, maxOutput: 8192 },
-  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384 },
-  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384 },
-  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000 },
-  // Ornith 1.5 35B A3B (LiteLLM). Verified from provider metadata:
-  // context_window 262144, max_output_tokens 32768. Priced as unknown
-  // (cost.ts has no entry; quotes $0, estimated:false) per D26c — never
-  // fake precision. reasoning stays false until confirmed supported.
-  { id: 'ornith-1.5-35b-a3b', label: 'Ornith 1.5 35B A3B', pricePerMTok: [0, 0], reasoning: false, maxOutput: 32768 },
+  // Context windows verified against each provider's own /models or docs.
+  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true, maxOutput: 64000, maxContext: 200000 },
+  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true, maxOutput: 32768, maxContext: 200000 },
+  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false, maxOutput: 8192, maxContext: 200000 },
+  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384, maxContext: 128000 },
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384, maxContext: 128000 },
+  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000, maxContext: 200000 },
 ];
 
 export function splitModelRef(ref: string): {
@@ -77,6 +75,16 @@ export function modelSupportsReasoning(bareName: string): boolean {
  */
 export function maxOutputFor(bareName: string): number {
   return findModel(bareName)?.maxOutput ?? 8192;
+}
+
+/**
+ * Provider-advertised input context window in tokens. null = unknown
+ * (discovered model whose /models payload didn't carry the field, or
+ * provider that doesn't expose it). Per D26c we never fake precision:
+ * the UI shows "ctx unknown" rather than guessing.
+ */
+export function maxContextFor(bareName: string): number | null {
+  return findModel(bareName)?.maxContext ?? null;
 }
 
 export function createProvider(

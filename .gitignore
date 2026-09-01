@@ -20,6 +20,9 @@ build/
 # --- Test & coverage ---
 coverage/
 
+# --- Build-time scratch (e.g. node --check of the inline webview script) ---
+tmp/
+
 # --- VS Code extension packaging ---
 *.vsix
 

@@ -385,6 +385,85 @@ Amends D34 based on founder feedback (preferring Claude Code's presentation). `a
 **D36 — ask_user v3 UI (M4.1, founder review amendment 2).**
 Amends D35. With multiple questions the UI no longer stacks them together; it presents **one question at a time** with "Question X of N" progress, a Back button to revisit earlier answers (restoring the prior selection), and Next/Submit to advance. Each question keeps the title + context + vertical options, and **"Others" for a custom answer is now unconditional** — the `allowCustom` toggle was removed from the schema entirely because models would suppress it, yet the founder wants a custom answer always available. The whole set still submits as one `string[]` batch to the model, so the model-facing contract is unchanged.
 
+**D37 — Live context ring + Auto/Manual compaction (M4.1).**
+Three additions, all built on the same D9 primitive (model context is a
+managed resource, not a backstop).
+
+(a) *Model max context* — `ModelEntry.maxContext` added to the registry
+catalog with verified windows for the 6 known models (Sonnet 4.5 / Opus
+4.1 / Haiku 3.5 → 200k; GPT-4o / 4o-mini → 128k; o4-mini → 200k).
+`maxContextFor(bareName): number | null` returns `null` for unknown
+models — the UI shows "ctx unknown" rather than guessing (D26c: never
+fake precision). Discovered models also surface their context window
+opportunistically: `fetchModelPool()` reads `max_input_tokens` from
+Anthropic's `/v1/models` and `context_length` /
+`top_provider.context_length` from OpenRouter's `/api/v1/models`. Plain
+OpenAI's `/v1/models` does NOT expose the field, so it stays `null` —
+the user still sees "ctx unknown" but the connection works.
+
+(b) *Running context ring* — before every turn the loop emits a
+`context` bus event with `maxContext`, the total estimate, and a
+breakdown (system / user / assistant / tool). A 28px SVG ring in the
+composer footer fills proportionally; color steps green → amber at 70%
+→ red at 90%. Hover tooltip shows the breakdown plus a secondary
+"last request" line carrying the provider's authoritative `inputTokens`
+from the previous turn. The webview header caption next to the model
+dropdown shows "ctx 200k" / "ctx unknown" so the window is visible
+while picking a model — and Settings → Connections appends "· 200k"
+to every known-context option in the multi-select.
+
+(c) *Compaction* — one primitive in two modes. `compactMessages()`
+splits the older N messages off, asks the same provider to summarise
+them with a small output budget, prefixes the summary onto the
+system prompt, and keeps the most recent 6 messages verbatim. The
+summariser call's tokens are folded into the run's `inputTokens` /
+`costUsd` honestly so the done card stays accurate. **Manual**: a
+header pill toggles Manual ↔ Auto (default Auto per founder review,
+since no users yet), and an always-on **Compact** button in the
+composer fires `RunController.requestCompact()` which the loop checks
+at the next safe point. **Auto**: the loop checks before every turn
+whether the estimate has crossed `threshold × maxContext` (default
+0.8, range 0.5–0.95). There is intentionally no "Off" — a run
+*always* manages its context. Failed compactions emit a `notice`
+event and continue without compacting; the run never crashes because
+context grew. Compaction is a *prompt-shrinking* operation: the
+visible chat log is untouched, only what we send the model is
+condensed.
+
+**D37a — D37 follow-ups: catalog-only trip, model-aware summary cap, Ornith removed (M4.1, 0.13.1).**
+Three corrections to D37 raised during review:
+
+(a) *Catalog-only trip guard.* The auto-compaction trip now lives in
+`shouldAutoCompact(estimate, maxContext, threshold)`, a pure helper
+with an explicit invariant: `maxContext` MUST come from
+`maxContextFor(bare)` (catalog) — never from a `/models` payload.
+Discovered `context_length` fields are still surfaced in the header
+caption (informational) but never drive compaction timing. The
+reasoning is captured in the helper's docstring: OpenRouter /
+LiteLLM routes have advertised stale or route-specific windows, and
+silent unbounded growth is the only worse failure mode than
+compacting slightly early. Unknown models fall back to
+`UNKNOWN_CONTEXT_FLOOR` (8192).
+
+(b) *Model-aware summary cap.* The summariser's `maxTokens` was
+hard-coded at 1024 — fine for big models, but a 1/4 budget on a big
+model (Sonnet 4.5: 64000 / 4 = 16000) was wildly generous, while a
+1/4 budget on a cheap model (Haiku 3.5: 8192 / 4 = 2048) was right
+on the edge. New formula `compactMaxTokensFor(model)` =
+`clamp(256, maxOutputFor(bare) / 4, 2048)`: floor at 256 keeps a
+faithful summary possible on tiny models; ceiling at 2048 keeps
+costs bounded on huge ones; the 1/4-of-cap middle keeps the
+summariser from overrunning its own per-call output limit.
+
+(c) *Ornith removed from the catalog.* `ornith-1.5-35b-a3b` was a
+local-only model that had been carried over verbatim from a prior
+in-tree comment. It doesn't belong in the shipped catalog and
+shouldn't appear in the dropdown for users on OpenAI / Anthropic /
+OpenRouter. The window value (262144) it advertised is *real for
+that one user's LiteLLM proxy* but unverifiable in general. Now
+unknown — its `maxContext` is `null`, which is the correct D26c
+default.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,

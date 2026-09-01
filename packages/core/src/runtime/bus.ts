@@ -35,6 +35,43 @@ export type AgentEvent =
       costUsd: number;
     }
   | {
+      /**
+       * D37: emitted before every turn so the UI can show the live
+       * context ring. `maxContext` is `null` when the model's window is
+       * unknown (D26c: never guess). The breakdown is an estimate.
+       */
+      type: 'context';
+      runId: string;
+      turn: number;
+      maxContext: number | null;
+      total: number;
+      system: number;
+      user: number;
+      assistant: number;
+      tool: number;
+      /**
+       * Provider-reported inputTokens from the previous turn, when
+       * available. Lets the tooltip compare the estimate with the
+       * authoritative number from the last request.
+       */
+      lastInputTokens?: number;
+    }
+  | {
+      /**
+       * D37: emitted after a successful compaction. The loop has
+       * already replaced `system` + `messages` in place; this event
+       * is for the UI to render a notice ("compacted 42k → 6k").
+       */
+      type: 'context-compacted';
+      runId: string;
+      turn: number;
+      mode: 'manual' | 'auto';
+      beforeTokens: number;
+      afterTokens: number;
+      summaryTokens: number;
+      keptMessages: number;
+    }
+  | {
       type: 'run-completed';
       runId: string;
       reason: 'complete' | 'cap' | 'cancelled';
@@ -44,7 +81,9 @@ export type AgentEvent =
       costUsd: number;
       truncated?: boolean;
     }
-  | { type: 'run-failed'; runId: string; error: string };
+  | { type: 'run-failed'; runId: string; error: string }
+  /** Human-readable in-flight notice. Not a run state. */
+  | { type: 'notice'; runId: string; text: string };
 
 export type AgentListener = (event: AgentEvent) => void;
 
@@ -74,12 +113,17 @@ export class AgentBus {
  * Inbound control channel. Guidance queues FIFO and is injected at safe
  * points; pause blocks at safe points until resume; cancel stops after
  * the in-flight tool call (D24b).
+ *
+ * D37: `requestCompact` is a one-shot flag the loop checks at the same
+ * safe points. Manual and Auto both funnel through here so the loop
+ * has a single compactor entry point.
  */
 export class RunController {
   private guidanceQueue: string[] = [];
   private paused = false;
   private cancelled = false;
   private waiter: (() => void) | null = null;
+  private compactRequested = false;
 
   sendGuidance(text: string): void {
     if (text.trim().length > 0) {
@@ -101,6 +145,18 @@ export class RunController {
     this.cancelled = true;
     this.waiter?.();
     this.waiter = null;
+  }
+
+  /** D37: ask the loop to compact at the next safe point. */
+  requestCompact(): void {
+    this.compactRequested = true;
+  }
+
+  /** D37: read & clear the compact request. */
+  drainCompactRequest(): boolean {
+    const v = this.compactRequested;
+    this.compactRequested = false;
+    return v;
   }
 
   drainGuidance(): string[] {

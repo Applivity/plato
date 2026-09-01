@@ -19,7 +19,12 @@ import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
 import { AgentBus, RunController } from './bus.js';
 import { estimateCost } from './cost.js';
-import { maxOutputFor, splitModelRef } from '../providers/registry.js';
+import { maxContextFor, maxOutputFor, splitModelRef } from '../providers/registry.js';
+import {
+  compactMessages,
+  promptBreakdown,
+  shouldAutoCompact,
+} from './context.js';
 
 const SYSTEM_PROMPT =
   'You are Plato, an AI coding agent working inside the user workspace. ' +
@@ -31,6 +36,14 @@ const SYSTEM_PROMPT =
   'applying changes, re-read each changed region to verify the result, ' +
   'and report anything you could not confirm. Stop and summarize once ' +
   'the task is complete. Never touch secrets or ignore errors silently.';
+
+/** D37: clamp a 0..1 threshold into a sane range. */
+function clampThreshold(t: number): number {
+  if (!Number.isFinite(t)) {
+    return 0.8;
+  }
+  return Math.max(0.5, Math.min(0.95, t));
+}
 
 export interface ApprovalRequest {
   tool: string;
@@ -143,6 +156,17 @@ export interface LoopOptions {
    * shell-class actions.
    */
   mcpServers?: McpServer[];
+  /**
+   * D37 context compaction. Default is `mode: 'auto'` with a threshold
+   * of 0.8 — a sane, agent-friendly default. Manual mode disables
+   * auto-triggering; the user invokes compaction via the controller's
+   * `requestCompact()`. In both modes the same compactor code path runs.
+   */
+  compact?: {
+    mode: 'auto' | 'manual';
+    /** Fraction of maxContext (0..1) that triggers auto-compaction. */
+    threshold?: number;
+  };
 }
 
 export interface LoopResult {
@@ -217,6 +241,18 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let autoContinued = false;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
+  // D37: the system string is mutable across a run because compaction
+  // prepends a conversation summary to it. Each turn's `completeTurn`
+  // call reads the latest value.
+  let currentSystem = SYSTEM_PROMPT + (opts.role ? `\n${opts.role}` : '');
+  // D37: the provider's authoritative inputTokens from the previous
+  // turn. Used as a secondary line in the context tooltip.
+  let lastInputTokens: number | undefined;
+  // D37: compaction config. Default = auto at 80% of max context.
+  const compactCfg = {
+    mode: opts.compact?.mode ?? 'auto',
+    threshold: clampThreshold(opts.compact?.threshold ?? 0.8),
+  };
 
   // Tool surface: built-ins + MCP (mcp_<server>_<tool>) (D06).
   const mcpByTool = new Map<string, { srv: McpServer; tool: string }>();
@@ -250,11 +286,108 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     pendingGuidance.push(...ctrl.drainGuidance());
     bus.emit({ type: 'turn-started', runId, turn });
 
+    // D37: emit the live context estimate before this turn goes out so
+    // the UI's ring is always one step ahead of the model call.
+    const maxCtx = maxContextFor(bareModel);
+    const breakDown = promptBreakdown(currentSystem, messages, allTools);
+    bus.emit({
+      type: 'context',
+      runId,
+      turn,
+      maxContext: maxCtx,
+      total: breakDown.total,
+      system: breakDown.system,
+      user: breakDown.user,
+      assistant: breakDown.assistant,
+      tool: breakDown.tool,
+      ...(lastInputTokens !== undefined
+        ? { lastInputTokens }
+        : {}),
+    });
+
+    // D37: decide whether to compact before the next request goes out.
+    // The effective trigger is the OR of: (a) controller.requestCompact
+    // (Manual pill + Compact button), and (b) auto-threshold tripped.
+    const manualCompact = ctrl.drainCompactRequest();
+    // D37a: trip math lives in shouldAutoCompact. The helper's docstring
+    // spells out the invariant — `maxContext` is catalog-only; a value
+    // surfaced by a /models payload is informational for the header
+    // caption but must NEVER drive compaction timing (OpenRouter /
+    // LiteLLM routes have been known to report stale or route-specific
+    // windows). Unknown models fall back to UNKNOWN_CONTEXT_FLOOR.
+    const autoTripped =
+      compactCfg.mode === 'auto' &&
+      shouldAutoCompact(breakDown.total, maxCtx, compactCfg.threshold);
+    if ((manualCompact || autoTripped) && messages.length > 1) {
+      try {
+        const beforeTokens = breakDown.total;
+        const result = await compactMessages(client, {
+          model: opts.model,
+          system: currentSystem,
+          messages,
+          tools: allTools,
+        });
+        currentSystem = result.system;
+        messages.length = 0;
+        messages.push(...result.messages);
+        // The summariser call used tokens; fold them into the run
+        // totals honestly so the done-card cost is accurate.
+        inputTokens += result.summaryTokens;
+        const summaryCost = estimateCost(opts.model, {
+          inputTokens: result.summaryTokens,
+          outputTokens: 0,
+        });
+        costUsd += summaryCost.usd;
+        const afterBreakdown = promptBreakdown(
+          currentSystem,
+          messages,
+          allTools,
+        );
+        bus.emit({
+          type: 'context-compacted',
+          runId,
+          turn,
+          mode: manualCompact ? 'manual' : 'auto',
+          beforeTokens,
+          afterTokens: afterBreakdown.total,
+          summaryTokens: result.summaryTokens,
+          keptMessages: messages.length,
+        });
+        // Re-emit `context` so the ring immediately reflects the new
+        // estimate, before the model call below.
+        bus.emit({
+          type: 'context',
+          runId,
+          turn,
+          maxContext: maxCtx,
+          total: afterBreakdown.total,
+          system: afterBreakdown.system,
+          user: afterBreakdown.user,
+          assistant: afterBreakdown.assistant,
+          tool: afterBreakdown.tool,
+          ...(lastInputTokens !== undefined
+            ? { lastInputTokens }
+            : {}),
+        });
+      } catch (e) {
+        // A failed compaction must not crash the run. Surface a notice
+        // and continue; the next threshold check (or the next manual
+        // click) can try again.
+        bus.emit({
+          type: 'notice',
+          runId,
+          text:
+            '[plato] context compaction failed — continuing without it: ' +
+            (e instanceof Error ? e.message : 'error'),
+        });
+      }
+    }
+
     let res;
     try {
       res = await client.completeTurn({
         model: opts.model,
-        system: SYSTEM_PROMPT + (opts.role ? `\n${opts.role}` : ''),
+        system: currentSystem,
         tools: allTools,
         messages,
         maxTokens,
@@ -277,6 +410,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     inputTokens += used.inputTokens;
     outputTokens += used.outputTokens;
     costUsd += quote.usd;
+    // D37: remember the authoritative input token count for the next
+    // pre-turn `context` event.
+    lastInputTokens = used.inputTokens;
     bus.emit({
       type: 'usage',
       runId,

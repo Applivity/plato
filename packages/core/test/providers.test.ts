@@ -3,6 +3,8 @@ import {
   MODEL_CATALOG,
   createProvider,
   findModel,
+  maxContextFor,
+  maxOutputFor,
   modelSupportsReasoning,
   parseModelRef,
 } from '../src/providers/registry.js';
@@ -53,6 +55,30 @@ describe('catalog (bare model names)', () => {
       expect(m.pricePerMTok[0]).toBeGreaterThan(0);
       expect(m.pricePerMTok[1]).toBeGreaterThan(0);
     }
+  });
+
+  it('declares a non-null maxContext for every catalog entry', () => {
+    for (const m of MODEL_CATALOG) {
+      expect(m.maxContext).not.toBeNull();
+      expect(m.maxContext).toBeTypeOf('number');
+      expect(m.maxContext).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('maxContextFor / maxOutputFor (D37)', () => {
+  it('returns catalog maxContext for known bare names', () => {
+    expect(maxContextFor('claude-sonnet-4-5')).toBe(200000);
+    expect(maxContextFor('gpt-4o')).toBe(128000);
+  });
+
+  it('returns null for unknown models — never guesses (D26c)', () => {
+    expect(maxContextFor('totally-custom')).toBeNull();
+  });
+
+  it('maxOutputFor still falls back to 8192 for unknown models', () => {
+    expect(maxOutputFor('claude-3-5-haiku-latest')).toBe(8192);
+    expect(maxOutputFor('totally-custom')).toBe(8192);
   });
 });
 

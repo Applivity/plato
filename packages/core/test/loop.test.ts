@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { runAgentLoop } from '../src/runtime/loop.js';
-import type { ChatProvider, TurnRequest, TurnResponse } from '../src/providers/types.js';
+import { AgentBus, RunController } from '../src/runtime/bus.js';
+import type {
+  ChatProvider,
+  TurnRequest,
+  TurnResponse,
+} from '../src/providers/types.js';
 
 function provider(turns: TurnResponse[]): ChatProvider & { seenMaxTokens: number[] } {
   let i = 0;
@@ -219,5 +224,230 @@ describe('runAgentLoop truncation handling', () => {
       provider: p,
     });
     expect(p.seenMaxTokens[0]).toBe(16384);
+  });
+});
+
+describe('runAgentLoop context + compaction (D37)', () => {
+  it('emits a context event before every turn', async () => {
+    // One-turn run: the assistant returns plain text and the loop
+    // completes. We just verify a `context` event fires before the
+    // model call and carries the right shape.
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 5, outputTokens: 2 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const events: { type: string; turn: number; total: number; maxContext: number | null; lastInputTokens?: number }[] = [];
+    bus.on((e) => {
+      if (e.type === 'context') {
+        events.push({
+          type: 'context',
+          turn: e.turn,
+          total: e.total,
+          maxContext: e.maxContext,
+          lastInputTokens: e.lastInputTokens,
+        });
+      }
+    });
+    await runAgentLoop({ ...BASE, provider: p, bus });
+    expect(events.length).toBe(1);
+    expect(events[0]?.turn).toBe(1);
+    expect(events[0]?.total).toBeGreaterThan(0);
+    // Catalog has haiku at 200k; first turn has no lastInputTokens.
+    expect(events[0]?.maxContext).toBe(200_000);
+    expect(events[0]?.lastInputTokens).toBeUndefined();
+  });
+
+  it('auto-compacts when the estimate crosses the threshold', async () => {
+    let summariseCalls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          summariseCalls += 1;
+          return {
+            content: [{ type: 'text', text: 'summary' }],
+            usage: { inputTokens: 50, outputTokens: 10 },
+            stopReason: 'stop',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const compacted: { mode: 'manual' | 'auto'; before: number; after: number } = {
+      mode: 'manual',
+      before: 0,
+      after: 0,
+    };
+    let compactedSeen = false;
+    bus.on((e) => {
+      if (e.type === 'context-compacted') {
+        compacted.mode = e.mode;
+        compacted.before = e.beforeTokens;
+        compacted.after = e.afterTokens;
+        compactedSeen = true;
+      }
+    });
+    // Use a model id NOT in the catalog so the loop falls back to
+    // UNKNOWN_CONTEXT_FLOOR (8192). With threshold 0.5 the trip point
+    // is 4096 — a 10×2000-char history easily blows past it.
+    await runAgentLoop({
+      ...BASE,
+      model: 'litellm:totally-unknown-model',
+      provider: p,
+      bus,
+      history: [
+        { role: 'user', text: 'a'.repeat(2_000) },
+        { role: 'assistant', text: 'b'.repeat(2_000) },
+        { role: 'user', text: 'c'.repeat(2_000) },
+        { role: 'assistant', text: 'd'.repeat(2_000) },
+        { role: 'user', text: 'e'.repeat(2_000) },
+        { role: 'assistant', text: 'f'.repeat(2_000) },
+        { role: 'user', text: 'g'.repeat(2_000) },
+        { role: 'assistant', text: 'h'.repeat(2_000) },
+        { role: 'user', text: 'i'.repeat(2_000) },
+        { role: 'assistant', text: 'j'.repeat(2_000) },
+      ],
+      compact: { mode: 'auto', threshold: 0.5 },
+    });
+    expect(summariseCalls).toBeGreaterThanOrEqual(1);
+    expect(compactedSeen).toBe(true);
+    expect(compacted.mode).toBe('auto');
+    expect(compacted.before).toBeGreaterThan(compacted.after);
+  });
+
+  it('compacts on controller.requestCompact() in manual mode', async () => {
+    let summariseCalls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          summariseCalls += 1;
+          return {
+            content: [{ type: 'text', text: 's' }],
+            usage: { inputTokens: 5, outputTokens: 2 },
+            stopReason: 'stop',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const controller = new RunController();
+    let mode: 'manual' | 'auto' | null = null;
+    bus.on((e) => {
+      if (e.type === 'context-compacted') {
+        mode = e.mode;
+      }
+    });
+    controller.requestCompact();
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      controller,
+      compact: { mode: 'manual' },
+      history: [
+        { role: 'user', text: 'hello' },
+        { role: 'assistant', text: 'hi' },
+        { role: 'user', text: 'do it' },
+      ],
+    });
+    expect(summariseCalls).toBe(1);
+    expect(mode).toBe('manual');
+  });
+
+  it('manual mode never auto-triggers even when the estimate is high', async () => {
+    let summariseCalls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          summariseCalls += 1;
+          return {
+            content: [{ type: 'text', text: 's' }],
+            usage: { inputTokens: 5, outputTokens: 2 },
+            stopReason: 'stop',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      compact: { mode: 'manual' },
+      history: [
+        { role: 'user', text: 'a'.repeat(400) },
+        { role: 'assistant', text: 'b'.repeat(400) },
+        { role: 'user', text: 'c'.repeat(400) },
+        { role: 'assistant', text: 'd'.repeat(400) },
+      ],
+    });
+    expect(summariseCalls).toBe(0);
+  });
+
+  it('continues the run when a compaction call fails', async () => {
+    let summariseCalls = 0;
+    let mainCalls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          summariseCalls += 1;
+          throw new Error('summariser down');
+        }
+        mainCalls += 1;
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const controller = new RunController();
+    controller.requestCompact();
+    const notices: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'notice') {
+        notices.push(e.text);
+      }
+    });
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      controller,
+      compact: { mode: 'manual' },
+      history: [
+        { role: 'user', text: 'hi' },
+        { role: 'assistant', text: 'hello' },
+        { role: 'user', text: 'do thing' },
+      ],
+    });
+    expect(summariseCalls).toBe(1);
+    expect(mainCalls).toBe(1);
+    expect(r.reason).toBe('complete');
+    expect(notices.join(' ')).toMatch(/compaction failed/);
   });
 });

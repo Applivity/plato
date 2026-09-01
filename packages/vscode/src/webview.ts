@@ -328,6 +328,62 @@ export function chatHtml(): string {
                padding:2px 10px; border-radius:4px; cursor:pointer; border:none;
                background:var(--vscode-button-secondaryBackground,#3a3d41);
                color:var(--vscode-button-secondaryForeground,#ddd); }
+  /* D37: model context window caption next to the dropdown. */
+  #mctx { font-size:10.5px; color:var(--pl-muted);
+          margin-left:6px; letter-spacing:.04em; white-space:nowrap; }
+  #mctx.unknown { font-style:italic; }
+  /* D37: header pill that toggles Auto / Manual compaction. */
+  #compactPill { font-size:10.5px; padding:1px 8px;
+                 border:1px solid var(--pl-border); border-radius:9px;
+                 cursor:pointer; color:var(--pl-muted);
+                 background:transparent; }
+  #compactPill:hover { border-color:var(--vscode-focusBorder, #666);
+                       color:var(--vscode-foreground, #ccc); }
+  #compactPill[data-mode="auto"] { color:var(--vscode-focusBorder, #4a9eff);
+                                   border-color:var(--vscode-focusBorder, #4a9eff); }
+  /* D37: round progress ring + breakdown tooltip. Sits as an
+     absolute overlay on the textarea's top-right corner so it never
+     competes with the Send button. */
+  .ring-wrap { position:absolute; right:60px; top:8px;
+               width:28px; height:28px; pointer-events:auto; }
+  #contextRing { width:28px; height:28px; display:block; cursor:help; }
+  #contextRing .track { fill:none; stroke:var(--pl-border); stroke-width:3; }
+  #contextRing .fill { fill:none; stroke:var(--vscode-focusBorder, #4a9eff);
+                       stroke-width:3; stroke-linecap:round;
+                       transform:rotate(-90deg); transform-origin:50% 50%;
+                       transition:stroke-dashoffset .25s ease,
+                                  stroke .2s ease; }
+  #contextRing.warn .fill { stroke:var(--vscode-editorWarning-foreground, #cca700); }
+  #contextRing.crit .fill { stroke:var(--vscode-testing-iconFailed, #f14c4c); }
+  #contextRing.unknown .fill { stroke:var(--pl-muted); opacity:.4; }
+  #contextRing .label { font-size:8.5px; fill:var(--pl-muted);
+                        font-family:var(--vscode-font-family);
+                        text-anchor:middle; dominant-baseline:central; }
+  #contextBreakdown { display:none; position:absolute; right:0; top:36px;
+                      min-width:240px; max-width:320px;
+                      background:var(--vscode-editorWidget-background, #252526);
+                      border:1px solid var(--pl-border); border-radius:6px;
+                      padding:8px 10px; font-size:11.5px; z-index:5;
+                      box-shadow:0 4px 14px rgba(0,0,0,.35);
+                      color:var(--vscode-foreground); }
+  .ring-wrap:hover #contextBreakdown,
+  .ring-wrap:focus-within #contextBreakdown { display:block; }
+  #contextBreakdown h4 { margin:0 0 4px; font-size:11px; color:var(--pl-muted);
+                         text-transform:uppercase; letter-spacing:.06em; }
+  #contextBreakdown .row { display:flex; justify-content:space-between; gap:10px;
+                           padding:1px 0; }
+  #contextBreakdown .row .lbl { color:var(--pl-muted); }
+  #contextBreakdown .row .val { font-variant-numeric:tabular-nums; }
+  #contextBreakdown .note { margin-top:5px; font-size:10.5px;
+                            color:var(--pl-muted); font-style:italic; }
+  /* D37: compact button in the footer (next to Send). Always enabled. */
+  #compactBtn { height:32px; padding:0 10px; border:1px solid var(--pl-border);
+                border-radius:6px; font-size:11.5px; cursor:pointer;
+                background:transparent; color:var(--pl-muted); align-self:flex-end; }
+  #compactBtn:hover { border-color:var(--vscode-focusBorder, #666);
+                      color:var(--vscode-editor-foreground); }
+  #compactBtn[data-mode="auto"] { border-color:var(--vscode-focusBorder, #4a9eff); }
+  #compactBtn[data-busy="true"] { opacity:.6; cursor:default; }
 </style>
 </head>
 <body>
@@ -335,6 +391,7 @@ export function chatHtml(): string {
   <div class="hrow htop">
     <span class="brand">Plato</span>
     <select id="msel" title="Model for this conversation"></select>
+    <span id="mctx" class="unknown" title="Model's input context window">ctx unknown</span>
     <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
     <button id="hist" title="History">
       <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -350,6 +407,7 @@ export function chatHtml(): string {
     <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
     <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
     <span class="spacer"></span>
+    <button id="compactPill" data-mode="auto" title="Compaction: Auto triggers at the threshold. Click to switch to Manual.">ctx: auto</button>
     <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
     <button id="new" title="Start a new chat (clears this conversation)">＋</button>
     <span id="st"></span>
@@ -357,10 +415,30 @@ export function chatHtml(): string {
 </header>
 <div id="log"></div>
 <div id="statusbar" hidden></div>
-<footer>
+<footer style="position:relative;">
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
+  <div class="ring-wrap" tabindex="0" aria-label="Context usage">
+    <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
+      <circle class="track" cx="14" cy="14" r="11"></circle>
+      <circle class="fill" cx="14" cy="14" r="11"
+              stroke-dasharray="69.115" stroke-dashoffset="69.115"></circle>
+      <text class="label" x="14" y="14">--</text>
+    </svg>
+    <div id="contextBreakdown" role="tooltip">
+      <h4>Context</h4>
+      <div class="row"><span class="lbl">total</span><span class="val" id="ctxb-total">--</span></div>
+      <div class="row"><span class="lbl">system</span><span class="val" id="ctxb-system">--</span></div>
+      <div class="row"><span class="lbl">user</span><span class="val" id="ctxb-user">--</span></div>
+      <div class="row"><span class="lbl">assistant</span><span class="val" id="ctxb-assistant">--</span></div>
+      <div class="row"><span class="lbl">tool</span><span class="val" id="ctxb-tool">--</span></div>
+      <div class="row"><span class="lbl">max</span><span class="val" id="ctxb-max">--</span></div>
+      <div class="row"><span class="lbl">last request</span><span class="val" id="ctxb-last">--</span></div>
+      <div class="note" id="ctxb-note">estimate, ~4 chars/token</div>
+    </div>
+  </div>
   <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
   <button id="cx" title="Stop after the current tool call" hidden>Cancel</button>
+  <button id="compactBtn" data-mode="auto" title="Compact the conversation now (manual override; always available)">Compact</button>
   <button id="go" title="Send">
     <svg class="icn" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
   </button>
@@ -388,7 +466,121 @@ export function chatHtml(): string {
   let streaming = false;
   let runT0 = 0;
   let lastAct = '';
+  // D37 state. The caption + ring + pill all read from here.
+  let lastMaxContext = null;
+  let lastThreshold = 0.8;
+  let lastModelMaxContext = null;
+  let compactPending = false;
   vsapi.postMessage({ type: 'ready' });
+
+  // D37 helpers -----------------------------------------------------------
+  const RING_CIRC = 2 * Math.PI * 11; // matches the SVG r=11
+  function fmtTok(n) {
+    if (typeof n !== 'number' || !Number.isFinite(n)) return '--';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+    return String(n);
+  }
+  function setRing(pct) {
+    const ring = document.getElementById('contextRing');
+    const fill = ring.querySelector('.fill');
+    const lbl = ring.querySelector('.label');
+    ring.classList.remove('warn', 'crit', 'unknown');
+    if (pct == null || !Number.isFinite(pct)) {
+      ring.classList.add('unknown');
+      fill.setAttribute('stroke-dashoffset', String(RING_CIRC));
+      lbl.textContent = '?';
+      return;
+    }
+    const clamped = Math.max(0, Math.min(1, pct));
+    fill.setAttribute('stroke-dashoffset', String(RING_CIRC * (1 - clamped)));
+    lbl.textContent = Math.round(clamped * 100) + '%';
+    if (clamped >= 0.9) ring.classList.add('crit');
+    else if (clamped >= 0.7) ring.classList.add('warn');
+  }
+  function applyContext(c) {
+    if (typeof c.maxContext === 'number') {
+      lastMaxContext = c.maxContext;
+    } else if (c.maxContext === null) {
+      lastMaxContext = null;
+    }
+    const pct =
+      typeof lastMaxContext === 'number' && lastMaxContext > 0
+        ? c.total / lastMaxContext
+        : null;
+    setRing(pct);
+    // Breakdown.
+    const put = (id, v) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = fmtTok(v);
+    };
+    put('ctxb-total', c.total);
+    put('ctxb-system', c.system);
+    put('ctxb-user', c.user);
+    put('ctxb-assistant', c.assistant);
+    put('ctxb-tool', c.tool);
+    put('ctxb-max', typeof lastMaxContext === 'number' ? lastMaxContext : null);
+    const last = document.getElementById('ctxb-last');
+    if (last) {
+      last.textContent =
+        typeof c.lastInputTokens === 'number'
+          ? fmtTok(c.lastInputTokens)
+          : '--';
+    }
+  }
+  function applyCompaction(c) {
+    if (!c) return;
+    const mode = c.mode === 'manual' ? 'manual' : 'auto';
+    lastThreshold = typeof c.threshold === 'number' ? c.threshold : 0.8;
+    const pill = document.getElementById('compactPill');
+    const btn = document.getElementById('compactBtn');
+    if (pill) {
+      pill.dataset.mode = mode;
+      pill.textContent = 'ctx: ' + mode;
+      pill.title =
+        mode === 'auto'
+          ? 'Compaction: Auto at ' +
+            Math.round(lastThreshold * 100) +
+            '% of the model context. Click to switch to Manual.'
+          : 'Compaction: Manual — Plato only compacts when you click Compact. Click to switch to Auto.';
+    }
+    if (btn) {
+      btn.dataset.mode = mode;
+    }
+  }
+  function updateModelCaption() {
+    const cap = document.getElementById('mctx');
+    if (!cap) return;
+    // The selected option carries the model's maxContext as a data attr.
+    const opt = msel.options[msel.selectedIndex];
+    const raw = opt && opt.dataset ? opt.dataset.maxContext : undefined;
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) {
+        cap.textContent = 'ctx ' + fmtTok(n);
+        cap.classList.remove('unknown');
+        return;
+      }
+    }
+    cap.textContent = 'ctx unknown';
+    cap.classList.add('unknown');
+  }
+  function requestCompact() {
+    if (!busy) {
+      // No active run: nothing to compact. Surface a tiny hint.
+      return;
+    }
+    vsapi.postMessage({ type: 'request-compact' });
+    compactPending = true;
+    const btn = document.getElementById('compactBtn');
+    if (btn) {
+      btn.dataset.busy = 'true';
+    }
+    setTimeout(() => {
+      compactPending = false;
+      if (btn) btn.dataset.busy = 'false';
+    }, 1500);
+  }
+  // -----------------------------------------------------------------------
 
   function chipOn(txt, doneKind) {
     const st = document.getElementById('st');
@@ -969,6 +1161,65 @@ export function chatHtml(): string {
       'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.',
     ));
 
+    // D37: Context section — header pill toggles Auto/Manual; the
+    // slider sets the auto-trigger threshold.
+    const secCtx = collapsible('Context', false);
+    const ctxInfo = d.compaction || { mode: 'auto', threshold: 0.8 };
+    const ctxMode = el('div', 'prefrow');
+    ctxMode.appendChild(el('label', null, 'Compaction'));
+    const modeSel = sel(
+      [
+        { value: 'auto', label: 'Auto (at threshold)' },
+        { value: 'manual', label: 'Manual (Compact button only)' },
+      ],
+      ctxInfo.mode === 'manual' ? 'manual' : 'auto',
+    );
+    modeSel.addEventListener('change', (e) => {
+      vsapi.postMessage({
+        type: 'set-compaction-mode',
+        mode: e.target.value,
+      });
+    });
+    ctxMode.appendChild(modeSel);
+    secCtx.appendChild(ctxMode);
+    const ctxThr = el('div', 'prefrow');
+    ctxThr.appendChild(el(
+      'label',
+      null,
+      'Auto threshold (' +
+        Math.round((ctxInfo.threshold ?? 0.8) * 100) +
+        '% of context)',
+    ));
+    const thrInput = el('input');
+    thrInput.type = 'range';
+    thrInput.min = '0.5';
+    thrInput.max = '0.95';
+    thrInput.step = '0.05';
+    thrInput.value = String(ctxInfo.threshold ?? 0.8);
+    thrInput.style.width = '100%';
+    thrInput.addEventListener('input', () => {
+      const v = Number(thrInput.value);
+      thrLabel.textContent = Math.round(v * 100) + '% of context';
+    });
+    thrInput.addEventListener('change', () => {
+      vsapi.postMessage({
+        type: 'set-compaction-threshold',
+        value: Number(thrInput.value),
+      });
+    });
+    const thrLabel = el('label', null,
+      Math.round((ctxInfo.threshold ?? 0.8) * 100) + '% of context');
+    thrLabel.style.fontSize = '10.5px';
+    thrLabel.style.color = 'var(--pl-muted)';
+    ctxThr.appendChild(thrInput);
+    ctxThr.appendChild(thrLabel);
+    secCtx.appendChild(ctxThr);
+    secCtx.appendChild(el(
+      'div',
+      'note',
+      'Auto: Plato compacts at the threshold. Manual: only when you click Compact. There is no off — the run always manages its context.',
+    ));
+
     // Preferences
     const sec2 = collapsible('Defaults', false);
     const prow1 = el('div', 'prefrow');
@@ -1013,10 +1264,22 @@ export function chatHtml(): string {
   }
   msel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'model', value: msel.value });
+    updateModelCaption();
   });
   rsel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'set-reasoning', value: rsel.value });
   });
+  // D37: header pill toggles Auto / Manual; always-on Compact button.
+  const compactPill = document.getElementById('compactPill');
+  compactPill.addEventListener('click', () => {
+    const next =
+      compactPill.dataset.mode === 'auto' ? 'manual' : 'auto';
+    vsapi.postMessage({ type: 'set-compaction-mode', mode: next });
+    // Optimistic UI; the host will re-post the models payload.
+    applyCompaction({ mode: next, threshold: lastThreshold });
+  });
+  const compactBtn = document.getElementById('compactBtn');
+  compactBtn.addEventListener('click', requestCompact);
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
@@ -1120,6 +1383,8 @@ export function chatHtml(): string {
           persona: m.persona,
           personas: [],
         });
+        // D37: header caption + compaction state.
+        applyCompaction(m.compaction);
         const current = msel.value;
         msel.textContent = '';
         let og = null;
@@ -1133,7 +1398,16 @@ export function chatHtml(): string {
           }
           const o = document.createElement('option');
           o.value = String(it.value);
-          o.textContent = String(it.label);
+          // D37: append "· 200k" to known-context models so the user
+          // sees the window while picking a model.
+          const label = String(it.label);
+          const max = it.maxContext;
+          if (typeof max === 'number' && max > 0) {
+            o.textContent = label + ' \u00b7 ' + fmtTok(max);
+            o.dataset.maxContext = String(max);
+          } else {
+            o.textContent = label;
+          }
           og.appendChild(o);
         }
         // Reasoning control (D28 phase 2): visible only for capable models.
@@ -1155,6 +1429,21 @@ export function chatHtml(): string {
           }
           msel.value = current;
         }
+        updateModelCaption();
+        break;
+      }
+      case 'context': applyContext(m); break;
+      case 'context-compacted': {
+        // Force a brief animation by re-applying; the user already sees
+        // the chat-log notice that the host pushes.
+        applyContext({
+          maxContext: lastMaxContext,
+          total: m.afterTokens,
+          system: 0,
+          user: 0,
+          assistant: 0,
+          tool: 0,
+        });
         break;
       }
       case 'settings': showSettings(m); break;
