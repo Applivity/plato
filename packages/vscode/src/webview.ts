@@ -177,10 +177,16 @@ export function chatHtml(): string {
   .runitem .rt { font-weight:600; font-size:12px; word-break:break-word; }
   .runitem .rm { font-size:11px; color:var(--pl-muted); margin-top:2px; }
   .hlabel { padding:8px 12px 6px; }
-  header.shead { padding:8px 12px; gap:8px; }
-  header.shead button { border:1px solid var(--pl-border); border-radius:6px;
-                        background:transparent; color:var(--pl-muted);
-                        padding:2px 10px; cursor:pointer; font-size:12px; }
+  header.shead { padding:18px 24px 14px; gap:8px; border-bottom:1px solid var(--pl-border);
+                  display:flex; align-items:baseline; }
+  header.shead .stitle { font-size:18px; font-weight:600;
+                         color:var(--vscode-editor-foreground); }
+  header.shead .sback { background:transparent; border:none; padding:0;
+                        color:var(--pl-muted); cursor:pointer; font-size:12.5px;
+                        font-family:inherit; }
+  header.shead .sback:hover { color:var(--vscode-editor-foreground);
+                              text-decoration:underline; }
+  header.shead .sback::before { content:'\u2190\u00a0'; opacity:.7; }
   /* --- Settings page (D38: full rewrite) --- */
   #sbody { flex:1; overflow-y:auto; padding:24px 20px; }
   #sbody .wrap { max-width:720px; margin:0 auto; }
@@ -260,9 +266,6 @@ export function chatHtml(): string {
                  word-break:break-all; margin-top:6px; }
   .conn .crow { display:flex; align-items:center; gap:8px;
                 margin-top:10px; flex-wrap:wrap; }
-  .conn .cbuilt { font-size:10.5px; color:var(--pl-muted);
-                  border:1px solid var(--pl-border); border-radius:8px;
-                  padding:1px 7px; }
   /* Model multi-select inside a connection card. */
   .conn .picker { margin-top:10px; border:1px solid var(--pl-border);
                   border-radius:6px; overflow:hidden; }
@@ -429,15 +432,21 @@ export function chatHtml(): string {
   #mctx { font-size:10.5px; color:var(--pl-muted);
           margin-left:6px; letter-spacing:.04em; white-space:nowrap; }
   #mctx.unknown { font-style:italic; }
-  /* D37: header pill that toggles Auto / Manual compaction. */
-  #compactPill { font-size:10.5px; padding:1px 8px;
-                 border:1px solid var(--pl-border); border-radius:9px;
-                 cursor:pointer; color:var(--pl-muted);
-                 background:transparent; }
-  #compactPill:hover { border-color:var(--vscode-focusBorder, #666);
-                       color:var(--vscode-foreground, #ccc); }
-  #compactPill[data-mode="auto"] { color:var(--vscode-focusBorder, #4a9eff);
-                                   border-color:var(--vscode-focusBorder, #4a9eff); }
+  /* D38b: chat header pill becomes a status label, not a toggle. It
+     explains what the ring is doing; the ring's tooltip is where you
+     change it. Visually distinct from the mode chips (plan/edit/act/auto)
+     so "auto" the mode and "compact: auto" never look related. */
+  #compactPill { font-size:10.5px; padding:1px 0;
+                 border:none; border-radius:0;
+                 cursor:default; color:var(--pl-muted);
+                 background:transparent;
+                 display:inline-flex; align-items:center; gap:4px; }
+  #compactPill::before { content:''; width:6px; height:6px; border-radius:50%;
+                         background:var(--pl-muted); opacity:.7; }
+  #compactPill[data-mode="auto"]::before { background:var(--vscode-focusBorder, #4a9eff);
+                                           opacity:1; }
+  #compactPill[data-mode="manual"]::before { background:var(--pl-muted);
+                                             opacity:.7; }
   /* D37: round progress ring + breakdown tooltip. Sits as an
      absolute overlay on the textarea's top-right corner so it never
      competes with the Send button. */
@@ -463,8 +472,14 @@ export function chatHtml(): string {
                       padding:8px 10px; font-size:11.5px; z-index:5;
                       box-shadow:0 4px 14px rgba(0,0,0,.35);
                       color:var(--vscode-foreground); }
+  /* D38b: keep the breakdown open while the cursor is on the ring OR
+     the breakdown itself - the breakdown is now interactive (segmented
+     control, range slider, button) so the user must be able to move
+     their cursor into it. */
   .ring-wrap:hover #contextBreakdown,
-  .ring-wrap:focus-within #contextBreakdown { display:block; }
+  .ring-wrap:focus-within #contextBreakdown,
+  #contextBreakdown:hover,
+  #contextBreakdown:focus-within { display:block; }
   #contextBreakdown h4 { margin:0 0 4px; font-size:11px; color:var(--pl-muted);
                          text-transform:uppercase; letter-spacing:.06em; }
   #contextBreakdown .row { display:flex; justify-content:space-between; gap:10px;
@@ -473,6 +488,28 @@ export function chatHtml(): string {
   #contextBreakdown .row .val { font-variant-numeric:tabular-nums; }
   #contextBreakdown .note { margin-top:5px; font-size:10.5px;
                             color:var(--pl-muted); font-style:italic; }
+  /* D38b: compact controls live inside the ring's tooltip. */
+  #contextBreakdown .ctxsep { height:1px; background:var(--pl-border);
+                              margin:8px 0 6px; }
+  #contextBreakdown .ctxctl-row { display:flex; align-items:center;
+                                  gap:8px; padding:3px 0; }
+  #contextBreakdown .ctxctl-row .lbl { font-size:11px;
+                                       color:var(--pl-muted);
+                                       min-width:62px; }
+  #contextBreakdown .ctxseg { display:inline-flex; border:1px solid var(--pl-border);
+                              border-radius:4px; overflow:hidden; }
+  #contextBreakdown .ctxseg button { background:transparent; border:none;
+                                     color:var(--pl-muted); cursor:pointer;
+                                     font-size:11px; padding:3px 9px;
+                                     font-family:inherit; }
+  #contextBreakdown .ctxseg button + button { border-left:1px solid var(--pl-border); }
+  #contextBreakdown .ctxseg button.on { background:var(--vscode-button-background);
+                                        color:var(--vscode-button-foreground); }
+  #contextBreakdown #ctxb-thr { flex:1; padding:0; height:4px; }
+  #contextBreakdown #ctxb-thr-live { font-variant-numeric:tabular-nums;
+                                     font-size:11px; min-width:38px;
+                                     text-align:right; }
+  #contextBreakdown #ctxb-cnow { font-size:11px; }
   /* D37: compact button in the footer (next to Send). Always enabled. */
   #compactBtn { height:32px; padding:0 10px; border:1px solid var(--pl-border);
                 border-radius:6px; font-size:11.5px; cursor:pointer;
@@ -504,7 +541,7 @@ export function chatHtml(): string {
     <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
     <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
     <span class="spacer"></span>
-    <button id="compactPill" data-mode="auto" title="Compaction: Auto triggers at the threshold. Click to switch to Manual.">ctx: auto</button>
+    <button id="compactPill" data-mode="auto" title="Compaction policy. Hover the context ring to change it.">compact: auto</button>
     <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
     <button id="new" title="Start a new chat (clears this conversation)">＋</button>
     <span id="st"></span>
@@ -531,6 +568,24 @@ export function chatHtml(): string {
       <div class="row"><span class="lbl">max</span><span class="val" id="ctxb-max">--</span></div>
       <div class="row"><span class="lbl">last request</span><span class="val" id="ctxb-last">--</span></div>
       <div class="note" id="ctxb-note">estimate, ~4 chars/token</div>
+      <div class="ctxsep"></div>
+      <h4>Compaction</h4>
+      <div class="ctxctl-row">
+        <span class="lbl">Mode</span>
+        <div class="ctxseg" id="ctxb-seg">
+          <button type="button" data-mode="auto">Auto</button>
+          <button type="button" data-mode="manual">Manual</button>
+        </div>
+      </div>
+      <div class="ctxctl-row" id="ctxb-thr-row">
+        <span class="lbl">Threshold</span>
+        <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
+        <span class="val" id="ctxb-thr-live">80%</span>
+      </div>
+      <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
+        <span class="lbl"></span>
+        <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
+      </div>
     </div>
   </div>
   <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
@@ -542,15 +597,15 @@ export function chatHtml(): string {
 </footer>
 <div id="settingsPage">
   <header class="shead">
-    <button id="sback">‹ Back</button>
-    <span class="label">Plato Settings</span>
+    <span class="stitle">Plato Settings</span>
+    <button id="sback" class="sback" type="button">All settings</button>
   </header>
   <div id="sbody"></div>
 </div>
 <div id="historyPage">
   <header class="shead">
-    <button id="hback">‹ Back</button>
-    <span class="label" id="htitle">History</span>
+    <span class="stitle" id="htitle">History</span>
+    <button id="hback" class="sback" type="button">Back to chat</button>
   </header>
   <div id="hibody"></div>
 </div>
@@ -632,13 +687,32 @@ export function chatHtml(): string {
     const btn = document.getElementById('compactBtn');
     if (pill) {
       pill.dataset.mode = mode;
-      pill.textContent = 'ctx: ' + mode;
+      // D38b: pill is now a status label, not a toggle. Hover the
+      // ring to change the policy.
+      pill.textContent = 'compact: ' + mode;
       pill.title =
         mode === 'auto'
           ? 'Compaction: Auto at ' +
             Math.round(lastThreshold * 100) +
-            '% of the model context. Click to switch to Manual.'
-          : 'Compaction: Manual — Plato only compacts when you click Compact. Click to switch to Auto.';
+            '% of context. Hover the context ring to change.'
+          : 'Compaction: Manual — Plato only compacts when you click Compact. Hover the context ring to change.';
+      // D38b: also reflect in the ring's tooltip controls.
+      const seg = document.getElementById('ctxb-seg');
+      if (seg) {
+        for (const b of Array.from(seg.querySelectorAll('button'))) {
+          b.classList.toggle('on', b.dataset.mode === mode);
+        }
+      }
+      const thrRow = document.getElementById('ctxb-thr-row');
+      if (thrRow) { thrRow.hidden = mode !== 'auto'; }
+      const cnowRow = document.getElementById('ctxb-cnow-row');
+      if (cnowRow) { cnowRow.hidden = mode !== 'manual'; }
+      const thr = document.getElementById('ctxb-thr');
+      const thrLive = document.getElementById('ctxb-thr-live');
+      if (thr) { thr.value = String(lastThreshold); }
+      if (thrLive) {
+        thrLive.textContent = Math.round(lastThreshold * 100) + '%';
+      }
     }
     if (btn) {
       btn.dataset.mode = mode;
@@ -965,7 +1039,197 @@ export function chatHtml(): string {
       wrap.appendChild(f);
     }
 
-    // ---- 1. Orchestration (always-open) ----
+    // ---- 1. Providers (collapsed, auto-opens when zero providers) ----
+    // D38b: count user-managed connections only (built-ins are
+    // reachable through the Add presets, not as cards).
+    const userConns = (d.connections || []).filter((c) => !c.builtin);
+    const sec1Det = document.createElement('details');
+    sec1Det.className = 'sec';
+    sec1Det.appendChild(el('summary', null,
+      'Providers  \u2014  ' + userConns.length + ' configured'));
+    const sec1Body = el('div', 'secbody');
+    sec1Det.appendChild(sec1Body);
+    wrap.appendChild(sec1Det);
+    if (userConns.length === 0) {
+      sec1Det.open = true;
+    }
+    sec1Body.appendChild(el('h2', 'shead2', 'Providers'));
+    sec1Body.appendChild(el('p', 'shelp',
+      'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in SecretStorage and never displayed.'));
+
+    const list = el('div', 'conn-list');
+    // D38b: built-in providers (anthropic, openai) are reachable only
+    // through the "+ Add a provider" presets, not as cards here. The
+    // list shows only connections the user actually manages.
+    for (const c of d.connections || []) {
+      if (c.builtin) { continue; }
+      const card = el('div', 'conn');
+      const r1 = el('div', 'row1');
+      r1.appendChild(el('span', 'cid', c.id));
+      r1.appendChild(el('span', 'ckind', String(c.kind)));
+      const statClass = c.keyStatus === 'set' ? 'cstat set' : 'cstat miss';
+      const statText = c.keyStatus === 'set' ? 'Ready' : 'No key';
+      const stat = el('span', statClass);
+      stat.appendChild(el('span', 'dot'));
+      stat.appendChild(document.createTextNode(statText));
+      r1.appendChild(stat);
+      card.appendChild(r1);
+      if (c.baseUrl) {
+        card.appendChild(el('div', 'cbase', String(c.baseUrl)));
+      }
+      const pool = c.all || c.models || [];
+      const selected = new Set(c.models || []);
+      if (pool.length > 0) {
+        const det = document.createElement('details');
+        det.className = 'picker';
+        det.appendChild(el('summary', null,
+          'Models \u2014 ' + selected.size + ' of ' + pool.length + ' active'));
+        const box = el('div', 'modellist');
+        for (const mid of pool) {
+          const lbl = el('label', 'mopt', null);
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = String(mid);
+          cb.checked = selected.has(String(mid));
+          lbl.appendChild(cb);
+          lbl.appendChild(el('span', null, String(mid)));
+          box.appendChild(lbl);
+        }
+        const okB = sbtn('OK', () => {
+          const chosen = Array.from(box.querySelectorAll('input'))
+            .filter((i) => i.checked)
+            .map((i) => String(i.value));
+          vsapi.postMessage({
+            type: 'settings-models', connId: c.id, models: chosen,
+          });
+          det.querySelector('summary').textContent =
+            'Models \u2014 ' + chosen.length + ' of ' + pool.length + ' active';
+          det.open = false;
+        }, 'primary');
+        const cancelB = sbtn('Cancel', () => {
+          for (const cb of Array.from(box.querySelectorAll('input'))) {
+            cb.checked = selected.has(String(cb.value));
+          }
+          det.open = false;
+        }, 'secondary');
+        const rowBtns = el('div', 'mbtns');
+        rowBtns.appendChild(okB);
+        rowBtns.appendChild(cancelB);
+        box.appendChild(rowBtns);
+        det.appendChild(box);
+        card.appendChild(det);
+      } else {
+        card.appendChild(el('div', 'note',
+          'No models yet - set a key and use Refresh to fetch the model list.'));
+      }
+      const crow = el('div', 'crow');
+      if (c.keyStatus !== 'set') {
+        crow.appendChild(sbtn('Set key', () => {
+          vsapi.postMessage({ type: 'settings-key', connId: c.id });
+        }, 'primary'));
+      } else {
+        crow.appendChild(sbtn('Set key', () => {
+          vsapi.postMessage({ type: 'settings-key', connId: c.id });
+        }, 'secondary'));
+      }
+      const refresh = sbtn('\u21BB Refresh models', () => {
+        vsapi.postMessage({ type: 'settings-fetch', connId: c.id });
+      }, 'secondary');
+      refresh.disabled = Boolean(c.keyStatus !== 'set');
+      crow.appendChild(refresh);
+      // D38b: built-ins are no longer rendered as cards, so every card
+      // here is user-managed. Always show Delete.
+      crow.appendChild(sbtn('Delete', () => {
+        vsapi.postMessage({ type: 'settings-delete', connId: c.id });
+      }, 'danger'));
+      card.appendChild(crow);
+      list.appendChild(card);
+    }
+    sec1Body.appendChild(list);
+
+    // Add-connection card: prominent CTA at the END of Providers.
+    const addCard = el('div', 'add-card');
+    addCard.appendChild(el('div', 'add-title',
+      '\uFF0B  Add a provider'));
+    const add = document.createElement('form');
+    add.id = 'addForm';
+    add.addEventListener('submit', (e) => { e.preventDefault(); });
+    const grid = el('div', 'grid');
+    const presetRow = el('div');
+    presetRow.style.gridColumn = '1 / -1';
+    presetRow.style.display = 'grid';
+    presetRow.style.gridTemplateColumns = '130px 1fr';
+    presetRow.style.gap = '10px 12px';
+    presetRow.style.alignItems = 'center';
+    const ppick = sel([
+      { value: '', label: '\u2014 or enter a custom endpoint \u2014' },
+      ...(d.presets || []).map((p) => ({ value: p.value, label: p.label })),
+    ]);
+    presetRow.appendChild(el('label', null, 'Start from preset'));
+    presetRow.appendChild(ppick);
+    grid.appendChild(presetRow);
+    const fkind = sel([
+      { value: 'openai', label: 'OpenAI-compatible' },
+      { value: 'anthropic', label: 'Anthropic native' },
+    ]);
+    fkind.value = 'openai';
+    grid.appendChild(el('label', null, 'API style'));
+    grid.appendChild(fkind);
+    const fbase = el('input');
+    fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
+    grid.appendChild(el('label', null, 'Base URL'));
+    grid.appendChild(fbase);
+    const fkey = el('input');
+    fkey.type = 'password';
+    fkey.placeholder = 'API key';
+    fkey.autocomplete = 'off';
+    grid.appendChild(el('label', null, 'API key'));
+    grid.appendChild(fkey);
+    ppick.addEventListener('change', () => {
+      const pre = (d.presets || []).find((p) => p.value === ppick.value);
+      if (pre) {
+        fkind.value = String(pre.kind);
+        fbase.value = String(pre.baseUrl);
+      }
+    });
+    add.appendChild(grid);
+    add.appendChild(el('div', 'note',
+      'Models are fetched automatically from this URL after adding.'));
+    const actions = el('div', 'actions');
+    actions.appendChild(sbtn('Add connection', () => {
+      const base = fbase.value.trim();
+      if (!base) { return; }
+      let id = String(ppick.value || '');
+      if (!id) {
+        try {
+          id = new URL(base).hostname.split('.')[0].replace(/[^a-z0-9_-]/gi, '') || 'provider';
+        } catch {
+          id = 'provider';
+        }
+      }
+      try {
+        vsapi.postMessage({
+          type: 'settings-add',
+          connId: id,
+          kind: fkind.value,
+          baseUrl: base,
+          apiKey: fkey.value,
+        });
+        fkey.value = '';
+      } catch (err) {
+        const f = el('div', 'err');
+        f.textContent = 'Add failed: ' + String(err);
+        add.appendChild(f);
+      }
+    }, 'primary'));
+    add.appendChild(actions);
+    addCard.appendChild(add);
+    sec1Body.appendChild(addCard);
+    sec1Body.appendChild(el('div', 'note',
+      'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.'));
+
+
+    // ---- 2. Orchestration (always-open) ----
     const orch = d.orchestration || {};
     const secO = el('div', 'sec');
     secO.appendChild(el('h2', 'shead2', 'Orchestration'));
@@ -1100,189 +1364,6 @@ export function chatHtml(): string {
     secO.appendChild(oblock);
     wrap.appendChild(secO);
 
-    // ---- 2. Providers (collapsed, auto-opens when zero providers) ----
-    const sec1Det = document.createElement('details');
-    sec1Det.className = 'sec';
-    sec1Det.appendChild(el('summary', null,
-      'Providers  \u2014  ' + (d.connections || []).length + ' configured'));
-    const sec1Body = el('div', 'secbody');
-    sec1Det.appendChild(sec1Body);
-    wrap.appendChild(sec1Det);
-    if ((d.connections || []).length === 0) {
-      sec1Det.open = true;
-    }
-    sec1Body.appendChild(el('h2', 'shead2', 'Providers'));
-    sec1Body.appendChild(el('p', 'shelp',
-      'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in SecretStorage and never displayed.'));
-
-    const list = el('div', 'conn-list');
-    for (const c of d.connections || []) {
-      const card = el('div', 'conn');
-      const r1 = el('div', 'row1');
-      r1.appendChild(el('span', 'cid', c.id));
-      r1.appendChild(el('span', 'ckind', String(c.kind)));
-      const statClass = c.keyStatus === 'set' ? 'cstat set' : 'cstat miss';
-      const statText = c.keyStatus === 'set' ? 'Ready' : 'No key';
-      const stat = el('span', statClass);
-      stat.appendChild(el('span', 'dot'));
-      stat.appendChild(document.createTextNode(statText));
-      r1.appendChild(stat);
-      card.appendChild(r1);
-      if (c.baseUrl) {
-        card.appendChild(el('div', 'cbase', String(c.baseUrl)));
-      }
-      const pool = c.all || c.models || [];
-      const selected = new Set(c.models || []);
-      if (pool.length > 0) {
-        const det = document.createElement('details');
-        det.className = 'picker';
-        det.appendChild(el('summary', null,
-          'Models \u2014 ' + selected.size + ' of ' + pool.length + ' active'));
-        const box = el('div', 'modellist');
-        for (const mid of pool) {
-          const lbl = el('label', 'mopt', null);
-          const cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.value = String(mid);
-          cb.checked = selected.has(String(mid));
-          lbl.appendChild(cb);
-          lbl.appendChild(el('span', null, String(mid)));
-          box.appendChild(lbl);
-        }
-        const okB = sbtn('OK', () => {
-          const chosen = Array.from(box.querySelectorAll('input'))
-            .filter((i) => i.checked)
-            .map((i) => String(i.value));
-          vsapi.postMessage({
-            type: 'settings-models', connId: c.id, models: chosen,
-          });
-          det.querySelector('summary').textContent =
-            'Models \u2014 ' + chosen.length + ' of ' + pool.length + ' active';
-          det.open = false;
-        }, 'primary');
-        const cancelB = sbtn('Cancel', () => {
-          for (const cb of Array.from(box.querySelectorAll('input'))) {
-            cb.checked = selected.has(String(cb.value));
-          }
-          det.open = false;
-        }, 'secondary');
-        const rowBtns = el('div', 'mbtns');
-        rowBtns.appendChild(okB);
-        rowBtns.appendChild(cancelB);
-        box.appendChild(rowBtns);
-        det.appendChild(box);
-        card.appendChild(det);
-      } else {
-        card.appendChild(el('div', 'note',
-          'No models yet - set a key and use Refresh to fetch the model list.'));
-      }
-      const crow = el('div', 'crow');
-      if (c.keyStatus !== 'set') {
-        crow.appendChild(sbtn('Set key', () => {
-          vsapi.postMessage({ type: 'settings-key', connId: c.id });
-        }, 'primary'));
-      } else {
-        crow.appendChild(sbtn('Set key', () => {
-          vsapi.postMessage({ type: 'settings-key', connId: c.id });
-        }, 'secondary'));
-      }
-      const refresh = sbtn('\u21BB Refresh models', () => {
-        vsapi.postMessage({ type: 'settings-fetch', connId: c.id });
-      }, 'secondary');
-      refresh.disabled = Boolean(c.keyStatus !== 'set');
-      crow.appendChild(refresh);
-      if (c.builtin) {
-        crow.appendChild(el('span', 'cbuilt', 'built-in'));
-      } else {
-        crow.appendChild(sbtn('Delete', () => {
-          vsapi.postMessage({ type: 'settings-delete', connId: c.id });
-        }, 'danger'));
-      }
-      card.appendChild(crow);
-      list.appendChild(card);
-    }
-    sec1Body.appendChild(list);
-
-    // Add-connection card: prominent CTA at the END of Providers.
-    const addCard = el('div', 'add-card');
-    addCard.appendChild(el('div', 'add-title',
-      '\uFF0B  Add a provider'));
-    const add = document.createElement('form');
-    add.id = 'addForm';
-    add.addEventListener('submit', (e) => { e.preventDefault(); });
-    const grid = el('div', 'grid');
-    const presetRow = el('div');
-    presetRow.style.gridColumn = '1 / -1';
-    presetRow.style.display = 'grid';
-    presetRow.style.gridTemplateColumns = '130px 1fr';
-    presetRow.style.gap = '10px 12px';
-    presetRow.style.alignItems = 'center';
-    const ppick = sel([
-      { value: '', label: '\u2014 or enter a custom endpoint \u2014' },
-      ...(d.presets || []).map((p) => ({ value: p.value, label: p.label })),
-    ]);
-    presetRow.appendChild(el('label', null, 'Start from preset'));
-    presetRow.appendChild(ppick);
-    grid.appendChild(presetRow);
-    const fkind = sel([
-      { value: 'openai', label: 'OpenAI-compatible' },
-      { value: 'anthropic', label: 'Anthropic native' },
-    ]);
-    fkind.value = 'openai';
-    grid.appendChild(el('label', null, 'API style'));
-    grid.appendChild(fkind);
-    const fbase = el('input');
-    fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
-    grid.appendChild(el('label', null, 'Base URL'));
-    grid.appendChild(fbase);
-    const fkey = el('input');
-    fkey.type = 'password';
-    fkey.placeholder = 'API key';
-    fkey.autocomplete = 'off';
-    grid.appendChild(el('label', null, 'API key'));
-    grid.appendChild(fkey);
-    ppick.addEventListener('change', () => {
-      const pre = (d.presets || []).find((p) => p.value === ppick.value);
-      if (pre) {
-        fkind.value = String(pre.kind);
-        fbase.value = String(pre.baseUrl);
-      }
-    });
-    add.appendChild(grid);
-    add.appendChild(el('div', 'note',
-      'Models are fetched automatically from this URL after adding.'));
-    const actions = el('div', 'actions');
-    actions.appendChild(sbtn('Add connection', () => {
-      const base = fbase.value.trim();
-      if (!base) { return; }
-      let id = String(ppick.value || '');
-      if (!id) {
-        try {
-          id = new URL(base).hostname.split('.')[0].replace(/[^a-z0-9_-]/gi, '') || 'provider';
-        } catch {
-          id = 'provider';
-        }
-      }
-      try {
-        vsapi.postMessage({
-          type: 'settings-add',
-          connId: id,
-          kind: fkind.value,
-          baseUrl: base,
-          apiKey: fkey.value,
-        });
-        fkey.value = '';
-      } catch (err) {
-        const f = el('div', 'err');
-        f.textContent = 'Add failed: ' + String(err);
-        add.appendChild(f);
-      }
-    }, 'primary'));
-    add.appendChild(actions);
-    addCard.appendChild(add);
-    sec1Body.appendChild(addCard);
-    sec1Body.appendChild(el('div', 'note',
-      'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.'));
 
     // ---- 3. Context (compaction) (collapsed) ----
     const ctxInfo = d.compaction || { mode: 'auto', threshold: 0.8 };
@@ -1359,17 +1440,42 @@ export function chatHtml(): string {
   rsel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'set-reasoning', value: rsel.value });
   });
-  // D37: header pill toggles Auto / Manual; always-on Compact button.
-  const compactPill = document.getElementById('compactPill');
-  compactPill.addEventListener('click', () => {
-    const next =
-      compactPill.dataset.mode === 'auto' ? 'manual' : 'auto';
-    vsapi.postMessage({ type: 'set-compaction-mode', mode: next });
-    // Optimistic UI; the host will re-post the models payload.
-    applyCompaction({ mode: next, threshold: lastThreshold });
-  });
+  // D38b: the compact pill is a status label, not a toggle. The
+  // context ring's tooltip is where the policy is changed (and the
+  // Settings page is the authoritative place).
   const compactBtn = document.getElementById('compactBtn');
   compactBtn.addEventListener('click', requestCompact);
+  // D38b: ring's tooltip is now a control surface for compaction.
+  // The handlers live on the elements (not delegated) and post the
+  // same set-compaction-mode / set-compaction-threshold messages
+  // the Settings page uses - no new message types.
+  const ctxSeg = document.getElementById('ctxb-seg');
+  if (ctxSeg) {
+    for (const b of Array.from(ctxSeg.querySelectorAll('button'))) {
+      b.addEventListener('click', () => {
+        const next = b.dataset.mode === 'manual' ? 'manual' : 'auto';
+        vsapi.postMessage({ type: 'set-compaction-mode', mode: next });
+        applyCompaction({ mode: next, threshold: lastThreshold });
+      });
+    }
+  }
+  const ctxThr = document.getElementById('ctxb-thr');
+  const ctxThrLive = document.getElementById('ctxb-thr-live');
+  if (ctxThr && ctxThrLive) {
+    ctxThr.addEventListener('input', () => {
+      ctxThrLive.textContent =
+        Math.round(Number(ctxThr.value) * 100) + '%';
+    });
+    ctxThr.addEventListener('change', () => {
+      const v = Number(ctxThr.value);
+      vsapi.postMessage({ type: 'set-compaction-threshold', value: v });
+      lastThreshold = v;
+    });
+  }
+  const ctxCnow = document.getElementById('ctxb-cnow');
+  if (ctxCnow) {
+    ctxCnow.addEventListener('click', () => requestCompact());
+  }
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');

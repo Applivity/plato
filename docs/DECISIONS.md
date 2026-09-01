@@ -499,6 +499,55 @@ field set per handler) on change; no Save button.
 (g) *Compaction section.* Mode select (Auto/Manual) and threshold
 slider (50–95%, with live read-out) in a single `.sblock`.
 
+**D38b — Settings UI polish + ring-as-control (M4.1, 0.14.1, founder
+follow-up 2026-09-01).** Five small changes addressing things that
+looked wrong or felt wrong after the D38 rewrite shipped.
+
+(a) *Reorder: Providers first, Orchestration second.* Most users
+never need to change orchestration — Solo is the default and Duo /
+Academy are power-user features. Settings should answer "where does
+Plato go" first and "how does it work" second.
+
+(b) *Drop built-in `anthropic` / `openai` cards from the list.*
+They were rendered as cards with a "No key" state, which the user
+perceived as a list of broken things. They're now reachable only
+through the `+ Add a provider` preset dropdown. The list shows
+*only user-managed connections*. The section summary line counts
+them with a `userConns` filter (was using the full array, which
+over-counted by the number of built-ins). The action row's
+"built-in" chip is gone — every card is user-managed, so every
+card has a Delete.
+
+(c) *Page header restyle.* Old: 8px-padding tab with a `‹ Back`
+button and a `.label` "Plato Settings" tag. New: 18px-padding
+page header with a real `.stitle` (18px weight 600) and a
+ghost-link `← All settings` (or `← Back to chat` on History)
+with hover underline. Looks like a page, not a tab strip.
+
+(d) *Compaction pill is a status, not a toggle.* The old
+`ctx: auto` pill in the chat header was a button styled to look
+like a mode chip, sitting next to the `plan` / `edit` / `act` /
+`auto` mode buttons. Users read `auto` the pill and `auto` the
+mode as related (they aren't) and the click was a silent
+optimistic toggle with no visible feedback. New: pill is
+`compact: auto` (explicit), styled as a status label with a
+small dot, no border, no hover, no click — it just describes
+what the ring is doing. The tooltip on the dot says where to
+change it: the ring.
+
+(e) *Ring's tooltip is a control surface for compaction.* The
+ring's hover tooltip (already showing context breakdown:
+total / system / user / assistant / tool / max / last request)
+gains a Compaction block at the bottom: a segmented control
+(Auto / Manual), a threshold range slider (only shown in Auto
+mode), and a "Compact now" button (only shown in Manual mode).
+All three write through the same `set-compaction-mode` /
+`set-compaction-threshold` messages the Settings page uses; no
+new message types, no new host code. The tooltip stays open
+while the cursor is on the ring OR the tooltip itself
+(`#contextBreakdown:hover`) so the user can move into the
+controls without dismissing it.
+
 **D37a — D37 follow-ups: catalog-only trip, model-aware summary cap, Ornith removed (M4.1, 0.13.1).**
 Three corrections to D37 raised during review:
 
