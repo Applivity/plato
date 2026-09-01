@@ -105,6 +105,51 @@ describe('runAgentLoop truncation handling', () => {
     expect(r.finalText).toBe('all done');
   });
 
+  it('routes ask_user to the callback and passes the answer as a tool_result', async () => {
+    let capturedReq: TurnRequest | undefined;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        capturedReq = req;
+        // First turn: model calls ask_user
+        if (req.messages.length === 1) {
+          return {
+            content: [{
+              type: 'tool_use',
+              id: 'ask_1',
+              name: 'ask_user',
+              input: { question: 'Which path?', options: ['A', 'B'], allowCustom: true }
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use'
+          };
+        }
+        // Second turn: model gets the answer and stops
+        return {
+          content: [{ type: 'text', text: 'got it' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop'
+        };
+      }
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      askUser: async (req) => {
+        expect(req.question).toBe('Which path?');
+        expect(req.options).toEqual(['A', 'B']);
+        return 'I prefer B';
+      }
+    });
+    expect(r.reason).toBe('complete');
+    
+    // Check that the tool_result made it back to the model
+    const userMsg = capturedReq?.messages.find(m => m.role === 'user' && m.content.some(c => c.type === 'tool_result'));
+    expect(userMsg).toBeDefined();
+    const result = userMsg?.content.find(c => c.type === 'tool_result' && (c as any).toolUseId === 'ask_1') as any;
+    expect(result.content).toBe('I prefer B');
+    expect(result.isError).toBe(false);
+  });
   it('clamps maxTokens to the model hard cap (haiku 8192), never above', async () => {
     const p = provider([
       { content: [{ type: 'text', text: 'ok' }], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'stop' },

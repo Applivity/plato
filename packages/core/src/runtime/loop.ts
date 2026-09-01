@@ -125,6 +125,16 @@ export interface LoopOptions {
    */
   history?: { role: 'user' | 'assistant'; text: string }[];
   /**
+   * Called when the model calls ask_user (D34). Returns the user's
+   * answer text, which flows back to the model as a tool result.
+   */
+  askUser?: (req: {
+    question: string;
+    options: string[];
+    recommended?: string;
+    allowCustom: boolean;
+  }) => Promise<string>;
+  /**
    * Started MCP servers (D06). Their tools join the model's tool list
    * as mcp_<server>_<tool> and route through the mode policy like
    * shell-class actions.
@@ -385,6 +395,29 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       bus.emit({ type: 'tool-event', runId, tool: name, phase: 'allowed', args });
 
       const outcome = await (async () => {
+        // ask_user routes through the shell's user-question UI (D34).
+        if (name === 'ask_user' && opts.askUser) {
+          try {
+            const question = String(args['question'] ?? '');
+            const options = Array.isArray(args['options'])
+              ? (args['options'] as unknown[]).map(String)
+              : [];
+            const recommended = typeof args['recommended'] === 'string'
+              ? args['recommended'] : undefined;
+            const allowCustom = args['allowCustom'] !== false;
+            const answer = await opts.askUser({
+              question, options, recommended, allowCustom,
+            });
+            return { ok: true, output: answer || '(no answer given)' };
+          } catch (e) {
+            return {
+              ok: false,
+              output: `ask_user failed: ${
+                e instanceof Error ? e.message : 'error'
+              }`,
+            };
+          }
+        }
         const mcp = mcpByTool.get(name);
         if (mcp) {
           try {

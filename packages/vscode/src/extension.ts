@@ -248,6 +248,7 @@ class ChatHost {
   private readonly sessionApprovals = new Set<string>();
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
+  private pendingQuestion: ((answer: string) => void) | null = null;
   private replyBuffer = '';
   private running = false;
   private modelOverride: string | null = null;
@@ -629,6 +630,12 @@ class ChatHost {
           }
           return;
         }
+        if (m.type === 'user-answer' && typeof m.answer === 'string') {
+          const resolve = this.pendingQuestion;
+          this.pendingQuestion = null;
+          resolve?.(m.answer);
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
           void this.run(m.text);
@@ -660,7 +667,24 @@ class ChatHost {
 
   // ---- Settings surface (D27) -------------------------------------------
 
-  /** Builds and posts the settings snapshot; secrets never leave the host. */
+  /** D34: ask_user — posts a question card with option buttons. */
+  private askUser(req: {
+    question: string;
+    options: string[];
+    recommended?: string;
+    allowCustom: boolean;
+  }): Promise<string> {
+    return new Promise((resolve) => {
+      this.pendingQuestion = resolve;
+      void this.panel.webview.postMessage({
+        type: 'user-question',
+        question: req.question,
+        options: req.options,
+        recommended: req.recommended ?? '',
+        allowCustom: req.allowCustom,
+      });
+    });
+  }
   private async sendSettings(flash?: string): Promise<void> {
     const userRaw = new Set(rawUserConnections().map((u) => u.id));
     const connections = [];
@@ -1468,6 +1492,10 @@ class ChatHost {
         getMode: () => this.mode,
         bus,
         controller: this.controller,
+        askUser: async (req) => {
+          const answer = await this.askUser(req);
+          return answer;
+        },
         provider: createProvider(conn.kind, {
           apiKey,
           baseUrl:

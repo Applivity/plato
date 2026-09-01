@@ -1178,6 +1178,13 @@ export function chatHtml(): string {
         refreshChip();
         setStatus('waiting for your approval');
         break;
+      case 'user-question':
+        flushToolBuffer();
+        lastAct = 'awaiting your answer';
+        refreshChip();
+        setStatus('awaiting your answer');
+        showUserQuestion(m);
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -1356,6 +1363,71 @@ export function chatHtml(): string {
     card.appendChild(actions);
     log.appendChild(card);
     scroll();
+  }
+
+  // D34: question card with multiple-choice options + free-text input.
+  function showUserQuestion(m) {
+    const question = String(m.question || '');
+    const options = Array.isArray(m.options) ? m.options.map(String) : [];
+    const recommended = String(m.recommended || '');
+    const allowCustom = m.allowCustom !== false;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    const h = document.createElement('h3');
+    h.textContent = question;
+    card.appendChild(h);
+
+    // Each option is a button; mark the recommended one.
+    const list = document.createElement('div');
+    list.className = 'actions';
+    for (const opt of options) {
+      const b = document.createElement('button');
+      b.textContent = opt + (opt === recommended ? ' (recommended)' : '');
+      if (opt === recommended) b.className = 'all';
+      b.addEventListener('click', () => {
+        answer(opt);
+      });
+      list.appendChild(b);
+    }
+    card.appendChild(list);
+
+    // Free-text custom answer (always shown when allowed).
+    let input = null, send = null;
+    if (allowCustom) {
+      const row = document.createElement('div');
+      row.className = 'actions';
+      input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Type a custom answer…';
+      input.style.flex = '1';
+      send = document.createElement('button');
+      send.textContent = 'Send';
+      send.addEventListener('click', () => submitCustom());
+      row.appendChild(input);
+      row.appendChild(send);
+      card.appendChild(row);
+    }
+
+    function answer(text) {
+      vsapi.postMessage({ type: 'user-answer', answer: text });
+      card.remove();
+      addMsg('you', 'You', text);
+      clearStatus();
+    }
+    function submitCustom() {
+      const v = input.value.trim();
+      if (v) answer(v);
+    }
+    if (input) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
+      });
+    }
+
+    log.appendChild(card);
+    scroll();
+    if (input) input.focus();
   }
 
   function cardDone(t) {

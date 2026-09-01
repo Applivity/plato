@@ -376,6 +376,9 @@ Settings open. Member data stays read-only in the GUI (D11 visual-editor
 deferral unchanged) — the yaml is the interface, the buttons are the
 on-ramp.
 
+**D34 — ask_user tool (M4.1, approved and implemented 2026-09-01).**
+Closes a parity gap with similar tools (Claude Code/Codex) where the agent could only narrate or seek file-change approval. Adds `ask_user` to the M1 tool surface (schema: question, 2–6 options, optional recommended flag, allowCustom). Mode policy treats it as a meta-tool (agent asking user) and ALWAYS allows it in `plan`/`edit`/`act`/`auto` modes without gating. The loop routing diverts `ask_user` calls to a dedicated `askUser` callback (bypassing `executeTool`), resolving the answer text back into a standard `tool_result` block. Host UI renders this as an inline question card (heading, action buttons for options, free-text input field); the chosen option (or custom text) echoes into the transcript.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,

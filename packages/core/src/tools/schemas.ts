@@ -76,6 +76,34 @@ export function toolDeclarations(): CanonicalTool[] {
       },
     },
     {
+      name: 'ask_user',
+      description:
+        'Ask the user a question with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. Always provide a recommended option.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: 'The question to ask the user' },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 2,
+            maxItems: 6,
+            description: '2-6 answer options (short labels)',
+          },
+          recommended: {
+            type: 'string',
+            description: 'Which option you recommend (must exactly match one of the options)',
+          },
+          allowCustom: {
+            type: 'boolean',
+            default: true,
+            description: 'Whether the user can type a custom answer instead of picking one',
+          },
+        },
+        required: ['question', 'options'],
+      },
+    },
+    {
       name: 'git',
       description: 'Read-only git info of the workspace.',
       parameters: {

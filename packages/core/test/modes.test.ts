@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decide, secretRefusal } from '../src/runtime/modes.js';
+import type { Mode } from '../src/runtime/modes.js';
 import type { ToolName } from '../src/runtime/modes.js';
 
 describe('decide', () => {
@@ -49,8 +50,10 @@ describe('secretRefusal', () => {
     expect(secretRefusal('grep', { pattern: 'gradle' })).toBeNull();
   });
 
-  it('unknown non-mcp tools are denied outright', () => {
-    expect(decide('totally_unknown', 'auto')).toBe('deny');
+  it('ask_user is allow in every mode (meta tool, D34)', () => {
+    for (const mode of ['plan', 'edit', 'act', 'auto'] as Mode[]) {
+      expect(decide('ask_user', mode)).toBe('allow');
+    }
   });
 
   it('MCP tools are shell-class: gated/denied per mode (D06)', () => {
@@ -58,5 +61,9 @@ describe('secretRefusal', () => {
     expect(decide('mcp_fake_echo', 'edit')).toBe('deny');
     expect(decide('mcp_fake_echo', 'act')).toBe('ask');
     expect(decide('mcp_fake_echo', 'auto')).toBe('allow');
+  });
+
+  it('unknown non-mcp tools are denied outright', () => {
+    expect(decide('totally_unknown', 'auto')).toBe('deny');
   });
 });

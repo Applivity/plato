@@ -40,6 +40,8 @@ export type Decision = 'allow' | 'ask' | 'deny';
  * denied in plan/edit.
  */
 export function decide(tool: string, mode: Mode): Decision {
+  // ask_user is meta (the agent asking the user) — always allowed in all modes.
+  if (tool === 'ask_user') return 'allow';
   const kind = TOOL_KIND[tool as ToolName] ?? (tool.startsWith('mcp_') ? 'shell' : undefined);
   if (kind === undefined) {
     return 'deny';
