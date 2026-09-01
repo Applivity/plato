@@ -89,7 +89,12 @@ export function chatHtml(): string {
          padding:2px 9px; font-size:12px; cursor:pointer;
          background:transparent; color:var(--pl-muted); }
   #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
-  #log { flex:1; overflow-y:auto; padding:10px 14px; }
+  /* D39b: chat log grows to fill available space; the footer (now
+     two rows) takes its own intrinsic height. The textbox grows
+     vertically up to 220px (was 160px) and the textbox itself is
+     taller by default (rows=3, min-height 56px was 44px) so the
+     user has more room to think before reaching the cap. */
+  #log { flex:1; overflow-y:auto; padding:10px 14px; min-height:0; }
   /* D39b: #pp and #cx are now styled by .bar-btn (matches the other
      controls in the composer-bar). The old 44px-tall square styling
      is gone. */
@@ -102,7 +107,7 @@ export function chatHtml(): string {
            padding:8px 12px 4px;
            border-top:1px solid var(--pl-border);
            background:var(--vscode-editor-background); }
-  #q { flex:1; resize:none; min-height:44px; max-height:160px;
+  #q { flex:1; resize:none; min-height:56px; max-height:220px;
        padding:9px 11px; font-family:var(--vscode-font-family);
        font-size:13px; line-height:1.5; border-radius:6px;
        border:1px solid var(--pl-border); outline:none;
@@ -660,7 +665,7 @@ export function chatHtml(): string {
 <div id="log"></div>
 <div id="statusbar" hidden></div>
 <footer style="position:relative;">
-  <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
+  <textarea id="q" rows="3" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <div class="composer-bar">
     <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
       <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
