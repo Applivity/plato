@@ -125,15 +125,19 @@ export interface LoopOptions {
    */
   history?: { role: 'user' | 'assistant'; text: string }[];
   /**
-   * Called when the model calls ask_user (D34). Returns the user's
-   * answer text, which flows back to the model as a tool result.
+   * Called when the model calls ask_user (D34). The model may ask up to 3
+   * questions at once; returns an array of answers, one per question, in
+   * the same order. Answers flow back to the model as a tool result.
    */
   askUser?: (req: {
-    question: string;
-    options: string[];
-    recommended?: string;
-    allowCustom: boolean;
-  }) => Promise<string>;
+    questions: {
+      question: string;
+      context?: string;
+      options: string[];
+      recommended?: string;
+      allowCustom: boolean;
+    }[];
+  }) => Promise<string[]>;
   /**
    * Started MCP servers (D06). Their tools join the model's tool list
    * as mcp_<server>_<tool> and route through the mode policy like
@@ -396,19 +400,34 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
 
       const outcome = await (async () => {
         // ask_user routes through the shell's user-question UI (D34).
+        // The model can ask multiple questions at once.
         if (name === 'ask_user' && opts.askUser) {
           try {
-            const question = String(args['question'] ?? '');
-            const options = Array.isArray(args['options'])
-              ? (args['options'] as unknown[]).map(String)
-              : [];
-            const recommended = typeof args['recommended'] === 'string'
-              ? args['recommended'] : undefined;
-            const allowCustom = args['allowCustom'] !== false;
-            const answer = await opts.askUser({
-              question, options, recommended, allowCustom,
+            const raw = Array.isArray(args['questions']) ? args['questions'] : [];
+            const questions = raw.map((q) => {
+              const rec = q as unknown as Record<string, unknown>;
+              return {
+                question: String(rec['question'] ?? ''),
+                context: typeof rec['context'] === 'string' ? rec['context'] : undefined,
+                options: Array.isArray(rec['options'])
+                  ? (rec['options'] as unknown[]).map(String)
+                  : [],
+                recommended: typeof rec['recommended'] === 'string' ? rec['recommended'] : undefined,
+                allowCustom: rec['allowCustom'] !== false,
+              };
             });
-            return { ok: true, output: answer || '(no answer given)' };
+            if (questions.length === 0) {
+              return { ok: false, output: 'ask_user: no questions provided' };
+            }
+            const answers = await opts.askUser({ questions });
+            const text = answers
+              .map((a, i) =>
+                questions.length === 1
+                  ? String(a)
+                  : `Q${i + 1}: ${questions[i]!.question}\nAnswer: ${String(a)}`,
+              )
+              .join('\n\n');
+            return { ok: true, output: text || '(no answer given)' };
           } catch (e) {
             return {
               ok: false,

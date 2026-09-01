@@ -124,9 +124,28 @@ export function chatHtml(): string {
                  border-radius:3px; font-size:12px;
                  background:var(--vscode-button-background);
                  color:var(--vscode-button-foreground); }
+  .card button:disabled { opacity: 0.5; cursor: not-allowed; }
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
+  .q-form { padding: 4px 10px; display:flex; flex-direction:column; gap:12px; }
+  .q-block { display:flex; flex-direction:column; gap:6px; }
+  .q-title { font-weight:600; font-size:12px; color:var(--vscode-foreground); }
+  .q-context { font-size:11.5px; color:var(--pl-muted); line-height:1.4; margin-bottom:2px; }
+  .q-options { display:flex; flex-direction:column; gap:4px; }
+  .q-option { display:flex; align-items:flex-start; gap:8px; padding:6px 8px;
+              background:var(--vscode-editorWidget-background, rgba(128,128,128,.12));
+              border:1px solid transparent; border-radius:4px; cursor:pointer; }
+  .q-option:hover { background:var(--vscode-list-hoverBackground, rgba(128,128,128,.2)); }
+  .q-option.selected { border-color:var(--vscode-focusBorder); background:var(--vscode-list-activeSelectionBackground, rgba(128,128,128,.3)); }
+  .q-radio { margin-top:2px; width:12px; height:12px; border-radius:50%; border:1px solid var(--pl-muted); flex-shrink:0; }
+  .q-option.selected .q-radio { border-color:var(--pl-accent); background:var(--pl-accent); }
+  .q-text { font-size:12px; line-height:1.3; }
+  .q-custom-row { padding-top:4px; padding-bottom:4px; }
+  .q-custom-row input { width:100%; padding:6px; background:var(--vscode-input-background);
+                        color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border);
+                        border-radius:3px; outline:none; }
+  .q-custom-row input:focus { border-color:var(--vscode-focusBorder); }
   #st { display:none; align-items:center; gap:5px;
         font-size:11px; color:var(--pl-muted); white-space:nowrap; }
   #st.on { display:flex; }
@@ -1365,69 +1384,119 @@ export function chatHtml(): string {
     scroll();
   }
 
-  // D34: question card with multiple-choice options + free-text input.
+  // D34: stacked question card — one form, one block per question.
   function showUserQuestion(m) {
-    const question = String(m.question || '');
-    const options = Array.isArray(m.options) ? m.options.map(String) : [];
-    const recommended = String(m.recommended || '');
-    const allowCustom = m.allowCustom !== false;
+    const questions = Array.isArray(m.questions) ? m.questions : [];
+    if (questions.length === 0) return;
 
     const card = document.createElement('div');
     card.className = 'card';
     const h = document.createElement('h3');
-    h.textContent = question;
+    h.textContent = questions.length > 1
+      ? 'Plato has a few questions'
+      : 'Plato has a question';
     card.appendChild(h);
 
-    // Each option is a button; mark the recommended one.
-    const list = document.createElement('div');
-    list.className = 'actions';
-    for (const opt of options) {
-      const b = document.createElement('button');
-      b.textContent = opt + (opt === recommended ? ' (recommended)' : '');
-      if (opt === recommended) b.className = 'all';
-      b.addEventListener('click', () => {
-        answer(opt);
+    const form = document.createElement('div');
+    form.className = 'q-form';
+    const answers = new Array(questions.length).fill('');
+
+    questions.forEach((q, qi) => {
+      const qdiv = document.createElement('div');
+      qdiv.className = 'q-block';
+
+      const qh = document.createElement('div');
+      qh.className = 'q-title';
+      qh.textContent = String(q.question || '');
+      qdiv.appendChild(qh);
+
+      if (q.context) {
+        const ctx = document.createElement('div');
+        ctx.className = 'q-context';
+        ctx.textContent = String(q.context);
+        qdiv.appendChild(ctx);
+      }
+
+      const optsDiv = document.createElement('div');
+      optsDiv.className = 'q-options';
+      const opts = Array.isArray(q.options) ? [...q.options] : [];
+      const allowCustom = q.allowCustom !== false;
+      if (allowCustom) opts.push('Others');
+
+      const customRow = document.createElement('div');
+      customRow.className = 'q-custom-row';
+      customRow.style.display = 'none';
+      const customInput = document.createElement('input');
+      customInput.type = 'text';
+      customInput.placeholder = 'Type your answer\u2026';
+      customRow.appendChild(customInput);
+
+      customInput.addEventListener('input', () => {
+        answers[qi] = customInput.value.trim();
+        updateSubmit();
       });
-      list.appendChild(b);
-    }
-    card.appendChild(list);
 
-    // Free-text custom answer (always shown when allowed).
-    let input = null, send = null;
-    if (allowCustom) {
-      const row = document.createElement('div');
-      row.className = 'actions';
-      input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Type a custom answer…';
-      input.style.flex = '1';
-      send = document.createElement('button');
-      send.textContent = 'Send';
-      send.addEventListener('click', () => submitCustom());
-      row.appendChild(input);
-      row.appendChild(send);
-      card.appendChild(row);
+      opts.forEach((opt) => {
+        const isCustom = opt === 'Others';
+        const row = document.createElement('div');
+        row.className = 'q-option';
+        const circle = document.createElement('div');
+        circle.className = 'q-radio';
+        const text = document.createElement('div');
+        text.className = 'q-text';
+        text.textContent = String(opt) + (opt === q.recommended ? ' (recommended)' : '');
+        row.appendChild(circle);
+        row.appendChild(text);
+        row.addEventListener('click', () => {
+          Array.from(optsDiv.querySelectorAll('.q-option')).forEach((r) =>
+            r.classList.remove('selected'),
+          );
+          row.classList.add('selected');
+          if (isCustom) {
+            customRow.style.display = 'block';
+            customInput.focus();
+            answers[qi] = customInput.value.trim();
+          } else {
+            customRow.style.display = 'none';
+            answers[qi] = String(opt);
+          }
+          updateSubmit();
+        });
+        optsDiv.appendChild(row);
+      });
+
+      qdiv.appendChild(optsDiv);
+      qdiv.appendChild(customRow);
+      form.appendChild(qdiv);
+    });
+
+    card.appendChild(form);
+
+    const act = document.createElement('div');
+    act.className = 'actions';
+    const sub = document.createElement('button');
+    sub.textContent = 'Submit answers';
+    sub.disabled = true;
+
+    function updateSubmit() {
+      sub.disabled = answers.some((a) => !a);
     }
 
-    function answer(text) {
-      vsapi.postMessage({ type: 'user-answer', answer: text });
+    sub.addEventListener('click', () => {
+      if (sub.disabled) return;
+      vsapi.postMessage({ type: 'user-answer', answers });
       card.remove();
-      addMsg('you', 'You', text);
+      questions.forEach((q, i) =>
+        addMsg('you', 'You', String(q.question) + ': ' + answers[i]),
+      );
       clearStatus();
-    }
-    function submitCustom() {
-      const v = input.value.trim();
-      if (v) answer(v);
-    }
-    if (input) {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); submitCustom(); }
-      });
-    }
+    });
+
+    act.appendChild(sub);
+    card.appendChild(act);
 
     log.appendChild(card);
     scroll();
-    if (input) input.focus();
   }
 
   function cardDone(t) {

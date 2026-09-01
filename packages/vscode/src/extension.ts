@@ -248,7 +248,7 @@ class ChatHost {
   private readonly sessionApprovals = new Set<string>();
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
-  private pendingQuestion: ((answer: string) => void) | null = null;
+  private pendingQuestion: ((answers: string[]) => void) | null = null;
   private replyBuffer = '';
   private running = false;
   private modelOverride: string | null = null;
@@ -630,10 +630,10 @@ class ChatHost {
           }
           return;
         }
-        if (m.type === 'user-answer' && typeof m.answer === 'string') {
+        if (m.type === 'user-answer' && Array.isArray(m.answers)) {
           const resolve = this.pendingQuestion;
           this.pendingQuestion = null;
-          resolve?.(m.answer);
+          resolve?.(m.answers.map(String));
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
@@ -667,21 +667,21 @@ class ChatHost {
 
   // ---- Settings surface (D27) -------------------------------------------
 
-  /** D34: ask_user — posts a question card with option buttons. */
+  /** D34: ask_user — posts stacked question cards (one per question). */
   private askUser(req: {
-    question: string;
-    options: string[];
-    recommended?: string;
-    allowCustom: boolean;
-  }): Promise<string> {
+    questions: {
+      question: string;
+      context?: string;
+      options: string[];
+      recommended?: string;
+      allowCustom: boolean;
+    }[];
+  }): Promise<string[]> {
     return new Promise((resolve) => {
       this.pendingQuestion = resolve;
       void this.panel.webview.postMessage({
         type: 'user-question',
-        question: req.question,
-        options: req.options,
-        recommended: req.recommended ?? '',
-        allowCustom: req.allowCustom,
+        questions: req.questions,
       });
     });
   }

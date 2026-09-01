@@ -118,7 +118,13 @@ describe('runAgentLoop truncation handling', () => {
               type: 'tool_use',
               id: 'ask_1',
               name: 'ask_user',
-              input: { question: 'Which path?', options: ['A', 'B'], allowCustom: true }
+              input: {
+                questions: [{
+                  question: 'Which path?',
+                  options: ['A', 'B'],
+                  allowCustom: true
+                }]
+              }
             }],
             usage: { inputTokens: 10, outputTokens: 10 },
             stopReason: 'tool_use'
@@ -136,9 +142,10 @@ describe('runAgentLoop truncation handling', () => {
       ...BASE,
       provider: p,
       askUser: async (req) => {
-        expect(req.question).toBe('Which path?');
-        expect(req.options).toEqual(['A', 'B']);
-        return 'I prefer B';
+        expect(req.questions.length).toBe(1);
+        expect(req.questions[0]!.question).toBe('Which path?');
+        expect(req.questions[0]!.options).toEqual(['A', 'B']);
+        return ['I prefer B'];
       }
     });
     expect(r.reason).toBe('complete');
@@ -149,6 +156,47 @@ describe('runAgentLoop truncation handling', () => {
     const result = userMsg?.content.find(c => c.type === 'tool_result' && (c as any).toolUseId === 'ask_1') as any;
     expect(result.content).toBe('I prefer B');
     expect(result.isError).toBe(false);
+  });
+
+  it('supports multiple questions in one ask_user call', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [{
+              type: 'tool_use',
+              id: 'ask_multi',
+              name: 'ask_user',
+              input: {
+                questions: [
+                  { question: 'Approach?', options: ['A', 'B'] },
+                  { question: 'Framework?', context: 'pick a stack', options: ['X', 'Y'] }
+                ]
+              }
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use'
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop'
+        };
+      }
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      askUser: async (req) => {
+        expect(req.questions.length).toBe(2);
+        expect(req.questions[1]!.context).toBe('pick a stack');
+        return ['Approach A', 'Framework Y'];
+      }
+    });
+    expect(r.reason).toBe('complete');
+    expect(r.finalText).toBe('done');
   });
   it('clamps maxTokens to the model hard cap (haiku 8192), never above', async () => {
     const p = provider([
