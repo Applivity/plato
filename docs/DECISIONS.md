@@ -548,6 +548,79 @@ while the cursor is on the ring OR the tooltip itself
 (`#contextBreakdown:hover`) so the user can move into the
 controls without dismissing it.
 
+**D39 — Chat composer rework (M4.1, 0.15.0, founder directive
+2026-09-01).** Five layout changes to the chat header and
+composer. Pure webview; no new host message types; the existing
+`type: 'model'`, `type: 'mode'`, `type: 'set-reasoning'` handlers
+keep their shape.
+
+(a) *History + settings paired on the right of the header.* The
+two icons used to live in the model row, looking like
+unaffiliated controls. New: a `.headnav` group with a 1px border
+sits at the right edge of the top row, grouping the two icons
+visually as "page navigation" (vs. "selection" — the model
+picker below it).
+
+(b) *Drop the `#mctx` "ctx 200.0k" label next to the model
+dropdown.* The window is still shown *per model* in the
+dropdown options themselves (D37: `model 200k`); the run's
+*current* context usage is the ring's job, not a label. The
+`updateModelCaption` function becomes a no-op kept for API
+stability with the picker.
+
+(c) *Custom model picker popover.* The native `<select id="msel">`
+is replaced with a `<button id="modelBtn>` trigger (text-link
+styled, no background fill) that opens a popover anchored below
+it. The popover has a search input, grouped rows (one group per
+provider), per-row `· 200k` / `· ctx unknown` metadata, a check
+mark on the current selection, and the same `<conn>:<bare>`
+values the host message expects. Selection preservation across
+pool rebuilds: if the user's current value isn't in the new
+pool, it's shown as a "offline" fallback row. Keyboard nav
+(Enter/ArrowDown in the search input, Esc to close, click-outside
+to close) is implemented; the type-ahead buffer for letter
+jumping is a stretch goal.
+
+(d) *Modes move from the header to a `composer-bar` below the
+textarea.* The chip row (plan / edit / act / auto) is replaced
+with a `#modeBtn` trigger styled like a colored chip with an
+icon, the current mode label, and a caret. Clicking opens a
+popover with all four modes; each row has an icon, the mode
+name, and a 1-line explainer (e.g. "Read-only: Plato can look,
+never touch"). The selected row is highlighted with its mode
+color. The popover opens *upward* because the trigger lives in
+the composer bar below the textarea.
+
+(e) *Send button color per mode.* The `#go` send button is
+restyled as `.btn-send` and gets a class `mode-<m>` that
+swaps the background color per active mode. Palette is
+safe-to-loud: plan = green (`--vscode-testing-iconPassed`),
+edit = blue (`--vscode-focusBorder`), act = default
+(`--vscode-button-background`), auto = amber
+(`--vscode-editorWarning-foreground`). The same class
+drives the `#modeBtn` trigger's icon and label color, so the
+two controls read as a single theme.
+
+(f) *Ring tooltip direction flips.* The ring lived in the
+textarea's top-right corner (D37, `position:absolute right:60px
+top:8px`) so the breakdown opened *downward*. After D39 the
+ring lives in the composer bar, so opening downward pushes
+the tooltip off-screen below the composer. Fix: `bottom:36px;
+left:50%; transform:translateX(-50%)` to center the tooltip
+above the ring.
+
+(g) *Drop the `#compactBtn` from the composer.* The "Compact
+now" button was redundant with the ring's tooltip (which has
+had the control since D38b). The composer bar is now: mode
+picker, future-attach slot (left), spacer, context ring,
+optional pause/cancel, send button. The `future-attach` div is
+a reserved slot for upcoming command / document affordances
+(no implementation; just room).
+
+(h) *Mode icons.* Inline SVGs, no extra request: plan = play
+triangle, edit = pencil, act = terminal, auto = refresh arc.
+Icons inherit their color from the active mode class.
+
 **D37a — D37 follow-ups: catalog-only trip, model-aware summary cap, Ornith removed (M4.1, 0.13.1).**
 Three corrections to D37 raised during review:
 

@@ -35,27 +35,45 @@ export function chatHtml(): string {
                      color:var(--vscode-button-foreground); }
   header { flex-direction:column; align-items:stretch; padding:8px 12px 7px;
            gap:6px; }
-  .hrow { display:flex; align-items:center; gap:6px; width:100%; }
+  .hrow { display:flex; align-items:center; gap:8px; width:100%; }
   .hrow .brand { font-weight:600; font-size:12.5px; letter-spacing:.02em; }
   .hrow .label { color:var(--pl-muted); font-size:11px; text-transform:uppercase;
                  letter-spacing:.08em; }
   .hrow .spacer { flex:1; }
-  #msel { flex:1; max-width:420px; font-family:var(--vscode-font-family);
-          font-size:11.5px; padding:2px 6px; border-radius:6px;
-          border:1px solid var(--pl-border);
-          background:var(--vscode-dropdown-background);
-          color:var(--vscode-dropdown-foreground); outline:none; }
-  #msel optgroup { font-style:normal; color:var(--pl-muted); }
-  #msel optgroup option { color:var(--vscode-dropdown-foreground); }
-  #gear { margin-left:auto; }
-  .icn { width:14px; height:14px; fill:none; stroke:currentColor;
-         stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
-         vertical-align:-2px; }
-  #hist, #gear { font-size:12px; padding:4px 9px; border:1px solid transparent;
-                 border-radius:6px; background:transparent; cursor:pointer;
+  /* D39: model picker trigger (replaces the native #msel). Looks like
+     a text link with a small caret, opens a custom popover. */
+  #modelBtn { display:inline-flex; align-items:center; gap:5px;
+              background:transparent; border:1px solid transparent;
+              color:var(--vscode-editor-foreground);
+              font-family:inherit; font-size:12.5px; font-weight:500;
+              padding:3px 8px; border-radius:5px; cursor:pointer;
+              max-width:420px; }
+  #modelBtn:hover { background:rgba(128,128,128,.08); }
+  #modelBtn .caret { color:var(--pl-muted); flex:none; }
+  #modelBtn-label, .model-btn-label { white-space:nowrap; overflow:hidden;
+                                      text-overflow:ellipsis; }
+  /* D39: paired history + settings nav, right side of the header. */
+  .headnav { margin-left:auto; display:inline-flex; gap:2px; padding:2px;
+             border:1px solid var(--pl-border); border-radius:6px; }
+  #hist, #gear { font-size:12px; padding:3px 7px; border:1px solid transparent;
+                 border-radius:4px; background:transparent; cursor:pointer;
                  color:var(--pl-muted); }
   #hist:hover, #gear:hover { border-color:var(--pl-border);
                              color:var(--vscode-editor-foreground); }
+  /* D39: status row under the model row - new-chat, compaction status,
+     orchestration chip, run-status indicator. Compact pill is no longer
+     a button; the right-side nav is now history+settings paired. */
+  .hstatus { font-size:11px; color:var(--pl-muted); gap:10px; }
+  .hstatus .hstatus-spacer { flex:1; }
+  #new { font-family:inherit; background:transparent;
+         border:1px solid var(--pl-border); border-radius:4px;
+         padding:2px 8px; font-size:11px; cursor:pointer;
+         color:var(--pl-muted); }
+  #new:hover { color:var(--vscode-editor-foreground);
+               border-color:var(--vscode-focusBorder, #6a6a6a); }
+  .icn { width:14px; height:14px; fill:none; stroke:currentColor;
+         stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+         vertical-align:-2px; }
   #rsel { font-family:var(--vscode-font-family); font-size:11px;
           padding:2px 5px; border-radius:6px;
           border:1px solid var(--pl-border);
@@ -428,30 +446,26 @@ export function chatHtml(): string {
                padding:2px 10px; border-radius:4px; cursor:pointer; border:none;
                background:var(--vscode-button-secondaryBackground,#3a3d41);
                color:var(--vscode-button-secondaryForeground,#ddd); }
-  /* D37: model context window caption next to the dropdown. */
-  #mctx { font-size:10.5px; color:var(--pl-muted);
-          margin-left:6px; letter-spacing:.04em; white-space:nowrap; }
-  #mctx.unknown { font-style:italic; }
-  /* D38b: chat header pill becomes a status label, not a toggle. It
-     explains what the ring is doing; the ring's tooltip is where you
-     change it. Visually distinct from the mode chips (plan/edit/act/auto)
-     so "auto" the mode and "compact: auto" never look related. */
-  #compactPill { font-size:10.5px; padding:1px 0;
-                 border:none; border-radius:0;
-                 cursor:default; color:var(--pl-muted);
-                 background:transparent;
-                 display:inline-flex; align-items:center; gap:4px; }
-  #compactPill::before { content:''; width:6px; height:6px; border-radius:50%;
-                         background:var(--pl-muted); opacity:.7; }
-  #compactPill[data-mode="auto"]::before { background:var(--vscode-focusBorder, #4a9eff);
-                                           opacity:1; }
-  #compactPill[data-mode="manual"]::before { background:var(--pl-muted);
-                                             opacity:.7; }
-  /* D37: round progress ring + breakdown tooltip. Sits as an
-     absolute overlay on the textarea's top-right corner so it never
-     competes with the Send button. */
-  .ring-wrap { position:absolute; right:60px; top:8px;
-               width:28px; height:28px; pointer-events:auto; }
+  /* D39: drop #mctx (the "ctx 200.0k" label next to the model
+     dropdown). Per-model context windows are still shown in the
+     dropdown options themselves; the run's *current* context is the
+     ring's job, not a label. */
+  /* D38b / D39: chat header pill is a status label, not a toggle.
+     Now a <span>, no border, no hover. The dot color hints at the
+     mode. */
+  .compact-pill { font-size:11px; color:var(--pl-muted);
+                  display:inline-flex; align-items:center; gap:5px; }
+  .compact-pill::before { content:''; width:6px; height:6px; border-radius:50%;
+                          background:var(--pl-muted); opacity:.7; }
+  .compact-pill[data-mode="auto"]::before { background:var(--vscode-focusBorder, #4a9eff);
+                                            opacity:1; }
+  .compact-pill[data-mode="manual"]::before { background:var(--pl-muted);
+                                              opacity:.7; }
+  /* D39: round progress ring + breakdown tooltip. The ring now lives
+     in the composer bar (below the textarea), so the tooltip opens
+     UPWARD so it stays on screen. */
+  .ring-wrap { position:relative; width:28px; height:28px;
+               pointer-events:auto; }
   #contextRing { width:28px; height:28px; display:block; cursor:help; }
   #contextRing .track { fill:none; stroke:var(--pl-border); stroke-width:3; }
   #contextRing .fill { fill:none; stroke:var(--vscode-focusBorder, #4a9eff);
@@ -465,7 +479,12 @@ export function chatHtml(): string {
   #contextRing .label { font-size:8.5px; fill:var(--pl-muted);
                         font-family:var(--vscode-font-family);
                         text-anchor:middle; dominant-baseline:central; }
-  #contextBreakdown { display:none; position:absolute; right:0; top:36px;
+  /* D39: opens UPWARD because the ring now lives in the composer
+     bar below the textarea. Centered on the ring (was right-anchored
+     in D37 when the ring was a textarea overlay). */
+  #contextBreakdown { display:none; position:absolute;
+                      left:50%; bottom:36px;
+                      transform:translateX(-50%);
                       min-width:240px; max-width:320px;
                       background:var(--vscode-editorWidget-background, #252526);
                       border:1px solid var(--pl-border); border-radius:6px;
@@ -510,40 +529,121 @@ export function chatHtml(): string {
                                      font-size:11px; min-width:38px;
                                      text-align:right; }
   #contextBreakdown #ctxb-cnow { font-size:11px; }
-  /* D37: compact button in the footer (next to Send). Always enabled. */
-  #compactBtn { height:32px; padding:0 10px; border:1px solid var(--pl-border);
-                border-radius:6px; font-size:11.5px; cursor:pointer;
-                background:transparent; color:var(--pl-muted); align-self:flex-end; }
-  #compactBtn:hover { border-color:var(--vscode-focusBorder, #666);
-                      color:var(--vscode-editor-foreground); }
-  #compactBtn[data-mode="auto"] { border-color:var(--vscode-focusBorder, #4a9eff); }
-  #compactBtn[data-busy="true"] { opacity:.6; cursor:default; }
+  /* D39: composer bar - the control footer below the textarea.
+     Mode picker on the left, spacer, ring + run controls on the right.
+     Future command / attachment affordances go in .future-attach. */
+  .composer-bar { display:flex; align-items:center; gap:8px;
+                  padding:5px 4px 2px; position:relative; }
+  .composer-bar .bar-spacer { flex:1; }
+  .composer-bar .future-attach { display:inline-flex; gap:4px; min-width:0; }
+  .bar-btn { font-family:inherit; font-size:11px; padding:3px 8px;
+             border:1px solid var(--pl-border); border-radius:4px;
+             background:transparent; color:var(--pl-muted); cursor:pointer; }
+  .bar-btn:hover { color:var(--vscode-editor-foreground);
+                   border-color:var(--vscode-focusBorder, #6a6a6a); }
+  /* D39: mode picker trigger. Color hints at the active mode. */
+  #modeBtn { display:inline-flex; align-items:center; gap:6px;
+             background:transparent; border:1px solid transparent;
+             color:var(--vscode-editor-foreground);
+             font-family:inherit; font-size:12px; font-weight:500;
+             padding:4px 8px; border-radius:5px; cursor:pointer; }
+  #modeBtn:hover { background:rgba(128,128,128,.08); }
+  #modeBtn .mode-icn { width:13px; height:13px; fill:none;
+                        stroke:currentColor; stroke-width:2;
+                        stroke-linecap:round; stroke-linejoin:round; }
+  #modeBtn .caret { color:var(--pl-muted); flex:none; }
+  /* Per-mode color on the mode picker itself. */
+  #modeBtn.mode-plan { color:var(--vscode-testing-iconPassed, #73c991); }
+  #modeBtn.mode-edit { color:var(--vscode-focusBorder, #4a9eff); }
+  #modeBtn.mode-act  { color:var(--vscode-button-foreground, #fff); }
+  #modeBtn.mode-auto { color:var(--vscode-editorWarning-foreground, #cca700); }
+  /* D39: send button - colored by the active mode. Safe-to-loud. */
+  .btn-send { display:inline-flex; align-items:center; gap:5px;
+              padding:5px 12px; border-radius:5px; border:1px solid transparent;
+              font-family:inherit; font-size:12px; font-weight:500;
+              cursor:pointer; color:#fff;
+              transition:background .12s, transform .04s; }
+  .btn-send:active { transform:translateY(1px); }
+  .btn-send:hover { filter:brightness(1.08); }
+  .btn-send[disabled] { opacity:.5; cursor:default; }
+  .btn-send.mode-plan { background:var(--vscode-testing-iconPassed, #73c991); color:#0d2a18; }
+  .btn-send.mode-edit { background:var(--vscode-focusBorder, #4a9eff); }
+  .btn-send.mode-act  { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
+  .btn-send.mode-auto { background:var(--vscode-editorWarning-foreground, #cca700); color:#3a2a00; }
+  /* D39: shared popover styles for the model picker and the mode
+     picker. The body attaches the popover to a fixed-position wrapper
+     right under the trigger. */
+  .popover { display:none; position:fixed; z-index:50;
+             min-width:240px; max-width:360px; max-height:340px;
+             background:var(--vscode-editorWidget-background, #252526);
+             border:1px solid var(--pl-border); border-radius:6px;
+             box-shadow:0 6px 20px rgba(0,0,0,.4);
+             padding:6px; font-size:12px;
+             color:var(--vscode-foreground);
+             flex-direction:column; }
+  .popover.open { display:flex; }
+  .popover-search { display:flex; align-items:center; padding:0 4px 6px;
+                    border-bottom:1px solid var(--pl-border); margin-bottom:4px; }
+  .popover-search input { flex:1; background:transparent; border:none;
+                          outline:none; color:var(--vscode-foreground);
+                          font:inherit; padding:4px 4px; }
+  .popover-list { overflow-y:auto; max-height:280px; }
+  .popover-group-label { font-size:10.5px; text-transform:uppercase;
+                         letter-spacing:.08em; color:var(--pl-muted);
+                         padding:6px 8px 2px; }
+  .popover-row { display:flex; align-items:center; gap:8px;
+                 padding:5px 8px; border-radius:4px; cursor:pointer;
+                 font-size:12px; }
+  .popover-row:hover, .popover-row.active {
+                 background:var(--vscode-list-hoverBackground,
+                                 rgba(128,128,128,.12)); }
+  .popover-row .pr-name { flex:1; white-space:nowrap;
+                          overflow:hidden; text-overflow:ellipsis; }
+  .popover-row .pr-meta { color:var(--pl-muted); font-size:11px;
+                          font-variant-numeric:tabular-nums; }
+  .popover-row .pr-check { color:var(--vscode-focusBorder, #4a9eff);
+                           font-size:11px; width:10px; flex:none; }
+  /* Mode picker popover rows: icon + name + 1-line explainer. */
+  .mp-row { display:grid; grid-template-columns:18px 1fr;
+            gap:6px 10px; align-items:start; padding:7px 8px;
+            border-radius:5px; cursor:pointer; }
+  .mp-row:hover, .mp-row.active { background:var(--vscode-list-hoverBackground,
+                                                   rgba(128,128,128,.12)); }
+  .mp-row .mp-icn { width:16px; height:16px; margin-top:1px;
+                     fill:none; stroke:currentColor; stroke-width:2;
+                     stroke-linecap:round; stroke-linejoin:round; }
+  .mp-row .mp-name { font-size:12px; font-weight:500; }
+  .mp-row .mp-desc { grid-column:2; font-size:11px; color:var(--pl-muted);
+                     line-height:1.4; margin-top:2px; }
+  .mp-row.mode-plan .mp-icn { color:var(--vscode-testing-iconPassed, #73c991); }
+  .mp-row.mode-edit .mp-icn { color:var(--vscode-focusBorder, #4a9eff); }
+  .mp-row.mode-act  .mp-icn { color:var(--vscode-button-foreground, #fff); }
+  .mp-row.mode-auto .mp-icn { color:var(--vscode-editorWarning-foreground, #cca700); }
 </style>
 </head>
 <body>
 <header>
   <div class="hrow htop">
     <span class="brand">Plato</span>
-    <select id="msel" title="Model for this conversation"></select>
-    <span id="mctx" class="unknown" title="Model's input context window">ctx unknown</span>
+    <button id="modelBtn" class="model-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+      <span class="model-btn-label">loading…</span>
+      <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
     <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
-    <button id="hist" title="History">
-      <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-    </button>
-    <button id="gear" title="Settings">
-      <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
+    <div class="headnav">
+      <button id="hist" title="History">
+        <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </button>
+      <button id="gear" title="Settings">
+        <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
   </div>
-  <div class="hrow hmodes">
-    <span class="label">Mode</span>
-    <button data-m="plan" title="Read-only: Plato can look, never touch">plan</button>
-    <button data-m="edit" title="File edits via diff approval cards; no shell">edit</button>
-    <button data-m="act" class="on" title="Shell + writes; every action needs its own click">act</button>
-    <button data-m="auto" title="No approval clicks; hard turn cap is the backstop">auto</button>
-    <span class="spacer"></span>
-    <button id="compactPill" data-mode="auto" title="Compaction policy. Hover the context ring to change it.">compact: auto</button>
+  <div class="hrow hstatus">
+    <button id="new" title="Start a new chat (clears this conversation)">＋ new</button>
+    <span id="compactPill" class="compact-pill" data-mode="auto" title="Compaction policy. Hover the context ring to change it.">compact: auto</span>
+    <span class="hstatus-spacer"></span>
     <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
-    <button id="new" title="Start a new chat (clears this conversation)">＋</button>
     <span id="st"></span>
   </div>
 </header>
@@ -551,49 +651,58 @@ export function chatHtml(): string {
 <div id="statusbar" hidden></div>
 <footer style="position:relative;">
   <textarea id="q" rows="2" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
-  <div class="ring-wrap" tabindex="0" aria-label="Context usage">
-    <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
-      <circle class="track" cx="14" cy="14" r="11"></circle>
-      <circle class="fill" cx="14" cy="14" r="11"
-              stroke-dasharray="69.115" stroke-dashoffset="69.115"></circle>
-      <text class="label" x="14" y="14">--</text>
-    </svg>
-    <div id="contextBreakdown" role="tooltip">
-      <h4>Context</h4>
-      <div class="row"><span class="lbl">total</span><span class="val" id="ctxb-total">--</span></div>
-      <div class="row"><span class="lbl">system</span><span class="val" id="ctxb-system">--</span></div>
-      <div class="row"><span class="lbl">user</span><span class="val" id="ctxb-user">--</span></div>
-      <div class="row"><span class="lbl">assistant</span><span class="val" id="ctxb-assistant">--</span></div>
-      <div class="row"><span class="lbl">tool</span><span class="val" id="ctxb-tool">--</span></div>
-      <div class="row"><span class="lbl">max</span><span class="val" id="ctxb-max">--</span></div>
-      <div class="row"><span class="lbl">last request</span><span class="val" id="ctxb-last">--</span></div>
-      <div class="note" id="ctxb-note">estimate, ~4 chars/token</div>
-      <div class="ctxsep"></div>
-      <h4>Compaction</h4>
-      <div class="ctxctl-row">
-        <span class="lbl">Mode</span>
-        <div class="ctxseg" id="ctxb-seg">
-          <button type="button" data-mode="auto">Auto</button>
-          <button type="button" data-mode="manual">Manual</button>
+  <div class="composer-bar">
+    <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
+      <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
+      <span class="mode-btn-label" id="modeBtnLabel">act</span>
+      <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+    <div class="future-attach" aria-hidden="true"></div>
+    <span class="bar-spacer"></span>
+    <div class="ring-wrap" tabindex="0" aria-label="Context usage">
+      <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
+        <circle class="track" cx="14" cy="14" r="11"></circle>
+        <circle class="fill" cx="14" cy="14" r="11"
+                stroke-dasharray="69.115" stroke-dashoffset="69.115"></circle>
+        <text class="label" x="14" y="14">--</text>
+      </svg>
+      <div id="contextBreakdown" role="tooltip">
+        <h4>Context</h4>
+        <div class="row"><span class="lbl">total</span><span class="val" id="ctxb-total">--</span></div>
+        <div class="row"><span class="lbl">system</span><span class="val" id="ctxb-system">--</span></div>
+        <div class="row"><span class="lbl">user</span><span class="val" id="ctxb-user">--</span></div>
+        <div class="row"><span class="lbl">assistant</span><span class="val" id="ctxb-assistant">--</span></div>
+        <div class="row"><span class="lbl">tool</span><span class="val" id="ctxb-tool">--</span></div>
+        <div class="row"><span class="lbl">max</span><span class="val" id="ctxb-max">--</span></div>
+        <div class="row"><span class="lbl">last request</span><span class="val" id="ctxb-last">--</span></div>
+        <div class="note" id="ctxb-note">estimate, ~4 chars/token</div>
+        <div class="ctxsep"></div>
+        <h4>Compaction</h4>
+        <div class="ctxctl-row">
+          <span class="lbl">Mode</span>
+          <div class="ctxseg" id="ctxb-seg">
+            <button type="button" data-mode="auto">Auto</button>
+            <button type="button" data-mode="manual">Manual</button>
+          </div>
+        </div>
+        <div class="ctxctl-row" id="ctxb-thr-row">
+          <span class="lbl">Threshold</span>
+          <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
+          <span class="val" id="ctxb-thr-live">80%</span>
+        </div>
+        <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
+          <span class="lbl"></span>
+          <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
         </div>
       </div>
-      <div class="ctxctl-row" id="ctxb-thr-row">
-        <span class="lbl">Threshold</span>
-        <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
-        <span class="val" id="ctxb-thr-live">80%</span>
-      </div>
-      <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
-        <span class="lbl"></span>
-        <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
-      </div>
     </div>
+    <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
+    <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
+    <button id="go" class="btn-send mode-act" type="button" title="Send">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      <span class="btn-send-label">Send</span>
+    </button>
   </div>
-  <button id="pp" title="Pause at the next safe point" hidden>Pause</button>
-  <button id="cx" title="Stop after the current tool call" hidden>Cancel</button>
-  <button id="compactBtn" data-mode="auto" title="Compact the conversation now (manual override; always available)">Compact</button>
-  <button id="go" title="Send">
-    <svg class="icn" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-  </button>
 </footer>
 <div id="settingsPage">
   <header class="shead">
@@ -719,21 +828,10 @@ export function chatHtml(): string {
     }
   }
   function updateModelCaption() {
-    const cap = document.getElementById('mctx');
-    if (!cap) return;
-    // The selected option carries the model's maxContext as a data attr.
-    const opt = msel.options[msel.selectedIndex];
-    const raw = opt && opt.dataset ? opt.dataset.maxContext : undefined;
-    if (raw) {
-      const n = Number(raw);
-      if (Number.isFinite(n) && n > 0) {
-        cap.textContent = 'ctx ' + fmtTok(n);
-        cap.classList.remove('unknown');
-        return;
-      }
-    }
-    cap.textContent = 'ctx unknown';
-    cap.classList.add('unknown');
+    // D39: the "ctx 200.0k" label is gone. The model button now shows
+    // just the bare model name. We keep this hook so callers (the
+    // picker's selection handler, the models message handler) can
+    // request a label refresh; the implementation is a no-op now.
   }
   function requestCompact() {
     if (!busy) {
@@ -800,17 +898,256 @@ export function chatHtml(): string {
     statusTextEl = null;
   }
 
-  for (const b of document.querySelectorAll('header button[data-m]')) {
-    if (b.classList.contains('on')) { mode = b.dataset.m; }
-    b.addEventListener('click', () => {
-      for (const x of document.querySelectorAll('header button[data-m]')) {
-        x.classList.remove('on');
-      }
-      b.classList.add('on');
-      mode = b.dataset.m;
-      vsapi.postMessage({ type: 'mode', value: mode });
-    });
+  // D39: modes live in a popover (#modePicker) anchored under
+  // #modeBtn. The popover is built once and re-rendered on each
+  // open (cheap). Selecting fires the same mode postMessage.
+  // Mode icons are inline SVGs to avoid an extra round-trip.
+  const MODE_ICONS = {
+    plan: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+    act:  '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
+    auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 6.7 15"/>',
+  };
+  const MODE_DESCS = {
+    plan: 'Read-only: Plato can look, never touch',
+    edit: 'File edits via diff approval cards; no shell',
+    act:  'Shell + writes; every action needs its own click',
+    auto: 'No approval clicks; hard turn cap is the backstop',
+  };
+  function setMode(m) {
+    m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';
+    mode = m;
+    const btn = document.getElementById('modeBtn');
+    const lbl = document.getElementById('modeBtnLabel');
+    const icn = document.getElementById('modeBtnIcn');
+    const send = document.getElementById('go');
+    if (btn) {
+      btn.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      btn.classList.add('mode-' + m);
+    }
+    if (lbl) { lbl.textContent = m; }
+    if (icn) { icn.innerHTML = MODE_ICONS[m] || ''; }
+    if (send) {
+      send.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      send.classList.add('mode-' + m);
+    }
   }
+  setMode(mode);
+
+  // --- D39: popover helper. position:fixed wrapper so it escapes any
+  // overflow:hidden ancestor; we compute left/top from the trigger.
+  const openPopover = (pop, trigger, opts) => {
+    pop.classList.add('open');
+    document.body.appendChild(pop);
+    const r = trigger.getBoundingClientRect();
+    const pw = pop.offsetWidth;
+    const ph = pop.offsetHeight;
+    let left, top;
+    if (opts && opts.up) {
+      top = r.top - ph - 6;
+      left = r.left + r.width / 2 - pw / 2;
+    } else {
+      top = r.bottom + 6;
+      left = r.left + r.width / 2 - pw / 2;
+    }
+    const vw = window.innerWidth, vh = window.innerHeight;
+    left = Math.max(8, Math.min(left, vw - pw - 8));
+    if (top + ph > vh - 8) { top = vh - ph - 8; }
+    if (top < 8) { top = 8; }
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+    if (opts && opts.focus) { opts.focus.focus(); }
+  };
+  const closePopover = (pop) => {
+    pop.classList.remove('open');
+    if (pop.parentNode) { pop.parentNode.removeChild(pop); }
+  };
+  // Click-outside + Esc-to-close.
+  document.addEventListener('mousedown', (e) => {
+    for (const pop of document.querySelectorAll('.popover.open')) {
+      if (pop.contains(e.target)) { continue; }
+      const trig = pop.dataset.trigger;
+      if (trig && document.getElementById(trig) &&
+          document.getElementById(trig).contains(e.target)) { continue; }
+      closePopover(pop);
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      for (const pop of document.querySelectorAll('.popover.open')) {
+        closePopover(pop);
+        const trig = pop.dataset.trigger;
+        if (trig) { document.getElementById(trig)?.focus(); }
+      }
+    }
+  });
+
+  // --- D39: mode picker popover.
+  const modePop = document.createElement('div');
+  modePop.className = 'popover';
+  modePop.dataset.trigger = 'modeBtn';
+  modePop.setAttribute('role', 'listbox');
+  const modeBtn = document.getElementById('modeBtn');
+  const renderModePop = () => {
+    modePop.textContent = '';
+    for (const m of ['plan', 'edit', 'act', 'auto']) {
+      const row = el('div', 'mp-row mode-' + m);
+      row.dataset.mode = m;
+      row.setAttribute('role', 'option');
+      if (m === mode) { row.classList.add('active'); row.setAttribute('aria-selected', 'true'); }
+      const icn = document.createElement('svg');
+      icn.className = 'mp-icn';
+      icn.setAttribute('viewBox', '0 0 24 24');
+      icn.innerHTML = MODE_ICONS[m];
+      const name = el('div', 'mp-name', m);
+      const desc = el('div', 'mp-desc', MODE_DESCS[m]);
+      row.appendChild(icn);
+      row.appendChild(name);
+      row.appendChild(desc);
+      row.addEventListener('click', () => {
+        setMode(m);
+        closePopover(modePop);
+        vsapi.postMessage({ type: 'mode', value: m });
+        modeBtn.focus();
+      });
+      modePop.appendChild(row);
+    }
+  };
+  modeBtn.addEventListener('click', () => {
+    if (modePop.classList.contains('open')) {
+      closePopover(modePop);
+      return;
+    }
+    renderModePop();
+    openPopover(modePop, modeBtn, { up: true });
+  });
+
+  // --- D39: model picker popover.
+  // Replaces the native #msel. State lives in closure vars; the
+  // popover is rebuilt on the models postMessage and on open.
+  const modelPop = document.createElement('div');
+  modelPop.className = 'popover';
+  modelPop.dataset.trigger = 'modelBtn';
+  modelPop.setAttribute('role', 'listbox');
+  const modelBtn = document.getElementById('modelBtn');
+  const modelBtnLabel = modelBtn.querySelector('.model-btn-label');
+  let currentModel = '';
+  let currentModelLabel = '';
+  let currentModelMaxCtx = null;
+  let lastModelItems = [];
+  const fmtCtx = (n) => {
+    if (typeof n === 'number' && n > 0) {
+      if (n >= 1000) { return Math.round(n / 1000) + 'k'; }
+      return String(n);
+    }
+    return null;
+  };
+  const setModelSelected = (value, label, maxCtx) => {
+    currentModel = value;
+    currentModelLabel = label;
+    currentModelMaxCtx = maxCtx;
+    modelBtnLabel.textContent = label || (value ? value : 'select model');
+  };
+  const renderModelPop = () => {
+    modelPop.textContent = '';
+    const search = el('div', 'popover-search');
+    const sinput = el('input');
+    sinput.type = 'text';
+    sinput.placeholder = 'Search models\u2026';
+    search.appendChild(sinput);
+    modelPop.appendChild(search);
+    const list = el('div', 'popover-list');
+    modelPop.appendChild(list);
+    const items = lastModelItems || [];
+    const filtered = [];
+    for (const it of items) {
+      const label = String(it.label || it.value || '');
+      const hay = (label + ' ' + String(it.group || '')).toLowerCase();
+      if (sinput.value && !hay.includes(sinput.value.toLowerCase())) { continue; }
+      filtered.push(it);
+    }
+    let lastGroup = null;
+    for (const it of filtered) {
+      const g = String(it.group || '');
+      if (g !== lastGroup) {
+        list.appendChild(el('div', 'popover-group-label', g));
+        lastGroup = g;
+      }
+      const value = String(it.value || '');
+      const label = String(it.label || value);
+      const max = it.maxContext;
+      const row = el('div', 'popover-row');
+      row.dataset.value = value;
+      row.setAttribute('role', 'option');
+      const name = el('span', 'pr-name', label);
+      const meta = el('span', 'pr-meta',
+        fmtCtx(max) ? '\u00b7 ' + fmtCtx(max) : '\u00b7 ctx unknown');
+      const check = el('span', 'pr-check', value === currentModel ? '\u2713' : '');
+      row.appendChild(check);
+      row.appendChild(name);
+      row.appendChild(meta);
+      if (value === currentModel) {
+        row.classList.add('active');
+        row.setAttribute('aria-selected', 'true');
+      }
+      row.addEventListener('click', () => {
+        setModelSelected(value, label, max);
+        vsapi.postMessage({ type: 'model', value });
+        closePopover(modelPop);
+        modelBtn.focus();
+      });
+      list.appendChild(row);
+    }
+    if (filtered.length === 0) {
+      list.appendChild(el('div', 'popover-row',
+        sinput.value ? 'No matches' : 'No models'));
+    }
+    // Fallback row: if the current model isn't in the list (e.g.
+    // connection offline, custom model), still show it so the user
+    // can see what's selected.
+    if (currentModel &&
+        !items.some((it) => String(it.value || '') === currentModel)) {
+      const row = el('div', 'popover-row');
+      row.dataset.value = currentModel;
+      const name = el('span', 'pr-name', currentModelLabel || currentModel);
+      const meta = el('span', 'pr-meta', '\u00b7 offline');
+      const check = el('span', 'pr-check', '\u2713');
+      row.appendChild(check);
+      row.appendChild(name);
+      row.appendChild(meta);
+      row.classList.add('active');
+      row.setAttribute('aria-selected', 'true');
+      row.style.opacity = '.7';
+      row.addEventListener('click', () => {
+        closePopover(modelPop);
+        modelBtn.focus();
+      });
+      list.appendChild(row);
+    }
+    sinput.addEventListener('input', () => renderModelPop());
+    sinput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'ArrowDown') {
+        const first = list.querySelector('.popover-row');
+        if (first && first.dataset.value) { first.click(); }
+        e.preventDefault();
+      } else if (e.key === 'Escape') {
+        closePopover(modelPop);
+        modelBtn.focus();
+      }
+    });
+  };
+  modelBtn.addEventListener('click', () => {
+    if (modelPop.classList.contains('open')) {
+      closePopover(modelPop);
+      return;
+    }
+    renderModelPop();
+    openPopover(modelPop, modelBtn, { up: false });
+    const sinput = modelPop.querySelector('input');
+    if (sinput) { sinput.focus(); }
+  });
+
+
 
   document.getElementById('go').addEventListener('click', ask);
   document.getElementById('new').addEventListener('click', () => {
@@ -1418,8 +1755,8 @@ export function chatHtml(): string {
 
     scroll();
   }
-  // Model select + observer controls (D25f/D26d).
-  const msel = document.getElementById('msel');
+  // Reasoning select (D39: model picker is now a popover; the
+  // reasoning select is the only native dropdown left in the header).
   const rsel = document.getElementById('rsel');
   rsel.appendChild((() => {
     const s = document.createElement('option');
@@ -1433,18 +1770,13 @@ export function chatHtml(): string {
     o.textContent = 'reasoning: ' + v;
     rsel.appendChild(o);
   }
-  msel.addEventListener('change', () => {
-    vsapi.postMessage({ type: 'model', value: msel.value });
-    updateModelCaption();
-  });
   rsel.addEventListener('change', () => {
     vsapi.postMessage({ type: 'set-reasoning', value: rsel.value });
   });
-  // D38b: the compact pill is a status label, not a toggle. The
-  // context ring's tooltip is where the policy is changed (and the
-  // Settings page is the authoritative place).
-  const compactBtn = document.getElementById('compactBtn');
-  compactBtn.addEventListener('click', requestCompact);
+  // D39: #compactBtn is gone - "Compact now" is in the ring's
+  // tooltip (D38b). The Compact button in the composer was removed
+  // entirely; the requestCompact() function still exists and is
+  // called from the ring's tooltip.
   // D38b: ring's tooltip is now a control surface for compaction.
   // The handlers live on the elements (not delegated) and post the
   // same set-compaction-mode / set-compaction-threshold messages
@@ -1581,51 +1913,36 @@ export function chatHtml(): string {
         });
         // D37: header caption + compaction state.
         applyCompaction(m.compaction);
-        const current = msel.value;
-        msel.textContent = '';
-        let og = null;
-        for (const it of m.items || []) {
-          const g = String(it.group || '');
-          if (!og || og.dataset.g !== g) {
-            og = document.createElement('optgroup');
-            og.label = g;
-            og.dataset.g = g;
-            msel.appendChild(og);
-          }
-          const o = document.createElement('option');
-          o.value = String(it.value);
-          // D37: append "· 200k" to known-context models so the user
-          // sees the window while picking a model.
-          const label = String(it.label);
-          const max = it.maxContext;
-          if (typeof max === 'number' && max > 0) {
-            o.textContent = label + ' \u00b7 ' + fmtTok(max);
-            o.dataset.maxContext = String(max);
-          } else {
-            o.textContent = label;
-          }
-          og.appendChild(o);
+        // D39: model picker popover data. Preserve the user's current
+        // selection across rebuilds; if the new pool doesn't contain
+        // the value, renderModelPop shows it as an "offline" fallback
+        // row.
+        lastModelItems = m.items || [];
+        // Find the selected item in the new pool to refresh the label
+        // and maxContext; otherwise keep the previous selection.
+        const preserved = currentModel;
+        const match = lastModelItems.find(
+          (it) => String(it.value || '') === preserved);
+        if (match) {
+          setModelSelected(String(match.value), String(match.label),
+                           match.maxContext);
+        } else if (preserved) {
+          // Off-line selection - keep closure state, label stays.
+          setModelSelected(preserved, currentModelLabel, currentModelMaxCtx);
+        } else if (lastModelItems.length > 0) {
+          // First-time / restore: pick the first item as default.
+          const first = lastModelItems[0];
+          setModelSelected(String(first.value), String(first.label),
+                           first.maxContext);
         }
         // Reasoning control (D28 phase 2): visible only for capable models.
         rsel.hidden = !m.reasoningCapable;
         if (typeof m.reasoning === 'string') {
           rsel.value = m.reasoning;
         }
-        // Preserve selection across rebuilds; if it's not in the new list
-        // (e.g., a manually-typed model), add it as a hidden option so the
-        // dropdown still displays it.
-        if (current) {
-          const inList = Array.from(msel.options).some((o) => o.value === current);
-          if (!inList) {
-            const o = document.createElement('option');
-            o.value = current;
-            o.textContent = current;
-            o.style.display = 'none';
-            msel.appendChild(o);
-          }
-          msel.value = current;
-        }
-        updateModelCaption();
+        // If the popover is currently open, re-render it to reflect
+        // the new pool.
+        if (modelPop.classList.contains('open')) { renderModelPop(); }
         break;
       }
       case 'context': applyContext(m); break;
@@ -1648,11 +1965,19 @@ export function chatHtml(): string {
       case 'restore':
         document.body.classList.remove('show-settings', 'show-history');
         render(m.log);
-        if (
-          typeof m.model === 'string' &&
-          Array.from(msel.options).some((o) => o.value === m.model)
-        ) {
-          msel.value = String(m.model);
+        // D39: restore the chat's prior model selection. If the value
+        // is in the current pool, setModelSelected will refresh the
+        // label and maxContext; otherwise it stays as a closure var
+        // and renderModelPop will show it as an "offline" fallback.
+        if (typeof m.model === 'string' && m.model) {
+          const found = lastModelItems.find(
+            (it) => String(it.value || '') === m.model);
+          if (found) {
+            setModelSelected(String(found.value), String(found.label),
+                             found.maxContext);
+          } else {
+            setModelSelected(m.model, m.model, null);
+          }
         }
         break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); setStatus('writing'); break;
