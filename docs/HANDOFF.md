@@ -112,11 +112,10 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D44 — slash-commands slot + file attachment.** The reserved bar gap
+1. **D44a — slash-commands slot + file attachment.** The reserved bar gap
    (D39). 5 commands (`/plan` `/fix` `/review` `/commit` `/test`) + a
    paperclip file attach with secret deny-list. Design locked in DECISIONS
-   D44a. → Ship the **D44b** Settings fix first (gate the Academy status
-   block on `mode === 'academy'`).
+   D44a. **D44b shipped 2026-09-02 (e26a6f1) — pick up here for D44a.**
 2. **D45 — project files.** `PLATO.md` + `AGENTS.md` + academy
    `worker.role`, a three-layer worker prompt join identical across
    solo/duo/academy. Design locked in DECISIONS D45a. Includes the
