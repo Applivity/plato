@@ -53,12 +53,14 @@ export function chatHtml(): string {
   #modelBtn-label, .model-btn-label { white-space:nowrap; overflow:hidden;
                                       text-overflow:ellipsis; }
   /* D39: paired history + settings nav, right side of the header. */
-  .headnav { margin-left:auto; display:inline-flex; gap:2px; padding:2px;
+  .headnav { margin-left:auto; display:inline-flex; gap:6px; padding:3px;
              border:1px solid var(--pl-border); border-radius:999px; }
   /* D39g: square hit areas, centered icons, and a highlighted state
-     for whichever nav page is open (history / settings). */
+     for whichever nav page is open (history / settings).
+     D42c: wider hit areas + bigger gap - the two icons sat ~26px apart
+     center-to-center, close enough to mis-click. */
   #hist, #gear { display:inline-flex; align-items:center; justify-content:center;
-                 width:24px; height:20px; padding:0; border:none;
+                 width:28px; height:22px; padding:0; border:none;
                  border-radius:999px; background:transparent; cursor:pointer;
                  color:var(--pl-muted);
                  transition:color .1s, background .1s; }
@@ -567,9 +569,10 @@ export function chatHtml(): string {
   #contextBreakdown .ctxctl-row .lbl { font-size:11px;
                                        color:var(--pl-muted);
                                        min-width:62px; }
-  #contextBreakdown .ctxseg { display:inline-flex; border:1px solid var(--pl-border);
+  #contextBreakdown .ctxseg { display:inline-flex; flex:1; border:1px solid var(--pl-border);
                               border-radius:4px; overflow:hidden; }
-  #contextBreakdown .ctxseg button { background:transparent; border:none;
+  #contextBreakdown .ctxseg button { background:transparent; border:none; flex:1;
+                                     text-align:center;
                                      color:var(--pl-muted); cursor:pointer;
                                      font-size:11px; padding:3px 9px;
                                      font-family:inherit; }
