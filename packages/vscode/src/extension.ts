@@ -254,6 +254,7 @@ type PendingResolve = (v: boolean) => void;
 
 const LOG_KEY = 'plato.chatLog';
 const LOG_MAX = 400;
+const TITLE_KEY = 'plato.chatTitle';
 const SESSIONS_KEY = 'plato.chatSessions';
 const SESSIONS_MAX = 30;
 
@@ -285,12 +286,18 @@ class ChatHost {
   private running = false;
   private modelOverride: string | null = null;
   private readonly log: Entry[];
+  /** D40: model-generated (or user-renamed) conversation title. */
+  private chatTitle: string;
+  /** D40: once the user renames, the generator never overwrites. */
+  private titleManuallySet = false;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly ctx: vscode.ExtensionContext,
   ) {
     this.log = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
+    // D40: the conversation title survives reloads with the log.
+    this.chatTitle = ctx.workspaceState.get<string>(TITLE_KEY, '');
     this.panel.webview.onDidReceiveMessage(
       async (m: { type?: string; [k: string]: unknown }) => {
         if (m.type === 'mode' && typeof m.value === 'string') {
@@ -298,6 +305,15 @@ class ChatHost {
           this.sessionWrites.clear();
           this.sessionApprovals.clear();
           this.send('notice', `Mode: ${this.mode}`);
+          return;
+        }
+        // D40: user renamed the conversation title from the header chip.
+        if (m.type === 'rename' && typeof m.value === 'string') {
+          const v = m.value.trim().slice(0, 80);
+          this.chatTitle = v;
+          this.titleManuallySet = true;
+          await this.ctx.workspaceState.update(TITLE_KEY, v);
+          this.send('title', v);
           return;
         }
         if (m.type === 'model' && typeof m.value === 'string') {
@@ -396,6 +412,9 @@ class ChatHost {
             this.log.length = 0;
             this.log.push(...s.log.slice(-LOG_MAX));
             void this.ctx.workspaceState.update(LOG_KEY, this.log);
+            // D40: resuming adopts the archived session's title.
+            this.chatTitle = s.title || '';
+            await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
             const decorated = this.log.map((e) =>
               e.k === 'msg' && e.cls === 'bot'
                 ? { ...e, html: renderMarkdown(e.text) }
@@ -405,6 +424,7 @@ class ChatHost {
               type: 'restore',
               log: decorated,
               model: this.effectiveModel(),
+              title: this.chatTitle,
             });
             this.postModelState();
           }
@@ -722,6 +742,7 @@ class ChatHost {
             type: 'restore',
             log: decorated,
             model: this.effectiveModel(),
+            title: this.chatTitle,
           });
         }
       },
@@ -1068,8 +1089,11 @@ class ChatHost {
     const sessions = this.sessions();
     sessions.unshift({
       id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-      title: ((first && first.k === 'msg' ? first.text : '') || 'Chat')
-        .slice(0, 80),
+      // D40: the model-generated / user-renamed title wins; the first
+      // user message is only the fallback.
+      title:
+        this.chatTitle ||
+        ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
       ts: new Date().toISOString(),
       log: [...this.log],
     });
@@ -1218,11 +1242,19 @@ class ChatHost {
     await this.archiveCurrentChat();
     this.log.length = 0;
     await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    // D40: a new chat gets a fresh title.
+    this.chatTitle = '';
+    this.titleManuallySet = false;
+    await this.ctx.workspaceState.update(TITLE_KEY, '');
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
     this.pendingApproval = null;
     this.replyBuffer = '';
-    await this.panel.webview.postMessage({ type: 'restore', log: [] });
+    await this.panel.webview.postMessage({
+      type: 'restore',
+      log: [],
+      title: '',
+    });
   }
 
   /** Session override, else the plato.model workspace setting. */
@@ -1243,6 +1275,75 @@ class ChatHost {
     return (
       readConnections().find((c) => c.id === parts.connectionId) ?? null
     );
+  }
+
+  /**
+   * D40: conversation title. After the first completed run of a
+   * conversation with no title yet, ask the same model (one cheap
+   * non-streaming turn, no tools, ~40 output tokens) for a 3-6 word
+   * title. Fire and forget: failures are silent and the next run
+   * retries; a user rename always wins.
+   */
+  private async maybeGenerateTitle(
+    conn: ConnectionConfig,
+    apiKey: string,
+    ref: string,
+    task: string,
+  ): Promise<void> {
+    if (this.chatTitle || this.titleManuallySet) {
+      return;
+    }
+    const firstYou = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
+    const seed =
+      (firstYou && firstYou.k === 'msg' ? firstYou.text : '') || task;
+    const lastBot = [...this.log]
+      .reverse()
+      .find((e) => e.k === 'msg' && e.cls === 'bot');
+    const excerpt =
+      lastBot && lastBot.k === 'msg' ? lastBot.text.slice(0, 400) : '';
+    try {
+      const provider = createProvider(conn.kind, {
+        apiKey,
+        baseUrl:
+          conn.kind === 'openai'
+            ? conn.baseUrl ?? 'https://api.openai.com/v1'
+            : undefined,
+      });
+      const res = await provider.completeTurn({
+        model: ref,
+        system:
+          'Write a short conversation title (3-6 words) summarizing the exchange. Reply with the title only: no quotes, no period, no explanation.',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `User: ${seed.slice(0, 500)}${
+                  excerpt ? `\n\nAssistant: ${excerpt}` : ''
+                }`,
+              },
+            ],
+          },
+        ],
+        tools: [],
+        maxTokens: 40,
+      });
+      const raw = res.content
+        .map((c) => (c.type === 'text' ? c.text : ''))
+        .join(' ')
+        .replace(/^["'\u201c\u201d]+|["'\u201c\u201d.]+$/g, '')
+        .trim()
+        .slice(0, 80);
+      if (!raw || this.chatTitle || this.titleManuallySet) {
+        return;
+      }
+      this.chatTitle = raw;
+      await this.ctx.workspaceState.update(TITLE_KEY, raw);
+      this.send('title', raw);
+    } catch {
+      // Silent: an untitled conversation is fine; the next run retries.
+    }
   }
 
   /**
@@ -1742,6 +1843,8 @@ class ChatHost {
               )} interventions${this.obsExtras(observers)}`
             : '',
       });
+      // D40: first successful run of an untitled conversation names it.
+      void this.maybeGenerateTitle(conn, apiKey, ref, task);
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');
       this.push({
