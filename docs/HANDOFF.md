@@ -17,8 +17,8 @@ may not be available when you work; everything you need is in this repo.
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.15.0).
-- HEAD (`main`) is at **D42i** (commit `c8659e0`). Working tree clean.
+  extension shell, v0.16.0).
+- HEAD (`main`) is at **D43** (commit `c27cda0`). Working tree clean.
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -76,14 +76,14 @@ may not be available when you work; everything you need is in this repo.
 3. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 4. `cd packages/vscode && pnpm run package` — produces
-   `plato-vscode-0.15.0.vsix`
+   `plato-vscode-0.16.0.vsix`
 5. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 6. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
 7. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
    change warrants a decision; commit.
 
-## Shipped this session (D37 → D42i, 0.15.0)
+## Shipped this session (D37 → D43, 0.16.0)
 
 - **D37** — context management: model max-context (catalog
   `maxContextFor()` + opportunistic discovery `fetchModelPool()` from
@@ -104,22 +104,22 @@ may not be available when you work; everything you need is in this repo.
 - **D42 → D42i** — title survives reasoning models, History shows the
   current chat, history-dispatch fix, tooltip hover/click behavior,
   compaction-control alignment, custom tooltip.
+- **D43** — empty first-run + provider onboarding: seeded
+  anthropic/openai connections removed; friendly empty composer state
+  with a Connect CTA when no provider exists; onboarding card in
+  Settings → Providers; Base URL field hidden for the Anthropic/OpenAI
+  presets.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D43 — empty first-run + provider onboarding.** Remove the
-   auto-seeded `anthropic`/`openai` connections from the host; add an
-   onboarding card in Settings → Providers ("Connect your first
-   provider"); hide the URL field for Anthropic/OpenAI presets; show a
-   friendly empty state in the composer when no connection exists.
-2. **Composer commands/docs slot.** The reserved bar gap (D39) for a
+1. **Composer commands/docs slot.** The reserved bar gap (D39) for a
    future `@` command menu + file attachment. Bigger lift.
-3. **Chat-log message rendering.** Markdown, code blocks, tool-call
+2. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.
-4. **History run-detail view.** Friendlier rendering of a run's
+3. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
-5. **Small wins:** title regenerate affordance (hover rename → add
+4. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
 ## Ground rules for any agent working here

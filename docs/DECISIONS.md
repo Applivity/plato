@@ -769,6 +769,45 @@ that one user's LiteLLM proxy* but unverifiable in general. Now
 unknown — its `maxContext` is `null`, which is the correct D26c
 default.
 
+**D43 — Empty first-run + provider onboarding (M4.1, 0.16.0, from the
+HANDOFF queue).**
+
+The pre-seeded built-in connections (D26a) made a fresh install look
+configured when it wasn't: the header showed catalog models, the model
+ref defaulted to `anthropic:claude-sonnet-4-5`, and a first run either
+failed on a missing key or implied models that had never been fetched.
+The queue directive: remove the seeds, add the onboarding.
+
+- *Seeds removed.* `readConnections()` returns `rawUserConnections()`
+  verbatim; nothing is pre-configured. `plato.connections` remains the
+  single source of truth (default `[]`), so existing user configs are
+  untouched.
+- *Empty composer.* With zero connections the webview replaces the
+  composer with a centered explainer + "Connect a provider" CTA that
+  posts `openSettings` (Settings → Providers already auto-opens at zero
+  providers, D38b). Driven by a `hasConnections` flag on every
+  `models`/`restore` payload; the header model button reads "connect a
+  provider" and also routes to Settings; `ask()` and the model picker
+  guard into onboarding.
+- *Settings onboarding card.* Providers renders a "✦ Connect your first
+  provider" card on first run, above the existing Add form.
+- *URL field hidden for fixed-endpoint presets.* The OpenAI/Anthropic
+  preset base URLs are fixed by the preset; the editable Base URL field
+  hides for those two and shows for every other preset and for custom
+  endpoints. The preset's URL still rides the submit so model discovery
+  works unchanged.
+- *Fallbacks.* `run()` errors "Connect a provider first — open Settings
+  → Providers" when zero connections (the webview CTA normally prevents
+  this path). `effectiveModel()` falls back to the first selectable
+  model when the configured ref's connection no longer exists — after
+  seed removal a user whose `plato.model` still names `anthropic:…`
+  would otherwise hit an "Unknown connection" error on their first
+  connected run.
+- *Legacy key note.* The pre-0.3.0 `plato.anthropicApiKey`
+  SecretStorage slot is still honoured as a fallback for an `anthropic`
+  connection only when that connection exists; it no longer powers a
+  phantom default. Users relying on it must re-add the Anthropic preset.
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
