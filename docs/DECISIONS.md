@@ -650,6 +650,43 @@ overwrites. `archiveCurrentChat()` prefers the generated/renamed
 title for `StoredChat.title` (first user message remains the
 fallback), so the History page and the header agree.
 
+**D41 — History archives on panel close; title generates early (M4.1, 0.15.0, founder-reported History always empty).**
+
+History was always empty because `archiveCurrentChat()` had exactly
+one call site: `newChat()`. Closing the panel or reloading never
+archived anything. Fixes:
+- `ChatHost.dispose()` archives on panel `onDidDispose`; an
+  `archivedUpTo` index (log length at last archive) prevents
+  close/reopen cycles from stacking duplicate snapshots.
+  `newChat()` resets it; resume seeds it so already-archived
+  content isn't re-archived.
+- Title generation moved from run-completion to run-start (right
+  after connection/key resolution, before the agent loop), so the
+  title lands a second or two into the run. `titleInFlight` guards
+  against double-fire; the post-completion call was removed.
+
+**D42 — Title call survives reasoning models; History shows the current chat (M4.1, 0.15.0).**
+
+Two founder reports: (1) the title appeared instantly but looked
+prompt-derived ("Analyse the code and specially the"); (2) History
+was still empty after New Chat. Root causes and fixes:
+- *Title reliability.* The title call IS the first LLM call (D41);
+  the instant fallback proved the reply was unusable — a
+  reasoning-style model spent the whole 120-token budget on
+  thinking, leaving content empty. Fixes: maxTokens 120→512;
+  `reasoning:{effort:'low'}` attached when `modelSupportsReasoning`;
+  the fallback strips trailing dangling stop-words so it never ends
+  mid-phrase; empty replies log stop reason + block count to the
+  Extension Host console.
+- *History.* openHistory now prepends the live conversation as a
+  pseudo-entry (`id:'__current__'`, `current:true`) whenever the
+  log has messages, so the page is never empty mid-chat; the webview
+  renders it first with a "current chat" accent and clicking it
+  returns to the chat. Pre-D41 chats were never archived and are
+  unrecoverable.
+  (D42b later found the initial History render was dropping the
+  chats payload at the webview dispatch site — see PROGRESS.)
+
 **D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
 
 **D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
