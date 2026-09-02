@@ -113,7 +113,18 @@ export function chatHtml(): string {
        border:1px solid var(--pl-border); outline:none;
        background:var(--vscode-input-background);
        color:var(--vscode-input-foreground); }
-  #q:focus { border-color:var(--pl-accent); }
+  #q:focus { border-color:inherit; border-width:1.5px; }
+  /* D39c: the textbox border tracks the active mode (1.5px). The
+     user gets a second visual cue of what their next send will do.
+     The default (no mode class) stays the muted border. */
+  footer.mode-plan #q { border-color:#3bba6a; }
+  footer.mode-edit #q { border-color:#d99a1a; }
+  footer.mode-act  #q { border-color:#d8484a; }
+  footer.mode-auto #q { border-color:#9575cd; }
+  footer.mode-plan #q:focus,
+  footer.mode-edit #q:focus,
+  footer.mode-act  #q:focus,
+  footer.mode-auto #q:focus { border-color:inherit; box-shadow:0 0 0 1px currentColor; }
   /* #go is now styled by .btn-send (with per-mode color). The old
      44x44 square styling is gone; the send button is a normal
      pill that lives in .composer-bar. */
@@ -563,28 +574,34 @@ export function chatHtml(): string {
              font-family:inherit; font-size:12px; font-weight:500;
              padding:4px 8px; border-radius:5px; cursor:pointer; }
   #modeBtn:hover { background:rgba(128,128,128,.08); }
-  #modeBtn .mode-icn { width:13px; height:13px; fill:none;
-                        stroke:currentColor; stroke-width:2;
+  #modeBtn .mode-icn { width:15px; height:15px; fill:none;
+                        stroke:currentColor; stroke-width:2.2;
                         stroke-linecap:round; stroke-linejoin:round; }
   #modeBtn .caret { color:var(--pl-muted); flex:none; }
-  /* Per-mode color on the mode picker itself. */
-  #modeBtn.mode-plan { color:var(--vscode-testing-iconPassed, #73c991); }
-  #modeBtn.mode-edit { color:var(--vscode-focusBorder, #4a9eff); }
-  #modeBtn.mode-act  { color:var(--vscode-button-foreground, #fff); }
-  #modeBtn.mode-auto { color:var(--vscode-editorWarning-foreground, #cca700); }
-  /* D39: send button - colored by the active mode. Safe-to-loud. */
-  .btn-send { display:inline-flex; align-items:center; gap:5px;
-              padding:5px 12px; border-radius:5px; border:1px solid transparent;
-              font-family:inherit; font-size:12px; font-weight:500;
+  /* D39c: four distinct hues - plan=green, edit=amber, act=red,
+     auto=purple. No two modes are the same color. */
+  #modeBtn.mode-plan { color:#1a8a4a; }
+  #modeBtn.mode-edit { color:#b07a00; }
+  #modeBtn.mode-act  { color:#c13838; }
+  #modeBtn.mode-auto { color:#7c4dbf; }
+  /* Send button: same four-color palette, with readable text colors
+     on each. */
+  .btn-send { display:inline-flex; align-items:center; gap:6px;
+              padding:5px 14px; border-radius:5px; border:1px solid transparent;
+              font-family:inherit; font-size:12px; font-weight:600;
               cursor:pointer; color:#fff;
-              transition:background .12s, transform .04s; }
+              transition:background .12s, transform .04s, box-shadow .12s; }
   .btn-send:active { transform:translateY(1px); }
-  .btn-send:hover { filter:brightness(1.08); }
+  .btn-send:hover { filter:brightness(1.08);
+                    box-shadow:0 1px 4px rgba(0,0,0,.25); }
   .btn-send[disabled] { opacity:.5; cursor:default; }
-  .btn-send.mode-plan { background:var(--vscode-testing-iconPassed, #73c991); color:#0d2a18; }
-  .btn-send.mode-edit { background:var(--vscode-focusBorder, #4a9eff); }
-  .btn-send.mode-act  { background:var(--vscode-button-background); color:var(--vscode-button-foreground); }
-  .btn-send.mode-auto { background:var(--vscode-editorWarning-foreground, #cca700); color:#3a2a00; }
+  .btn-send .btn-send-icn { width:14px; height:14px; fill:none;
+                             stroke:currentColor; stroke-width:2.2;
+                             stroke-linecap:round; stroke-linejoin:round; }
+  .btn-send.mode-plan { background:#3bba6a; color:#0d2a18; }
+  .btn-send.mode-edit { background:#d99a1a; color:#3a2a00; }
+  .btn-send.mode-act  { background:#d8484a; color:#fff; }
+  .btn-send.mode-auto { background:#9575cd; color:#fff; }
   /* D39: shared popover styles for the model picker and the mode
      picker. The body attaches the popover to a fixed-position wrapper
      right under the trigger. */
@@ -624,16 +641,24 @@ export function chatHtml(): string {
             border-radius:5px; cursor:pointer; }
   .mp-row:hover, .mp-row.active { background:var(--vscode-list-hoverBackground,
                                                    rgba(128,128,128,.12)); }
-  .mp-row .mp-icn { width:16px; height:16px; margin-top:1px;
-                     fill:none; stroke:currentColor; stroke-width:2;
+  .mp-row .mp-icn { width:18px; height:18px; margin-top:1px;
+                     fill:none; stroke:currentColor; stroke-width:2.2;
                      stroke-linecap:round; stroke-linejoin:round; }
-  .mp-row .mp-name { font-size:12px; font-weight:500; }
-  .mp-row .mp-desc { grid-column:2; font-size:11px; color:var(--pl-muted);
-                     line-height:1.4; margin-top:2px; }
-  .mp-row.mode-plan .mp-icn { color:var(--vscode-testing-iconPassed, #73c991); }
-  .mp-row.mode-edit .mp-icn { color:var(--vscode-focusBorder, #4a9eff); }
-  .mp-row.mode-act  .mp-icn { color:var(--vscode-button-foreground, #fff); }
-  .mp-row.mode-auto .mp-icn { color:var(--vscode-editorWarning-foreground, #cca700); }
+  .mp-row .mp-name { font-size:12.5px; font-weight:600; }
+  .mp-row .mp-desc { grid-column:2; font-size:11.5px; color:var(--pl-muted);
+                     line-height:1.45; margin-top:3px; }
+  /* D39c: popover icons match the picker/send palette. The popover
+     uses a chip background behind the icon so it reads at a glance
+     even in dim themes. */
+  .mp-row .mp-icn { padding:3px; border-radius:5px; }
+  .mp-row.mode-plan .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
+  .mp-row.mode-edit .mp-icn { color:#b07a00; background:rgba(217,154,26,.14); }
+  .mp-row.mode-act  .mp-icn { color:#c13838; background:rgba(216,72,74,.14); }
+  .mp-row.mode-auto .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
+  .mp-row.active.mode-plan .mp-icn { color:#fff; background:#3bba6a; }
+  .mp-row.active.mode-edit .mp-icn { color:#3a2a00; background:#d99a1a; }
+  .mp-row.active.mode-act  .mp-icn { color:#fff; background:#d8484a; }
+  .mp-row.active.mode-auto .mp-icn { color:#fff; background:#9575cd; }
 </style>
 </head>
 <body>
@@ -667,13 +692,6 @@ export function chatHtml(): string {
 <footer style="position:relative;">
   <textarea id="q" rows="3" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
   <div class="composer-bar">
-    <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
-      <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
-      <span class="mode-btn-label" id="modeBtnLabel">act</span>
-      <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <div class="future-attach" aria-hidden="true"></div>
-    <span class="bar-spacer"></span>
     <div class="ring-wrap" tabindex="0" aria-label="Context usage">
       <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
         <circle class="track" cx="14" cy="14" r="11"></circle>
@@ -711,10 +729,17 @@ export function chatHtml(): string {
         </div>
       </div>
     </div>
+    <span class="bar-spacer"></span>
     <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
+    <div class="future-attach" aria-hidden="true"></div>
+    <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
+      <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
+      <span class="mode-btn-label" id="modeBtnLabel">act</span>
+      <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
     <button id="go" class="btn-send mode-act" type="button" title="Send">
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      <svg class="btn-send-icn" id="goIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="btn-send-label">Send</span>
     </button>
   </div>
@@ -917,17 +942,26 @@ export function chatHtml(): string {
   // #modeBtn. The popover is built once and re-rendered on each
   // open (cheap). Selecting fires the same mode postMessage.
   // Mode icons are inline SVGs to avoid an extra round-trip.
+  // D39c: mode icons are now visible at a glance (thicker strokes,
+  // filled backgrounds). Each mode has a distinct hue so the user
+  // can tell them apart at a glance, and the same icon shows up on
+  // the send button so the action's consequence is reinforced.
+  // The four colors form a clear escalation:
+  //   plan = green  (calm, read-only)
+  //   edit = amber  (caution, files being written)
+  //   act  = red    (full power, shell + writes)
+  //   auto = purple (hands-off, AI drives)
   const MODE_ICONS = {
-    plan: '<polygon points="6 3 20 12 6 21 6 3"/>',
+    plan: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
     act:  '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
-    auto: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 6.7 15"/>',
+    auto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   };
   const MODE_DESCS = {
-    plan: 'Read-only: Plato can look, never touch',
-    edit: 'File edits via diff approval cards; no shell',
-    act:  'Shell + writes; every action needs its own click',
-    auto: 'No approval clicks; hard turn cap is the backstop',
+    plan: 'Read-only. Plato can look at files and answer questions, but never modifies anything on disk or runs shell.',
+    edit: 'File edits via diff approval cards. Plato can read and propose changes; shell access is denied.',
+    act:  'Shell + writes. Every action is gated by an approval card. Full power, every step.',
+    auto: 'No approval clicks. Plato runs end-to-end on its own. A hard turn cap is the only backstop.',
   };
   function setMode(m) {
     m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';
@@ -936,6 +970,8 @@ export function chatHtml(): string {
     const lbl = document.getElementById('modeBtnLabel');
     const icn = document.getElementById('modeBtnIcn');
     const send = document.getElementById('go');
+    const sendIcn = document.getElementById('goIcn');
+    const footer = document.querySelector('footer');
     if (btn) {
       btn.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
       btn.classList.add('mode-' + m);
@@ -945,6 +981,13 @@ export function chatHtml(): string {
     if (send) {
       send.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
       send.classList.add('mode-' + m);
+    }
+    if (sendIcn) { sendIcn.innerHTML = MODE_ICONS[m] || ''; }
+    // D39c: textbox border tracks the active mode so the user gets
+    // a second visual cue of what their next send will do.
+    if (footer) {
+      footer.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      footer.classList.add('mode-' + m);
     }
   }
   setMode(mode);
