@@ -227,6 +227,8 @@ export function activate(ctx: vscode.ExtensionContext): void {
       );
       panel.onDidDispose(() => {
         if (live === panel) {
+          // D41: archive on close so History fills without New Chat.
+          void host?.dispose();
           live = undefined;
           host = undefined;
         }
@@ -290,6 +292,10 @@ class ChatHost {
   private chatTitle: string;
   /** D40: once the user renames, the generator never overwrites. */
   private titleManuallySet = false;
+  /** D41: a title call is in flight — don't double-fire. */
+  private titleInFlight = false;
+  /** D41: log length at the last archive; only archive what's new. */
+  private archivedUpTo = 0;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -415,6 +421,9 @@ class ChatHost {
             // D40: resuming adopts the archived session's title.
             this.chatTitle = s.title || '';
             await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
+            // D41: the resumed content is already in History — only
+            // messages sent from here on should archive again.
+            this.archivedUpTo = this.log.length;
             const decorated = this.log.map((e) =>
               e.k === 'msg' && e.cls === 'bot'
                 ? { ...e, html: renderMarkdown(e.text) }
@@ -1085,6 +1094,12 @@ class ChatHost {
     if (msgs.length === 0) {
       return;
     }
+    // D41: skip when nothing new was said since the last archive —
+    // closing and reopening the same conversation must not stack
+    // duplicate history snapshots.
+    if (this.log.length <= this.archivedUpTo) {
+      return;
+    }
     const first = msgs.find((e) => e.k === 'msg' && e.cls === 'you');
     const sessions = this.sessions();
     sessions.unshift({
@@ -1101,6 +1116,16 @@ class ChatHost {
       SESSIONS_KEY,
       sessions.slice(0, SESSIONS_MAX),
     );
+    this.archivedUpTo = this.log.length;
+  }
+
+  /**
+   * D41: archive the conversation when the panel closes, so History
+   * lists past chats even without an explicit New Chat. The log itself
+   * stays persisted, so reopening the panel continues the conversation.
+   */
+  async dispose(): Promise<void> {
+    await this.archiveCurrentChat();
   }
 
   /** Prior conversation for LLM context (text pairs, capped). */
@@ -1245,6 +1270,7 @@ class ChatHost {
     // D40: a new chat gets a fresh title.
     this.chatTitle = '';
     this.titleManuallySet = false;
+    this.archivedUpTo = 0;
     await this.ctx.workspaceState.update(TITLE_KEY, '');
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
@@ -1290,9 +1316,10 @@ class ChatHost {
     ref: string,
     task: string,
   ): Promise<void> {
-    if (this.chatTitle || this.titleManuallySet) {
+    if (this.titleInFlight || this.chatTitle || this.titleManuallySet) {
       return;
     }
+    this.titleInFlight = true;
     const firstYou = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
     const seed =
       (firstYou && firstYou.k === 'msg' ? firstYou.text : '') || task;
@@ -1358,6 +1385,8 @@ class ChatHost {
     } catch (e) {
       // Diagnostics only (Extension Host console); the UI stays silent.
       console.warn('[plato] title generation failed:', e);
+    } finally {
+      this.titleInFlight = false;
     }
   }
 
@@ -1516,6 +1545,9 @@ class ChatHost {
       return;
     }
     this.replyBuffer = '';
+    // D41: name the conversation from the prompt immediately — the
+    // title arrives a second or two into the run, not after it.
+    void this.maybeGenerateTitle(conn, apiKey, ref, task);
     const started = Date.now();
     let toolsUsed = 0;
     // M2: every run is transcribed under <root>/.plato/runs/ (D24c).
@@ -1858,8 +1890,6 @@ class ChatHost {
               )} interventions${this.obsExtras(observers)}`
             : '',
       });
-      // D40: first successful run of an untitled conversation names it.
-      void this.maybeGenerateTitle(conn, apiKey, ref, task);
     } catch {
       this.send('error', 'Provider request failed. Check the API key and network.');
       this.push({
