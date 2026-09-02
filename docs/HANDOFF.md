@@ -115,11 +115,16 @@ may not be available when you work; everything you need is in this repo.
 1. **D44a — slash-commands slot + file attachment.** The reserved bar gap
    (D39). 5 commands (`/plan` `/fix` `/review` `/commit` `/test`) + a
    paperclip file attach with secret deny-list. Design locked in DECISIONS
-   D44a. **D44b shipped 2026-09-02 (e26a6f1) — pick up here for D44a.**
-2. **D45 — project files.** `PLATO.md` + `AGENTS.md` + academy
-   `worker.role`, a three-layer worker prompt join identical across
-   solo/duo/academy. Design locked in DECISIONS D45a. Includes the
-   `/system-prompt` command and a Settings → Workers section.
+   D44a. **D44b shipped 2026-09-02 (e26a6f1) and D45a shipped 2026-09-03
+   — pick up here for D44a.**
+2. **D45a-2 — D45a UI/discoverability follow-ups** (deferred, recorded
+   in DECISIONS D45a "Status" box): Settings → Workers section
+   (read-only state, per-file actions, the includeProjectRules toggle);
+   `/system-prompt` slash command (renders the join state for the
+   current mode + opens the files); secondary empty-composer card when
+   neither PLATO.md nor AGENTS.md is present; Academy per-member
+   `includeProjectRules` flag in `academy.yaml`. The 3-layer join is
+   the contract; the UI is the affordance layer (D45c: UI first).
 3. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
    philosopher (deferred; see DECISIONS D45b).
 4. **Chat-log message rendering.** Markdown, code blocks, tool-call

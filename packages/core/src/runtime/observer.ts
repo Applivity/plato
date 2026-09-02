@@ -104,6 +104,9 @@ export class ObserverAgent {
     try {
       const res = await this.provider.completeTurn({
         model: this.opts.model,
+        // D45a: philosophers never see PLATO.md or AGENTS.md — their
+        // system is the observer SYSTEM + their persona/academy role.
+        // No buildWorkerRole call here; no root access needed.
         system: SYSTEM + (this.opts.role ? '\n' + this.opts.role : ''),
         messages: [
           {

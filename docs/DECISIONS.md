@@ -834,7 +834,9 @@ The Academy status block (`.astat`) currently renders in *all three* modes, not 
 
 This honors D32's "academy.yaml present but orchestration != academy shows a Settings hint" without the parsed-member dump.
 
-**D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, TBD).**
+**D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, 0.17.0, shipped 2026-09-03).**
+
+> **Status (2026-09-03):** the three-layer join is shipped. `buildWorkerRole` lives at `packages/core/src/runtime/workerRole.ts`; the loop calls it at run start (`loop.ts:256-264`); the host passes `plato.worker.includeProjectRules`. Philosophers still see only their persona/academy role (D45a invariant: observer.ts never calls `buildWorkerRole`). **Deferred to a follow-up row in PROGRESS** (UI-first per D45c): the Settings → Workers section, the `/system-prompt` command, the secondary empty-composer card, and the Academy per-member `includeProjectRules` flag. The 3-layer join is the contract; the UI is the affordance layer.
 
 The worker is one agent with one prompt, regardless of mode. The customisation surface has the same shape in all three modes; only the sources differ.
 

@@ -25,17 +25,11 @@ import {
   promptBreakdown,
   shouldAutoCompact,
 } from './context.js';
+import { buildWorkerRole } from './workerRole.js';
 
-const SYSTEM_PROMPT =
-  'You are Plato, an AI coding agent working inside the user workspace. ' +
-  'Use the provided tools to inspect and change files. Prefer apply_diff ' +
-  'for edits and write_file only for new files. When you find defects, ' +
-  'enumerate them briefly, then fix them immediately with tool calls in ' +
-  'the same run — never stop to ask whether to proceed; write approval ' +
-  'is enforced by the UI, so the user always confirms changes. After ' +
-  'applying changes, re-read each changed region to verify the result, ' +
-  'and report anything you could not confirm. Stop and summarize once ' +
-  'the task is complete. Never touch secrets or ignore errors silently.';
+// D45a: the worker system prompt is assembled by `buildWorkerRole` at
+// the top of `runAgentLoop` (override >> PLATO.md default >> AGENTS.md).
+// The baseline-identity text lives in `DEFAULT_PLATO_BODY` (workerRole.ts).
 
 /** D37: clamp a 0..1 threshold into a sane range. */
 function clampThreshold(t: number): number {
@@ -129,6 +123,12 @@ export interface LoopOptions {
   model: string;
   /** Extra system text appended for this run (D31: team coder role). */
   role?: string;
+  /**
+   * D45a: when false, the PLATO.md and AGENTS.md layers are dropped from
+   * the worker system prompt. The override layer (above) is never gated.
+   * Default true; the host reads `plato.worker.includeProjectRules`.
+   */
+  includeProjectRules?: boolean;
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
   /**
@@ -241,10 +241,19 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let autoContinued = false;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
+  // D45a: build the three-layer worker system prompt (override +
+  // PLATO.md + AGENTS.md) before the loop starts. Loop is async so the
+  // disk reads for PLATO.md/AGENTS.md are awaited here. Philosophers
+  // (observer.ts) do NOT call this — they get a separate SYSTEM string.
+  const workerRole = await buildWorkerRole({
+    override: opts.role,
+    root: opts.root,
+    includeProjectRules: opts.includeProjectRules,
+  });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`
   // call reads the latest value.
-  let currentSystem = SYSTEM_PROMPT + (opts.role ? `\n${opts.role}` : '');
+  let currentSystem = workerRole.system;
   // D37: the provider's authoritative inputTokens from the previous
   // turn. Used as a secondary line in the context tooltip.
   let lastInputTokens: number | undefined;

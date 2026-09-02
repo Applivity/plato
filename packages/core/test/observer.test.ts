@@ -181,4 +181,26 @@ describe('ObserverAgent', () => {
     expect(seen).toContain('[tool] grep done');
     expect(seen).toContain('CODER RECENT REPLY');
   });
+
+  it('philosopher system does NOT include project-file content (D45a invariant)', async () => {
+    let seenSystem = '';
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        seenSystem = req.system;
+        return {
+          content: [{ type: 'text', text: '{"action":"noop"}' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const o = new ObserverAgent(p, { ...OPTS, role: 'A SKEPTICAL REVIEWER' });
+    await o.observe('fix the bug', []);
+    // D45a: philosophers see the observer SYSTEM + their role only.
+    // PLATO.md / AGENTS.md / DEFAULT_PLATO_BODY must NOT appear here.
+    expect(seenSystem).not.toContain('Operate within the user-selected mode');
+    expect(seenSystem).not.toContain('PROJECT TUNING');
+    expect(seenSystem).not.toContain('AGENTS BODY');
+    expect(seenSystem).toContain('A SKEPTICAL REVIEWER');
+  });
 });

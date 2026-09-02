@@ -1895,6 +1895,13 @@ class ChatHost {
         }),
         model: ref,
         role: workerMember?.role,
+        // D45a: opt-out for the PLATO.md + AGENTS.md layers. Default true;
+        // the host reads `plato.worker.includeProjectRules` (workspace
+        // setting). The loop calls buildWorkerRole() to assemble the
+        // joined worker system prompt.
+        includeProjectRules: vscode.workspace
+          .getConfiguration('plato')
+          .get<boolean>('worker.includeProjectRules', true),
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),

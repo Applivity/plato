@@ -451,3 +451,59 @@ describe('runAgentLoop context + compaction (D37)', () => {
     expect(notices.join(' ')).toMatch(/compaction failed/);
   });
 });
+
+describe('runAgentLoop worker system prompt (D45a)', () => {
+  function capturingProvider(): ChatProvider & { seenSystem: string[] } {
+    const seenSystem: string[] = [];
+    return {
+      id: 'anthropic',
+      seenSystem,
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        seenSystem.push(req.system);
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+  }
+
+  it('sends DEFAULT_PLATO_BODY when no project files exist and rules are on', async () => {
+    const { DEFAULT_PLATO_BODY } = await import('../src/runtime/workerRole.js');
+    const p = capturingProvider();
+    // BASE.root = process.cwd(). The Plato repo has no PLATO.md/AGENTS.md
+    // at the root, so the bundled default is the PLATO layer. The join
+    // is empty-override + default + missing-AGENTS, so the system string
+    // is just the default PLATO body.
+    await runAgentLoop({ ...BASE, provider: p });
+    expect(p.seenSystem.length).toBeGreaterThan(0);
+    expect(p.seenSystem[0]).toContain(DEFAULT_PLATO_BODY);
+  });
+
+  it('drops project layers when includeProjectRules is false', async () => {
+    const p = capturingProvider();
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      includeProjectRules: false,
+    });
+    expect(p.seenSystem[0]).not.toContain('Operate within the user-selected mode');
+  });
+
+  it('appends opts.role to the joined worker prompt when present', async () => {
+    const { DEFAULT_PLATO_BODY } = await import('../src/runtime/workerRole.js');
+    const p = capturingProvider();
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      role: 'YOU ARE A FIX-BOT',
+    });
+    // Override is layered on top of the default PLATO body.
+    expect(p.seenSystem[0]).toContain('YOU ARE A FIX-BOT');
+    expect(p.seenSystem[0]).toContain(DEFAULT_PLATO_BODY);
+    expect(p.seenSystem[0]!.indexOf('YOU ARE A FIX-BOT')).toBeLessThan(
+      p.seenSystem[0]!.indexOf(DEFAULT_PLATO_BODY),
+    );
+  });
+});
