@@ -621,6 +621,52 @@ a reserved slot for upcoming command / document affordances
 triangle, edit = pencil, act = terminal, auto = refresh arc.
 Icons inherit their color from the active mode class.
 
+**D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
+Three founder follow-ups to D39:
+
+(e) *Ring returns to the textarea as an overlay.* D39 moved the
+ring into the composer bar; the founder preferred the D37-style
+overlay. The ring (shrunk to 24px) sits inside a new
+`.textarea-wrap` (`position:relative`) with
+`position:absolute; top:9px; left:9px`, and the textarea reserves
+the corner with `padding-left:38px` so typed text never runs
+under it. The tooltip keeps opening upward. The composer bar
+simplifies to: spacer, pause/cancel, future-attach, mode picker,
+send.
+
+(f) *Act color = orange, not red.* Red read as danger/error,
+which is wrong for "act = full power, every step approved."
+act becomes `#e08a3c` (text `#b8651a`).
+
+(g) *Border truncation fix.* The 1.5px textbox border sat against
+the composer-bar's 1px top divider and looked doubled/clipped.
+Footer bottom padding 4px → 8px; the focus box-shadow that
+doubled the border is replaced with a 1px inset shadow;
+`border-width:1.5px` moved to the `#q` base rule.
+
+**D39f — Ring to top-right, full-width textbox, mode color swap (M4.1, 0.15.0).**
+Three founder corrections to D39e:
+
+(a) *Ring moves to the top-right corner* (D39e had it top-left by
+miscommunication). `.ring-wrap` → `right:9px`; textarea padding
+flips to `9px 38px 9px 11px`. The breakdown tooltip reverts to
+the D37-style right anchor (`right:-4px`, no translateX) — a
+centered 240px tooltip would fall off the panel's right edge.
+
+(b) *Full-width textbox restored.* Wrapping the textarea in
+`.textarea-wrap` (a plain block, not flex) silently broke `#q`'s
+`flex:1`, so it fell back to its default `cols`-based width
+(~20 chars). Fix: `width:100%` on `#q` (safe under the global
+`* { box-sizing:border-box }`).
+
+(c) *Mode color swap.* plan ↔ auto trade palettes; edit becomes
+blue. Final palette: plan = purple (`#9575cd` / `#7c4dbf`),
+edit = blue (`#4a9eff`), act = orange (`#e08a3c` / `#b8651a`),
+auto = green (`#3bba6a` / `#1a8a4a`). Applied to the four places
+per mode: textbox border, mode-picker text, send button, popover
+icon chip (default + active).
+
+
 **D37a — D37 follow-ups: catalog-only trip, model-aware summary cap, Ornith removed (M4.1, 0.13.1).**
 Three corrections to D37 raised during review:
 
