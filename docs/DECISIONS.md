@@ -620,6 +620,37 @@ a reserved slot for upcoming command / document affordances
 (h) *Mode icons.* Inline SVGs, no extra request: plan = play
 triangle, edit = pencil, act = terminal, auto = refresh arc.
 Icons inherit their color from the active mode class.
+**D40 — Conversation title: model-generated, editable; compact pill removed (M4.1, 0.15.0).**
+Three founder directives:
+
+(a) *Status row rearranged.* The "＋ new" button moves to the right
+of the status row (after the orchestration chip). The
+"compact: auto" pill is deleted — it duplicated the compaction
+mode that the context ring's tooltip (D38b) already controls and
+shows. The pill's markup, its `applyCompaction()` DOM updates, and
+all `.compact-pill` CSS are gone; the ring's tooltip controls stay
+in sync as before.
+
+(b) *Model-generated conversation title.* Where "＋ new" sat, a
+`.ctitle` chip shows the conversation title. After the first
+completed run of an untitled conversation the host asks the same
+model for a 3–6 word title — one cheap non-streaming
+`completeTurn()` on the run's own connection (`tools: []`,
+`maxTokens: 40`, ~40 output tokens, quotes/period stripped, 80-char
+cap). Fire-and-forget: failures are silent and the next run
+retries. Title state lives in a `TITLE_KEY` workspaceState key,
+restored with the log, cleared by New Chat, adopted from the
+archived session on resume.
+
+(c) *Hover-to-edit.* Hovering the chip reveals a pencil; clicking
+swaps in an inline input (same pill metrics). Enter or click-away
+commits a `{type:'rename'}` message; Esc cancels. A user rename
+sets `titleManuallySet`, after which the generator never
+overwrites. `archiveCurrentChat()` prefers the generated/renamed
+title for `StoredChat.title` (first user message remains the
+fallback), so the History page and the header agree.
+
+**D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
 
 **D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
 Three founder follow-ups to D39:
