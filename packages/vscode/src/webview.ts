@@ -53,24 +53,39 @@ export function chatHtml(): string {
   #modelBtn-label, .model-btn-label { white-space:nowrap; overflow:hidden;
                                       text-overflow:ellipsis; }
   /* D39: paired history + settings nav, right side of the header. */
-  .headnav { margin-left:auto; display:inline-flex; gap:1px; padding:3px;
-             border:1px solid var(--pl-border); border-radius:6px; }
-  #hist, #gear { font-size:12px; padding:4px 9px; border:1px solid transparent;
-                 border-radius:4px; background:transparent; cursor:pointer;
-                 color:var(--pl-muted); }
-  #hist:hover, #gear:hover { border-color:var(--pl-border);
-                             color:var(--vscode-editor-foreground); }
+  .headnav { margin-left:auto; display:inline-flex; gap:2px; padding:2px;
+             border:1px solid var(--pl-border); border-radius:999px; }
+  /* D39g: square hit areas, centered icons, and a highlighted state
+     for whichever nav page is open (history / settings). */
+  #hist, #gear { display:inline-flex; align-items:center; justify-content:center;
+                 width:24px; height:20px; padding:0; border:none;
+                 border-radius:999px; background:transparent; cursor:pointer;
+                 color:var(--pl-muted);
+                 transition:color .1s, background .1s; }
+  #hist:hover, #gear:hover { color:var(--vscode-editor-foreground);
+                             background:rgba(128,128,128,.1); }
+  body.show-history #hist, body.show-settings #gear {
+                 color:var(--vscode-editor-foreground);
+                 background:rgba(128,128,128,.14); }
   /* D39: status row under the model row - new-chat, compaction status,
      orchestration chip, run-status indicator. Compact pill is no longer
      a button; the right-side nav is now history+settings paired. */
-  .hstatus { font-size:11px; color:var(--pl-muted); gap:10px; }
+  .hstatus { font-size:11px; color:var(--pl-muted); gap:10px; align-items:center; }
   .hstatus .hstatus-spacer { flex:1; }
-  #new { font-family:inherit; background:transparent;
-         border:1px solid var(--pl-border); border-radius:4px;
-         padding:2px 8px; font-size:11px; cursor:pointer;
-         color:var(--pl-muted); }
-  #new:hover { color:var(--vscode-editor-foreground);
-               border-color:var(--vscode-focusBorder, #6a6a6a); }
+  /* D39g: one shared chip style for the status-row buttons (#new and
+     #orchChip). Same muted/bordered color language as .bar-btn, but
+     pill-shaped so the status row reads as chips instead of form
+     controls. Identical metrics keep the two controls level. */
+  #new, .orch-chip {
+             font-family:inherit; display:inline-flex; align-items:center;
+             background:transparent; border:1px solid var(--pl-border);
+             border-radius:999px; padding:2px 10px; font-size:11px;
+             line-height:1.4; cursor:pointer; color:var(--pl-muted);
+             transition:color .1s, border-color .1s, background .1s; }
+  #new:hover, .orch-chip:hover {
+             color:var(--vscode-editor-foreground);
+             border-color:var(--vscode-focusBorder, #6a6a6a);
+             background:rgba(128,128,128,.08); }
   .icn { width:14px; height:14px; fill:none; stroke:currentColor;
          stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
          vertical-align:-2px; }
@@ -85,10 +100,9 @@ export function chatHtml(): string {
           cursor:pointer; outline:none; }
   #rsel:hover { background:rgba(128,128,128,.08); }
   #rsel[hidden] { display:none; }
-  #new { border:1px solid var(--pl-border); border-radius:10px;
-         padding:2px 9px; font-size:12px; cursor:pointer;
-         background:transparent; color:var(--pl-muted); }
-  #new:hover { border-color:var(--pl-accent); color:var(--vscode-editor-foreground); }
+  /* D39g: the duplicate #new rule that overrode the one above (pill
+     radius vs 4px) is gone - #new is defined once, in the .hstatus
+     chip block. */
   /* D39b: chat log grows to fill available space; the footer (now
      two rows) takes its own intrinsic height. The textbox grows
      vertically up to 220px (was 160px) and the textbox itself is
@@ -447,10 +461,9 @@ export function chatHtml(): string {
                  color:var(--vscode-errorForeground, #f66); }
   .pdesc { font-size:11px; color:var(--pl-muted); font-style:italic;
            margin:4px 0 8px; padding:6px 8px; border-left:2px solid var(--pl-border); }
-  .orch-chip { font-size:10.5px; padding:1px 8px; border:1px solid var(--pl-border);
-               border-radius:9px; cursor:pointer; color:var(--pl-muted); }
-  .orch-chip:hover { border-color:var(--vscode-focusBorder, #666);
-                     color:var(--vscode-foreground, #ccc); }
+  /* D39g: #orchChip now shares the status-row chip style with #new
+     (see the .hstatus block) - the old 10.5px one-off chip rule is
+     gone. */
   /* Pinned run-status bar (Claude-code style): sits between the scrollable
      #log and the footer, so it is ALWAYS visible during a run — content
      scrolling below never buries it. Hidden otherwise & on settings/history. */
