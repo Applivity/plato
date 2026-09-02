@@ -1327,22 +1327,37 @@ class ChatHost {
           },
         ],
         tools: [],
-        maxTokens: 40,
+        // Headroom: some models prepend reasoning/newlines; still cheap.
+        maxTokens: 120,
       });
       const raw = res.content
         .map((c) => (c.type === 'text' ? c.text : ''))
         .join(' ')
+        // Some OpenAI-compatible reasoning models emit inline <think>.
+        .replace(/<think>[\s\S]*?<\/think>/gi, '')
         .replace(/^["'\u201c\u201d]+|["'\u201c\u201d.]+$/g, '')
         .trim()
         .slice(0, 80);
-      if (!raw || this.chatTitle || this.titleManuallySet) {
+      if (this.chatTitle || this.titleManuallySet) {
         return;
       }
-      this.chatTitle = raw;
-      await this.ctx.workspaceState.update(TITLE_KEY, raw);
-      this.send('title', raw);
-    } catch {
-      // Silent: an untitled conversation is fine; the next run retries.
+      if (raw) {
+        this.chatTitle = raw;
+      } else {
+        // Fallback: derive a short title from the first user message so
+        // a completed run always names the conversation, even when the
+        // title call returns nothing usable.
+        const words = seed.trim().split(/\s+/).slice(0, 6).join(' ');
+        if (!words) {
+          return;
+        }
+        this.chatTitle = words.slice(0, 40);
+      }
+      await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
+      this.send('title', this.chatTitle);
+    } catch (e) {
+      // Diagnostics only (Extension Host console); the UI stays silent.
+      console.warn('[plato] title generation failed:', e);
     }
   }
 

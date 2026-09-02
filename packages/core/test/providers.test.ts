@@ -215,6 +215,24 @@ describe('OpenAICompatProvider.completeTurn', () => {
     });
   });
 
+  it('omits the tools key entirely for tool-less turns (D40b)', async () => {
+    // OpenAI-compatible endpoints 400 on an empty tools array
+    // (minItems: 1) — the D40 conversation-title call hit exactly this.
+    const fetchMock = mockFetch({ choices: [{ message: { content: 't' } }] });
+    const p = createProvider('openai', { apiKey: 'k', fetchImpl: fetchMock });
+    await p.completeTurn({
+      model: 'openai:gpt-4o',
+      system: 's',
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      tools: [],
+      maxTokens: 10,
+    });
+    const fn = fetchMock as unknown as ReturnType<typeof vi.fn>;
+    const init = fn.mock.calls[0]![1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect('tools' in body).toBe(false);
+  });
+
   it('throws a readable error on non-200', async () => {
     const p = createProvider('openai', {
       apiKey: 'k',

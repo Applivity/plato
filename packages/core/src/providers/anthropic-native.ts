@@ -55,15 +55,21 @@ export class AnthropicNativeProvider implements ChatProvider {
       extra = { thinking: { type: 'enabled', budget_tokens: budget } };
     }
 
+    // D40b: omit tools entirely for tool-less turns instead of sending
+    // an empty array — consistent with the OpenAI-compat adapter.
     const res = await this.client.messages.create({
       model: stripPrefix(req.model),
       max_tokens: maxTokens,
       system: req.system,
-      tools: req.tools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
-      })),
+      ...(req.tools.length > 0
+        ? {
+            tools: req.tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
+            })),
+          }
+        : {}),
       messages,
       ...extra,
     });

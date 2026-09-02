@@ -94,15 +94,20 @@ export class OpenAICompatProvider implements ChatProvider {
       model: this.strip(req.model),
       max_tokens: req.maxTokens,
       messages,
-      tools: req.tools.map((t) => ({
+    };
+    // D40b: an empty tools array is a 400 on OpenAI-compatible
+    // endpoints (minItems: 1). Omit the key entirely for tool-less
+    // turns (e.g. the D40 conversation-title call).
+    if (req.tools.length > 0) {
+      body.tools = req.tools.map((t) => ({
         type: 'function',
         function: {
           name: t.name,
           description: t.description,
           parameters: t.parameters,
         },
-      })),
-    };
+      }));
+    }
     if (req.reasoning) {
       const efforts = { low: 'low', medium: 'medium', high: 'high' } as const;
       body.reasoning_effort = efforts[req.reasoning.effort];
