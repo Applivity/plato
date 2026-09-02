@@ -112,14 +112,23 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **Composer commands/docs slot.** The reserved bar gap (D39) for a
-   future `@` command menu + file attachment. Bigger lift.
-2. **Chat-log message rendering.** Markdown, code blocks, tool-call
+1. **D44 — slash-commands slot + file attachment.** The reserved bar gap
+   (D39). 5 commands (`/plan` `/fix` `/review` `/commit` `/test`) + a
+   paperclip file attach with secret deny-list. Design locked in DECISIONS
+   D44a. → Ship the **D44b** Settings fix first (gate the Academy status
+   block on `mode === 'academy'`).
+2. **D45 — project files.** `PLATO.md` + `AGENTS.md` + academy
+   `worker.role`, a three-layer worker prompt join identical across
+   solo/duo/academy. Design locked in DECISIONS D45a. Includes the
+   `/system-prompt` command and a Settings → Workers section.
+3. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
+   philosopher (deferred; see DECISIONS D45b).
+4. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.
-3. **History run-detail view.** Friendlier rendering of a run's
+5. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
-4. **Small wins:** title regenerate affordance (hover rename → add
+6. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
 ## Ground rules for any agent working here
@@ -131,6 +140,13 @@ may not be available when you work; everything you need is in this repo.
   and record the proposed change in DECISIONS.md before deviating.
 - Match existing conventions; no new frameworks/libraries without a
   recorded reason.
+- **Customisation principle (D45c): UI first, yaml as backup.** Every
+  user-facing knob must be discoverable and editable in the in-panel UI
+  before (or in the same milestone as) the underlying yaml is read. Yaml
+  is the power-user fallback, not the primary surface.
+- **Pre-release (D45d): no legacy/migration support.** Plato is not
+  shipped; moving a customisation between surfaces needs no migration
+  path or deprecation cycle — record the move in DECISIONS and go.
 
 ## Non-negotiable safety rules
 

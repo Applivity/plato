@@ -808,6 +808,85 @@ The queue directive: remove the seeds, add the onboarding.
   connection only when that connection exists; it no longer powers a
   phantom default. Users relying on it must re-add the Anthropic preset.
 
+**D44a — Slash-commands slot: 5 commands + file attachment (M4.1, 0.17.0).**
+
+The composer bar's reserved `.future-attach` slot (D39) becomes real. Scope locked today, code lands in D44:
+
+- **5 slash commands** registered in a single popover that opens when the user types `/` at position 0 or after whitespace. Each expands into prompt text the model sees, plus mode / payload side-effects described below:
+  - `/plan [task]` — expands a planning brief; auto-flips the mode to `plan` for the run.
+  - `/fix [issue]` — expands a "diagnose → propose diff → apply after approval" scaffold; mode stays.
+  - `/review [paths…]` — expands an opinionated-critique brief; auto-flips to `plan`; if paths are given the host attaches those files; no paths = "look at the working tree."
+  - `/commit` — runs in `plan` mode (read-only on the repo); expansion is a "produce a conventional-commit message and stop" scaffold; the host pulls `git status` + `git diff` into context.
+  - `/test [target]` — expansion is "find the test command, run it, report failures and likely causes"; mode stays. Defaults to `act` (per-action approval), never `auto`.
+- **File attachment** — the `.future-attach` div becomes a paperclip button. Click → `vscode.workspace.openDialog({canSelectMany, canSelectFiles:true, canSelectFolders:false})`. Selected paths post `attach-files`; the host reads each, runs the secret deny-list (`isSecretPath()` from `core/security`), and inlines the content into the message text as fenced blocks (one per file). Rendered as removable chips above the textarea. Hard cap: 20 files, 200 KB each (constants in v1; settings later).
+- **The slash popover** uses the existing `.popover` / `.popover-row` styles (D39). Selection replaces the `/token` at the cursor and positions the cursor after the expansion. Esc and click-outside close.
+- **The `core/expandSlash.ts` module** is the canonical source of command metadata: `{id, label, expand, sideEffects}`. The webview reads it (via a new payload) and renders the popover from it; the host calls `expandSlash()` when the user picks a command. Commands are *textual shortcuts*, not a plugin system.
+- **`/system-prompt` is registered in the slash table with a stub handler** (D45 implements it for real).
+- **No new core capability** is added beyond file reading (which already exists for the `read_file` tool). The deny-list is the existing one. The host's only new responsibility is reading attached files and inlining them.
+
+**D44b — Settings → Orchestration: Academy status block, gate on mode (M4.1, 0.17.0, founder-reported).**
+
+The Academy status block (`.astat`) currently renders in *all three* modes, not just Academy. The `orch.academy` payload is always populated by the host (`academyStatus()` is unconditional), so the user sees the parsed member list and the "Open academy.yaml" button under Solo and Duo, which is misleading — the file isn't used in those modes.
+
+- **In Academy mode** — block renders as today: full member list, "Open academy.yaml" button, error/create-example affordances. No change.
+- **In Solo and Duo** — if `orch.academy.available`, render a brief one-line hint: "academy.yaml detected — switch to Academy to use it" with a small "Switch to Academy" button (reuses `set-orchestration`). If not available, render nothing (no spurious "Create example" CTA in modes that don't use the file).
+- The "Open academy.yaml" button only renders in Academy mode (the file is only meaningful there).
+
+This honors D32's "academy.yaml present but orchestration != academy shows a Settings hint" without the parsed-member dump.
+
+**D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, TBD).**
+
+The worker is one agent with one prompt, regardless of mode. The customisation surface has the same shape in all three modes; only the sources differ.
+
+- **File locations (operator-tunable, all optional):**
+  - `AGENTS.md` (or `CLAUDE.md` fallback) at the repo root — the *project manual*. Architecture, build, conventions.
+  - `PLATO.md` at the repo root — how Plato's worker behaves in this project. The operator's tuning file. Ships with a default in the VSIX (`packages/vscode/resources/PLATO.md`); loader falls back to it when the file is missing.
+  - `academy.yaml` `worker.role:` (char-capped at 4000) — per-team override, **Academy mode only**.
+- **Join order, identical in all three modes:**
+  ```
+  [mode-specific override] >> [PLATO.md body or shipped default] >> [AGENTS.md body]
+  ```
+  - Solo: override slot empty.
+  - Duo: override slot empty.
+  - Academy: override slot is `academy.yaml`'s `workerMember.role` if present.
+- **Philosophers never see any of these files.** Their prompt is sourced as today: `PERSONAS[].role` (Duo, picked via `plato.duo.persona`) or `academy.yaml` `member.role` (Academy). Solo has no philosophers.
+- **The join site is `core/src/runtime/loop.ts` line 247**, where `SYSTEM_PROMPT + opts.role` is the current formula. After D45:
+  ```ts
+  const workerRole = buildWorkerRole({ override: opts.role, root: opts.root });
+  ```
+  The new helper does the three-layer join with the in-memory default as the PLATO.md fallback. The compaction summary (`context.ts:305-307`) already operates on the joined string and needs no change.
+- **Opt-out:** `plato.worker.includeProjectRules` (workspace, default true) gates layers 2 and 3 together for all modes. Academy adds a per-member `includeProjectRules` flag in academy.yaml. Layer 1 (mode-specific override, if any) is never gated.
+- **Discoverability:** `/system-prompt` command (renders the join state for the current mode + opens the files), secondary empty-composer card when neither PLATO.md nor AGENTS.md is present, Settings → Workers section (read-only state, per-file actions).
+- **The existing `SYSTEM_PROMPT` constant** stays at `loop.ts:29-38` but is renamed to `WORKER_IDENTITY` and reframed as the *baseline identity* ("you are Plato, an AI coding agent…"). PLATO.md and AGENTS.md sit on top. The default PLATO.md content is derived from the existing DECISIONS.md operational rules (D08 modes, D19 safety, D31 budgets, D32 orchestration contract, D37 compaction).
+- **Naming note:** PLATO.md and AGENTS.md live at the repo root, not under `.plato/`. The operator's mental model is "open the project, see both files." `.plato/` remains the namespace for team / MCP / Duo config. The shipped default for PLATO.md lives in the VSIX as a static asset; the loader reads the on-disk file if present, otherwise returns the bundled default. No surprise file writes.
+
+**D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
+
+Duo philosophers are hardcoded in `core/src/teams/personas.ts` (five personas, literal role strings). The user has one override surface today (`plato.observer.role` replaces the persona's role wholesale) and a flat list of settings for the other tiers. Academy has richer per-member config via yaml. The asymmetry is real and the user needs richer Duo config too.
+
+**Deferred scope** (recorded so the direction is locked):
+- New file: `.plato/duo.yaml` with `philosopher: { name, role, model, persona, pause, cancel, maxInterventions }`.
+- New schema: `duo.schema.json` bound via YAML extension.
+- Discovery: `.plato/duo.yaml` if present, else settings (legacy default). Precedence: yaml > settings.
+- Settings UI: a "Duo — philosopher" block that shows the file's parsed config and offers "Open duo.yaml" + "Edit in settings" affordances. Round-trip between file and settings.
+- The `plato.observer.role` setting becomes the *fallback* when `duo.yaml` is absent.
+
+Not in D44 / D45. Queued in HANDOFF.
+
+**D45c — Customisation principle: UI first, yaml as backup (M4.1, applies to all future work).**
+
+Plato is pre-release. Every new user-facing customisation MUST be discoverable and editable in the in-panel UI before (or in the same milestone as) the underlying yaml is read. The yaml exists for version control, sharing across teammates, and power-user workflows — it is the *fallback* surface, not the primary one. The user who only opens Settings should be able to discover and adjust every shipped knob.
+
+- When a feature is yaml-driven (Duo customisation, Academy members, project files), it MUST have a Settings UI affordance for "open the file" at minimum, and ideally a form-based editor. The "Create example" button (D33) is the template; "Open <file>" is the floor.
+- When a feature is settings-driven, exposing a yaml equivalent is a power-user enhancement, not a requirement. PLATO.md and AGENTS.md are the exception — they're discovered by the worker at runtime, so the file *is* the surface — but they're still opened by `/system-prompt` rather than edited through the chat.
+- Settings UI must never require yaml knowledge to discover a feature. "Create example" is the bridge; once the file exists, the UI keeps showing the parsed state for read-only inspection (D11: yaml is the interface, the buttons are the on-ramp).
+
+**D45d — Pre-release status: no legacy / migration support (M4.1, applies to all future work).**
+
+Plato is not released publicly. There is no v0 → v1 user base, no shared history, no extension marketplace, no published schema. Customisations moving between surfaces (settings → yaml, yaml → file, file → different file) do not require migration paths, compatibility shims, or deprecation cycles. When a customisation moves, the new surface is the only surface; the old one is ignored; the user is told via the D-decision that lands alongside the change.
+
+This is the "D45c" complement: not just "UI first" but "we can break things on purpose because no one depends on the old shape."
+
 ## Open items carried forward
 
 - **Provider matrix gap (flagged 2026-08-25): RESOLVED by D25 (adapters,
