@@ -2107,7 +2107,7 @@ export function chatHtml(): string {
         break;
       }
       case 'settings': showSettings(m); break;
-      case 'history': showHistory(m.runs); break;
+      case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
       case 'run': showRun(m); break;
       case 'title': setTitle(String(m.text || '')); break;
       case 'restore':
