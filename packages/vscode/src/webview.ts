@@ -2037,8 +2037,12 @@ export function chatHtml(): string {
       ctxbTT.classList.remove('show');
     });
     ctxCnow.addEventListener('mousemove', (e) => {
-      ctxbTT.style.left = e.clientX + 10 + 'px';
-      ctxbTT.style.top = e.clientY - 26 + 'px';
+      // D42i: draw left-center of the cursor so it never clips at
+      // VS Code's right edge; clamp within the viewport.
+      ctxbTT.style.left =
+        Math.max(6, e.clientX - ctxbTT.offsetWidth - 10) + 'px';
+      ctxbTT.style.top =
+        Math.max(6, e.clientY - ctxbTT.offsetHeight / 2) + 'px';
     });
   }
   const g = document.getElementById('g');
