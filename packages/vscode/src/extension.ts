@@ -11,7 +11,6 @@ import {
   createProvider,
   splitModelRef,
   modelSupportsReasoning,
-  MODEL_CATALOG,
   PROVIDER_PRESETS,
   fetchModelPool,
   maxContextFor,
@@ -111,31 +110,9 @@ function rawUserConnections(): ConnectionConfig[] {
   return list;
 }
 
-/** Reads plato.connections and seeds the built-in defaults (D26a). */
+/** Reads plato.connections (D26a; no built-in seeds since D43). */
 function readConnections(): ConnectionConfig[] {
-  const list = rawUserConnections();
-  const ids = new Set(list.map((c) => c.id));
-  if (!ids.has('anthropic')) {
-    list.unshift({
-      id: 'anthropic',
-      kind: 'anthropic',
-      // Sensible starting set; Refresh models replaces it with live data.
-      models: MODEL_CATALOG.filter((e) => e.id.startsWith('claude')).map(
-        (e) => e.id,
-      ),
-    });
-  }
-  if (!ids.has('openai')) {
-    list.push({
-      id: 'openai',
-      kind: 'openai',
-      baseUrl: 'https://api.openai.com/v1',
-      models: MODEL_CATALOG.filter((e) => !e.id.startsWith('claude')).map(
-        (e) => e.id,
-      ),
-    });
-  }
-  return list;
+  return rawUserConnections();
 }
 
 /** Exact token facts beat estimated dollars (D26c). */
@@ -154,6 +131,13 @@ export function activate(ctx: vscode.ExtensionContext): void {
       'plato.setApiKey',
       async (connectionArg?: string) => {
         const ids = readConnections().map((c) => c.id);
+        // D43: nothing to attach a key to before the first connection.
+        if (ids.length === 0) {
+          void vscode.window.showInformationMessage(
+            'No providers connected yet — add one in the Plato chat panel (⚙ Settings → Providers) first.',
+          );
+          return;
+        }
         const pick =
           connectionArg && ids.includes(connectionArg)
             ? connectionArg
@@ -185,6 +169,17 @@ export function activate(ctx: vscode.ExtensionContext): void {
   ctx.subscriptions.push(
     vscode.commands.registerCommand('plato.manageKeys', async () => {
       const conns = readConnections();
+      // D43: nothing to manage before the first connection.
+      if (conns.length === 0) {
+        const open = await vscode.window.showInformationMessage(
+          'No providers connected yet — add one first.',
+          'Open Settings',
+        );
+        if (open) {
+          await vscode.commands.executeCommand('plato.openChat');
+        }
+        return;
+      }
       const pick = await vscode.window.showQuickPick(
         conns.map((c) => ({
           label: c.id,
@@ -457,6 +452,7 @@ class ChatHost {
             void this.panel.webview.postMessage({
               type: 'restore',
               log: decorated,
+              hasConnections: readConnections().length > 0,
               model: this.effectiveModel(),
               title: this.chatTitle,
             });
@@ -775,6 +771,7 @@ class ChatHost {
           void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
+            hasConnections: readConnections().length > 0,
             model: this.effectiveModel(),
             title: this.chatTitle,
           });
@@ -990,6 +987,8 @@ class ChatHost {
   private postModelState(): void {
     void this.panel.webview.postMessage({
       type: 'models',
+      // D43: the webview toggles its empty-composer state from this.
+      hasConnections: readConnections().length > 0,
       items: this.modelItems(),
       reasoningCapable: this.reasoningCapable(),
       reasoning: vscode.workspace
@@ -1304,18 +1303,25 @@ class ChatHost {
     await this.panel.webview.postMessage({
       type: 'restore',
       log: [],
+      hasConnections: readConnections().length > 0,
       title: '',
     });
   }
 
   /** Session override, else the plato.model workspace setting. */
   private effectiveModel(): string {
-    return (
+    const configured =
       this.modelOverride ??
       vscode.workspace
         .getConfiguration('plato')
-        .get<string>('model', 'anthropic:claude-sonnet-4-5')
-    );
+        .get<string>('model', 'anthropic:claude-sonnet-4-5');
+    // D43: the built-in seeds are gone — if the configured ref's
+    // connection no longer exists, fall back to the first selectable
+    // model so the header dropdown and academy example stay coherent.
+    if (this.resolveConnection(configured)) {
+      return configured;
+    }
+    return this.modelItems()[0]?.value ?? configured;
   }
 
   private resolveConnection(ref: string): ConnectionConfig | null {
@@ -1499,6 +1505,12 @@ class ChatHost {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       this.send('error', 'Open a folder before asking Plato.');
+      return;
+    }
+    // D43: nothing to run until a provider is connected. The webview
+    // hides the composer entirely in this state; guard direct sends.
+    if (readConnections().length === 0) {
+      this.send('error', 'Connect a provider first — open Settings → Providers.');
       return;
     }
     // Orchestration (D32): the SETTING decides the mode, never file presence.

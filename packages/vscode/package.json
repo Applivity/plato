@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -18,7 +18,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-vscode-0.15.0.vsix --force"
+    "install:vsix": "code --install-extension plato-vscode-0.16.0.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -45,7 +45,7 @@
         "plato.connections": {
           "type": "array",
           "default": [],
-          "description": "Named OpenAI-compatible/Anthropic connections (D26a). Built-in defaults: anthropic (native), openai (api.openai.com/v1). Example: [{\"id\":\"litellm\",\"kind\":\"openai\",\"baseUrl\":\"http://localhost:4000/v1\",\"models\":[\"gpt-4o\"]}]",
+          "description": "Named OpenAI-compatible/Anthropic connections (D26a, D43: nothing is pre-seeded). Example: [{\"id\":\"litellm\",\"kind\":\"openai\",\"baseUrl\":\"http://localhost:4000/v1\",\"models\":[\"gpt-4o\"]}]",
           "items": {
             "type": "object",
             "required": ["id", "kind"],

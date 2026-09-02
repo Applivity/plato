@@ -116,6 +116,22 @@ export function chatHtml(): string {
      is gone. */
   #pp[hidden], #cx[hidden] { display:none; }
   #pp:disabled, #cx:disabled { opacity:.45; cursor:default; }
+  /* D43: empty first-run state — the composer is replaced by a friendly
+     explainer + CTA until a provider exists. #log and footer stay hidden
+     (both are display:flex by author CSS, so [hidden] alone is not enough). */
+  #log[hidden] { display:none; }
+  footer[hidden] { display:none; }
+  #emptyState { flex:1; display:flex; align-items:center;
+                justify-content:center; padding:24px; }
+  #emptyState[hidden] { display:none; }
+  .empty-card { max-width:340px; text-align:center; }
+  .empty-card .empty-logo { width:34px; height:34px; margin:0 0 10px;
+                            fill:none; stroke:var(--pl-muted); stroke-width:1.6;
+                            stroke-linecap:round; stroke-linejoin:round; }
+  .empty-card h3 { margin:0 0 8px; font-size:14px; font-weight:600; }
+  .empty-card p { margin:0 0 16px; font-size:12px; line-height:1.6;
+                  color:var(--pl-muted); }
+  #emptyCta { font-size:12.5px; }
   /* D39b: footer is now a two-row stack - textarea on top, controls
      on bottom (in .composer-bar with its own top border). The footer
      itself no longer needs the right-side send button column. */
@@ -218,13 +234,13 @@ export function chatHtml(): string {
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
   body.show-settings header:not(.shead), body.show-settings #log,
   body.show-settings #obs, body.show-settings footer,
-  body.show-settings #statusbar { display:none !important; }
+  body.show-settings #statusbar, body.show-settings #emptyState { display:none !important; }
   #settingsPage { display:none; }
   body.show-settings #settingsPage { display:flex; flex-direction:column;
                                      height:100vh; }
   body.show-history header:not(.shead), body.show-history #log,
   body.show-history #obs, body.show-history footer,
-  body.show-history #statusbar { display:none !important; }
+  body.show-history #statusbar, body.show-history #emptyState { display:none !important; }
   #historyPage { display:none; }
   body.show-history #historyPage { display:flex; flex-direction:column;
                                    height:100vh; }
@@ -351,6 +367,13 @@ export function chatHtml(): string {
   .add-card { border:1px dashed var(--pl-border); border-radius:8px;
               padding:16px 18px; margin-top:14px;
               background:rgba(128,128,128,.03); }
+  .onboard-card { border:1px solid var(--pl-accent); border-radius:8px;
+                  padding:14px 16px; margin-bottom:14px;
+                  background:rgba(74,158,255,.06); }
+  .onboard-card .onboard-title { font-size:13px; font-weight:600;
+                                 margin-bottom:6px; }
+  .onboard-card .onboard-body { margin:0; font-size:12px; line-height:1.55;
+                                color:var(--pl-muted); }
   .add-card .add-title { font-size:13px; font-weight:600; margin-bottom:12px; }
   .add-card .grid { display:grid; grid-template-columns:130px 1fr;
                     gap:10px 12px; align-items:center; }
@@ -758,6 +781,16 @@ export function chatHtml(): string {
   </div>
 </header>
 <div id="log"></div>
+<div id="emptyState" hidden>
+  <div class="empty-card">
+    <svg class="empty-logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <h3>Connect your first provider</h3>
+    <p>Plato signs in to a provider when it answers — Anthropic, OpenAI,
+       OpenRouter, or any compatible endpoint. Your API key stays in
+       VS Code&rsquo;s secure storage.</p>
+    <button id="emptyCta" class="btn-send mode-act" type="button">Connect a provider</button>
+  </div>
+</div>
 <div id="statusbar" hidden></div>
 <footer style="position:relative;">
   <div class="textarea-wrap">
@@ -859,6 +892,8 @@ export function chatHtml(): string {
   let lastThreshold = 0.8;
   let lastModelMaxContext = null;
   let compactPending = false;
+  // D43: no provider connected yet — drives the empty composer state.
+  let hasConnections = true;
   vsapi.postMessage({ type: 'ready' });
 
   // D37 helpers -----------------------------------------------------------
@@ -1014,6 +1049,29 @@ export function chatHtml(): string {
     }
     statusEl = null;
     statusTextEl = null;
+  }
+
+  // D43: swap the composer for the friendly empty state while no
+  // provider is connected. Driven by the hasConnections signal that
+  // every models/restore payload now carries; sendSettings() reposts
+  // models after each connection change, so Add/Delete stay in sync.
+  function applyEmptyState(has) {
+    has = Boolean(has);
+    if (hasConnections === has) { return; }
+    hasConnections = has;
+    const footer = document.querySelector('footer');
+    const empty = document.getElementById('emptyState');
+    const logEl = document.getElementById('log');
+    const modelLabel = document.querySelector('#modelBtn .model-btn-label');
+    if (footer) { footer.hidden = !has; }
+    if (empty) { empty.hidden = has; }
+    if (logEl) { logEl.hidden = !has; }
+    if (!has && modelLabel) { modelLabel.textContent = 'connect a provider'; }
+    // Reconnect: the models payload already refreshed the label; only
+    // fall back to the last known selection label if it exists.
+    if (has && modelLabel && currentModelLabel) {
+      modelLabel.textContent = currentModelLabel;
+    }
   }
 
   // D39: modes live in a popover (#modePicker) anchored under
@@ -1273,6 +1331,12 @@ export function chatHtml(): string {
     });
   };
   modelBtn.addEventListener('click', () => {
+    if (!hasConnections) {
+      // D43: no models exist yet — take the user to onboarding instead
+      // of an empty picker.
+      vsapi.postMessage({ type: 'openSettings' });
+      return;
+    }
     if (modelPop.classList.contains('open')) {
       closePopover(modelPop);
       return;
@@ -1288,6 +1352,11 @@ export function chatHtml(): string {
   document.getElementById('go').addEventListener('click', ask);
   document.getElementById('new').addEventListener('click', () => {
     vsapi.postMessage({ type: 'newChat' });
+  });
+  // D43: the empty state's CTA opens Settings → Providers (which
+  // auto-opens the section when zero providers exist, D38b).
+  document.getElementById('emptyCta').addEventListener('click', () => {
+    vsapi.postMessage({ type: 'openSettings' });
   });
 
   // D40: conversation title — model-generated by the host; the user
@@ -1587,6 +1656,16 @@ export function chatHtml(): string {
     sec1Body.appendChild(el('p', 'shelp',
       'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in SecretStorage and never displayed.'));
 
+    // D43: onboarding card on first run — nothing is pre-configured.
+    if (userConns.length === 0) {
+      const oc = el('div', 'onboard-card');
+      oc.appendChild(el('div', 'onboard-title',
+        '✦  Connect your first provider'));
+      oc.appendChild(el('p', 'onboard-body',
+        'Plato has nothing configured yet. Pick a preset below or enter a custom endpoint, then set your API key. Keys stay in VS Code secure storage and never touch the repo.'));
+      sec1Body.appendChild(oc);
+    }
+
     const list = el('div', 'conn-list');
     // D38b: built-in providers (anthropic, openai) are reachable only
     // through the "+ Add a provider" presets, not as cards here. The
@@ -1705,9 +1784,10 @@ export function chatHtml(): string {
     fkind.value = 'openai';
     grid.appendChild(el('label', null, 'API style'));
     grid.appendChild(fkind);
+    const fbaseLbl = el('label', null, 'Base URL');
     const fbase = el('input');
     fbase.placeholder = 'Base URL (e.g. http://localhost:4000/v1)';
-    grid.appendChild(el('label', null, 'Base URL'));
+    grid.appendChild(fbaseLbl);
     grid.appendChild(fbase);
     const fkey = el('input');
     fkey.type = 'password';
@@ -1717,6 +1797,13 @@ export function chatHtml(): string {
     grid.appendChild(fkey);
     ppick.addEventListener('change', () => {
       const pre = (d.presets || []).find((p) => p.value === ppick.value);
+      // D43: the OpenAI/Anthropic endpoints are fixed by the preset —
+      // hide the URL field for those two; the preset's own baseUrl
+      // still rides the submit (fbase keeps its value while hidden).
+      // Every other preset and custom endpoints show the editable field.
+      const fixed = pre && (pre.value === 'openai' || pre.value === 'anthropic');
+      fbaseLbl.hidden = Boolean(fixed);
+      fbase.hidden = Boolean(fixed);
       if (pre) {
         fkind.value = String(pre.kind);
         fbase.value = String(pre.baseUrl);
@@ -2086,6 +2173,11 @@ export function chatHtml(): string {
   });
 
   function ask() {
+    if (!hasConnections) {
+      // D43: nothing to send to yet — route to provider onboarding.
+      vsapi.postMessage({ type: 'openSettings' });
+      return;
+    }
     if (busy) { sendGuidance(); return; }
     const text = q.value.trim();
     if (!text) { return; }
@@ -2180,6 +2272,10 @@ export function chatHtml(): string {
         // If the popover is currently open, re-render it to reflect
         // the new pool.
         if (modelPop.classList.contains('open')) { renderModelPop(); }
+        // D43: keep the empty composer state in sync with the
+        // connection count (fallback: infer from the pool).
+        applyEmptyState(typeof m.hasConnections === 'boolean'
+          ? m.hasConnections : lastModelItems.length > 0);
         break;
       }
       case 'context': applyContext(m); break;
@@ -2219,6 +2315,9 @@ export function chatHtml(): string {
             setModelSelected(m.model, m.model, null);
           }
         }
+        // D43: empty-composer state rides the same restore payload.
+        applyEmptyState(typeof m.hasConnections === 'boolean'
+          ? m.hasConnections : true);
         break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); setStatus('writing'); break;
       case 'turn': {
