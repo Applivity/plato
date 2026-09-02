@@ -111,8 +111,8 @@ export function chatHtml(): string {
      an overlay. The ring is positioned absolute in the top-left
      corner; the textarea's padding-left reserves room for it. */
   .textarea-wrap { position:relative; }
-  #q { flex:1; resize:none; min-height:56px; max-height:220px;
-       padding:9px 11px 9px 38px; font-family:var(--vscode-font-family);
+  #q { width:100%; flex:1; resize:none; min-height:56px; max-height:220px;
+       padding:9px 38px 9px 11px; font-family:var(--vscode-font-family);
        font-size:13px; line-height:1.5; border-radius:6px;
        border:1px solid var(--pl-border); outline:none;
        background:var(--vscode-input-background);
@@ -123,10 +123,10 @@ export function chatHtml(): string {
      thickens a hair on focus. The footer bottom padding is
      8px (was 4px) so the border doesn't crowd the bar's top
      divider line. */
-  footer.mode-plan #q { border-color:#3bba6a; }
-  footer.mode-edit #q { border-color:#d99a1a; }
+  footer.mode-plan #q { border-color:#9575cd; }
+  footer.mode-edit #q { border-color:#4a9eff; }
   footer.mode-act  #q { border-color:#e08a3c; }
-  footer.mode-auto #q { border-color:#9575cd; }
+  footer.mode-auto #q { border-color:#3bba6a; }
   footer.mode-plan #q:focus,
   footer.mode-edit #q:focus,
   footer.mode-act  #q:focus,
@@ -488,7 +488,7 @@ export function chatHtml(): string {
   /* D39e: ring sits as a 24px overlay in the top-left corner of the
      textarea. The tooltip opens UPWARD into the chat-log area, so
      the user can read it without it covering typed text. */
-  .ring-wrap { position:absolute; top:9px; left:9px;
+  .ring-wrap { position:absolute; top:9px; right:9px;
                width:24px; height:24px; pointer-events:auto;
                z-index:2; }
   #contextRing { width:24px; height:24px; display:block; cursor:help; }
@@ -504,12 +504,11 @@ export function chatHtml(): string {
   #contextRing .label { font-size:8.5px; fill:var(--pl-muted);
                         font-family:var(--vscode-font-family);
                         text-anchor:middle; dominant-baseline:central; }
-  /* D39: opens UPWARD because the ring now lives in the composer
-     bar below the textarea. Centered on the ring (was right-anchored
-     in D37 when the ring was a textarea overlay). */
+  /* D39e: opens UPWARD and is RIGHT-anchored because the ring lives
+     in the textarea's top-right corner (same as D37's overlay).
+     Centering would push half the 240px panel off the right edge. */
   #contextBreakdown { display:none; position:absolute;
-                      left:50%; bottom:36px;
-                      transform:translateX(-50%);
+                      right:-4px; bottom:36px;
                       min-width:240px; max-width:320px;
                       background:var(--vscode-editorWidget-background, #252526);
                       border:1px solid var(--pl-border); border-radius:6px;
@@ -588,10 +587,10 @@ export function chatHtml(): string {
   #modeBtn .caret { color:var(--pl-muted); flex:none; }
   /* D39c: four distinct hues - plan=green, edit=amber, act=red,
      auto=purple. No two modes are the same color. */
-  #modeBtn.mode-plan { color:#1a8a4a; }
-  #modeBtn.mode-edit { color:#b07a00; }
+  #modeBtn.mode-plan { color:#7c4dbf; }
+  #modeBtn.mode-edit { color:#4a9eff; }
   #modeBtn.mode-act  { color:#b8651a; }
-  #modeBtn.mode-auto { color:#7c4dbf; }
+  #modeBtn.mode-auto { color:#1a8a4a; }
   /* Send button: same four-color palette, with readable text colors
      on each. */
   .btn-send { display:inline-flex; align-items:center; gap:6px;
@@ -606,10 +605,10 @@ export function chatHtml(): string {
   .btn-send .btn-send-icn { width:14px; height:14px; fill:none;
                              stroke:currentColor; stroke-width:2.2;
                              stroke-linecap:round; stroke-linejoin:round; }
-  .btn-send.mode-plan { background:#3bba6a; color:#0d2a18; }
-  .btn-send.mode-edit { background:#d99a1a; color:#3a2a00; }
+  .btn-send.mode-plan { background:#9575cd; color:#fff; }
+  .btn-send.mode-edit { background:#4a9eff; color:#fff; }
   .btn-send.mode-act  { background:#e08a3c; color:#3a1f00; }
-  .btn-send.mode-auto { background:#9575cd; color:#fff; }
+  .btn-send.mode-auto { background:#3bba6a; color:#0d2a18; }
   /* D39: shared popover styles for the model picker and the mode
      picker. The body attaches the popover to a fixed-position wrapper
      right under the trigger. */
@@ -659,14 +658,14 @@ export function chatHtml(): string {
      uses a chip background behind the icon so it reads at a glance
      even in dim themes. */
   .mp-row .mp-icn { padding:3px; border-radius:5px; }
-  .mp-row.mode-plan .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
-  .mp-row.mode-edit .mp-icn { color:#b07a00; background:rgba(217,154,26,.14); }
+  .mp-row.mode-plan .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
+  .mp-row.mode-edit .mp-icn { color:#4a9eff; background:rgba(74,158,255,.14); }
   .mp-row.mode-act  .mp-icn { color:#b8651a; background:rgba(224,138,60,.14); }
-  .mp-row.mode-auto .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
-  .mp-row.active.mode-plan .mp-icn { color:#fff; background:#3bba6a; }
-  .mp-row.active.mode-edit .mp-icn { color:#3a2a00; background:#d99a1a; }
+  .mp-row.mode-auto .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
+  .mp-row.active.mode-plan .mp-icn { color:#fff; background:#9575cd; }
+  .mp-row.active.mode-edit .mp-icn { color:#fff; background:#4a9eff; }
   .mp-row.active.mode-act  .mp-icn { color:#3a1f00; background:#e08a3c; }
-  .mp-row.active.mode-auto .mp-icn { color:#fff; background:#9575cd; }
+  .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
 </style>
 </head>
 <body>
