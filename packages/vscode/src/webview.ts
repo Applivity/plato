@@ -2305,7 +2305,9 @@ export function chatHtml(): string {
         // is in the current pool, setModelSelected will refresh the
         // label and maxContext; otherwise it stays as a closure var
         // and renderModelPop will show it as an "offline" fallback.
-        if (typeof m.model === 'string' && m.model) {
+        // D43: with no connections there is nothing to restore — the
+        // models payload already set the "connect a provider" label.
+        if (typeof m.model === 'string' && m.model && hasConnections) {
           const found = lastModelItems.find(
             (it) => String(it.value || '') === m.model);
           if (found) {
