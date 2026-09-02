@@ -591,7 +591,15 @@ export function chatHtml(): string {
   #contextBreakdown #ctxb-thr-live { font-variant-numeric:tabular-nums;
                                      font-size:11px; min-width:38px;
                                      text-align:right; }
-  #contextBreakdown #ctxb-cnow { font-size:11px; }
+  #contextBreakdown #ctxb-cnow { flex:0 0 50%; font-size:11px;
+                                padding:3px 9px; border-radius:4px;
+                                line-height:1.3; }
+  /* D42e: the Compact-now button sits directly under the Manual half
+     of the mode switch - right-aligned, half the control column's
+     width, same metrics as the segment buttons, so it reads as the
+     action for Manual mode. */
+  #contextBreakdown #ctxb-cnow-row .cnow-wrap { flex:1; display:flex;
+                                                justify-content:flex-end; }
   /* D39b: the composer is now two rows. Top row = textarea. Bottom
      row = controls, with a visible 1px divider so it reads as a
      distinct toolbar (Claude Code pattern). All controls live in
@@ -776,7 +784,9 @@ export function chatHtml(): string {
           </div>
           <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
             <span class="lbl"></span>
-            <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
+            <div class="cnow-wrap">
+              <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
+            </div>
           </div>
         </div>
       </div>
