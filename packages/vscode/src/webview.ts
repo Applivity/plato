@@ -1870,35 +1870,49 @@ export function chatHtml(): string {
     }
     oblock.appendChild(modeRow);
 
-    // Academy status block (D33): parsed, error, or nothing.
+    // Academy status block (D33, D44b): parsed, error, or nothing.
+    // D44b: Gate the full block on mode === 'academy'. In solo/duo,
+    // only show a brief hint if the file is available.
     const st = orch.academy || {};
-    const stBox = el('div', 'astat');
-    if (st.available) {
-      stBox.appendChild(el(
-        'div', 'aok',
-        '\u2713 .plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
-          (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
-      ));
-      stBox.appendChild(sbtn('Open academy.yaml', () => {
-        vsapi.postMessage({ type: 'open-academy' });
-      }, 'ghost'));
-    } else if (st.error) {
-      stBox.appendChild(el('div', 'aerr', String(st.error)));
-      if (!st.legacy) {
+    if (orch.mode === 'academy') {
+      const stBox = el('div', 'astat');
+      if (st.available) {
+        stBox.appendChild(el(
+          'div', 'aok',
+          '\u2713 .plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
+            (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
+        ));
+        stBox.appendChild(sbtn('Open academy.yaml', () => {
+          vsapi.postMessage({ type: 'open-academy' });
+        }, 'ghost'));
+      } else if (st.error) {
+        stBox.appendChild(el('div', 'aerr', String(st.error)));
+        if (!st.legacy) {
+          stBox.appendChild(sbtn('Create example', () => {
+            vsapi.postMessage({ type: 'create-academy' });
+          }, 'secondary'));
+        }
+      } else {
+        stBox.appendChild(el(
+          'div', 'note',
+          'No .plato/academy.yaml yet - create the example to start a council.',
+        ));
         stBox.appendChild(sbtn('Create example', () => {
           vsapi.postMessage({ type: 'create-academy' });
         }, 'secondary'));
       }
-    } else {
-      stBox.appendChild(el(
+      oblock.appendChild(stBox);
+    } else if (st.available) {
+      const hintBox = el('div', 'astat');
+      hintBox.appendChild(el(
         'div', 'note',
-        'No .plato/academy.yaml yet - create the example to start a council.',
+        'academy.yaml detected \u2014 switch to Academy to use it.',
       ));
-      stBox.appendChild(sbtn('Create example', () => {
-        vsapi.postMessage({ type: 'create-academy' });
+      hintBox.appendChild(sbtn('Switch to Academy', () => {
+        vsapi.postMessage({ type: 'set-orchestration', mode: 'academy' });
       }, 'secondary'));
+      oblock.appendChild(hintBox);
     }
-    oblock.appendChild(stBox);
 
     // D38: Duo sub-block only renders when mode === 'duo'. Replaces
     // the old top-level "Duo - philosopher" details that was appearing
