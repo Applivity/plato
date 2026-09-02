@@ -591,10 +591,10 @@ export function chatHtml(): string {
   #contextBreakdown #ctxb-thr-live { font-variant-numeric:tabular-nums;
                                      font-size:11px; min-width:38px;
                                      text-align:right; }
-  #contextBreakdown #ctxb-cnow { flex:0 0 50%; display:inline-flex;
+  #contextBreakdown #ctxb-cnow { flex:0 0 auto; display:inline-flex;
                                 align-items:center; justify-content:center;
-                                gap:5px; font-size:11px;
-                                padding:3px 6px; border-radius:4px;
+                                width:26px; height:24px; font-size:11px;
+                                padding:0; border-radius:4px;
                                 line-height:1; white-space:nowrap; }
   #contextBreakdown #ctxb-cnow svg { flex:0 0 auto; display:block; }
   /* D42e: the Compact-now button sits directly under the Manual half
@@ -789,7 +789,7 @@ export function chatHtml(): string {
             <span class="lbl"></span>
             <div class="cnow-wrap">
               <button type="button" id="ctxb-cnow" class="btn btn-secondary"
-                      title="Compact now — summarize the older conversation">
+                      title="Compact now" aria-label="Compact now">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
                      stroke="currentColor" stroke-width="2" stroke-linecap="round"
                      stroke-linejoin="round" aria-hidden="true">
@@ -798,7 +798,6 @@ export function chatHtml(): string {
                   <path d="M3 16h3a2 2 0 0 1 2 2v3"></path>
                   <path d="M16 21v-3a2 2 0 0 1 2-2h3"></path>
                 </svg>
-                Compact
               </button>
             </div>
           </div>
