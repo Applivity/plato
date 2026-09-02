@@ -601,8 +601,17 @@ export function chatHtml(): string {
      of the mode switch - right-aligned, half the control column's
      width, same metrics as the segment buttons, so it reads as the
      action for Manual mode. */
-  #contextBreakdown #ctxb-cnow-row .cnow-wrap { flex:1; display:flex;
-                                                justify-content:flex-end; }
+  #contextBreakdown .cnow-wrap { position:relative; flex:1; display:flex;
+                                 justify-content:flex-end; }
+  /* D42h: custom tooltip - the webview strips native title tooltips,
+     so hover the icon shows a styled bubble above it. */
+  #ctxb-tt { position:fixed; z-index:9999; pointer-events:none; display:none;
+             background:var(--vscode-editorWidget-background,#252526);
+             color:var(--vscode-editorWidget-foreground,#cccccc);
+             border:1px solid var(--vscode-editorWidget-border,#454545);
+             padding:3px 8px; border-radius:4px; font-size:11px;
+             box-shadow:0 2px 8px rgba(0,0,0,.3); white-space:nowrap; }
+  #ctxb-tt.show { display:block; }
   /* D39b: the composer is now two rows. Top row = textarea. Bottom
      row = controls, with a visible 1px divider so it reads as a
      distinct toolbar (Claude Code pattern). All controls live in
@@ -802,6 +811,7 @@ export function chatHtml(): string {
             </div>
           </div>
         </div>
+        <div id="ctxb-tt">Compact now</div>
       </div>
     </div>
   </div>
@@ -2015,8 +2025,21 @@ export function chatHtml(): string {
     });
   }
   const ctxCnow = document.getElementById('ctxb-cnow');
+  const ctxbTT = document.getElementById('ctxb-tt');
   if (ctxCnow) {
     ctxCnow.addEventListener('click', () => requestCompact());
+    // D42h: native title tooltips don't render in the webview, so a
+    // custom bubble follows the cursor while hovering the button.
+    ctxCnow.addEventListener('mouseenter', () => {
+      ctxbTT.classList.add('show');
+    });
+    ctxCnow.addEventListener('mouseleave', () => {
+      ctxbTT.classList.remove('show');
+    });
+    ctxCnow.addEventListener('mousemove', (e) => {
+      ctxbTT.style.left = e.clientX + 10 + 'px';
+      ctxbTT.style.top = e.clientY - 26 + 'px';
+    });
   }
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
