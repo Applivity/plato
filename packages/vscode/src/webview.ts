@@ -104,27 +104,34 @@ export function chatHtml(): string {
      on bottom (in .composer-bar with its own top border). The footer
      itself no longer needs the right-side send button column. */
   footer { display:flex; flex-direction:column; gap:0;
-           padding:8px 12px 4px;
+           padding:8px 12px 8px;
            border-top:1px solid var(--pl-border);
            background:var(--vscode-editor-background); }
+  /* D39e: textarea-wrap holds the textarea + the context ring as
+     an overlay. The ring is positioned absolute in the top-left
+     corner; the textarea's padding-left reserves room for it. */
+  .textarea-wrap { position:relative; }
   #q { flex:1; resize:none; min-height:56px; max-height:220px;
-       padding:9px 11px; font-family:var(--vscode-font-family);
+       padding:9px 11px 9px 38px; font-family:var(--vscode-font-family);
        font-size:13px; line-height:1.5; border-radius:6px;
        border:1px solid var(--pl-border); outline:none;
        background:var(--vscode-input-background);
        color:var(--vscode-input-foreground); }
-  #q:focus { border-color:inherit; border-width:1.5px; }
-  /* D39c: the textbox border tracks the active mode (1.5px). The
-     user gets a second visual cue of what their next send will do.
-     The default (no mode class) stays the muted border. */
+  #q { border-width:1.5px; }
+  #q:focus { border-color:inherit; box-shadow:none; outline:none; }
+  /* D39e: the textbox border tracks the active mode (1.5px) and
+     thickens a hair on focus. The footer bottom padding is
+     8px (was 4px) so the border doesn't crowd the bar's top
+     divider line. */
   footer.mode-plan #q { border-color:#3bba6a; }
   footer.mode-edit #q { border-color:#d99a1a; }
-  footer.mode-act  #q { border-color:#d8484a; }
+  footer.mode-act  #q { border-color:#e08a3c; }
   footer.mode-auto #q { border-color:#9575cd; }
   footer.mode-plan #q:focus,
   footer.mode-edit #q:focus,
   footer.mode-act  #q:focus,
-  footer.mode-auto #q:focus { border-color:inherit; box-shadow:0 0 0 1px currentColor; }
+  footer.mode-auto #q:focus { border-color:inherit;
+                               box-shadow:inset 0 0 0 1px currentColor; }
   /* #go is now styled by .btn-send (with per-mode color). The old
      44x44 square styling is gone; the send button is a normal
      pill that lives in .composer-bar. */
@@ -478,12 +485,13 @@ export function chatHtml(): string {
                                             opacity:1; }
   .compact-pill[data-mode="manual"]::before { background:var(--pl-muted);
                                               opacity:.7; }
-  /* D39: round progress ring + breakdown tooltip. The ring now lives
-     in the composer bar (below the textarea), so the tooltip opens
-     UPWARD so it stays on screen. */
-  .ring-wrap { position:relative; width:28px; height:28px;
-               pointer-events:auto; }
-  #contextRing { width:28px; height:28px; display:block; cursor:help; }
+  /* D39e: ring sits as a 24px overlay in the top-left corner of the
+     textarea. The tooltip opens UPWARD into the chat-log area, so
+     the user can read it without it covering typed text. */
+  .ring-wrap { position:absolute; top:9px; left:9px;
+               width:24px; height:24px; pointer-events:auto;
+               z-index:2; }
+  #contextRing { width:24px; height:24px; display:block; cursor:help; }
   #contextRing .track { fill:none; stroke:var(--pl-border); stroke-width:3; }
   #contextRing .fill { fill:none; stroke:var(--vscode-focusBorder, #4a9eff);
                        stroke-width:3; stroke-linecap:round;
@@ -582,7 +590,7 @@ export function chatHtml(): string {
      auto=purple. No two modes are the same color. */
   #modeBtn.mode-plan { color:#1a8a4a; }
   #modeBtn.mode-edit { color:#b07a00; }
-  #modeBtn.mode-act  { color:#c13838; }
+  #modeBtn.mode-act  { color:#b8651a; }
   #modeBtn.mode-auto { color:#7c4dbf; }
   /* Send button: same four-color palette, with readable text colors
      on each. */
@@ -600,7 +608,7 @@ export function chatHtml(): string {
                              stroke-linecap:round; stroke-linejoin:round; }
   .btn-send.mode-plan { background:#3bba6a; color:#0d2a18; }
   .btn-send.mode-edit { background:#d99a1a; color:#3a2a00; }
-  .btn-send.mode-act  { background:#d8484a; color:#fff; }
+  .btn-send.mode-act  { background:#e08a3c; color:#3a1f00; }
   .btn-send.mode-auto { background:#9575cd; color:#fff; }
   /* D39: shared popover styles for the model picker and the mode
      picker. The body attaches the popover to a fixed-position wrapper
@@ -653,11 +661,11 @@ export function chatHtml(): string {
   .mp-row .mp-icn { padding:3px; border-radius:5px; }
   .mp-row.mode-plan .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
   .mp-row.mode-edit .mp-icn { color:#b07a00; background:rgba(217,154,26,.14); }
-  .mp-row.mode-act  .mp-icn { color:#c13838; background:rgba(216,72,74,.14); }
+  .mp-row.mode-act  .mp-icn { color:#b8651a; background:rgba(224,138,60,.14); }
   .mp-row.mode-auto .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
   .mp-row.active.mode-plan .mp-icn { color:#fff; background:#3bba6a; }
   .mp-row.active.mode-edit .mp-icn { color:#3a2a00; background:#d99a1a; }
-  .mp-row.active.mode-act  .mp-icn { color:#fff; background:#d8484a; }
+  .mp-row.active.mode-act  .mp-icn { color:#3a1f00; background:#e08a3c; }
   .mp-row.active.mode-auto .mp-icn { color:#fff; background:#9575cd; }
 </style>
 </head>
@@ -690,8 +698,8 @@ export function chatHtml(): string {
 <div id="log"></div>
 <div id="statusbar" hidden></div>
 <footer style="position:relative;">
-  <textarea id="q" rows="3" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
-  <div class="composer-bar">
+  <div class="textarea-wrap">
+    <textarea id="q" rows="3" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
     <div class="ring-wrap" tabindex="0" aria-label="Context usage">
       <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
         <circle class="track" cx="14" cy="14" r="11"></circle>
@@ -729,6 +737,8 @@ export function chatHtml(): string {
         </div>
       </div>
     </div>
+  </div>
+  <div class="composer-bar">
     <span class="bar-spacer"></span>
     <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
