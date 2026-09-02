@@ -541,6 +541,8 @@ export function chatHtml(): string {
                       padding:8px 10px; font-size:11.5px; z-index:5;
                       box-shadow:0 4px 14px rgba(0,0,0,.35);
                       color:var(--vscode-foreground); }
+  .runitem.current { border-left:2px solid var(--pl-accent); }
+  .runitem.current .rt::after { content:' \u2192'; color:var(--pl-accent); }
   /* D38b: keep the breakdown open while the cursor is on the ring OR
      the breakdown itself - the breakdown is now interactive (segmented
      control, range slider, button) so the user must be able to move
@@ -1351,12 +1353,23 @@ export function chatHtml(): string {
       for (const c of chats) {
         const item = el('div', 'runitem');
         item.appendChild(el('div', 'rt', String(c.title || 'Chat')));
+        // D42: the first entry is the live conversation - clicking it
+        // just returns to the chat, same as the Back button.
+        const isCurrent = !!c.current;
         item.appendChild(el('div', 'rm',
           String(c.ts || '').replace('T', ' ').slice(0, 19)
-          + ' \u00b7 ' + c.count + ' messages \u00b7 click to resume'));
-        item.addEventListener('click', () => {
-          vsapi.postMessage({ type: 'resumeChat', id: c.id });
-        });
+          + ' \u00b7 ' + c.count + ' messages \u00b7 '
+          + (isCurrent ? 'current chat \u00b7 click to open' : 'click to resume')));
+        if (isCurrent) {
+          item.classList.add('current');
+          item.addEventListener('click', () => {
+            document.body.classList.remove('show-history');
+          });
+        } else {
+          item.addEventListener('click', () => {
+            vsapi.postMessage({ type: 'resumeChat', id: c.id });
+          });
+        }
         sec.appendChild(item);
       }
       hbody.appendChild(sec);

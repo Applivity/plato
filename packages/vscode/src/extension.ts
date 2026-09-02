@@ -396,15 +396,40 @@ class ChatHost {
           return;
         }
         if (m.type === 'openHistory') {
+          const chats: {
+            id: string;
+            title: string;
+            ts: string;
+            count: number;
+            current?: boolean;
+          }[] = this.sessions().map((s) => ({
+            id: s.id,
+            title: s.title,
+            ts: s.ts,
+            count: s.log.filter((e) => e.k === 'msg').length,
+          }));
+          // D42: the live conversation is the first History entry so the
+          // page is never empty while a chat is open.
+          const curMsgs = this.log.filter((e) => e.k === 'msg').length;
+          if (curMsgs > 0) {
+            const first = this.log.find(
+              (e) => e.k === 'msg' && e.cls === 'you',
+            );
+            chats.unshift({
+              id: '__current__',
+              title:
+                this.chatTitle ||
+                ((first && first.k === 'msg' ? first.text : '') || 'Chat')
+                  .slice(0, 80),
+              ts: new Date().toISOString(),
+              count: curMsgs,
+              current: true,
+            });
+          }
           void this.panel.webview.postMessage({
             type: 'history',
             runs: this.listRuns(),
-            chats: this.sessions().map((s) => ({
-              id: s.id,
-              title: s.title,
-              ts: s.ts,
-              count: s.log.filter((e) => e.k === 'msg').length,
-            })),
+            chats,
           });
           return;
         }
@@ -1336,6 +1361,7 @@ class ChatHost {
             ? conn.baseUrl ?? 'https://api.openai.com/v1'
             : undefined,
       });
+      const parts = splitModelRef(ref);
       const res = await provider.completeTurn({
         model: ref,
         system:
@@ -1354,8 +1380,15 @@ class ChatHost {
           },
         ],
         tools: [],
-        // Headroom: some models prepend reasoning/newlines; still cheap.
-        maxTokens: 120,
+        // D42: reasoning models spend tokens thinking before the title —
+        // a 120-token budget was eaten whole, leaving content empty.
+        maxTokens: 512,
+        // D42: when the model supports reasoning, keep it brief but let
+        // it think (the Anthropic adapter raises max_tokens above the
+        // budget automatically).
+        ...(parts && modelSupportsReasoning(parts.model)
+          ? { reasoning: { effort: 'low' as const } }
+          : {}),
       });
       const raw = res.content
         .map((c) => (c.type === 'text' ? c.text : ''))
@@ -1371,14 +1404,37 @@ class ChatHost {
       if (raw) {
         this.chatTitle = raw;
       } else {
-        // Fallback: derive a short title from the first user message so
-        // a completed run always names the conversation, even when the
-        // title call returns nothing usable.
-        const words = seed.trim().split(/\s+/).slice(0, 6).join(' ');
-        if (!words) {
+        // D42: diagnose why the model gave nothing usable (Extension
+        // Host console), then fall back to the prompt's own words.
+        console.warn(
+          `[plato] title: empty model reply (stop=${res.stopReason}, ` +
+            `blocks=${res.content.length}) — using prompt fallback`,
+        );
+        const STOP = new Set([
+          'the', 'a', 'an', 'and', 'or', 'but', 'to', 'of', 'for',
+          'with', 'on', 'in', 'at', 'then', 'is', 'are',
+        ]);
+        const words = seed
+          .trim()
+          .split(/\s+/)
+          .slice(0, 6)
+          .join(' ')
+          .split(/\s+/);
+        while (
+          words.length > 1 &&
+          STOP.has(
+            (words[words.length - 1] ?? '')
+              .toLowerCase()
+              .replace(/[^a-z]/g, ''),
+          )
+        ) {
+          words.pop();
+        }
+        const fallback = words.join(' ').slice(0, 40).trim();
+        if (!fallback) {
           return;
         }
-        this.chatTitle = words.slice(0, 40);
+        this.chatTitle = fallback;
       }
       await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
       this.send('title', this.chatTitle);
