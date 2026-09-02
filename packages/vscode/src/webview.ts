@@ -549,10 +549,15 @@ export function chatHtml(): string {
      the breakdown itself - the breakdown is now interactive (segmented
      control, range slider, button) so the user must be able to move
      their cursor into it. */
-  .ring-wrap:hover #contextBreakdown,
+  /* D42d: hover shows the info breakdown only; the compaction controls
+     are pinned-state only (click the ring). */
+  .ring-wrap:not(.pinned):hover #contextBreakdown,
+  .ring-wrap.pinned #contextBreakdown,
   .ring-wrap:focus-within #contextBreakdown,
   #contextBreakdown:hover,
   #contextBreakdown:focus-within { display:block; }
+  #contextBreakdown #ctxb-compaction { display:none; }
+  .ring-wrap.pinned #contextBreakdown #ctxb-compaction { display:block; }
   #contextBreakdown h4 { margin:0 0 4px; font-size:11px; color:var(--pl-muted);
                          text-transform:uppercase; letter-spacing:.06em; }
   #contextBreakdown .row { display:flex; justify-content:space-between; gap:10px;
@@ -566,6 +571,9 @@ export function chatHtml(): string {
                               margin:8px 0 6px; }
   #contextBreakdown .ctxctl-row { display:flex; align-items:center;
                                   gap:8px; padding:3px 0; }
+  /* D42d: the display:flex above overrides the UA's [hidden] rule, so
+     the threshold / compact-now rows never disappeared. Reinstate it. */
+  #contextBreakdown .ctxctl-row[hidden] { display:none; }
   #contextBreakdown .ctxctl-row .lbl { font-size:11px;
                                        color:var(--pl-muted);
                                        min-width:62px; }
@@ -751,23 +759,25 @@ export function chatHtml(): string {
         <div class="row"><span class="lbl">max</span><span class="val" id="ctxb-max">--</span></div>
         <div class="row"><span class="lbl">last request</span><span class="val" id="ctxb-last">--</span></div>
         <div class="note" id="ctxb-note">estimate, ~4 chars/token</div>
-        <div class="ctxsep"></div>
-        <h4>Compaction</h4>
-        <div class="ctxctl-row">
-          <span class="lbl">Mode</span>
-          <div class="ctxseg" id="ctxb-seg">
-            <button type="button" data-mode="auto">Auto</button>
-            <button type="button" data-mode="manual">Manual</button>
+        <div id="ctxb-compaction">
+          <div class="ctxsep"></div>
+          <h4>Compaction</h4>
+          <div class="ctxctl-row">
+            <span class="lbl">Mode</span>
+            <div class="ctxseg" id="ctxb-seg">
+              <button type="button" data-mode="auto">Auto</button>
+              <button type="button" data-mode="manual">Manual</button>
+            </div>
           </div>
-        </div>
-        <div class="ctxctl-row" id="ctxb-thr-row">
-          <span class="lbl">Threshold</span>
-          <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
-          <span class="val" id="ctxb-thr-live">80%</span>
-        </div>
-        <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
-          <span class="lbl"></span>
-          <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
+          <div class="ctxctl-row" id="ctxb-thr-row">
+            <span class="lbl">Threshold</span>
+            <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
+            <span class="val" id="ctxb-thr-live">80%</span>
+          </div>
+          <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
+            <span class="lbl"></span>
+            <button type="button" id="ctxb-cnow" class="btn btn-secondary">Compact now</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1932,6 +1942,33 @@ export function chatHtml(): string {
   // same set-compaction-mode / set-compaction-threshold messages
   // the Settings page uses - no new message types.
   const ctxSeg = document.getElementById('ctxb-seg');
+  // D42d: hover = info only. Clicking the ring pins the full panel
+  // (info + compaction controls) open until the ring is clicked
+  // again, an outside click lands, or Esc is pressed. Clicks inside
+  // the tooltip never toggle the pin (slider drags must not close it).
+  const ringWrap = document.querySelector('.ring-wrap');
+  if (ringWrap) {
+    ringWrap.addEventListener('click', (e) => {
+      if (e.target && e.target.closest('#contextBreakdown')) {
+        return;
+      }
+      ringWrap.classList.toggle('pinned');
+    });
+    document.addEventListener('mousedown', (e) => {
+      if (!ringWrap.classList.contains('pinned')) {
+        return;
+      }
+      if (e.target && e.target.closest('.ring-wrap')) {
+        return;
+      }
+      ringWrap.classList.remove('pinned');
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && ringWrap.classList.contains('pinned')) {
+        ringWrap.classList.remove('pinned');
+      }
+    });
+  }
   if (ctxSeg) {
     for (const b of Array.from(ctxSeg.querySelectorAll('button'))) {
       b.addEventListener('click', () => {
