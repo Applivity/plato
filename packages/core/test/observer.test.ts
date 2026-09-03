@@ -198,7 +198,8 @@ describe('ObserverAgent', () => {
     await o.observe('fix the bug', []);
     // D45a: philosophers see the observer SYSTEM + their role only.
     // PLATO.md / AGENTS.md / DEFAULT_PLATO_BODY must NOT appear here.
-    expect(seenSystem).not.toContain('Operate within the user-selected mode');
+    // 'Karpathy Guidelines' is a marker unique to DEFAULT_PLATO_BODY.
+    expect(seenSystem).not.toContain('Karpathy Guidelines');
     expect(seenSystem).not.toContain('PROJECT TUNING');
     expect(seenSystem).not.toContain('AGENTS BODY');
     expect(seenSystem).toContain('A SKEPTICAL REVIEWER');

@@ -17,19 +17,23 @@ may not be available when you work; everything you need is in this repo.
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.20.0).
-- HEAD (`main`) is at **D45a-2** — project-files UI + discoverability
-  (this session's commit). Command surface is now **Compact · History ·
-  System prompt**. `/system-prompt` materializes PLATO.md (opens it, or
-  writes the bundled default and opens it; AGENTS.md/CLAUDE.md are never
-  touched). Settings → Workers shows the project-file state + a Create/Open
-  PLATO.md action + the includeProjectRules toggle; the empty composer
-  stacks a "Set up this project's rules" card under the connect card;
-  Academy members opt out per-member via `includeProjectRules` in
-  academy.yaml (ANDed on the workspace setting). Earlier this session:
-  D44d (coherent compaction — /compact anytime + auto memory fold),
-  D44c, D44a. Working tree clean. 182 vitest cases across 18 files in
-  `packages/core`.
+  extension shell, v0.22.0).
+- HEAD (`main`) is at **D45a-3** — product model lock (one worker + N
+  philosophers) + project-files rework (this session's commit). Thesis
+  settled: Solo/Duo/Academy = the SAME one worker with 0/1/N philosophers;
+  multiple simultaneous workers are out of scope. Project files (PLATO.md +
+  AGENTS.md/CLAUDE.md) ALWAYS join the worker prompt when present — the
+  `includeProjectRules` opt-out (setting, per-member flag, checkbox) was
+  removed. Settings: the worker file-state block ("The worker — project
+  files") lives in Orchestration after the mode cards (no separate Workers
+  section). `/system-prompt` materializes PLATO.md — its created file (and
+  the in-memory fallback) is an identity header + Karpathy behavioral
+  guidance. Command surface = Compact · History · System prompt. Empty
+  composer stacks a "Set up this project's rules" card under the connect
+  card when no rule file exists. Earlier this session: D45a-2, D44d
+  (coherent compaction), D44c, D44a. Working tree clean. 179 vitest cases
+  across 18 files in `packages/core`. Known deferred: Academy mode select
+  reverts to Duo (founder has Duo/Academy mode-UI plans).
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -133,10 +137,13 @@ may not be available when you work; everything you need is in this repo.
 4. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
-> D45a-2 (project-files UI: `/system-prompt` PLATO.md materialization,
-> Settings → Workers section, empty-composer card, Academy per-member
-> `includeProjectRules`) shipped 2026-09-03 in 0.21.0 — see DECISIONS
-> D45a-2. Command surface is now **Compact · History · System prompt**.
+> Project-files work shipped 2026-09-03: D45a-2 (0.21.0, `/system-prompt`
+> PLATO.md materialization, empty-composer card) then **D45a-3 (0.22.0)**
+> — product model locked (one worker + N philosophers), `includeProjectRules`
+> removed (file presence is the switch), worker file-state moved into
+> Settings → Orchestration, default PLATO body = identity header + Karpathy
+> guidance. Command surface is **Compact · History · System prompt**. See
+> DECISIONS D45a-2 / D45a-3.
 
 ## Ground rules for any agent working here
 

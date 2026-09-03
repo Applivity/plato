@@ -123,12 +123,6 @@ export interface LoopOptions {
   model: string;
   /** Extra system text appended for this run (D31: team coder role). */
   role?: string;
-  /**
-   * D45a: when false, the PLATO.md and AGENTS.md layers are dropped from
-   * the worker system prompt. The override layer (above) is never gated.
-   * Default true; the host reads `plato.worker.includeProjectRules`.
-   */
-  includeProjectRules?: boolean;
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
   /**
@@ -242,13 +236,13 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
   // D45a: build the three-layer worker system prompt (override +
-  // PLATO.md + AGENTS.md) before the loop starts. Loop is async so the
-  // disk reads for PLATO.md/AGENTS.md are awaited here. Philosophers
-  // (observer.ts) do NOT call this — they get a separate SYSTEM string.
+  // PLATO.md + AGENTS.md) before the loop starts. Project files are always
+  // included when present (D45a-3 removed the opt-out). Loop is async so
+  // the disk reads are awaited here. Philosophers (observer.ts) do NOT
+  // call this — they get a separate SYSTEM string.
   const workerRole = await buildWorkerRole({
     override: opts.role,
     root: opts.root,
-    includeProjectRules: opts.includeProjectRules,
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`

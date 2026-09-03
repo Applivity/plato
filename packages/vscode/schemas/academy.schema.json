@@ -37,11 +37,6 @@
             "default": "worker",
             "description": "Exactly one worker; up to 3 philosophers"
           },
-          "includeProjectRules": {
-            "type": "boolean",
-            "default": true,
-            "description": "Worker tier only: when false, this member's prompt excludes the PLATO.md + AGENTS.md/CLAUDE.md project files (ANDed on top of the plato.worker.includeProjectRules setting). Absent = inherit that setting. The role override is never gated; philosophers never see the files regardless."
-          },
           "guidance": {
             "type": "boolean",
             "default": true,

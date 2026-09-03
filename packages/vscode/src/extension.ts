@@ -747,30 +747,11 @@ class ChatHost {
           }
           return;
         }
-        // D45a-2: Workers section toggle (PLATO.md + AGENTS.md/CLAUDE.md in
-        // the worker prompt). Global, like the observer knobs above.
-        if (
-          m.type === 'set-include-project-rules' &&
-          typeof m.value === 'boolean'
-        ) {
-          await vscode.workspace
-            .getConfiguration('plato')
-            .update(
-              'worker.includeProjectRules',
-              m.value,
-              vscode.ConfigurationTarget.Global,
-            );
-          void this.sendSettings(
-            'Project files ' +
-              (m.value ? 'included in' : 'excluded from') +
-              ' the worker prompt — applies from the next run.',
-          );
-          return;
-        }
-        // D45a-2: open-or-create PLATO.md (Settings row and the empty-composer
-        // card both land here). The from:'settings' sender stays on the
-        // Settings page and wants a flash there; the empty card / /system-prompt
-        // get a chat notice.
+        // D45a-3: open-or-create PLATO.md (Settings row and the empty-composer
+        // card both land here). Project files always join when present — the
+        // includeProjectRules opt-out was removed (file presence is the switch).
+        // The from:'settings' sender stays on the Settings page and wants a
+        // flash there; the empty card / /system-prompt get a chat notice.
         if (m.type === 'plato-open') {
           await this.openPlato(m.from === 'settings' ? 'settings' : 'chat');
           return;
@@ -904,31 +885,27 @@ class ChatHost {
   }
 
   /**
-   * D45a-2: read-only state for the Settings → Workers section. Stat-only —
-   * PLATO.md is 'custom' when a file exists, else the bundled default is in
-   * use; agentsFile reports which project-manual file the join would read
-   * (AGENTS.md first, CLAUDE.md alias).
+   * D45a-3: read-only project-file state for the Settings → Orchestration
+   * worker block. Stat-only — PLATO.md is 'custom' when a file exists, else
+   * the bundled default is in use; agentsFile reports which project-manual
+   * file the join would read (AGENTS.md first, CLAUDE.md alias).
    */
   private async workersState(): Promise<{
     noRoot: boolean;
-    include: boolean;
     plato: 'custom' | 'default';
     agentsFile: 'AGENTS.md' | 'CLAUDE.md' | null;
   }> {
     const root = this.workspaceRoot();
     if (root === null) {
-      return { noRoot: true, include: true, plato: 'default', agentsFile: null };
+      return { noRoot: true, plato: 'default', agentsFile: null };
     }
-    const include = vscode.workspace
-      .getConfiguration('plato')
-      .get<boolean>('worker.includeProjectRules', true);
     const plato = (await this.existsAt(root, 'PLATO.md')) ? 'custom' : 'default';
     const agentsFile = (await this.existsAt(root, 'AGENTS.md'))
       ? 'AGENTS.md'
       : (await this.existsAt(root, 'CLAUDE.md'))
         ? 'CLAUDE.md'
         : null;
-    return { noRoot: false, include, plato, agentsFile };
+    return { noRoot: false, plato, agentsFile };
   }
 
   /**
@@ -2500,16 +2477,10 @@ class ChatHost {
         }),
         model: ref,
         role: workerMember?.role,
-        // D45a/D45a-2: opt-out for the PLATO.md + AGENTS.md layers. Effective
-        // include = the workspace `plato.worker.includeProjectRules` setting
-        // AND the Academy member's `includeProjectRules` flag (default true =
-        // inherit the workspace setting; false opts that member out). The
-        // loop calls buildWorkerRole() to assemble the joined prompt.
-        includeProjectRules:
-          vscode.workspace
-            .getConfiguration('plato')
-            .get<boolean>('worker.includeProjectRules', true) &&
-          (workerMember?.includeProjectRules ?? true),
+        // D45a-3: project files (PLATO.md + AGENTS.md/CLAUDE.md) always join
+        // the worker prompt when present — the includeProjectRules opt-out was
+        // removed. The loop calls buildWorkerRole() to assemble the joined
+        // prompt; the Academy override (role above) is layered on top.
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),

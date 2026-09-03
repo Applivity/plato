@@ -887,7 +887,7 @@ The worker is one agent with one prompt, regardless of mode. The customisation s
   const workerRole = buildWorkerRole({ override: opts.role, root: opts.root });
   ```
   The new helper does the three-layer join with the in-memory default as the PLATO.md fallback. The compaction summary (`context.ts:305-307`) already operates on the joined string and needs no change.
-- **Opt-out:** `plato.worker.includeProjectRules` (workspace, default true) gates layers 2 and 3 together for all modes. Academy adds a per-member `includeProjectRules` flag in academy.yaml. Layer 1 (mode-specific override, if any) is never gated.
+- **Opt-out:** `plato.worker.includeProjectRules` (workspace, default true) gates layers 2 and 3 together for all modes. Academy adds a per-member `includeProjectRules` flag in academy.yaml. Layer 1 (mode-specific override, if any) is never gated. **Removed in D45a-3 — file presence is the switch.**
 - **Discoverability:** `/system-prompt` command (renders the join state for the current mode + opens the files), secondary empty-composer card when neither PLATO.md nor AGENTS.md is present, Settings → Workers section (read-only state, per-file actions).
 - **The existing `SYSTEM_PROMPT` constant** stays at `loop.ts:29-38` but is renamed to `WORKER_IDENTITY` and reframed as the *baseline identity* ("you are Plato, an AI coding agent…"). PLATO.md and AGENTS.md sit on top. The default PLATO.md content is derived from the existing DECISIONS.md operational rules (D08 modes, D19 safety, D31 budgets, D32 orchestration contract, D37 compaction).
 - **Naming note:** PLATO.md and AGENTS.md live at the repo root, not under `.plato/`. The operator's mental model is "open the project, see both files." `.plato/` remains the namespace for team / MCP / Duo config. The shipped default for PLATO.md lives in the VSIX as a static asset; the loader reads the on-disk file if present, otherwise returns the bundled default. No surprise file writes.
@@ -930,6 +930,46 @@ renderer.
 
 No migration concerns (D45d): PLATO.md did not exist as a user-facing surface
 before this milestone; materializing it is additive.
+
+> **Superseded in D45a-3 (2026-09-03):** the standalone Settings → Workers
+> section moved into Settings → Orchestration (a "The worker — project files"
+> block shown for the active mode), and the Include toggle + Academy
+> per-member `includeProjectRules` flag were removed entirely.
+
+**D45a-3 — Product model lock: one worker + N philosophers; project files always on (M4.1, 0.22.0, shipped 2026-09-03).**
+
+Debated and settled with the founder before further work (2026-09-03):
+
+- **Thesis: one worker + N philosophers.** Solo / Duo / Academy are the SAME
+  one worker with 0 / 1 / N philosophers around it (they watch, guide, and may
+  pause/cancel). The noun is **philosopher**; "guider"/"watcher"/"observer" are
+  not user-facing copy. Multiple simultaneous workers were rejected: N workers
+  each need a supervisor, which regresses to one primary worker; sub-agents are
+  routine, so the differentiator is a persistent interactive council over one
+  worker. "Many doers" is at most sub-agents inside one run — out of scope.
+- **Worker config lives in Orchestration, per active mode.** The D45a-2
+  standalone top-level "Workers" section is gone; Settings → Orchestration now
+  shows the mode cards, then a **"The worker — project files"** block (PLATO.md
+  status + Create/Open; read-only AGENTS.md/CLAUDE.md presence), then the
+  mode-specific philosopher blocks (Duo / Academy). One worker block, no copies.
+- **`includeProjectRules` removed entirely** (per D45d — free to break): the
+  `plato.worker.includeProjectRules` workspace setting, the Academy per-member
+  flag, the JSON-schema/example entries, the core `buildWorkerRole` /
+  `LoopOptions` params, and the Settings checkbox. Project files (PLATO.md +
+  AGENTS.md/CLAUDE.md) **always** join the worker prompt when present — file
+  presence is the switch (no PLATO.md → bundled default; no AGENTS.md/CLAUDE.md
+  → not read). Supersedes the D45a opt-out and the D45a-2 per-member flag.
+- **Default PLATO body = identity header + operator guidance.** `DEFAULT_PLATO_BODY`
+  now opens with a short worker identity (one doer; philosophers advise; mode
+  approval semantics; deny-list; fold-on-`/compact`) followed by the Karpathy
+  behavioral guidance seeded from the founder's own working rules. Both the
+  in-memory fallback and `/system-prompt`'s created PLATO.md use it, so the file
+  materializes exactly what the worker would otherwise see in memory.
+- **Composer icon family fix** (trivial): the `/` command button was a 15px text
+  glyph next to a 14px stroke-SVG paperclip in the same 24px box; `/` is now a
+  matching stroke SVG so the two read as one family.
+- Known, deferred (founder): Academy mode select reverts to Duo — the founder
+  has Duo/Academy mode-UI redesign plans and will address it there.
 
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
 

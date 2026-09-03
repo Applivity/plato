@@ -58,26 +58,6 @@ describe('parseTeamConfig', () => {
     });
   });
 
-  it('parses per-member includeProjectRules (worker tier) and rejects non-bool', () => {
-    const t = parseTeamConfig(`
-members:
-  - name: plato
-    model: anthropic:claude-sonnet-4-5
-    includeProjectRules: false
-    kind: worker
-`);
-    expect(t.members[0]!.includeProjectRules).toBe(false);
-    expect(() =>
-      parseTeamConfig(`
-members:
-  - name: plato
-    model: anthropic:claude-sonnet-4-5
-    includeProjectRules: maybe
-    kind: worker
-`),
-    ).toThrowError(/includeProjectRules must be true or false, got 'maybe'/);
-  });
-
   it('accepts the legacy team: header (renamed but tolerated)', () => {
     const t = parseTeamConfig(`
 team:

@@ -31,14 +31,6 @@ export interface TeamMember {
   pause?: boolean;
   cancel?: boolean;
   maxInterventions?: number;
-  /**
-   * D45a-2: worker tier only. When false, this member's prompt excludes the
-   * PLATO.md + AGENTS.md/CLAUDE.md layers (ANDed on top of the workspace
-   * `plato.worker.includeProjectRules` opt-out). Absent = inherit that
-   * setting. The role override above is never gated; philosophers never see
-   * the files regardless.
-   */
-  includeProjectRules?: boolean;
 }
 
 export interface TeamConfig {
@@ -170,8 +162,7 @@ export function parseTeamConfig(text: string): TeamConfig {
         }
         case 'guidance':
         case 'pause':
-        case 'cancel':
-        case 'includeProjectRules': {
+        case 'cancel': {
           const v = unquote(val);
           if (!BOOLS.has(v)) {
             fail(i, `${key} must be true or false, got '${v}'`);

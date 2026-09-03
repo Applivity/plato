@@ -130,21 +130,6 @@ describe('buildWorkerRole', () => {
     expect(override?.present).toBe(false);
   });
 
-  it('honors includeProjectRules=false and drops PLATO/AGENTS', async () => {
-    write('PLATO.md', 'SHOULD NOT APPEAR');
-    write('AGENTS.md', 'SHOULD NOT APPEAR EITHER');
-    const r = await buildWorkerRole({ root: dir, includeProjectRules: false });
-    expect(r.system).not.toContain('SHOULD NOT APPEAR');
-    expect(r.system).not.toContain('SHOULD NOT APPEAR EITHER');
-    // Override still rides.
-    const r2 = await buildWorkerRole({
-      root: dir,
-      includeProjectRules: false,
-      override: 'OVERRIDE-OK',
-    });
-    expect(r2.system).toContain('OVERRIDE-OK');
-  });
-
   it('truncates oversized layers at a sensible boundary with a marker', async () => {
     // Build a giant AGENTS.md and force a small cap via the helper.
     const big = Array.from({ length: 200 }, (_, i) => `line ${i} some text`).join('\n');

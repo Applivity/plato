@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -18,7 +18,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-vscode-0.21.0.vsix --force"
+    "install:vsix": "code --install-extension plato-vscode-0.22.0.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -116,11 +116,6 @@
           "minimum": 0.5,
           "maximum": 0.95,
           "description": "D44d: fraction of the model's context window at which auto-compaction triggers (0.5–0.95, default 0.8). Compaction is always auto at this threshold; /compact (or the ring's Compact-now) forces it on demand."
-        },
-        "plato.worker.includeProjectRules": {
-          "type": "boolean",
-          "default": true,
-          "description": "D45a: include the project files (PLATO.md and AGENTS.md/CLAUDE.md from the workspace root) in the worker system prompt. The mode-specific override (Academy worker.role) is never gated by this setting. The philosophers (Duo/Academy) never see these files regardless."
         }
       }
     },

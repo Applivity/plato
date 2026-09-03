@@ -469,7 +469,7 @@ describe('runAgentLoop worker system prompt (D45a)', () => {
     };
   }
 
-  it('sends DEFAULT_PLATO_BODY when no project files exist and rules are on', async () => {
+  it('sends DEFAULT_PLATO_BODY when no project files exist', async () => {
     const { DEFAULT_PLATO_BODY } = await import('../src/runtime/workerRole.js');
     const p = capturingProvider();
     // BASE.root = process.cwd(). The Plato repo has no PLATO.md/AGENTS.md
@@ -479,16 +479,6 @@ describe('runAgentLoop worker system prompt (D45a)', () => {
     await runAgentLoop({ ...BASE, provider: p });
     expect(p.seenSystem.length).toBeGreaterThan(0);
     expect(p.seenSystem[0]).toContain(DEFAULT_PLATO_BODY);
-  });
-
-  it('drops project layers when includeProjectRules is false', async () => {
-    const p = capturingProvider();
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      includeProjectRules: false,
-    });
-    expect(p.seenSystem[0]).not.toContain('Operate within the user-selected mode');
   });
 
   it('appends opts.role to the joined worker prompt when present', async () => {

@@ -1,9 +1,9 @@
 /**
- * D45a: three-layer worker prompt join.
+ * D45a/D45a-3: the worker prompt join.
  *
- * The worker is one agent with one prompt, regardless of mode. The
- * customisation surface has the same shape in all three modes; only
- * the sources differ.
+ * One worker, N philosophers (the product thesis). The worker is one agent
+ * with one prompt, regardless of how many philosophers watch; only the
+ * sources differ by mode.
  *
  *   [mode-specific override] >> [PLATO.md body or shipped default] >> [AGENTS.md body]
  *
@@ -12,12 +12,12 @@
  * - Philosophers never see any of these files. Their prompt is built in
  *   observer.ts from PERSONAS[].role / academy.yaml member.role only.
  *
- * Files are read from the workspace root, never written. Each layer is
- * hard-capped (DEFAULT_MAX_LAYER_CHARS) to defend against an oversized
- * AGENTS.md blowing up the context. The on-disk PLATO.md is preferred;
- * if missing, the bundled DEFAULT_PLATO_BODY ships as the fallback so
- * the join always has the operator-tuning layer. AGENTS.md (or its
- * CLAUDE.md alias) is optional.
+ * Files are read from the workspace root, never written. Project files are
+ * ALWAYS included when present (D45a-3 removed the includeProjectRules
+ * opt-out — file presence is the switch): no PLATO.md means the bundled
+ * DEFAULT_PLATO_BODY is used, and AGENTS.md (or its CLAUDE.md alias) joins
+ * only when it exists. Each layer is hard-capped (DEFAULT_MAX_LAYER_CHARS)
+ * so an oversized file cannot blow up the context.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -40,12 +40,6 @@ export interface BuildWorkerRoleOpts {
   override?: string;
   /** Workspace root (absolute path). Required for disk reads. */
   root: string;
-  /**
-   * Master opt-out. When false, the PLATO.md and AGENTS.md layers are
-   * dropped entirely (D45a opt-out: `plato.worker.includeProjectRules`).
-   * The override layer is never gated.
-   */
-  includeProjectRules?: boolean;
   /** Override the per-layer cap; tests pass smaller values. */
   maxLayerChars?: number;
 }
@@ -59,23 +53,115 @@ export interface BuildWorkerRoleResult {
 
 
 /**
- * Bundled default PLATO.md body. Derived from DECISIONS.md operational
- * rules (D08 modes, D19 safety, D31 budgets, D32 orchestration, D37
- * compaction). Kept short — projects ship their own PLATO.md to extend.
+ * Bundled default PLATO.md body (D45a-3). The worker ALWAYS gets this layer —
+ * the on-disk PLATO.md if present, else this bundled default; there is no
+ * opt-out (file presence is the switch). A compact identity header keeps the
+ * mode/approval/safety baseline the worker needs; the guidance below (seeded
+ * from the operator's own working rules) is the behavioral default and is
+ * materialized verbatim when /system-prompt creates PLATO.md.
  */
-export const DEFAULT_PLATO_BODY =
-  'You are Plato, an AI coding agent working inside the user workspace. ' +
-  'Operate within the user-selected mode (plan = read-only, edit = write with ' +
-  'per-session approval, act = per-action approval, auto = trusted). Use the ' +
-  'provided tools to inspect and change files. Prefer apply_diff for edits and ' +
-  'write_file only for new files. When you find defects, enumerate them briefly ' +
-  'and fix them in the same run — never stop to ask whether to proceed; write ' +
-  'approval is enforced by the UI. After applying changes, re-read each changed ' +
-  'region and report anything you could not confirm. ' +
-  'Never touch secret-bearing files (the host enforces a deny-list) and never ' +
-  'ignore errors silently. Stop and summarize once the task is complete. ' +
-  'If the context grows large, the loop folds older turns into a running summary ' +
-  'automatically, or when the user asks with /compact.';
+export const DEFAULT_PLATO_BODY = `You are Plato, an AI coding agent working inside the user's workspace. You
+drive one task at a time with the provided tools, and you are the one who
+acts; philosophers may watch and advise, but the work, the approvals, and the
+final summary are yours. Modes gate how edits are approved (plan = read-only,
+edit = write with per-session approval, act = per-action approval, auto =
+trusted) and the host enforces them. Never read or send secret-bearing files
+(the host enforces a deny-list) and never ignore errors silently. If the
+context grows large, older turns fold into a running summary automatically, or
+when the user asks with /compact.
+
+# Karpathy Guidelines
+
+Behavioral guidelines to reduce common LLM coding mistakes, derived from Andrej Karpathy's observations on LLM coding pitfalls.
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+* State your assumptions explicitly. If uncertain, ask.
+* If multiple interpretations exist, present them - don't pick silently.
+* If a simpler approach exists, say so. Push back when warranted.
+* If something is unclear, stop. Name what's confusing. Ask.
+* Treat the user prompt as the source of requested intent and the repository as the source of current behavior.
+* Before changing existing behavior, inspect the relevant implementation, call sites, tests, and documented contracts. Keep the investigation proportional to the scope and risk. Resolve or report contradictions before coding.
+
+## 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+* No features beyond what was asked.
+* No abstractions for single-use code.
+* No "flexibility" or "configurability" that wasn't requested.
+* No error handling for impossible scenarios.
+* If you write 200 lines and it could be 50, rewrite it.
+* Consider edge and error cases according to their likelihood, impact, documented contract, and available evidence. Do not add handling for cases that are impossible, speculative, or outside the requested scope.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+* Don't "improve" adjacent code, comments, or formatting.
+* Don't refactor things that aren't broken.
+* Match existing style, even if you'd do it differently.
+* If you notice unrelated dead code, mention it - don't delete it.
+* Do not rewrite weak or unrelated tests unless the requested change depends on them. Report unrelated test problems separately.
+
+When your changes create orphans:
+
+* Remove imports/variables/functions that YOUR changes made unused.
+* Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+* "Add validation" → "Write tests for invalid inputs, then make them pass"
+* "Fix the bug" → "Write a test that reproduces it, then make it pass"
+* "Refactor X" → "Ensure tests pass before and after"
+
+For bug fixes:
+
+* Reproduce the reported behavior before changing the implementation when practical.
+* Confirm that the regression test fails for the expected reason before the fix and passes after the fix.
+* If direct reproduction is not practical, state why and use the closest reliable test, simulation, trace, or other evidence available.
+
+For multi-step tasks, state a brief plan:
+
+\`\`\`text
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+\`\`\`
+
+When verifying:
+
+* Do not treat the first passing test command as sufficient evidence by itself.
+* Confirm that the relevant tests ran, were not skipped, and exercised the changed behavior.
+* Check that new or modified tests would detect the original defect or incorrect behavior.
+* Run focused tests first, then broader checks when the scope and risk justify them.
+* If a test appears incomplete or misleading and directly affects verification, inspect it before accepting the result.
+* Do not stop after editing. Continue until the defined success criteria are verified.
+* If complete verification is blocked, report exactly what was verified, what was not verified, and why.
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## Technical Conversation and Documentation Writing Rule
+
+**ASD-STE100 Simplified Technical English**
+
+Use ASD-STE100 Simplified Technical English for technical explanations and documentation unless the user requests another style or the project requires established terminology. It is a controlled writing standard. It helps people write and understand clear technical text.`;
 
 /** What `loadProjectFile` reports about one read attempt. */
 export type LoadResult =
@@ -169,47 +255,42 @@ export async function buildWorkerRole(
   let platoBody = '';
   let agentsBody = '';
 
-  if (opts.includeProjectRules === false) {
-    layers.push({ layer: 'plato', chars: 0, source: 'fallback', present: false });
-    layers.push({ layer: 'agents', chars: 0, source: 'missing', present: false, filename: null });
+  // Project files are always included when present (D45a-3: no opt-out —
+  // file presence is the switch). Read at a generous size (DEFAULT_READ_BYTES)
+  // so a moderately large file is still read in full and then clipped at the
+  // per-layer cap. The per-layer cap (clip) is what keeps the prompt bounded;
+  // the read cap is a sanity guard against reading a 10GB file.
+  const plato = await loadProjectFile('PLATO.md', opts.root, DEFAULT_READ_BYTES);
+  if (plato.found) {
+    const c = clip(plato.body, cap);
+    platoBody = c.body;
+    layers.push({ layer: 'plato', chars: c.body.length, source: 'disk', present: true });
   } else {
-    // Read at a generous size (DEFAULT_READ_BYTES) so a moderately large
-    // file is still read in full and then clipped at the per-layer cap.
-    // The per-layer cap (clip) is what keeps the prompt bounded; the
-    // read cap is a sanity guard against reading a 10GB file.
-    const plato = await loadProjectFile('PLATO.md', opts.root, DEFAULT_READ_BYTES);
-    if (plato.found) {
-      const c = clip(plato.body, cap);
-      platoBody = c.body;
-      layers.push({ layer: 'plato', chars: c.body.length, source: 'disk', present: true });
-    } else {
-      // Missing, IO error, or too-big — all fall back to the bundled
-      // default so the operator-tuning layer is never absent. The
-      // Settings → Workers UI surfaces the read error verbatim.
-      const c = clip(DEFAULT_PLATO_BODY, cap);
-      platoBody = c.body;
-      layers.push({ layer: 'plato', chars: c.body.length, source: 'fallback', present: true });
-    }
-
-    // AGENTS.md first; CLAUDE.md as the documented alias.
-    const agents = await loadProjectFile('AGENTS.md', opts.root, DEFAULT_READ_BYTES);
-    let agentsMeta: LayerSource;
-    if (agents.found) {
-      const c = clip(agents.body, cap);
-      agentsBody = c.body;
-      agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'AGENTS.md' };
-    } else {
-      const claude = await loadProjectFile('CLAUDE.md', opts.root, DEFAULT_READ_BYTES);
-      if (claude.found) {
-        const c = clip(claude.body, cap);
-        agentsBody = c.body;
-        agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'CLAUDE.md' };
-      } else {
-        agentsMeta = { layer: 'agents', chars: 0, source: 'missing', present: false, filename: null };
-      }
-    }
-    layers.push(agentsMeta);
+    // Missing, IO error, or too-big — all fall back to the bundled default
+    // so the operator-tuning layer is never absent.
+    const c = clip(DEFAULT_PLATO_BODY, cap);
+    platoBody = c.body;
+    layers.push({ layer: 'plato', chars: c.body.length, source: 'fallback', present: true });
   }
+
+  // AGENTS.md first; CLAUDE.md as the documented alias.
+  const agents = await loadProjectFile('AGENTS.md', opts.root, DEFAULT_READ_BYTES);
+  let agentsMeta: LayerSource;
+  if (agents.found) {
+    const c = clip(agents.body, cap);
+    agentsBody = c.body;
+    agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'AGENTS.md' };
+  } else {
+    const claude = await loadProjectFile('CLAUDE.md', opts.root, DEFAULT_READ_BYTES);
+    if (claude.found) {
+      const c = clip(claude.body, cap);
+      agentsBody = c.body;
+      agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'CLAUDE.md' };
+    } else {
+      agentsMeta = { layer: 'agents', chars: 0, source: 'missing', present: false, filename: null };
+    }
+  }
+  layers.push(agentsMeta);
 
   // Assemble. Join with a blank line so a layer's leading whitespace
   // doesn't run into the next layer's text. Skip empty layers so we

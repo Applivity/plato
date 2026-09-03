@@ -323,10 +323,7 @@ export function chatHtml(): string {
   .duo .toggles { grid-column:2; display:flex; gap:16px; flex-wrap:wrap; }
   .duo .tog { display:flex; align-items:center; gap:6px; font-size:12px; }
   .duo .tog input { margin:0; }
-  /* Workers section (D45a-2): project-file state + PLATO.md actions. */
-  .workers .tog { display:flex; align-items:center; gap:6px;
-                  font-size:12px; line-height:1.4; }
-  .workers .tog input { margin:0; flex:none; }
+  /* Worker block in Orchestration (D45a-3): project-file state + actions. */
   .workers .pf { margin-top:14px; padding-top:12px;
                  border-top:1px solid var(--pl-border); }
   .workers .pline { display:flex; align-items:center; gap:10px;
@@ -670,8 +667,7 @@ export function chatHtml(): string {
      paperclip — sits under the chat box's left edge. */
   .cmd-btn { display:inline-flex; align-items:center; justify-content:center;
              width:24px; height:24px; padding:0; border:none; border-radius:4px;
-             background:transparent; color:var(--pl-muted); cursor:pointer;
-             font-family:inherit; font-size:15px; font-weight:600; line-height:1; }
+             background:transparent; color:var(--pl-muted); cursor:pointer; }
   .cmd-btn:hover { color:var(--vscode-editor-foreground);
                    background:rgba(128,128,128,.08); }
   .clip-btn { display:inline-flex; align-items:center; justify-content:center;
@@ -921,7 +917,13 @@ export function chatHtml(): string {
   <div class="composer-bar">
     <div class="bar-left">
       <button id="cmds" class="cmd-btn" type="button" title="Commands (/…)"
-              aria-label="Commands">/</button>
+              aria-label="Commands">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="5" x2="16" y2="19"></line>
+        </svg>
+      </button>
       <div class="future-attach">
         <button id="clip" class="clip-btn" type="button" title="Attach files"
                 aria-label="Attach files">
@@ -1954,6 +1956,48 @@ export function chatHtml(): string {
     }
     oblock.appendChild(modeRow);
 
+    // D45a-3: the worker is the one doer in every arrangement, so its
+    // project-file block lives in Orchestration (shown for the active mode),
+    // not as a separate top-level section. PLATO.md + AGENTS.md/CLAUDE.md
+    // always join when present — there is no include opt-out.
+    const w = d.workers || { noRoot: true, plato: 'default', agentsFile: null };
+    oblock.appendChild(el('h3', 'shead3', 'The worker — project files'));
+    const wBlock = el('div', 'workers');
+    if (w.noRoot) {
+      wBlock.appendChild(el('div', 'note',
+        'Open a workspace folder to see the project-file state.'));
+    } else {
+      const pf = el('div', 'pf');
+      const pline = el('div', 'pline');
+      pline.appendChild(el('span', 'pname', 'PLATO.md'));
+      pline.appendChild(el('span', 'pst',
+        w.plato === 'custom'
+          ? 'Custom — this file tunes the worker.'
+          : 'Using the bundled default'));
+      pline.appendChild(el('span', 'spacer'));
+      pline.appendChild(w.plato === 'custom'
+        ? sbtn('Open PLATO.md', () => {
+            vsapi.postMessage({ type: 'plato-open', from: 'settings' });
+          }, 'secondary')
+        : sbtn('Create PLATO.md', () => {
+            vsapi.postMessage({ type: 'plato-open', from: 'settings' });
+          }, 'secondary'));
+      pf.appendChild(pline);
+      const aline = el('div', 'pline');
+      aline.appendChild(el('span', 'pname', 'AGENTS.md'));
+      aline.appendChild(el('span', 'pst',
+        w.agentsFile
+          ? w.agentsFile + ' present'
+          : 'Not present — Plato reads it when it exists.'));
+      pf.appendChild(aline);
+      pf.appendChild(el('div', 'note',
+        'No PLATO.md means the bundled default is in use; creating one writes ' +
+        'that default so the file starts where the shipped role leaves off. ' +
+        'Your AGENTS.md / CLAUDE.md stays yours.'));
+      wBlock.appendChild(pf);
+    }
+    oblock.appendChild(wBlock);
+
     // Academy status block (D33, D44b): parsed, error, or nothing.
     // D44b: Gate the full block on mode === 'academy'. In solo/duo,
     // only show a brief hint if the file is available.
@@ -2078,75 +2122,6 @@ export function chatHtml(): string {
 
     secO.appendChild(oblock);
     wrap.appendChild(secO);
-
-
-    // ---- 2b. Workers — project files (D45a-2) ----
-    const w = d.workers || {
-      noRoot: true, include: true, plato: 'default', agentsFile: null,
-    };
-    const secWDet = document.createElement('details');
-    secWDet.className = 'sec';
-    secWDet.appendChild(el('summary', null, 'Workers  —  project files'));
-    const wBody = el('div', 'secbody');
-    secWDet.appendChild(wBody);
-    wBody.appendChild(el('h2', 'shead2', 'Workers'));
-    wBody.appendChild(el('p', 'shelp',
-      'How this project tunes the worker prompt: mode override, then PLATO.md ' +
-      '(or the bundled default), then your AGENTS.md / CLAUDE.md. Applies from ' +
-      'the next run. The philosophers never see these files.'));
-    const wBlock = el('div', 'sblock workers');
-    if (w.noRoot) {
-      wBlock.appendChild(el('div', 'note',
-        'Open a workspace folder to see the project-file state.'));
-    } else {
-      const incTog = document.createElement('input');
-      incTog.type = 'checkbox';
-      incTog.checked = Boolean(w.include);
-      incTog.addEventListener('change', () => {
-        vsapi.postMessage({
-          type: 'set-include-project-rules',
-          value: incTog.checked,
-        });
-      });
-      const incLbl = el('label', 'tog',
-        'Include PLATO.md + AGENTS.md/CLAUDE.md in the worker prompt');
-      incLbl.insertBefore(incTog, incLbl.firstChild);
-      wBlock.appendChild(incLbl);
-      if (w.include === false) {
-        wBlock.appendChild(el('div', 'note',
-          'Excluded — project files join the prompt only while this is on.'));
-      }
-      const pf = el('div', 'pf');
-      const pline = el('div', 'pline');
-      pline.appendChild(el('span', 'pname', 'PLATO.md'));
-      pline.appendChild(el('span', 'pst',
-        w.plato === 'custom'
-          ? 'Custom — this file tunes the worker.'
-          : 'Using the bundled default'));
-      pline.appendChild(el('span', 'spacer'));
-      pline.appendChild(w.plato === 'custom'
-        ? sbtn('Open PLATO.md', () => {
-            vsapi.postMessage({ type: 'plato-open', from: 'settings' });
-          }, 'secondary')
-        : sbtn('Create PLATO.md', () => {
-            vsapi.postMessage({ type: 'plato-open', from: 'settings' });
-          }, 'secondary'));
-      pf.appendChild(pline);
-      const aline = el('div', 'pline');
-      aline.appendChild(el('span', 'pname', 'AGENTS.md'));
-      aline.appendChild(el('span', 'pst',
-        w.agentsFile
-          ? w.agentsFile + ' present'
-          : 'Not present — Plato reads it when it exists.'));
-      pf.appendChild(aline);
-      pf.appendChild(el('div', 'note',
-        'Your AGENTS.md / CLAUDE.md stays yours; PLATO.md is how you tune Plato. ' +
-        'Creating it writes the bundled default so the file starts where the ' +
-        'shipped role leaves off.'));
-      wBlock.appendChild(pf);
-    }
-    wBody.appendChild(wBlock);
-    wrap.appendChild(secWDet);
 
 
     // ---- 3. Context (compaction) (collapsed) ----
