@@ -17,23 +17,21 @@ may not be available when you work; everything you need is in this repo.
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.22.0).
-- HEAD (`main`) is at **D45a-3** — product model lock (one worker + N
-  philosophers) + project-files rework (this session's commit). Thesis
-  settled: Solo/Duo/Academy = the SAME one worker with 0/1/N philosophers;
-  multiple simultaneous workers are out of scope. Project files (PLATO.md +
-  AGENTS.md/CLAUDE.md) ALWAYS join the worker prompt when present — the
-  `includeProjectRules` opt-out (setting, per-member flag, checkbox) was
-  removed. Settings: the worker file-state block ("The worker — project
-  files") lives in Orchestration after the mode cards (no separate Workers
-  section). `/system-prompt` materializes PLATO.md — its created file (and
-  the in-memory fallback) is an identity header + Karpathy behavioral
-  guidance. Command surface = Compact · History · System prompt. Empty
-  composer stacks a "Set up this project's rules" card under the connect
-  card when no rule file exists. Earlier this session: D45a-2, D44d
-  (coherent compaction), D44c, D44a. Working tree clean. 179 vitest cases
-  across 18 files in `packages/core`. Known deferred: Academy mode select
-  reverts to Duo (founder has Duo/Academy mode-UI plans).
+  extension shell, v0.23.0).
+- HEAD (`main`) is at **D45a-4** — UI terminology + academy.yaml scoping
+  (this session's commit). The acting agent is **"Plato"** in user-facing
+  copy; "worker" stays internal + the academy.yaml `kind` label; the product
+  name stays **Plato**. Mode copy = Plato alone / Plato + one philosopher /
+  Plato + a council of philosophers. academy.yaml is surfaced only in Academy
+  mode (the Solo/Duo "switch to Academy" hint and the host run() notices are
+  gone). Underlying model (D45a-3): one worker + N philosophers; project
+  files (PLATO.md + AGENTS.md/CLAUDE.md) ALWAYS join the worker prompt when
+  present (no opt-out); Settings → Orchestration holds a "Plato — project
+  files" block; `/system-prompt` materializes PLATO.md (identity header +
+  Karpathy guidance); command surface = Compact · History · System prompt.
+  Working tree clean. 179 vitest cases across 18 files in `packages/core`.
+  Known deferred: Academy mode select reverts to Duo (founder has
+  Duo/Academy mode-UI plans); philosopher count cap (~5) is undecided.
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -137,13 +135,13 @@ may not be available when you work; everything you need is in this repo.
 4. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
-> Project-files work shipped 2026-09-03: D45a-2 (0.21.0, `/system-prompt`
-> PLATO.md materialization, empty-composer card) then **D45a-3 (0.22.0)**
-> — product model locked (one worker + N philosophers), `includeProjectRules`
-> removed (file presence is the switch), worker file-state moved into
-> Settings → Orchestration, default PLATO body = identity header + Karpathy
-> guidance. Command surface is **Compact · History · System prompt**. See
-> DECISIONS D45a-2 / D45a-3.
+> Project-files + model work shipped 2026-09-03: D45a-2 (0.21.0,
+> `/system-prompt` PLATO.md materialization, empty-composer card), D45a-3
+> (0.22.0, one worker + N philosophers lock, `includeProjectRules` removed,
+> worker file-state in Orchestration, default body = identity + Karpathy),
+> and **D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode)**.
+> Command surface is **Compact · History · System prompt**. See DECISIONS
+> D45a-2 / D45a-3 / D45a-4.
 
 ## Ground rules for any agent working here
 

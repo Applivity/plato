@@ -971,6 +971,30 @@ Debated and settled with the founder before further work (2026-09-03):
 - Known, deferred (founder): Academy mode select reverts to Duo — the founder
   has Duo/Academy mode-UI redesign plans and will address it there.
 
+**D45a-4 — UI terminology + academy.yaml scoping (M4.1, 0.23.0, shipped 2026-09-03).**
+
+A small polish pass settled in discussion with the founder:
+
+- **Naming: the acting agent is "Plato" in all user-facing copy.** "worker"
+  remains the internal code term and the `academy.yaml` `kind` label (where it
+  contrasts with "philosopher"). The product name stays **Plato**. In Solo/Duo
+  the doer *is* Plato; in Academy the doer is a named member, so "worker" is
+  the correct role word there. UI copy (headings, mode descriptions, the Duo
+  "same as …" option, the empty-composer card) now says "Plato".
+- **Mode copy:** Solo = Plato alone · Duo = Plato + one philosopher · Academy =
+  Plato + a council of philosophers (from `.plato/academy.yaml`). The old
+  "one worker, up to 3 philosophers" is gone — there is no enforced cap yet;
+  the cap (likely 5) is deferred to a later milestone and will be recorded
+  then, not printed as an undecided number now.
+- **academy.yaml is surfaced only in Academy mode.** Removed: the Solo/Duo
+  Settings hint ("academy.yaml detected — switch to Academy") and the two host
+  `run()` notices ("academy.yaml detected but not active" / "has a problem but
+  is not active"). A stray or broken academy.yaml in Solo/Duo is now inert and
+  silent. Academy mode already auto-loads the file and renders presence /
+  error / help-create (Create example), which stays.
+- **"The worker — project files" → "Plato — project files"** (in Settings →
+  Orchestration), with top spacing restored.
+
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
 
 Duo philosophers are hardcoded in `core/src/teams/personas.ts` (five personas, literal role strings). The user has one override surface today (`plato.observer.role` replaces the persona's role wholesale) and a flat list of settings for the other tiers. Academy has richer per-member config via yaml. The asymmetry is real and the user needs richer Duo config too.

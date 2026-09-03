@@ -2106,11 +2106,8 @@ class ChatHost {
         );
         return;
       }
-      // Not in Academy mode: the file is present but inert. Say so once.
-      this.send(
-        'notice',
-        `academy.yaml has a problem but is not active (orchestration: ${orchestration}) — ${msg}`,
-      );
+      // Not in Academy mode: a stray/broken academy.yaml is inert — ignore it
+      // (D45a-4: academy.yaml is only surfaced in Academy mode).
     }
     if (team === null && orchestration === 'academy') {
       const legacy = legacyConfigAtRoot(root);
@@ -2121,12 +2118,6 @@ class ChatHost {
           : 'Academy mode needs .plato/academy.yaml — create it from Settings → Orchestration → Create example, or switch to Solo/Duo.',
       );
       return;
-    }
-    if (team !== null && orchestration !== 'academy') {
-      this.send(
-        'notice',
-        `academy.yaml detected but not active (orchestration: ${orchestration}) — switch to Academy in Settings to use it.`,
-      );
     }
     const useAcademy = orchestration === 'academy' && team !== null;
     const workerMember: TeamMember | undefined = useAcademy

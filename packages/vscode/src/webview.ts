@@ -323,7 +323,8 @@ export function chatHtml(): string {
   .duo .toggles { grid-column:2; display:flex; gap:16px; flex-wrap:wrap; }
   .duo .tog { display:flex; align-items:center; gap:6px; font-size:12px; }
   .duo .tog input { margin:0; }
-  /* Worker block in Orchestration (D45a-3): project-file state + actions. */
+  /* Plato block in Orchestration (D45a-3/D45a-4): project-file state + actions. */
+  .workers-head { margin-top:18px; }
   .workers .pf { margin-top:14px; padding-top:12px;
                  border-top:1px solid var(--pl-border); }
   .workers .pline { display:flex; align-items:center; gap:10px;
@@ -858,7 +859,7 @@ export function chatHtml(): string {
   <div class="empty-card" id="projCard" hidden>
     <h3>Set up this project&rsquo;s rules</h3>
     <p>This project has no PLATO.md yet. Plato ships a bundled default that
-       tunes how its worker behaves &mdash; create the file to make it yours.
+       tunes how Plato behaves &mdash; create the file to make it yours.
        Your AGENTS.md or CLAUDE.md stays yours on top.</p>
     <button id="projCta" class="btn btn-secondary" type="button">Create PLATO.md</button>
   </div>
@@ -1942,7 +1943,7 @@ export function chatHtml(): string {
     const MODES = [
       { id: 'solo', label: 'Solo', desc: 'Plato alone. No philosopher watching.' },
       { id: 'duo', label: 'Duo', desc: 'Plato + one philosopher steering the run.' },
-      { id: 'academy', label: 'Academy', desc: 'Council from .plato/academy.yaml - one worker, up to 3 philosophers.' },
+      { id: 'academy', label: 'Academy', desc: 'Plato + a council of philosophers (from .plato/academy.yaml).' },
     ];
     const modeRow = el('div', 'modes');
     for (const mode of MODES) {
@@ -1961,7 +1962,7 @@ export function chatHtml(): string {
     // not as a separate top-level section. PLATO.md + AGENTS.md/CLAUDE.md
     // always join when present — there is no include opt-out.
     const w = d.workers || { noRoot: true, plato: 'default', agentsFile: null };
-    oblock.appendChild(el('h3', 'shead3', 'The worker — project files'));
+    oblock.appendChild(el('h3', 'shead3 workers-head', 'Plato — project files'));
     const wBlock = el('div', 'workers');
     if (w.noRoot) {
       wBlock.appendChild(el('div', 'note',
@@ -1972,7 +1973,7 @@ export function chatHtml(): string {
       pline.appendChild(el('span', 'pname', 'PLATO.md'));
       pline.appendChild(el('span', 'pst',
         w.plato === 'custom'
-          ? 'Custom — this file tunes the worker.'
+          ? 'Custom — this file tunes Plato.'
           : 'Using the bundled default'));
       pline.appendChild(el('span', 'spacer'));
       pline.appendChild(w.plato === 'custom'
@@ -1998,9 +1999,9 @@ export function chatHtml(): string {
     }
     oblock.appendChild(wBlock);
 
-    // Academy status block (D33, D44b): parsed, error, or nothing.
-    // D44b: Gate the full block on mode === 'academy'. In solo/duo,
-    // only show a brief hint if the file is available.
+    // Academy status block (D33, D44b, D45a-4): only in Academy mode.
+    // In solo/duo, academy.yaml is never surfaced (D45a-4) — it's a
+    // council file, irrelevant until the mode is Academy.
     const st = orch.academy || {};
     if (orch.mode === 'academy') {
       const stBox = el('div', 'astat');
@@ -2030,16 +2031,6 @@ export function chatHtml(): string {
         }, 'secondary'));
       }
       oblock.appendChild(stBox);
-    } else if (st.available) {
-      const hintBox = el('div', 'astat');
-      hintBox.appendChild(el(
-        'div', 'note',
-        'academy.yaml detected \u2014 switch to Academy to use it.',
-      ));
-      hintBox.appendChild(sbtn('Switch to Academy', () => {
-        vsapi.postMessage({ type: 'set-orchestration', mode: 'academy' });
-      }, 'secondary'));
-      oblock.appendChild(hintBox);
     }
 
     // D38: Duo sub-block only renders when mode === 'duo'. Replaces
@@ -2070,7 +2061,7 @@ export function chatHtml(): string {
       grid.appendChild(pDesc);
 
       const oSel = sel(
-        [{ value: '', label: '(same as worker)' }, ...(d.modelItems || [])],
+        [{ value: '', label: '(same as Plato)' }, ...(d.modelItems || [])],
         String(obs.model || ''),
       );
       const pTog = document.createElement('input');
