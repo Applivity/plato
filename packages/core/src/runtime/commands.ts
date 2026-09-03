@@ -1,13 +1,14 @@
 /**
- * D44c/D44d slash commands: the canonical registry. Commands are NOT text
- * expanders — each is a real action the host executes (`slash-run` in the
- * VS Code shell): compact the conversation (force the live run, or fold
- * older turns into a summary when idle) or import a past conversation as
- * context. Core keeps only the metadata the webview menu renders; behavior
- * lives in the host because it needs the run controller, the chat archive,
- * and a provider to summarise.
+ * D44c/D44d/D45a-2 slash commands: the canonical registry. Commands are NOT
+ * text expanders — each is a real action the host executes (`slash-run` in
+ * the VS Code shell): compact the conversation (force the live run, or fold
+ * older turns into a summary when idle), import a past conversation as
+ * context, or open/create the project's PLATO.md. Core keeps only the
+ * metadata the webview menu renders; behavior lives in the host because it
+ * needs the run controller, the chat archive, a provider to summarise, and
+ * the workspace file system.
  */
-export type SlashCommandId = 'compact' | 'history';
+export type SlashCommandId = 'compact' | 'history' | 'system-prompt';
 
 export interface SlashCommand {
   id: SlashCommandId;
@@ -29,6 +30,12 @@ const COMMANDS: readonly SlashCommand[] = [
     label: 'History',
     usage: '/history',
     blurb: 'Import a past conversation as context',
+  },
+  {
+    id: 'system-prompt',
+    label: 'System prompt',
+    usage: '/system-prompt',
+    blurb: 'Open PLATO.md — create it from the bundled default if you have none',
   },
 ];
 

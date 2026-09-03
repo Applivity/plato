@@ -865,6 +865,8 @@ The founder asked why Plato's `/compact` only works mid-run when other agents co
 **D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, 0.17.0, shipped 2026-09-03).**
 
 > **Status (2026-09-03):** the three-layer join is shipped. `buildWorkerRole` lives at `packages/core/src/runtime/workerRole.ts`; the loop calls it at run start (`loop.ts:256-264`); the host passes `plato.worker.includeProjectRules`. Philosophers still see only their persona/academy role (D45a invariant: observer.ts never calls `buildWorkerRole`). **Deferred to a follow-up row in PROGRESS** (UI-first per D45c): the Settings → Workers section, the `/system-prompt` command, the secondary empty-composer card, and the Academy per-member `includeProjectRules` flag. The 3-layer join is the contract; the UI is the affordance layer.
+>
+> **Follow-up shipped 2026-09-03 as D45a-2 (below)** — scoped by the founder to *PLATO.md materialization* rather than a join-state renderer.
 
 The worker is one agent with one prompt, regardless of mode. The customisation surface has the same shape in all three modes; only the sources differ.
 
@@ -889,6 +891,45 @@ The worker is one agent with one prompt, regardless of mode. The customisation s
 - **Discoverability:** `/system-prompt` command (renders the join state for the current mode + opens the files), secondary empty-composer card when neither PLATO.md nor AGENTS.md is present, Settings → Workers section (read-only state, per-file actions).
 - **The existing `SYSTEM_PROMPT` constant** stays at `loop.ts:29-38` but is renamed to `WORKER_IDENTITY` and reframed as the *baseline identity* ("you are Plato, an AI coding agent…"). PLATO.md and AGENTS.md sit on top. The default PLATO.md content is derived from the existing DECISIONS.md operational rules (D08 modes, D19 safety, D31 budgets, D32 orchestration contract, D37 compaction).
 - **Naming note:** PLATO.md and AGENTS.md live at the repo root, not under `.plato/`. The operator's mental model is "open the project, see both files." `.plato/` remains the namespace for team / MCP / Duo config. The shipped default for PLATO.md lives in the VSIX as a static asset; the loader reads the on-disk file if present, otherwise returns the bundled default. No surprise file writes.
+
+**D45a-2 — Project files UI + discoverability: PLATO.md materialization (M4.1, 0.21.0, shipped 2026-09-03).**
+
+The D45a deferral shipped — the affordance layer for the three-layer join,
+scoped by the founder to **PLATO.md materialization**, not a join-state
+renderer.
+
+- **`/system-prompt` materializes PLATO.md.** Plato ships a bundled in-memory
+  default role (`DEFAULT_PLATO_BODY` in core `workerRole.ts`). The command
+  opens PLATO.md when it exists; when absent it writes that default body to
+  `<root>/PLATO.md` and opens it — "get those in-memory instructions on the
+  file" as the starting point. It never writes or edits the user's AGENTS.md /
+  CLAUDE.md (those join on top and stay theirs) and renders no join-state card.
+- **Settings → Workers** (a new Settings section): read-only project-file
+  state with **PLATO.md-only actions** ("create or open PLATO.md only; in
+  create mode paste the content"). It shows the Include toggle
+  (`plato.worker.includeProjectRules`, Global) + a PLATO.md row (Using the
+  bundled default → Create PLATO.md; Custom → Open PLATO.md) + a read-only
+  AGENTS.md/CLAUDE.md presence line. Probes are stat-only — a file body is
+  never read, so a giant PLATO.md cannot be slurped by the UI.
+- **Empty-composer secondary card** stacks under the "Connect your first
+  provider" card (empty state only — no provider connected) when a workspace
+  folder is open and none of PLATO.md / AGENTS.md / CLAUDE.md exist; its CTA
+  creates PLATO.md from the bundled default and opens it.
+- **Academy per-member `includeProjectRules`** flag in academy.yaml (JSON
+  schema + hand-rolled core parse + shipped example + a parse test). The
+  effective include for a run is the workspace `plato.worker.includeProjectRules`
+  setting **AND** the member flag (absent = inherit). Layer 1 (the mode
+  override) is never gated; philosophers never see the files regardless.
+- **Bundled-default fix:** `DEFAULT_PLATO_BODY` still told the worker that
+  compaction runs "(Auto) or on user request (Manual)" — Manual was removed in
+  D44d. Reworded to the post-D44d model (older turns fold into a running
+  summary automatically, or on /compact), because that text is now the
+  user-facing create template.
+- Command surface is now **Compact · History · System prompt** (core registry,
+  `runtime/commands.ts`).
+
+No migration concerns (D45d): PLATO.md did not exist as a user-facing surface
+before this milestone; materializing it is additive.
 
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
 

@@ -18,12 +18,18 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.20.0).
-- HEAD (`main`) is at **D44d** — coherent compaction (this session's
-  commit). Commands are Compact · History (Manual + /autocompact removed).
-  Run context = running conversation summary + recent tail: /compact works
-  mid-run (force) or idle (fold older turns into a summary); chats
-  auto-fold on a cadence so older turns are never silently dropped.
-  Working tree clean. 181 vitest cases across 18 files in `packages/core`.
+- HEAD (`main`) is at **D45a-2** — project-files UI + discoverability
+  (this session's commit). Command surface is now **Compact · History ·
+  System prompt**. `/system-prompt` materializes PLATO.md (opens it, or
+  writes the bundled default and opens it; AGENTS.md/CLAUDE.md are never
+  touched). Settings → Workers shows the project-file state + a Create/Open
+  PLATO.md action + the includeProjectRules toggle; the empty composer
+  stacks a "Set up this project's rules" card under the connect card;
+  Academy members opt out per-member via `includeProjectRules` in
+  academy.yaml (ANDed on the workspace setting). Earlier this session:
+  D44d (coherent compaction — /compact anytime + auto memory fold),
+  D44c, D44a. Working tree clean. 182 vitest cases across 18 files in
+  `packages/core`.
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -117,33 +123,20 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D45a-2 — D45a UI/discoverability follow-ups** (deferred, recorded
-   in DECISIONS D45a "Status" box): Settings → Workers section
-   (read-only state, per-file actions, the includeProjectRules toggle);
-   `/system-prompt` slash command (renders the join state for the
-   current mode + opens the files); secondary empty-composer card when
-   neither PLATO.md nor AGENTS.md is present; Academy per-member
-   `includeProjectRules` flag in `academy.yaml`. The 3-layer join is
-   the contract; the UI is the affordance layer (D45c: UI first).
-   **D44a shipped 2026-09-03, superseded by D44c, then D44d (this
-   commit) — pick up here.** The command surface is now **Compact ·
-   History** (real host actions; core `runtime/commands.ts`, host
-   `slash-run`): D44c dropped D44a's five text-expander commands;
-   D44d removed `/autocompact` and Manual compaction mode, and made
-   compaction coherent — context is a running summary + the recent
-   tail, `/compact` works mid-run (force) or idle (fold into a
-   summary), and chats auto-fold on a cadence (see DECISIONS D44d).
-   The `/system-prompt` command remains deferred whole to this row
-   (DECISIONS D44a/D44c status notes).
-2. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
+1. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
    philosopher (deferred; see DECISIONS D45b).
-4. **Chat-log message rendering.** Markdown, code blocks, tool-call
+2. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.
-5. **History run-detail view.** Friendlier rendering of a run's
+3. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
-6. **Small wins:** title regenerate affordance (hover rename → add
+4. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
+
+> D45a-2 (project-files UI: `/system-prompt` PLATO.md materialization,
+> Settings → Workers section, empty-composer card, Academy per-member
+> `includeProjectRules`) shipped 2026-09-03 in 0.21.0 — see DECISIONS
+> D45a-2. Command surface is now **Compact · History · System prompt**.
 
 ## Ground rules for any agent working here
 

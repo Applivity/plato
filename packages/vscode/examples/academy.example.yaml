@@ -11,6 +11,10 @@ members:
     model: anthropic:claude-sonnet-4-5
     role: "You fix bugs in Android Java code. Enumerate defects, fix them, re-verify."
     kind: worker
+    # Keep PLATO.md + AGENTS.md/CLAUDE.md in this worker's prompt (default
+    # true — inherits plato.worker.includeProjectRules). Set false to opt a
+    # member out of the project files; the role above is never gated.
+    includeProjectRules: true
 
   # Philosophers watch the run and steer it.
   - name: aristotle

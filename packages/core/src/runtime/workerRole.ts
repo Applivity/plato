@@ -74,8 +74,8 @@ export const DEFAULT_PLATO_BODY =
   'region and report anything you could not confirm. ' +
   'Never touch secret-bearing files (the host enforces a deny-list) and never ' +
   'ignore errors silently. Stop and summarize once the task is complete. ' +
-  'If the context grows large, the loop compacts older turns automatically ' +
-  '(Auto) or on user request (Manual).';
+  'If the context grows large, the loop folds older turns into a running summary ' +
+  'automatically, or when the user asks with /compact.';
 
 /** What `loadProjectFile` reports about one read attempt. */
 export type LoadResult =

@@ -23,6 +23,7 @@ import {
   legacyConfigAtRoot,
   isSecretPath,
   loadProjectFile,
+  DEFAULT_PLATO_BODY,
   slashCommand,
   slashMenu,
   COMPACT_SYSTEM_PROMPT,
@@ -746,6 +747,50 @@ class ChatHost {
           }
           return;
         }
+        // D45a-2: Workers section toggle (PLATO.md + AGENTS.md/CLAUDE.md in
+        // the worker prompt). Global, like the observer knobs above.
+        if (
+          m.type === 'set-include-project-rules' &&
+          typeof m.value === 'boolean'
+        ) {
+          await vscode.workspace
+            .getConfiguration('plato')
+            .update(
+              'worker.includeProjectRules',
+              m.value,
+              vscode.ConfigurationTarget.Global,
+            );
+          void this.sendSettings(
+            'Project files ' +
+              (m.value ? 'included in' : 'excluded from') +
+              ' the worker prompt — applies from the next run.',
+          );
+          return;
+        }
+        // D45a-2: open-or-create PLATO.md (Settings row and the empty-composer
+        // card both land here). The from:'settings' sender stays on the
+        // Settings page and wants a flash there; the empty card / /system-prompt
+        // get a chat notice.
+        if (m.type === 'plato-open') {
+          await this.openPlato(m.from === 'settings' ? 'settings' : 'chat');
+          return;
+        }
+        // D45a-2: the webview asks once when its empty state appears whether
+        // any project rule file exists (drives the secondary empty card).
+        if (m.type === 'proj-files') {
+          const root = this.workspaceRoot();
+          const present =
+            root !== null &&
+            ((await this.existsAt(root, 'PLATO.md')) ||
+              (await this.existsAt(root, 'AGENTS.md')) ||
+              (await this.existsAt(root, 'CLAUDE.md')));
+          void this.panel.webview.postMessage({
+            type: 'proj-files',
+            noRoot: root === null,
+            present,
+          });
+          return;
+        }
         // D44d: compaction is always auto at the threshold — Manual is gone.
         // The threshold slider posts set-compaction-threshold; the Compact
         // button posts request-compact (force the live run). Both share the
@@ -846,6 +891,93 @@ class ChatHost {
 
   private workspaceRoot(): string | null {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
+  }
+
+  /** Stat-only existence probe — never reads a body (a giant PLATO.md must not be slurped). */
+  private async existsAt(root: string, rel: string): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.joinPath(vscode.Uri.file(root), rel));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * D45a-2: read-only state for the Settings → Workers section. Stat-only —
+   * PLATO.md is 'custom' when a file exists, else the bundled default is in
+   * use; agentsFile reports which project-manual file the join would read
+   * (AGENTS.md first, CLAUDE.md alias).
+   */
+  private async workersState(): Promise<{
+    noRoot: boolean;
+    include: boolean;
+    plato: 'custom' | 'default';
+    agentsFile: 'AGENTS.md' | 'CLAUDE.md' | null;
+  }> {
+    const root = this.workspaceRoot();
+    if (root === null) {
+      return { noRoot: true, include: true, plato: 'default', agentsFile: null };
+    }
+    const include = vscode.workspace
+      .getConfiguration('plato')
+      .get<boolean>('worker.includeProjectRules', true);
+    const plato = (await this.existsAt(root, 'PLATO.md')) ? 'custom' : 'default';
+    const agentsFile = (await this.existsAt(root, 'AGENTS.md'))
+      ? 'AGENTS.md'
+      : (await this.existsAt(root, 'CLAUDE.md'))
+        ? 'CLAUDE.md'
+        : null;
+    return { noRoot: false, include, plato, agentsFile };
+  }
+
+  /**
+   * D45a-2: the single open-or-create action behind /system-prompt, the
+   * Settings → Workers row, and the empty-composer card. Opens PLATO.md when
+   * it exists; otherwise materializes it from the bundled default so the
+   * operator's on-disk copy starts exactly where the shipped in-memory role
+   * leaves off. AGENTS.md / CLAUDE.md are never written.
+   */
+  private async openPlato(feedback: 'settings' | 'chat'): Promise<void> {
+    const root = this.workspaceRoot();
+    if (root === null) {
+      this.send('notice', 'Open a workspace folder before using /system-prompt.');
+      return;
+    }
+    const file = vscode.Uri.joinPath(vscode.Uri.file(root), 'PLATO.md');
+    let created = false;
+    try {
+      await vscode.workspace.fs.stat(file);
+    } catch {
+      try {
+        await vscode.workspace.fs.writeFile(
+          file,
+          Buffer.from(DEFAULT_PLATO_BODY, 'utf8'),
+        );
+        created = true;
+      } catch (e) {
+        const why = e instanceof Error ? e.message : 'error';
+        if (feedback === 'settings') {
+          void this.sendSettings(`Could not create PLATO.md — ${why}`);
+        } else {
+          this.send('error', `Could not create PLATO.md — ${why}`);
+        }
+        return;
+      }
+    }
+    if (created) {
+      if (feedback === 'settings') {
+        void this.sendSettings(
+          'PLATO.md created from the bundled default — edit it to tune the worker prompt.',
+        );
+      } else {
+        this.send(
+          'notice',
+          'Created PLATO.md from the bundled default — edit it to tune the worker prompt. It joins your AGENTS.md/CLAUDE.md, which stay yours.',
+        );
+      }
+    }
+    void vscode.window.showTextDocument(file);
   }
 
   /** True when `raw` resolves to a root-relative path inside `root`. */
@@ -959,6 +1091,11 @@ class ChatHost {
     }
     if (id === 'history') {
       await this.importHistory();
+    }
+    // D45a-2: /system-prompt opens the project's PLATO.md, creating it from
+    // the bundled default when absent — the worker prompt is on the file.
+    if (id === 'system-prompt') {
+      await this.openPlato('chat');
     }
   }
 
@@ -1303,6 +1440,7 @@ class ChatHost {
         })),
         academy: this.academyStatus(),
       },
+      workers: await this.workersState(),
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
@@ -2362,13 +2500,16 @@ class ChatHost {
         }),
         model: ref,
         role: workerMember?.role,
-        // D45a: opt-out for the PLATO.md + AGENTS.md layers. Default true;
-        // the host reads `plato.worker.includeProjectRules` (workspace
-        // setting). The loop calls buildWorkerRole() to assemble the
-        // joined worker system prompt.
-        includeProjectRules: vscode.workspace
-          .getConfiguration('plato')
-          .get<boolean>('worker.includeProjectRules', true),
+        // D45a/D45a-2: opt-out for the PLATO.md + AGENTS.md layers. Effective
+        // include = the workspace `plato.worker.includeProjectRules` setting
+        // AND the Academy member's `includeProjectRules` flag (default true =
+        // inherit the workspace setting; false opts that member out). The
+        // loop calls buildWorkerRole() to assemble the joined prompt.
+        includeProjectRules:
+          vscode.workspace
+            .getConfiguration('plato')
+            .get<boolean>('worker.includeProjectRules', true) &&
+          (workerMember?.includeProjectRules ?? true),
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
