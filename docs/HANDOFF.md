@@ -10,15 +10,17 @@ may not be available when you work; everything you need is in this repo.
 3. [ARCHITECTURE.md](ARCHITECTURE.md) — binding design contracts
 4. [PROGRESS.md](PROGRESS.md) — the running change log (newest first)
 
-## Current repository state (verified 2026-09-02)
+## Current repository state (verified 2026-09-03)
 
 - Location: `/Users/ai/Desktop/plato` (canonical remote is
   `https://github.com/applivity-com/plato`, private, default branch
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.16.0).
-- HEAD (`main`) is at **D43** (commit `c27cda0`). Working tree clean.
+  extension shell, v0.18.0).
+- HEAD (`main`) is at **D44a** — the slash-commands slot + paperclip file
+  attachment (this session's commit). Working tree clean. ~189 vitest
+  cases across 18 files in `packages/core`.
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -30,8 +32,8 @@ may not be available when you work; everything you need is in this repo.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 155 passing
-  vitest cases across 16 files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 189 passing
+  vitest cases across 18 files in packages/core).
 
 ## How the packages connect
 
@@ -112,12 +114,7 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D44a — slash-commands slot + file attachment.** The reserved bar gap
-   (D39). 5 commands (`/plan` `/fix` `/review` `/commit` `/test`) + a
-   paperclip file attach with secret deny-list. Design locked in DECISIONS
-   D44a. **D44b shipped 2026-09-02 (e26a6f1) and D45a shipped 2026-09-03
-   — pick up here for D44a.**
-2. **D45a-2 — D45a UI/discoverability follow-ups** (deferred, recorded
+1. **D45a-2 — D45a UI/discoverability follow-ups** (deferred, recorded
    in DECISIONS D45a "Status" box): Settings → Workers section
    (read-only state, per-file actions, the includeProjectRules toggle);
    `/system-prompt` slash command (renders the join state for the
@@ -125,7 +122,10 @@ may not be available when you work; everything you need is in this repo.
    neither PLATO.md nor AGENTS.md is present; Academy per-member
    `includeProjectRules` flag in `academy.yaml`. The 3-layer join is
    the contract; the UI is the affordance layer (D45c: UI first).
-3. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
+   **D44a shipped 2026-09-03 (this commit) — pick up here.** Its
+   `/system-prompt` was intentionally not registered (deferred whole,
+   DECISIONS D44a status note).
+2. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
    philosopher (deferred; see DECISIONS D45b).
 4. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the

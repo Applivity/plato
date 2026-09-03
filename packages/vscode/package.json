@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -18,7 +18,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-vscode-0.17.0.vsix --force"
+    "install:vsix": "code --install-extension plato-vscode-0.18.0.vsix --force"
   },
   "contributes": {
     "commands": [

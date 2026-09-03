@@ -647,6 +647,34 @@ export function chatHtml(): string {
                   position:relative; min-height:36px; }
   .composer-bar .bar-spacer { flex:1; }
   .composer-bar .future-attach { display:inline-flex; gap:4px; min-width:0; }
+  /* D44a: the paperclip lives in the reserved .future-attach slot, left of
+     the mode picker. Disabled only during a pick round-trip. */
+  .clip-btn { display:inline-flex; align-items:center; justify-content:center;
+              width:24px; height:24px; padding:0; border:none; border-radius:4px;
+              background:transparent; color:var(--pl-muted); cursor:pointer; }
+  .clip-btn:hover { color:var(--vscode-editor-foreground);
+                    background:rgba(128,128,128,.08); }
+  .clip-btn[disabled] { opacity:.4; cursor:default; }
+  /* D44a: attachment chips get their own row between the textarea and the
+     composer bar. [hidden] is author-overridden so it needs the explicit
+     rule to actually hide the row. */
+  .attach-row { display:flex; flex-wrap:wrap; gap:4px 6px;
+                padding:2px 8px 0; }
+  .attach-row[hidden] { display:none; }
+  .attach-chip { display:inline-flex; align-items:center; gap:5px;
+                 max-width:100%; padding:2px 5px 2px 9px; border-radius:10px;
+                 border:1px solid var(--pl-border);
+                 background:rgba(128,128,128,.09);
+                 font-size:11px; color:var(--vscode-editor-foreground); }
+  .attach-chip .ac-name { white-space:nowrap; overflow:hidden;
+                          text-overflow:ellipsis; max-width:260px; }
+  .attach-chip .ac-x { display:inline-flex; align-items:center;
+                       justify-content:center; width:16px; height:16px;
+                       margin:0; padding:0; border:none; border-radius:50%;
+                       background:transparent; color:var(--pl-muted);
+                       cursor:pointer; font-size:13px; line-height:1; }
+  .attach-chip .ac-x:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
+                             background:rgba(241,76,76,.16); }
   .bar-btn { font-family:inherit; font-size:11.5px; padding:4px 10px;
              border:1px solid var(--pl-border); border-radius:4px;
              background:transparent; color:var(--pl-muted); cursor:pointer; }
@@ -848,11 +876,21 @@ export function chatHtml(): string {
       </div>
     </div>
   </div>
+  <div class="attach-row" id="attachRow" hidden></div>
   <div class="composer-bar">
     <span class="bar-spacer"></span>
     <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
-    <div class="future-attach" aria-hidden="true"></div>
+    <div class="future-attach">
+      <button id="clip" class="clip-btn" type="button" title="Attach files"
+              aria-label="Attach files">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+        </svg>
+      </button>
+    </div>
     <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
       <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="mode-btn-label" id="modeBtnLabel">act</span>
@@ -883,6 +921,8 @@ export function chatHtml(): string {
   const log = document.getElementById('log');
   const q = document.getElementById('q');
   let mode = 'act';
+  let baseMode = 'act';   // D44a: mode before a for-the-run command overlay
+  let runForced = null;   // D44a: run-forced mode while active, else null
   let busy = false;
   let streaming = false;
   let runT0 = 0;
@@ -1099,9 +1139,7 @@ export function chatHtml(): string {
     act:  'Shell + writes. Every action is gated by an approval card. Full power, every step.',
     auto: 'No approval clicks. Plato runs end-to-end on its own. A hard turn cap is the only backstop.',
   };
-  function setMode(m) {
-    m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';
-    mode = m;
+  function renderModeUI(m) {
     const btn = document.getElementById('modeBtn');
     const lbl = document.getElementById('modeBtnLabel');
     const icn = document.getElementById('modeBtnIcn');
@@ -1125,6 +1163,16 @@ export function chatHtml(): string {
       footer.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
       footer.classList.add('mode-' + m);
     }
+  }
+  // D44a: the UI paint (renderModeUI) is split from mode state. setMode is
+  // the user entry point (mode picker): it records the new base mode and,
+  // if a for-the-run command was overlaying plan/act, adopts the user's
+  // choice as the new base and drops the overlay so run() never restores.
+  function setMode(m) {
+    m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';
+    mode = m;
+    if (runForced) { baseMode = m; runForced = null; }
+    renderModeUI(m);
   }
   setMode(mode);
 
@@ -1351,6 +1399,10 @@ export function chatHtml(): string {
 
   document.getElementById('go').addEventListener('click', ask);
   document.getElementById('new').addEventListener('click', () => {
+    // D44a: a fresh chat drops the armed command and any chips. The host's
+    // newChat resets pendingAttachments, so no attach-clear is needed here.
+    pendingCmd = null;
+    clearChips();
     vsapi.postMessage({ type: 'newChat' });
   });
   // D43: the empty state's CTA opens Settings → Providers (which
@@ -2182,28 +2234,244 @@ export function chatHtml(): string {
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
+
+  // --- D44a: slash commands + paperclip attachment -------------------------
+  // The reserved .future-attach slot (D39) hosts the paperclip. Typing '/'
+  // opens a command popover above the textarea; a pick (or Enter on a bare
+  // leading command) round-trips the host's expandSlash and replaces the
+  // token through end-of-line with the expansion. Attached files render as
+  // chips that mirror host-authoritative pendingAttachments; the host
+  // re-reads their content fresh at send time.
+  const attachRow = document.getElementById('attachRow');
+  const clipBtn = document.getElementById('clip');
+  const slashPop = document.createElement('div');
+  slashPop.className = 'popover';
+  slashPop.dataset.trigger = 'q';
+  slashPop.setAttribute('role', 'listbox');
+  let pendingCmd = null;      // slash command armed for the next send
+  let sending = false;        // a slash-expand round-trip is in flight
+  let slashResolve = null;    // resolves when the expand reply lands
+  let slashCommands = [];     // slash-meta rows from the host
+  let slashPick = null;       // {start,end} of the token being expanded
+  let slashActiveHit = null;  // token hit when the popover opened
+  let slashRows = [];         // rendered rows for keyboard cycling
+  let slashActiveIdx = -1;
+
+  // The webview script is one giant template literal, so inner regexes must
+  // never carry an escaped '/' or '\' (the re-escaped gate text would not
+  // parse). Token detection is therefore pure string logic.
+  const isTokCh = (ch) => typeof ch === 'string' && ch.length > 0 &&
+    ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+     (ch >= '0' && ch <= '9') || ch === '-');
+  function slashTokenAt() {
+    const up = q.value.slice(0, q.selectionStart);
+    const nxt = q.value[q.selectionStart];
+    if (nxt && /[A-Za-z0-9]/.test(nxt)) { return null; } // caret mid-word
+    // A valid token is a '/word' that ENDS at the caret. Walk back over the
+    // token chars to the '/' and confirm it starts at a word boundary.
+    let i = up.length - 1;
+    while (i >= 0 && isTokCh(up[i])) { i -= 1; }
+    if (i < 0 || up[i] !== '/') { return null; }
+    const start = i;
+    if (start > 0 && isTokCh(up[start - 1])) { return null; } // foo/bar
+    return { start: start, wordEnd: up.length };
+  }
+  // '/plan' (bare or '…  task') at the very start of the value, id matched
+  // against the host's command table so it stays in sync with slash-meta.
+  function leadingCmd(raw) {
+    if (raw.charAt(0) !== '/') { return null; }
+    for (const c of slashCommands) {
+      const tok = '/' + c.id;
+      if (raw.indexOf(tok) !== 0) { continue; }
+      const after = raw.charAt(tok.length);
+      if (after === '' || !/[A-Za-z0-9]/.test(after)) { return tok; }
+    }
+    return null;
+  }
+  function renderSlashPop(filter) {
+    slashPop.textContent = '';
+    slashRows = [];
+    slashActiveIdx = -1;
+    const f = (filter || '').toLowerCase();
+    for (const c of slashCommands) {
+      if (f && c.id.indexOf(f) !== 0) { continue; }
+      const row = el('div', 'popover-row');
+      row.setAttribute('role', 'option');
+      row.dataset.id = c.id;
+      row.appendChild(el('span', 'pr-name', c.label));
+      row.appendChild(el('span', 'pr-meta', c.usage));
+      row.addEventListener('click', () => { pickSlashAt(slashActiveHit, c.id); });
+      slashPop.appendChild(row);
+      slashRows.push(row);
+    }
+  }
+  function cycleSlash(dir) {
+    if (slashRows.length === 0) { return; }
+    if (slashActiveIdx >= 0) { slashRows[slashActiveIdx].classList.remove('active'); }
+    slashActiveIdx = (slashActiveIdx + dir + slashRows.length) % slashRows.length;
+    slashRows[slashActiveIdx].classList.add('active');
+  }
+  function closeSlashPop() {
+    slashActiveHit = null;
+    slashRows = [];
+    slashActiveIdx = -1;
+    if (slashPop.classList.contains('open')) { closePopover(slashPop); }
+  }
+  function syncSlashPop() {
+    if (busy || sending || slashResolve) { closeSlashPop(); return; }
+    if (!q.value.trim()) { closeSlashPop(); return; }
+    const hit = slashTokenAt();
+    if (!hit) { closeSlashPop(); return; }
+    const token = q.value.slice(hit.start, hit.wordEnd);
+    const f = token.slice(1).toLowerCase();
+    const anyMatch = f === '' ||
+      slashCommands.some((c) => c.id.indexOf(f) === 0);
+    if (!anyMatch) { closeSlashPop(); return; }
+    slashActiveHit = hit;
+    renderSlashPop(f);
+    if (slashRows.length > 0) { slashRows[0].classList.add('active'); slashActiveIdx = 0; }
+    if (!slashPop.classList.contains('open')) { openPopover(slashPop, q, { up: true }); }
+  }
+  // Consume the token through end-of-line, ask the host to expand it, and
+  // resolve once applySlashExpand swaps in the expansion text.
+  function pickSlashAt(hit, id) {
+    if (!hit || slashResolve) { return; }
+    const nl = q.value.indexOf('\\n', hit.wordEnd);
+    const end = nl === -1 ? q.value.length : nl;
+    const args = q.value.slice(hit.wordEnd, end).trim();
+    closeSlashPop();
+    return new Promise((resolve) => {
+      slashPick = { start: hit.start, end: end };
+      slashResolve = resolve;
+      vsapi.postMessage({ type: 'slash-choose', id: id, args: args });
+    });
+  }
+  function applySlashExpand(m) {
+    const p = slashPick;
+    slashPick = null;
+    if (!p) { return; }
+    const text = typeof m.text === 'string' ? m.text : '';
+    q.value = q.value.slice(0, p.start) + text + q.value.slice(p.end);
+    q.selectionStart = p.start + text.length;
+    q.selectionEnd = q.selectionStart;
+    pendingCmd = typeof m.id === 'string' ? m.id : null;
+    for (const a of m.accepted || []) { addChip(a.path); }
+    for (const r of m.rejected || []) {
+      addMsg('sys', 'Plato', 'Attachment refused: ' + r.path + ' — ' + r.error);
+    }
+    q.focus();
+    if (slashResolve) { const r = slashResolve; slashResolve = null; r(); }
+  }
+  function applyForcedMode(m) {
+    if (typeof m.mode === 'string' &&
+        (m.mode === 'plan' || m.mode === 'edit' || m.mode === 'act' || m.mode === 'auto')) {
+      if (runForced === null) { baseMode = mode; }
+      runForced = m.mode;
+      mode = m.mode;
+    } else {
+      runForced = null;
+      mode = baseMode;
+    }
+    renderModeUI(mode);
+  }
+  // Attachment chips (UI mirror only - the host stays authoritative).
+  function addChip(path) {
+    const chip = el('div', 'attach-chip');
+    const name = el('span', 'ac-name', path);
+    const x = document.createElement('button');
+    x.className = 'ac-x';
+    x.type = 'button';
+    x.setAttribute('aria-label', 'Remove ' + path);
+    x.textContent = '×';
+    x.addEventListener('click', () => {
+      if (chip.parentNode) { chip.parentNode.removeChild(chip); }
+      if (!attachRow.hasChildNodes()) { attachRow.hidden = true; }
+      vsapi.postMessage({ type: 'attach-remove', path: path });
+    });
+    chip.appendChild(name);
+    chip.appendChild(x);
+    attachRow.appendChild(chip);
+    attachRow.hidden = false;
+  }
+  function clearChips() {
+    attachRow.textContent = '';
+    attachRow.hidden = true;
+  }
+  // q: live popover + empty-wipe disarm. A send clears chips locally only;
+  // attach-clear is posted solely here (no-send wipe), so attachments that
+  // rode in on an ask are never double-cleared.
+  q.addEventListener('input', () => {
+    if (!q.value.trim()) {
+      pendingCmd = null;
+      clearChips();
+      vsapi.postMessage({ type: 'attach-clear' });
+    }
+    syncSlashPop();
+  });
+  q.addEventListener('keyup', syncSlashPop);
+  q.addEventListener('click', syncSlashPop);
+  clipBtn.addEventListener('click', () => {
+    if (busy || sending) { return; }
+    vsapi.postMessage({ type: 'attach' });
+  });
+
   q.addEventListener('keydown', (e) => {
+    if (slashPop.classList.contains('open')) {
+      // While the command popover is up, the arrows move the highlight and
+      // Enter/Tab confirm; nothing falls through to ask().
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        cycleSlash(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const active = slashPop.querySelector('.popover-row.active');
+        if (active && active.dataset.id) {
+          pickSlashAt(slashActiveHit, active.dataset.id);
+        }
+        return;
+      }
+      if (e.key === 'Escape') { return; } // global handler closes + refocuses
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); }
   });
 
-  function ask() {
+  async function ask() {
     if (!hasConnections) {
       // D43: nothing to send to yet — route to provider onboarding.
       vsapi.postMessage({ type: 'openSettings' });
       return;
     }
-    if (busy) { sendGuidance(); return; }
-    const text = q.value.trim();
-    if (!text) { return; }
+    if (busy || sending || slashResolve) { sendGuidance(); return; }
+    let raw = q.value;
+    if (!raw.trim()) { return; }
+    // D44a: a bare leading command ("/plan implement X" + Enter) is a
+    // one-key command: expand it once, then send the resulting brief.
+    const lead = leadingCmd(raw);
+    if (lead && !pendingCmd) {
+      const hit = slashTokenAt() || { start: 0, wordEnd: lead.length };
+      sending = true;
+      try { await pickSlashAt(hit, lead.slice(1)); } finally { sending = false; }
+      if (!pendingCmd) { return; } // no expansion arrived - stay put
+      raw = q.value;
+      if (!raw.trim()) { return; }
+    }
+    const text = raw.trim();
+    const cmd = pendingCmd; // capture before clearing
     addMsg('you', 'You', text);
+    clearChips();           // local only - the host consumes on ask
     q.value = '';
+    pendingCmd = null;
     busy = true;
     runT0 = Date.now();
     lastAct = 'thinking';
     refreshChip();
     setRunUi(true);
     setStatus('Plato is thinking');
-    vsapi.postMessage({ type: 'ask', text: text });
+    const payload = { type: 'ask', text: text };
+    if (cmd) { payload.cmd = cmd; }
+    vsapi.postMessage(payload);
   }
 
   // Tool calls collapse into one summary line ("read_file × 12 · shell × 2").
@@ -2310,6 +2578,15 @@ export function chatHtml(): string {
       case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
       case 'run': showRun(m); break;
       case 'title': setTitle(String(m.text || '')); break;
+      case 'slash-meta': slashCommands = m.commands || []; break;
+      case 'slash-expand': flushToolBuffer(); applySlashExpand(m); break;
+      case 'forced-mode': applyForcedMode(m); break;
+      case 'attach-result':
+        for (const a of m.accepted || []) { addChip(a.path); }
+        for (const r of m.rejected || []) {
+          addMsg('sys', 'Plato', 'Attachment refused: ' + r.path + ' — ' + r.error);
+        }
+        break;
       case 'restore':
         document.body.classList.remove('show-settings', 'show-history');
         render(m.log);

@@ -21,17 +21,31 @@ import {
   loadTeamConfig,
   TeamConfigError,
   legacyConfigAtRoot,
+  isSecretPath,
+  loadProjectFile,
+  slashCommand,
+  slashMenu,
+  modeForRun,
+  needsGitContext,
   PERSONAS,
   findPersona,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
+import type { SlashCommandId } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
+
+// D44a hard caps (spec: constants in v1, settings later). The per-file cap
+// follows loadProjectFile's char semantics — 200 KB measured in characters.
+const MAX_ATTACH_FILES = 20;
+const MAX_ATTACH_BYTES = 200 * 1024;
+const MAX_GIT_CHARS = 60_000;
 
 interface ConnectionPoolEntry {
   id: string;
@@ -272,6 +286,14 @@ type Entry =
   | { k: 'card-open'; tool: string; preview: string }
   | { k: 'card-done'; title: string; preview: string };
 
+/** D44a: per-run context a slash command or attachment adds to a run. */
+interface RunCtx {
+  /** The picked slash command id, if the message began as one. */
+  cmd?: SlashCommandId;
+  /** Root-relative pending attachment paths; content is read at run start. */
+  attach?: string[];
+}
+
 class ChatHost {
   private mode: Mode = 'act';
   private readonly sessionWrites = new Set<string>();
@@ -291,6 +313,12 @@ class ChatHost {
   private titleInFlight = false;
   /** D41: log length at the last archive; only archive what's new. */
   private archivedUpTo = 0;
+  /** D44a: root-relative paths awaiting send; host-authoritative. */
+  private pendingAttachments: string[] = [];
+  /** D44a: active for-the-run mode force (null = none). */
+  private forcedMode: Mode | null = null;
+  /** D44a: mode to restore when the forced run ends (unless the user overrides). */
+  private forcedModePrev: Mode | null = null;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -305,6 +333,10 @@ class ChatHost {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
           this.sessionApprovals.clear();
+          // D44a: a manual mode change mid-run cancels any for-the-run force —
+          // never auto-restore over the user's explicit choice.
+          this.forcedMode = null;
+          this.forcedModePrev = null;
           this.send('notice', `Mode: ${this.mode}`);
           return;
         }
@@ -753,9 +785,50 @@ class ChatHost {
           resolve?.(m.answers.map(String));
           return;
         }
+        // ---- D44a: slash commands + file attachment ----
+        if (m.type === 'attach') {
+          await this.openAttachmentPicker();
+          return;
+        }
+        if (m.type === 'attach-remove' && typeof m.path === 'string') {
+          this.pendingAttachments = this.pendingAttachments.filter(
+            (p) => p !== m.path,
+          );
+          return;
+        }
+        if (m.type === 'attach-clear') {
+          this.pendingAttachments = [];
+          return;
+        }
+        if (m.type === 'slash-choose' && typeof m.id === 'string') {
+          const cmd = slashCommand(m.id);
+          const args = typeof m.args === 'string' ? m.args : '';
+          const text = cmd?.expand(args) ?? '';
+          // /review args are file paths: they become pending attachments
+          // (chips), never echoed in the expansion text.
+          const root = this.workspaceRoot();
+          const result =
+            cmd?.id === 'review' && root !== null
+              ? await this.attachFiles(
+                  root,
+                  args.trim().split(/\s+/).filter(Boolean),
+                )
+              : { accepted: [], rejected: [] };
+          void this.panel.webview.postMessage({
+            type: 'slash-expand',
+            id: cmd?.id ?? m.id,
+            text,
+            ...result,
+          });
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
+          const cmd =
+            typeof m.cmd === 'string' ? (m.cmd as SlashCommandId) : undefined;
+          const attach = this.pendingAttachments.splice(0); // consume now
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
-          void this.run(m.text);
+          void this.run(m.text, { cmd, attach });
+          return;
         }
         // The webview asks for the log once its script is live; posting
         // earlier races page load and the message is dropped.
@@ -768,6 +841,7 @@ class ChatHost {
               : e,
           );
           this.postModelState();
+          this.postSlashMeta();
           void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
@@ -782,6 +856,148 @@ class ChatHost {
 
   private send(type: string, text?: unknown): void {
     void this.panel.webview.postMessage({ type, text });
+  }
+
+  // ---- D44a: slash commands + paperclip attachment ----------------------
+
+  private postSlashMeta(): void {
+    void this.panel.webview.postMessage({
+      type: 'slash-meta',
+      commands: slashMenu(),
+    });
+  }
+
+  private workspaceRoot(): string | null {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
+  }
+
+  /** True when `raw` resolves to a root-relative path inside `root`. */
+  private relWithinRoot(root: string, raw: string): string | null {
+    const absolute = raw.startsWith('/') || /^[A-Za-z]:[\\/]/.test(raw);
+    let rel: string;
+    if (absolute) {
+      rel = relative(root, raw);
+      // relative() yields '../…' or an absolute path when outside the root.
+      if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null;
+    } else {
+      rel = raw;
+      if (rel.startsWith('/') || rel.split(/[\\/]/).includes('..')) return null;
+    }
+    return rel;
+  }
+
+  /**
+   * Validate + collect attached files. The deny-list and caps are checked at
+   * attach time so refusals surface immediately; content is re-read at send.
+   */
+  private async attachFiles(
+    root: string,
+    paths: string[],
+  ): Promise<{
+    accepted: { path: string }[];
+    rejected: { path: string; error: string }[];
+  }> {
+    const accepted: { path: string }[] = [];
+    const rejected: { path: string; error: string }[] = [];
+    for (const raw of paths) {
+      const rel = this.relWithinRoot(root, raw);
+      if (rel === null) {
+        rejected.push({ path: raw, error: 'outside the workspace' });
+        continue;
+      }
+      if (isSecretPath(rel)) {
+        rejected.push({ path: rel, error: 'on the secret deny-list' });
+        continue;
+      }
+      if (this.pendingAttachments.includes(rel)) continue; // already attached
+      const r = await loadProjectFile(rel, root, MAX_ATTACH_BYTES);
+      if (!r.found) {
+        const why =
+          r.source === 'too-big'
+            ? 'larger than 200 KB'
+            : r.source === 'missing'
+              ? 'file not found'
+              : r.source === 'io'
+                ? r.error
+                : 'unreadable';
+        rejected.push({ path: rel, error: why });
+        continue;
+      }
+      if (this.pendingAttachments.length >= MAX_ATTACH_FILES) {
+        rejected.push({ path: rel, error: `over the ${MAX_ATTACH_FILES}-file cap` });
+        continue;
+      }
+      this.pendingAttachments.push(rel);
+      accepted.push({ path: rel });
+    }
+    return { accepted, rejected };
+  }
+
+  private async openAttachmentPicker(): Promise<void> {
+    const root = this.workspaceRoot();
+    if (root === null) {
+      this.send('error', 'Open a folder before attaching files.');
+      return;
+    }
+    const picks = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      canSelectFiles: true,
+      canSelectFolders: false,
+      openLabel: 'Attach',
+      defaultUri: vscode.Uri.file(root),
+    });
+    if (picks === undefined || picks.length === 0) return;
+    const { accepted, rejected } = await this.attachFiles(
+      root,
+      picks.map((p) => p.fsPath),
+    );
+    void this.panel.webview.postMessage({ type: 'attach-result', accepted, rejected });
+  }
+
+  /** /commit: a read-only git snapshot the model sees as injected context. */
+  private gitSnapshot(root: string): Promise<string> {
+    const capture = (args: string[]): Promise<string> =>
+      new Promise((resolve) => {
+        execFile(
+          'git',
+          ['-C', root, ...args],
+          { maxBuffer: 2 * 1024 * 1024 },
+          (err, stdout) => {
+            if (err) {
+              const msg = String(err.message).split('\n')[0];
+              resolve(`git ${args.join(' ')} failed: ${msg}`);
+            } else {
+              resolve(String(stdout).slice(0, MAX_GIT_CHARS));
+            }
+          },
+        );
+      });
+    return (async () => {
+      const status = await capture(['status', '--porcelain']);
+      const diff = await capture(['diff']);
+      return (
+        '\n\n[host: git status + diff for /commit — read-only snapshot]\n' +
+        'git status --porcelain:\n' +
+        status +
+        '\ngit diff (unstaged):\n' +
+        diff
+      );
+    })();
+  }
+
+  /** The model-visible task: user text + attached files + /commit git context. */
+  private async buildModelTask(task: string, ctx: RunCtx, root: string): Promise<string> {
+    let out = task;
+    for (const rel of ctx.attach ?? []) {
+      const r = await loadProjectFile(rel, root, MAX_ATTACH_BYTES);
+      if (r.found) {
+        out += '\n\n[attachment: ' + rel + ']\n```\n' + r.body + '\n```';
+      }
+    }
+    if (needsGitContext(ctx.cmd)) {
+      out += await this.gitSnapshot(root);
+    }
+    return out;
   }
 
   // ---- Settings surface (D27) -------------------------------------------
@@ -1298,6 +1514,7 @@ class ChatHost {
     await this.ctx.workspaceState.update(TITLE_KEY, '');
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
+    this.pendingAttachments = [];
     this.pendingApproval = null;
     this.replyBuffer = '';
     await this.panel.webview.postMessage({
@@ -1501,7 +1718,7 @@ class ChatHost {
     return v === 'off' ? undefined : { effort: v as 'low' | 'medium' | 'high' };
   }
 
-  private async run(task: string): Promise<void> {
+  private async run(task: string, ctx: RunCtx = {}): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       this.send('error', 'Open a folder before asking Plato.');
@@ -1875,9 +2092,20 @@ class ChatHost {
       }
     });
     try {
+      // D44a: a slash command may force the mode "for the run". Flip before
+      // the loop starts (getMode() reads live per tool decision); restore in
+      // the finally unless the user changed the mode mid-run.
+      const runMode = modeForRun(ctx.cmd, this.mode);
+      if (runMode !== this.mode) {
+        this.forcedModePrev = this.mode;
+        this.mode = runMode;
+        this.forcedMode = runMode;
+        void this.panel.webview.postMessage({ type: 'forced-mode', mode: runMode });
+      }
+      const modelTask = await this.buildModelTask(task, ctx, root);
       const result = await runAgentLoop({
         root,
-        task,
+        task: modelTask,
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
         bus,
@@ -1975,6 +2203,15 @@ class ChatHost {
       });
     } finally {
       this.running = false;
+      // D44a: lift the for-the-run mode force and restore the prior mode,
+      // unless the user changed the mode mid-run (the 'mode' handler then
+      // cleared forcedMode and we leave their choice alone).
+      if (this.forcedMode !== null) {
+        this.mode = this.forcedModePrev as Mode;
+        this.forcedMode = null;
+        this.forcedModePrev = null;
+        void this.panel.webview.postMessage({ type: 'forced-mode', mode: null });
+      }
       writer.close();
       for (const s of mcpServers) {
         s.stop();
