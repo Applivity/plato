@@ -17,9 +17,10 @@ may not be available when you work; everything you need is in this repo.
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.18.0).
-- HEAD (`main`) is at **D44a** — the slash-commands slot + paperclip file
-  attachment (this session's commit). Working tree clean. ~189 vitest
+  extension shell, v0.19.0).
+- HEAD (`main`) is at **D44c** — real slash commands (/compact /autocompact
+  /history, host actions, replacing D44a's text-expander commands) +
+  composer polish (this session's commit). Working tree clean. 181 vitest
   cases across 18 files in `packages/core`.
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
@@ -32,7 +33,7 @@ may not be available when you work; everything you need is in this repo.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 189 passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 181 passing
   vitest cases across 18 files in packages/core).
 
 ## How the packages connect
@@ -122,9 +123,12 @@ may not be available when you work; everything you need is in this repo.
    neither PLATO.md nor AGENTS.md is present; Academy per-member
    `includeProjectRules` flag in `academy.yaml`. The 3-layer join is
    the contract; the UI is the affordance layer (D45c: UI first).
-   **D44a shipped 2026-09-03 (this commit) — pick up here.** Its
-   `/system-prompt` was intentionally not registered (deferred whole,
-   DECISIONS D44a status note).
+   **D44a shipped 2026-09-03, then superseded by D44c (this commit) —
+   pick up here.** D44c replaced D44a's five text-expander commands
+   (/plan /fix /review /commit /test) with three real host-action
+   commands (/compact /autocompact /history; core `runtime/commands.ts`,
+   host `slash-run` dispatch). The `/system-prompt` command remains
+   deferred whole to this row (DECISIONS D44a/D44c status notes).
 2. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
    philosopher (deferred; see DECISIONS D45b).
 4. **Chat-log message rendering.** Markdown, code blocks, tool-call

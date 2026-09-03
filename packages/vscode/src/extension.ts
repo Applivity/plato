@@ -25,27 +25,22 @@ import {
   loadProjectFile,
   slashCommand,
   slashMenu,
-  modeForRun,
-  needsGitContext,
   PERSONAS,
   findPersona,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
-import type { SlashCommandId } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
-import { execFile } from 'node:child_process';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 
-// D44a hard caps (spec: constants in v1, settings later). The per-file cap
-// follows loadProjectFile's char semantics — 200 KB measured in characters.
+// D44a attachment hard caps (constants in v1, settings later). The per-file
+// cap follows loadProjectFile's char semantics — 200 KB measured in chars.
 const MAX_ATTACH_FILES = 20;
 const MAX_ATTACH_BYTES = 200 * 1024;
-const MAX_GIT_CHARS = 60_000;
 
 interface ConnectionPoolEntry {
   id: string;
@@ -286,10 +281,8 @@ type Entry =
   | { k: 'card-open'; tool: string; preview: string }
   | { k: 'card-done'; title: string; preview: string };
 
-/** D44a: per-run context a slash command or attachment adds to a run. */
+/** D44a: per-run context attachments add to a run. */
 interface RunCtx {
-  /** The picked slash command id, if the message began as one. */
-  cmd?: SlashCommandId;
   /** Root-relative pending attachment paths; content is read at run start. */
   attach?: string[];
 }
@@ -315,10 +308,8 @@ class ChatHost {
   private archivedUpTo = 0;
   /** D44a: root-relative paths awaiting send; host-authoritative. */
   private pendingAttachments: string[] = [];
-  /** D44a: active for-the-run mode force (null = none). */
-  private forcedMode: Mode | null = null;
-  /** D44a: mode to restore when the forced run ends (unless the user overrides). */
-  private forcedModePrev: Mode | null = null;
+  /** D44c: /history-imported conversation awaiting the next run. */
+  private pendingHistory: { title: string; text: string } | null = null;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -333,10 +324,6 @@ class ChatHost {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
           this.sessionApprovals.clear();
-          // D44a: a manual mode change mid-run cancels any for-the-run force —
-          // never auto-restore over the user's explicit choice.
-          this.forcedMode = null;
-          this.forcedModePrev = null;
           this.send('notice', `Mode: ${this.mode}`);
           return;
         }
@@ -773,10 +760,7 @@ class ChatHost {
           return;
         }
         if (m.type === 'request-compact') {
-          if (this.running) {
-            this.controller.requestCompact();
-            this.send('notice', 'Plato will compact the conversation at the next safe point.');
-          }
+          this.requestCompactNow();
           return;
         }
         if (m.type === 'user-answer' && Array.isArray(m.answers)) {
@@ -785,7 +769,7 @@ class ChatHost {
           resolve?.(m.answers.map(String));
           return;
         }
-        // ---- D44a: slash commands + file attachment ----
+        // ---- D44a/D44c: paperclip attachment + real slash commands --------
         if (m.type === 'attach') {
           await this.openAttachmentPicker();
           return;
@@ -800,34 +784,15 @@ class ChatHost {
           this.pendingAttachments = [];
           return;
         }
-        if (m.type === 'slash-choose' && typeof m.id === 'string') {
-          const cmd = slashCommand(m.id);
-          const args = typeof m.args === 'string' ? m.args : '';
-          const text = cmd?.expand(args) ?? '';
-          // /review args are file paths: they become pending attachments
-          // (chips), never echoed in the expansion text.
-          const root = this.workspaceRoot();
-          const result =
-            cmd?.id === 'review' && root !== null
-              ? await this.attachFiles(
-                  root,
-                  args.trim().split(/\s+/).filter(Boolean),
-                )
-              : { accepted: [], rejected: [] };
-          void this.panel.webview.postMessage({
-            type: 'slash-expand',
-            id: cmd?.id ?? m.id,
-            text,
-            ...result,
-          });
+        // D44c: real commands execute in the host — no text expansion.
+        if (m.type === 'slash-run' && typeof m.id === 'string') {
+          await this.runCommand(m.id);
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
-          const cmd =
-            typeof m.cmd === 'string' ? (m.cmd as SlashCommandId) : undefined;
           const attach = this.pendingAttachments.splice(0); // consume now
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
-          void this.run(m.text, { cmd, attach });
+          void this.run(m.text, { attach });
           return;
         }
         // The webview asks for the log once its script is live; posting
@@ -858,7 +823,7 @@ class ChatHost {
     void this.panel.webview.postMessage({ type, text });
   }
 
-  // ---- D44a: slash commands + paperclip attachment ----------------------
+  // ---- D44a/D44c: paperclip attachment + real slash commands ------------
 
   private postSlashMeta(): void {
     void this.panel.webview.postMessage({
@@ -954,38 +919,104 @@ class ChatHost {
     void this.panel.webview.postMessage({ type: 'attach-result', accepted, rejected });
   }
 
-  /** /commit: a read-only git snapshot the model sees as injected context. */
-  private gitSnapshot(root: string): Promise<string> {
-    const capture = (args: string[]): Promise<string> =>
-      new Promise((resolve) => {
-        execFile(
-          'git',
-          ['-C', root, ...args],
-          { maxBuffer: 2 * 1024 * 1024 },
-          (err, stdout) => {
-            if (err) {
-              const msg = String(err.message).split('\n')[0];
-              resolve(`git ${args.join(' ')} failed: ${msg}`);
-            } else {
-              resolve(String(stdout).slice(0, MAX_GIT_CHARS));
-            }
-          },
-        );
-      });
-    return (async () => {
-      const status = await capture(['status', '--porcelain']);
-      const diff = await capture(['diff']);
-      return (
-        '\n\n[host: git status + diff for /commit — read-only snapshot]\n' +
-        'git status --porcelain:\n' +
-        status +
-        '\ngit diff (unstaged):\n' +
-        diff
-      );
-    })();
+  /** /compact and the ring's Compact-now share one force-compact path. */
+  private requestCompactNow(): void {
+    if (this.running) {
+      this.controller.requestCompact();
+      this.send('notice', 'Plato will compact the conversation at the next safe point.');
+    } else {
+      this.send('notice', 'No active run — a run must be in progress to compact.');
+    }
   }
 
-  /** The model-visible task: user text + attached files + /commit git context. */
+  /** D44c: dispatch a real command to its host action. */
+  private async runCommand(id: string): Promise<void> {
+    if (slashCommand(id) === undefined) {
+      this.send('notice', 'Unknown command: /' + id);
+      return;
+    }
+    switch (id) {
+      case 'compact':
+        this.requestCompactNow();
+        return;
+      case 'autocompact':
+        await this.toggleAutoCompact();
+        return;
+      case 'history':
+        await this.importHistory();
+        return;
+    }
+  }
+
+  /** /autocompact: flip Global compaction.mode and resync the webview. */
+  private async toggleAutoCompact(): Promise<void> {
+    const next = this.compactionState().mode === 'auto' ? 'manual' : 'auto';
+    await vscode.workspace.getConfiguration('plato').update(
+      'compaction.mode',
+      next,
+      vscode.ConfigurationTarget.Global,
+    );
+    this.postModelState();
+    this.send('notice', 'Auto-compaction ' + (next === 'auto' ? 'ON' : 'OFF'));
+  }
+
+  /** /history: pick an archived chat and stage its transcript as context. */
+  private async importHistory(): Promise<void> {
+    const chats = this.sessions().filter((s) => s.id !== '__current__');
+    if (chats.length === 0) {
+      this.send('notice', 'No archived conversations yet.');
+      return;
+    }
+    const items = chats.map((s) => {
+      const when = new Date(s.ts);
+      const whenLabel = Number.isNaN(when.getTime()) ? s.ts : when.toLocaleString();
+      const msgs = s.log.filter((e) => e.k === 'msg').length;
+      return {
+        label: s.title && s.title.trim().length > 0 ? s.title : 'Untitled chat',
+        description: whenLabel + ' · ' + msgs + ' messages',
+        id: s.id,
+      };
+    });
+    const pick = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Import a past conversation as context',
+      matchOnDescription: true,
+    });
+    if (pick === undefined) return;
+    const chat = this.sessions().find((s) => s.id === pick.id);
+    if (chat === undefined) return;
+    this.pendingHistory = {
+      title: pick.label,
+      text: this.condenseTranscript(chat.log),
+    };
+    this.send(
+      'notice',
+      '[context: ' + pick.label + '] loaded — will accompany your next message.',
+    );
+  }
+
+  /** Condense an archived log to role-prefixed text the model can read. */
+  private condenseTranscript(log: Entry[]): string {
+    // Keep the most recent messages (the tail of the conversation), newest
+    // considered first but emitted oldest-first, until the char budget bites.
+    const msgs = log.filter(
+      (e): e is Extract<Entry, { k: 'msg' }> =>
+        e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'),
+    ).slice(-80);
+    const lines: string[] = [];
+    let chars = 0;
+    const cap = 32_000;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      const e = msgs[i];
+      if (e === undefined) break;
+      const line = (e.cls === 'you' ? '[user] ' : '[assistant] ') + e.text;
+      if (chars + line.length > cap) break;
+      lines.push(line);
+      chars += line.length;
+    }
+    return lines.reverse().join('\n');
+  }
+
+  /** The model-visible task: user text + attached files, read fresh. */
   private async buildModelTask(task: string, ctx: RunCtx, root: string): Promise<string> {
     let out = task;
     for (const rel of ctx.attach ?? []) {
@@ -993,9 +1024,6 @@ class ChatHost {
       if (r.found) {
         out += '\n\n[attachment: ' + rel + ']\n```\n' + r.body + '\n```';
       }
-    }
-    if (needsGitContext(ctx.cmd)) {
-      out += await this.gitSnapshot(root);
     }
     return out;
   }
@@ -1515,6 +1543,7 @@ class ChatHost {
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
     this.pendingAttachments = [];
+    this.pendingHistory = null;
     this.pendingApproval = null;
     this.replyBuffer = '';
     await this.panel.webview.postMessage({
@@ -2092,17 +2121,15 @@ class ChatHost {
       }
     });
     try {
-      // D44a: a slash command may force the mode "for the run". Flip before
-      // the loop starts (getMode() reads live per tool decision); restore in
-      // the finally unless the user changed the mode mid-run.
-      const runMode = modeForRun(ctx.cmd, this.mode);
-      if (runMode !== this.mode) {
-        this.forcedModePrev = this.mode;
-        this.mode = runMode;
-        this.forcedMode = runMode;
-        void this.panel.webview.postMessage({ type: 'forced-mode', mode: runMode });
+      let modelTask = await this.buildModelTask(task, ctx, root);
+      // D44c: /history-imported context rides this run's task. Consumed here,
+      // so an aborted run (the guards above) keeps it for the next attempt.
+      if (this.pendingHistory !== null) {
+        modelTask +=
+          '\n\n[imported conversation: ' + this.pendingHistory.title + ']\n' +
+          this.pendingHistory.text;
+        this.pendingHistory = null;
       }
-      const modelTask = await this.buildModelTask(task, ctx, root);
       const result = await runAgentLoop({
         root,
         task: modelTask,
@@ -2203,15 +2230,6 @@ class ChatHost {
       });
     } finally {
       this.running = false;
-      // D44a: lift the for-the-run mode force and restore the prior mode,
-      // unless the user changed the mode mid-run (the 'mode' handler then
-      // cleared forcedMode and we leave their choice alone).
-      if (this.forcedMode !== null) {
-        this.mode = this.forcedModePrev as Mode;
-        this.forcedMode = null;
-        this.forcedModePrev = null;
-        void this.panel.webview.postMessage({ type: 'forced-mode', mode: null });
-      }
       writer.close();
       for (const s of mcpServers) {
         s.stop();
