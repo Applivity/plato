@@ -848,7 +848,19 @@ The founder demoed D44a and rejected commands that only expand text — "let's g
 - **Menu UX (founder demo fixes):** opens above the textarea's top-left, as wide as the chat; rows are two-line (label + usage, one-line description beneath); Arrow keys keep their highlight — the menu only re-renders when the filter actually changes (re-rendering on every keyup was snapping back to the first row); the paperclip and a dedicated `/` button form the far-left composer cluster under the chat box's left edge; attachment chips clear the composer divider.
 - The per-file >200 KB attachment refusal is unchanged. It cannot backfire: the refusal only blocks the *pre-seed* copy; the model can still open an oversized file itself mid-run via its read tool (~1 MiB cap).
 
-> **Status (2026-09-03):** shipped in 0.19.0. `/compact` and `/autocompact` take effect immediately; `/history` stages context for the next message because context only exists once a run starts. The 200 KB / 20-file attachment caps remain open for founder tuning.
+> **Status (2026-09-03):** shipped in 0.19.0. `/compact` and `/autocompact` take effect immediately; `/history` stages context for the next message because context only exists once a run starts. The 200 KB / 20-file attachment caps remain open for founder tuning. **Superseded by D44d (2026-09-03):** `/autocompact` is removed together with Manual compaction mode; `/compact` now also works idle (it folds older turns into a summary) — see D44d.
+
+**D44d — Coherent compaction: /compact anytime + auto memory fold; Manual + /autocompact removed (M4.1, 0.20.0, founder-driven, shipped 2026-09-03).**
+
+The founder asked why Plato's `/compact` only works mid-run when other agents compact whenever asked. Root cause: Plato runs one task per run and rebuilds context each time from the **last 12 message pairs** (`historyFor()`); auto/manual compaction only ever acted on a single run's in-memory transcript, and turns older than ~12 were silently dropped from context between runs. Decisions: **drop Manual** (redundant once `/compact` exists) and **auto-fold on a cadence** so the model never silently forgets older turns.
+
+- **Context model.** Each run now sees the running conversation **summary (if any) + the raw recent tail** — no hard "last 12, drop the rest". A fold keeps the newest `KEEP_AFTER_FOLD` (12) pairs verbatim and condenses everything older (plus any prior summary) into one summary via core's exported summariser (`COMPACT_SYSTEM_PROMPT`, `compactMaxTokensFor`) over a normal `completeTurn`. No core/loop change.
+- **The summary lives in the chat** as a new log entry kind `{k:'compact', text}` placed at the head of the trimmed log — the webview renders a "Earlier conversation compacted" banner; it survives archive/resume because it is just another `Entry`.
+- **`/compact` works whenever:** mid-run it force-compacts the live run (same as the ring's Compact-now); idle it folds the tail into a summary (short chat → "nothing to compact yet").
+- **Auto cadence:** after each run finishes, the tail folds automatically once it outgrows `AUTO_FOLD_AT` (26) pairs, guarded so it never runs while a run or an approval/question is pending.
+- **Manual mode is gone.** Compaction is always auto at the threshold slider; `plato.compaction.mode` and the ring/Settings Auto-Manual controls and the `/autocompact` command are removed. In-run auto compaction at the slider keeps working as before.
+
+> **Status (2026-09-03):** shipped in 0.20.0. Command menu is Compact · History. Fold cadence is the tunable cost lever (`AUTO_FOLD_AT`/`KEEP_AFTER_FOLD`, default folds roughly every ~7 exchanges).
 
 **D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, 0.17.0, shipped 2026-09-03).**
 

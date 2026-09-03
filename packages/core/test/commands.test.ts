@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SLASH_COMMANDS, slashCommand, slashMenu } from '../src/runtime/commands.js';
 
-describe('D44c command registry', () => {
-  it('has exactly the three real commands and no text-expander ids', () => {
+describe('D44c/D44d command registry', () => {
+  it('has the two real commands and no dropped/expander ids', () => {
     const ids = SLASH_COMMANDS.map((c) => c.id);
-    expect(ids).toEqual(['compact', 'autocompact', 'history']);
-    for (const gone of ['plan', 'fix', 'review', 'commit', 'test', 'system-prompt']) {
+    expect(ids).toEqual(['compact', 'history']);
+    for (const gone of [
+      'plan', 'fix', 'review', 'commit', 'test', 'system-prompt', 'autocompact',
+    ]) {
       expect(ids).not.toContain(gone);
     }
   });
@@ -30,7 +32,7 @@ describe('D44c command registry', () => {
 
   it('slashMenu returns webview-safe rows with no extra keys', () => {
     const rows = slashMenu();
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     for (const row of rows) {
       expect(Object.keys(row).sort()).toEqual(['blurb', 'id', 'label', 'usage']);
     }

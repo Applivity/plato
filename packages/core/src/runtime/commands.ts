@@ -1,12 +1,13 @@
 /**
- * D44c slash commands: the canonical registry. Commands are NOT text
+ * D44c/D44d slash commands: the canonical registry. Commands are NOT text
  * expanders — each is a real action the host executes (`slash-run` in the
- * VS Code shell): compact a live run, flip auto-compaction, or import a
- * past conversation as context. Core keeps only the metadata the webview
- * menu renders; behavior lives in the host because it needs the run
- * controller, VS Code config, and the chat archive.
+ * VS Code shell): compact the conversation (force the live run, or fold
+ * older turns into a summary when idle) or import a past conversation as
+ * context. Core keeps only the metadata the webview menu renders; behavior
+ * lives in the host because it needs the run controller, the chat archive,
+ * and a provider to summarise.
  */
-export type SlashCommandId = 'compact' | 'autocompact' | 'history';
+export type SlashCommandId = 'compact' | 'history';
 
 export interface SlashCommand {
   id: SlashCommandId;
@@ -21,13 +22,7 @@ const COMMANDS: readonly SlashCommand[] = [
     id: 'compact',
     label: 'Compact',
     usage: '/compact',
-    blurb: 'Compress the active run at the next safe point',
-  },
-  {
-    id: 'autocompact',
-    label: 'Auto-compact',
-    usage: '/autocompact',
-    blurb: 'Toggle auto-compaction on or off',
+    blurb: 'Condense the conversation — now, or at the next safe point',
   },
   {
     id: 'history',

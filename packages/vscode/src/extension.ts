@@ -25,6 +25,8 @@ import {
   loadProjectFile,
   slashCommand,
   slashMenu,
+  COMPACT_SYSTEM_PROMPT,
+  compactMaxTokensFor,
   PERSONAS,
   findPersona,
 } from '@applivity/plato-core';
@@ -41,6 +43,15 @@ const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 // cap follows loadProjectFile's char semantics — 200 KB measured in chars.
 const MAX_ATTACH_FILES = 20;
 const MAX_ATTACH_BYTES = 200 * 1024;
+
+// D44d: cross-message memory fold cadence. A run's context is the running
+// conversation summary + the raw recent tail; when the tail grows past
+// AUTO_FOLD_AT pairs the oldest are folded into the summary, keeping the
+// newest KEEP_AFTER_FOLD pairs verbatim. MAX_TAIL_PAIRS is a safety cap on
+// historyFor when a fold is skipped (run in progress etc.).
+const KEEP_AFTER_FOLD = 12;
+const AUTO_FOLD_AT = 26;
+const MAX_TAIL_PAIRS = 60;
 
 interface ConnectionPoolEntry {
   id: string;
@@ -279,7 +290,9 @@ type Entry =
   | { k: 'msg'; cls: string; who: string; text: string }
   | { k: 'tool'; tool: string; phase: string }
   | { k: 'card-open'; tool: string; preview: string }
-  | { k: 'card-done'; title: string; preview: string };
+  | { k: 'card-done'; title: string; preview: string }
+  /** D44d: a folded conversation summary, standing in for trimmed turns. */
+  | { k: 'compact'; text: string };
 
 /** D44a: per-run context attachments add to a run. */
 interface RunCtx {
@@ -310,6 +323,8 @@ class ChatHost {
   private pendingAttachments: string[] = [];
   /** D44c: /history-imported conversation awaiting the next run. */
   private pendingHistory: { title: string; text: string } | null = null;
+  /** D44d: a cross-message fold (summary call + log rewrite) is in flight. */
+  private folding = false;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -731,19 +746,10 @@ class ChatHost {
           }
           return;
         }
-        // D37: header pill toggle for compaction mode. The Compact
-        // button posts `request-compact` instead; both share the same
-        // run-side handler below.
-        if (m.type === 'set-compaction-mode' && typeof m.mode === 'string') {
-          const mode = m.mode === 'manual' ? 'manual' : 'auto';
-          await vscode.workspace.getConfiguration('plato').update(
-            'compaction.mode',
-            mode,
-            vscode.ConfigurationTarget.Global,
-          );
-          this.postModelState();
-          return;
-        }
+        // D44d: compaction is always auto at the threshold — Manual is gone.
+        // The threshold slider posts set-compaction-threshold; the Compact
+        // button posts request-compact (force the live run). Both share the
+        // run-side state.
         if (
           m.type === 'set-compaction-threshold' &&
           typeof m.value === 'number'
@@ -760,7 +766,13 @@ class ChatHost {
           return;
         }
         if (m.type === 'request-compact') {
-          this.requestCompactNow();
+          // Mid-run: force the live run to compact. Idle: fold the older
+          // turns into a summary (same as /compact).
+          if (this.running) {
+            this.requestCompactNow();
+          } else {
+            await this.foldNow();
+          }
           return;
         }
         if (m.type === 'user-answer' && Array.isArray(m.answers)) {
@@ -921,43 +933,33 @@ class ChatHost {
 
   /** /compact and the ring's Compact-now share one force-compact path. */
   private requestCompactNow(): void {
-    if (this.running) {
-      this.controller.requestCompact();
-      this.send('notice', 'Plato will compact the conversation at the next safe point.');
-    } else {
+    if (!this.running) {
       this.send('notice', 'No active run — a run must be in progress to compact.');
+      return;
     }
+    this.controller.requestCompact();
+    this.send('notice', 'Plato will compact the conversation at the next safe point.');
   }
 
-  /** D44c: dispatch a real command to its host action. */
+  /** D44c/D44d: dispatch a real command to its host action. */
   private async runCommand(id: string): Promise<void> {
     if (slashCommand(id) === undefined) {
       this.send('notice', 'Unknown command: /' + id);
       return;
     }
-    switch (id) {
-      case 'compact':
+    if (id === 'compact') {
+      // Mid-run /compact force-compacts the live run; idle it folds the
+      // older turns of the conversation into a running summary.
+      if (this.running) {
         this.requestCompactNow();
-        return;
-      case 'autocompact':
-        await this.toggleAutoCompact();
-        return;
-      case 'history':
-        await this.importHistory();
-        return;
+      } else {
+        await this.foldNow();
+      }
+      return;
     }
-  }
-
-  /** /autocompact: flip Global compaction.mode and resync the webview. */
-  private async toggleAutoCompact(): Promise<void> {
-    const next = this.compactionState().mode === 'auto' ? 'manual' : 'auto';
-    await vscode.workspace.getConfiguration('plato').update(
-      'compaction.mode',
-      next,
-      vscode.ConfigurationTarget.Global,
-    );
-    this.postModelState();
-    this.send('notice', 'Auto-compaction ' + (next === 'auto' ? 'ON' : 'OFF'));
+    if (id === 'history') {
+      await this.importHistory();
+    }
   }
 
   /** /history: pick an archived chat and stage its transcript as context. */
@@ -1014,6 +1016,194 @@ class ChatHost {
       chars += line.length;
     }
     return lines.reverse().join('\n');
+  }
+
+  // ---- D44d: cross-message memory fold -----------------------------------
+
+  /** Resolve connection + apiKey + model ref for an idle (fold) call. */
+  private async resolveTurnTargets(): Promise<{
+    conn: ConnectionConfig;
+    apiKey: string;
+    ref: string;
+  } | null> {
+    const ref = this.effectiveModel();
+    const parts = splitModelRef(ref);
+    const conn = parts
+      ? readConnections().find((c) => c.id === parts.connectionId) ?? null
+      : null;
+    if (conn === null) return null;
+    let apiKey = await this.ctx.secrets.get(`plato.providers.${conn.id}.apiKey`);
+    if (!apiKey && conn.id === 'anthropic') {
+      apiKey = await this.ctx.secrets.get(LEGACY_KEY);
+    }
+    return apiKey ? { conn, apiKey, ref } : null;
+  }
+
+  /** Index of the last compact entry in the log, or -1. */
+  private lastCompactIndex(): number {
+    for (let i = this.log.length - 1; i >= 0; i -= 1) {
+      if (this.log[i]!.k === 'compact') return i;
+    }
+    return -1;
+  }
+
+  /** Number of raw you/bot pairs sitting after the last summary. */
+  private tailPairCount(): number {
+    const c = this.lastCompactIndex();
+    const tail = c < 0 ? this.log : this.log.slice(c + 1);
+    return tail.filter(
+      (e) => e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'),
+    ).length;
+  }
+
+  /**
+   * Fold the raw tail down to KEEP_AFTER_FOLD pairs: summarise everything
+   * older (plus any prior summary) into a single compact entry and trim the
+   * trimmed turns from the log. Returns true when a fold happened.
+   */
+  private async foldTail(
+    conn: ConnectionConfig,
+    apiKey: string,
+    ref: string,
+  ): Promise<boolean> {
+    const c = this.lastCompactIndex();
+    const tailEntries = c < 0 ? this.log : this.log.slice(c + 1);
+    const prior =
+      c >= 0 && this.log[c]!.k === 'compact' ? this.log[c]!.text : null;
+    // Indexes of you/bot pairs within tailEntries, oldest first.
+    const pairs: number[] = [];
+    for (let i = 0; i < tailEntries.length; i += 1) {
+      const e = tailEntries[i]!;
+      if (e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot')) pairs.push(i);
+    }
+    if (pairs.length <= KEEP_AFTER_FOLD) return false;
+    const foldCount = pairs.length - KEEP_AFTER_FOLD;
+    const boundary = pairs[foldCount]!;
+    const older = pairs.slice(0, foldCount).map((i) => tailEntries[i]!);
+    const keepEntries = tailEntries.slice(boundary);
+
+    const blocks: string[] = [];
+    if (prior !== null) {
+      blocks.push('[existing summary of the earlier conversation]\n' + prior);
+    }
+    for (const e of older) {
+      const m = e as Extract<Entry, { k: 'msg' }>;
+      blocks.push(
+        '--- ' + (m.cls === 'you' ? 'USER' : 'ASSISTANT') + ' ---\n' + m.text,
+      );
+    }
+    const provider = createProvider(conn.kind, {
+      apiKey,
+      baseUrl:
+        conn.kind === 'openai'
+          ? conn.baseUrl ?? 'https://api.openai.com/v1'
+          : undefined,
+    });
+    const res = await provider.completeTurn({
+      model: ref,
+      system: COMPACT_SYSTEM_PROMPT,
+      tools: [],
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text:
+                'Summarise the following conversation so the assistant can continue without it. Be terse and fact-only.\n\n' +
+                blocks.join('\n\n'),
+            },
+          ],
+        },
+      ],
+      maxTokens: compactMaxTokensFor(ref),
+    });
+    const text = res.content
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join(' ')
+      .trim();
+    if (text.length === 0) return false;
+
+    this.log.length = 0;
+    this.log.push({ k: 'compact', text } as Entry, ...keepEntries);
+    if (this.log.length > LOG_MAX) {
+      this.log.splice(0, this.log.length - LOG_MAX);
+    }
+    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    // A fold rewrote (and shrank) the log: let the next archive snapshot the
+    // folded conversation instead of being skipped by the growth guard.
+    this.archivedUpTo = 0;
+    const decorated = this.log.map((e) =>
+      e.k === 'msg' && e.cls === 'bot'
+        ? { ...e, html: renderMarkdown(e.text) }
+        : e,
+    );
+    void this.panel.webview.postMessage({
+      type: 'restore',
+      log: decorated,
+      hasConnections: readConnections().length > 0,
+      model: this.effectiveModel(),
+      title: this.chatTitle,
+    });
+    this.send(
+      'notice',
+      'Compacted ' + foldCount + ' earlier messages into a summary.',
+    );
+    return true;
+  }
+
+  /** /compact while idle: fold the tail, or say there is nothing to fold. */
+  private async foldNow(): Promise<void> {
+    if (this.folding) return;
+    const targets = await this.resolveTurnTargets();
+    if (targets === null) {
+      this.send('notice', 'Connect a provider before compacting.');
+      return;
+    }
+    this.folding = true;
+    try {
+      const folded = await this.foldTail(
+        targets.conn,
+        targets.apiKey,
+        targets.ref,
+      );
+      if (!folded) {
+        this.send('notice', 'Conversation is short — nothing to compact yet.');
+      }
+    } catch {
+      this.send('notice', 'Compaction failed — try again in a moment.');
+    } finally {
+      this.folding = false;
+    }
+  }
+
+  /**
+   * After a run finishes, fold the tail once it outgrows AUTO_FOLD_AT pairs
+   * (down to KEEP_AFTER_FOLD). Fire-and-forget: never runs while a run or an
+   * approval/question is pending, and a failure is silently retried later.
+   */
+  private scheduleAutoFold(
+    conn: ConnectionConfig,
+    apiKey: string,
+    ref: string,
+  ): void {
+    setTimeout(() => {
+      void (async () => {
+        if (this.running || this.folding) return;
+        if (this.pendingApproval !== null || this.pendingQuestion !== null) {
+          return;
+        }
+        if (this.tailPairCount() < AUTO_FOLD_AT) return;
+        this.folding = true;
+        try {
+          await this.foldTail(conn, apiKey, ref);
+        } catch {
+          // Leave the log untouched; the next completed run retries.
+        } finally {
+          this.folding = false;
+        }
+      })();
+    }, 0);
   }
 
   /** The model-visible task: user text + attached files, read fresh. */
@@ -1255,15 +1445,12 @@ class ChatHost {
    * `mode` defaults to auto so first-time users get the safe default;
    * `threshold` is clamped to [0.5, 0.95] in the loop itself.
    */
+  /** D44d: compaction is always auto at the threshold (Manual is gone). */
   private compactionState(): { mode: 'auto' | 'manual'; threshold: number } {
     const cfg = vscode.workspace.getConfiguration('plato');
-    const mode = cfg.get<'auto' | 'manual' | string>(
-      'compaction.mode',
-      'auto',
-    );
     const threshold = cfg.get<number>('compaction.threshold', 0.8);
     return {
-      mode: mode === 'manual' ? 'manual' : 'auto',
+      mode: 'auto',
       threshold: typeof threshold === 'number' && Number.isFinite(threshold)
         ? threshold
         : 0.8,
@@ -1396,17 +1583,42 @@ class ChatHost {
     await this.archiveCurrentChat();
   }
 
-  /** Prior conversation for LLM context (text pairs, capped). */
+  /**
+   * Prior conversation for LLM context. D44d: instead of a hard "last 12
+   * pairs, drop the rest", the context is the running conversation summary
+   * (if a fold has happened) followed by the raw tail since it — the fold
+   * cadence keeps that tail bounded. MAX_TAIL_PAIRS is only a safety cap.
+   */
   private historyFor(): { role: 'user' | 'assistant'; text: string }[] {
-    return this.log
-      .slice(0, -1) // exclude the entry for the task being sent now
+    const base = this.log.slice(0, -1); // exclude the entry for the task being sent now
+    let c = -1;
+    for (let i = base.length - 1; i >= 0; i -= 1) {
+      if (base[i]!.k === 'compact') {
+        c = i;
+        break;
+      }
+    }
+    const out: { role: 'user' | 'assistant'; text: string }[] = [];
+    const compactEntry =
+      c >= 0 && base[c]!.k === 'compact' ? base[c] : undefined;
+    if (compactEntry !== undefined && compactEntry.k === 'compact') {
+      out.push({
+        role: 'user',
+        text: '[Summary of the earlier conversation]\n' + compactEntry.text,
+      });
+    }
+    const tail = c < 0 ? base : base.slice(c + 1);
+    const pairs = tail
       .filter((e): e is Extract<Entry, { k: 'msg' }> =>
         e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'))
-      .slice(-12)
-      .map((e) => ({
+      .slice(-MAX_TAIL_PAIRS);
+    for (const e of pairs) {
+      out.push({
         role: e.cls === 'you' ? ('user' as const) : ('assistant' as const),
         text: e.text,
-      }));
+      });
+    }
+    return out;
   }
 
   // ---- Transcript replay (M3) -------------------------------------------
@@ -2230,6 +2442,8 @@ class ChatHost {
       });
     } finally {
       this.running = false;
+      // D44d: once idle, auto-fold the conversation tail on its cadence.
+      this.scheduleAutoFold(conn, apiKey, ref);
       writer.close();
       for (const s of mcpServers) {
         s.stop();

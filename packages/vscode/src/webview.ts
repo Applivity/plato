@@ -767,6 +767,15 @@ export function chatHtml(): string {
                                    color:var(--pl-muted); margin-top:2px;
                                    white-space:nowrap; overflow:hidden;
                                    text-overflow:ellipsis; }
+  /* D44d: banner where older turns were folded into a summary. */
+  .msg.compact { display:block; margin:3px 0 5px; padding:8px 10px;
+                 border-left:2px solid var(--pl-border);
+                 background:rgba(128,128,128,.06); }
+  .msg.compact .cc-head { font-size:10.5px; text-transform:uppercase;
+                          letter-spacing:.06em; color:var(--pl-muted);
+                          margin-bottom:4px; }
+  .msg.compact .cc-body { font-size:12px; line-height:1.5;
+                          white-space:pre-wrap; color:var(--vscode-foreground); }
   /* Mode picker popover rows: icon + name + 1-line explainer. */
   .mp-row { display:grid; grid-template-columns:18px 1fr;
             gap:6px 10px; align-items:start; padding:7px 8px;
@@ -858,19 +867,12 @@ export function chatHtml(): string {
         <div id="ctxb-compaction">
           <div class="ctxsep"></div>
           <h4>Compaction</h4>
-          <div class="ctxctl-row">
-            <span class="lbl">Mode</span>
-            <div class="ctxseg" id="ctxb-seg">
-              <button type="button" data-mode="auto">Auto</button>
-              <button type="button" data-mode="manual">Manual</button>
-            </div>
-          </div>
           <div class="ctxctl-row" id="ctxb-thr-row">
             <span class="lbl">Threshold</span>
             <input id="ctxb-thr" type="range" min="0.5" max="0.95" step="0.05" />
             <span class="val" id="ctxb-thr-live">80%</span>
           </div>
-          <div class="ctxctl-row" id="ctxb-cnow-row" hidden>
+          <div class="ctxctl-row" id="ctxb-cnow-row">
             <span class="lbl"></span>
             <div class="cnow-wrap">
               <button type="button" id="ctxb-cnow" class="btn btn-secondary"
@@ -948,7 +950,6 @@ export function chatHtml(): string {
   let lastMaxContext = null;
   let lastThreshold = 0.8;
   let lastModelMaxContext = null;
-  let compactPending = false;
   // D43: no provider connected yet — drives the empty composer state.
   let hasConnections = true;
   vsapi.postMessage({ type: 'ready' });
@@ -1008,33 +1009,16 @@ export function chatHtml(): string {
     }
   }
   function applyCompaction(c) {
+    // D44d: compaction is always auto at the threshold — Manual is gone.
+    // The threshold slider and Compact-now are always shown and stay in
+    // sync with the host payload.
     if (!c) return;
-    const mode = c.mode === 'manual' ? 'manual' : 'auto';
     lastThreshold = typeof c.threshold === 'number' ? c.threshold : 0.8;
-    const btn = document.getElementById('compactBtn');
-    // D40: the compact status pill is gone (redundant with the ring's
-    // tooltip); only the ring's tooltip controls stay in sync here.
-    {
-      // D38b: also reflect in the ring's tooltip controls.
-      const seg = document.getElementById('ctxb-seg');
-      if (seg) {
-        for (const b of Array.from(seg.querySelectorAll('button'))) {
-          b.classList.toggle('on', b.dataset.mode === mode);
-        }
-      }
-      const thrRow = document.getElementById('ctxb-thr-row');
-      if (thrRow) { thrRow.hidden = mode !== 'auto'; }
-      const cnowRow = document.getElementById('ctxb-cnow-row');
-      if (cnowRow) { cnowRow.hidden = mode !== 'manual'; }
-      const thr = document.getElementById('ctxb-thr');
-      const thrLive = document.getElementById('ctxb-thr-live');
-      if (thr) { thr.value = String(lastThreshold); }
-      if (thrLive) {
-        thrLive.textContent = Math.round(lastThreshold * 100) + '%';
-      }
-    }
-    if (btn) {
-      btn.dataset.mode = mode;
+    const thr = document.getElementById('ctxb-thr');
+    const thrLive = document.getElementById('ctxb-thr-live');
+    if (thr) { thr.value = String(lastThreshold); }
+    if (thrLive) {
+      thrLive.textContent = Math.round(lastThreshold * 100) + '%';
     }
   }
   function updateModelCaption() {
@@ -1044,20 +1028,9 @@ export function chatHtml(): string {
     // request a label refresh; the implementation is a no-op now.
   }
   function requestCompact() {
-    if (!busy) {
-      // No active run: nothing to compact. Surface a tiny hint.
-      return;
-    }
+    // D44d: works whenever — mid-run it force-compacts the live run, idle
+    // it folds the older turns into a summary (the host decides).
     vsapi.postMessage({ type: 'request-compact' });
-    compactPending = true;
-    const btn = document.getElementById('compactBtn');
-    if (btn) {
-      btn.dataset.busy = 'true';
-    }
-    setTimeout(() => {
-      compactPending = false;
-      if (btn) btn.dataset.busy = 'false';
-    }, 1500);
   }
   // -----------------------------------------------------------------------
 
@@ -2071,22 +2044,8 @@ export function chatHtml(): string {
     wrap.appendChild(secCtxDet);
     ctxBody.appendChild(el('h2', 'shead2', 'Context'));
     ctxBody.appendChild(el('p', 'shelp',
-      'How Plato manages the conversation window. There is no off - the run always manages its context. The Compact button in the chat header is always available as a manual override.'));
+      'Plato compacts automatically once the conversation outgrows the threshold. /compact, or the ring Compact-now button, forces it whenever you want.'));
     const ctxBlock = el('div', 'sblock');
-    const modeRow2 = el('div', 'row');
-    const modeSel = sel(
-      [
-        { value: 'auto', label: 'Auto (at threshold)' },
-        { value: 'manual', label: 'Manual (Compact button only)' },
-      ],
-      ctxInfo.mode === 'manual' ? 'manual' : 'auto',
-    );
-    modeSel.addEventListener('change', (e) => {
-      vsapi.postMessage({ type: 'set-compaction-mode', mode: e.target.value });
-    });
-    modeRow2.appendChild(el('label', null, 'Compaction'));
-    modeRow2.appendChild(modeSel);
-    ctxBlock.appendChild(modeRow2);
     const thrRow = el('div', 'row');
     const thrInput = el('input');
     thrInput.type = 'range';
@@ -2136,11 +2095,6 @@ export function chatHtml(): string {
   // tooltip (D38b). The Compact button in the composer was removed
   // entirely; the requestCompact() function still exists and is
   // called from the ring's tooltip.
-  // D38b: ring's tooltip is now a control surface for compaction.
-  // The handlers live on the elements (not delegated) and post the
-  // same set-compaction-mode / set-compaction-threshold messages
-  // the Settings page uses - no new message types.
-  const ctxSeg = document.getElementById('ctxb-seg');
   // D42d: hover = info only. Clicking the ring pins the full panel
   // (info + compaction controls) open until the ring is clicked
   // again, an outside click lands, or Esc is pressed. Clicks inside
@@ -2167,15 +2121,6 @@ export function chatHtml(): string {
         ringWrap.classList.remove('pinned');
       }
     });
-  }
-  if (ctxSeg) {
-    for (const b of Array.from(ctxSeg.querySelectorAll('button'))) {
-      b.addEventListener('click', () => {
-        const next = b.dataset.mode === 'manual' ? 'manual' : 'auto';
-        vsapi.postMessage({ type: 'set-compaction-mode', mode: next });
-        applyCompaction({ mode: next, threshold: lastThreshold });
-      });
-    }
   }
   const ctxThr = document.getElementById('ctxb-thr');
   const ctxThrLive = document.getElementById('ctxb-thr-live');
@@ -2694,7 +2639,24 @@ export function chatHtml(): string {
         break;
       case 'card-open': showCard(t, false); break;
       case 'card-done': cardDone(t); break;
+      case 'compact': addCompactBanner(t.text); break;
     }
+  }
+
+  // D44d: a fold replaced older turns with a summary; show it as a banner.
+  function addCompactBanner(text) {
+    const div = document.createElement('div');
+    div.className = 'msg compact';
+    const head = document.createElement('div');
+    head.className = 'cc-head';
+    head.textContent = 'Earlier conversation compacted';
+    const body = document.createElement('div');
+    body.className = 'cc-body';
+    body.textContent = text;
+    div.appendChild(head);
+    div.appendChild(body);
+    log.appendChild(div);
+    scroll();
   }
 
   function addMsg(cls, who, text, asHtml) {
