@@ -1,0 +1,11 @@
+# Plato duo philosopher (D47). Lives in ~/.plato/duo.yaml - edit it in
+# Settings -> Orchestration -> Duo, or copy this into place. The philosopher
+# watches the run and steers it. Philosophers NEVER approve tool calls.
+philosopher:
+  persona: aristotle        # one of: aristotle heraclitus diogenes pythagoras thales
+  # name: Aristotle         # optional display name (default = the persona's)
+  # role: "Your override"   # optional role prompt (default = the persona's)
+  model: anthropic:claude-sonnet-4-5
+  pause: false
+  cancel: false
+  maxInterventions: 5

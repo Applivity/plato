@@ -1028,15 +1028,54 @@ ever *read*, never written.
   (founder: "discussion later"); move convo history to `~/.plato/history/`
   (TODO).
 
-**D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
+**D47 — Duo + Academy fully configured from the UI over yaml (M4.1, 0.25.0, shipped 2026-09-04).**
+
+Founder-directed redesign (2026-09-04): Duo and Academy are edited entirely in
+the Settings panel; the yaml file is the single store, and both directions sync —
+UI edits write the file; editing/pasting the file (Open file in the editor, or any
+external change) re-parses and refreshes the UI through a file watcher. One store,
+two views (D45c realized, in the same milestone as the code, per D45c/D45d).
+
+- **`~/.plato/duo.yaml` is the only Duo store.** The `plato.duo.persona` and
+  `plato.observer.*` contributed settings are deleted (D45d: no migration).
+  Duo runs read `duo.yaml`; a broken duo.yaml aborts Duo loudly and is inert in
+  Solo/Academy (mirrors academy.yaml scoping, D45a-4).
+- **Edits create it.** No duo.yaml → Duo runs the built-in default (Aristotle —
+  exactly today's untouched-settings behavior); the Settings block shows a live
+  philosopher editor pre-filled from the default, and the first change
+  materializes the file. Academy does the same: no academy.yaml → the council
+  editor pre-seeds one worker (the user's default model) and the first edit
+  creates the file. **The "Create example" button is dropped** — editing IS
+  creating. `run()` still guards actually running Academy without a council.
+- **duo.yaml shape** (persona-anchored, superseding D45b's sketch):
+  `philosopher: { persona (required, one of the five), name?, role?, model?,
+  pause, cancel, maxInterventions }`. Effective name/role fall back to the
+  persona's when empty; an empty model uses the worker's ref; guidance is always
+  on (D30b). New strict parser `teams/duo.ts` (loud, like the academy one) —
+  the file must name a valid persona.
+- **Canonical writes.** UI saves emit canonical yaml from the model
+  (`teams/emit.ts` + `yamlScalar`, quoting only what a real YAML reader would
+  misread). Lossless in substance because the parsers reject unknown keys rather
+  than ignore them — only human-added comments/ordering are lost on a UI save.
+  The old `academyExample()` literal emitter is deleted; emit is the only writer.
+- **Two-way sync:** UI→file via whole-model `save-duo` / `save-academy` messages
+  (host validates by emit→re-parse; an invalid model never overwrites a good
+  file). File→UI via a host `createFileSystemWatcher` on
+  `~/.plato/{duo,academy}.yaml` (a `RelativePattern` over the home dir, armed
+  once Settings opens, disposed with the panel; self-write echoes swallowed by a
+  500 ms guard).
+- **Academy editor** enforces exactly-one-worker + ≤5 philosophers in the UI and
+  host; the header chip shows `duo · <name>` / `academy:<name>` from the files.
+
+**D45b — Duo customisation: deferred to a follow-up (M4.1, TBD — SUPERSEDED by D47, shipped 2026-09-04).**
 
 Duo philosophers are hardcoded in `core/src/teams/personas.ts` (five personas, literal role strings). The user has one override surface today (`plato.observer.role` replaces the persona's role wholesale) and a flat list of settings for the other tiers. Academy has richer per-member config via yaml. The asymmetry is real and the user needs richer Duo config too.
 
 **Deferred scope** (recorded so the direction is locked):
 - New file: `~/.plato/duo.yaml` with `philosopher: { name, role, model, persona, pause, cancel, maxInterventions }`. (Config dir is `~/.plato/` per D46, not `.plato/`.)
 - New schema: `duo.schema.json` bound via YAML extension.
-- Discovery: `~/.plato/duo.yaml` if present, else settings (legacy default). Precedence: yaml > settings.
-- Settings UI: a "Duo — philosopher" block that shows the file's parsed config and offers "Open duo.yaml" + "Edit in settings" affordances. Round-trip between file and settings.
+- Discovery: `~/.plato/duo.yaml`. (D47 supersedes the settings-fallback half: the file is the only store; the Settings block always shows a live editor and a missing file runs the built-in default.)
+- Settings UI: a "Duo — philosopher" block that shows the file's parsed config and offers "Open duo.yaml" + an in-form editor. Round-trip between the Settings form and the file (D47: two-way, via file watcher).
 - The `plato.observer.role` setting becomes the *fallback* when `duo.yaml` is absent.
 
 Not in D44 / D45. Queued in HANDOFF.

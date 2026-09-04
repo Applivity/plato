@@ -10,27 +10,37 @@ may not be available when you work; everything you need is in this repo.
 3. [ARCHITECTURE.md](ARCHITECTURE.md) — binding design contracts
 4. [PROGRESS.md](PROGRESS.md) — the running change log (newest first)
 
-## Current repository state (verified 2026-09-03)
+## Current repository state (verified 2026-09-04)
 
 - Location: `/Users/ai/Desktop/plato` (canonical remote is
   `https://github.com/applivity-com/plato`, private, default branch
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.24.0).
-- HEAD (`main`) is at **D46** — home storage (`~/.plato/`) + global PLATO.md
-  + ≤5 philosophers + Academy-switch fix. **Plato is a personal
+  extension shell, v0.25.0).
+- HEAD (`main`) is at **D47** — Duo + Academy fully configurable from the
+  Settings UI over yaml (two-way sync). **Plato is a personal
   pair-programmer: it never pollutes the shared repo.** Everything Plato owns
-  lives in a flat `~/.plato/` — `academy.yaml` (council), `mcp.yaml`,
-  `PLATO.md` (global default), and `runs/<project-key>/` (transcripts). The
-  repo is only ever read: `<repo>/PLATO.md` (project override, via
-  `/system-prompt`) and `<repo>/AGENTS.md`/`CLAUDE.md`. Worker-prompt join =
-  project PLATO.md > global PLATO.md > bundled default > AGENTS.md. Academy
-  mode now switches without a pre-existing council (block offers "Create
-  example"); philosopher cap = 5. Model (D45a-3/4): one worker + N
-  philosophers; "Plato" in UI; project files always on; command surface =
-  Compact · History · System prompt. Working tree clean. 178 vitest cases
-  across 18 files in `packages/core`. **Deferred (recorded in DECISIONS D46):**
+  lives in a flat `~/.plato/` — `academy.yaml` (council), `duo.yaml` (the Duo
+  philosopher), `mcp.yaml`, `PLATO.md` (global default), and
+  `runs/<project-key>/` (transcripts). The repo is only ever read:
+  `<repo>/PLATO.md` (project override, via `/system-prompt`) and
+  `<repo>/AGENTS.md`/`CLAUDE.md`. Worker-prompt join = project PLATO.md >
+  global PLATO.md > bundled default > AGENTS.md. Model (D45a-3/4): one worker
+  + N philosophers (cap 5); "Plato" in UI; project files always on; command
+  surface = Compact · History · System prompt. **D47 (0.25.0):** the in-panel
+  Orchestration blocks are live editors — Duo (persona, name, role override,
+  model, pause/cancel/maxInterventions) and Academy (council name + full
+  per-member CRUD). `~/.plato/duo.yaml` is the only Duo store
+  (`plato.duo.persona` + `plato.observer.*` settings deleted); a missing
+  duo.yaml runs the built-in Aristotle default and the first edit creates the
+  file; Academy dropped "Create example" for the same edits-create-it editor
+  (a one-worker pre-seed when no council exists). Both directions sync: edits
+  write the yaml, and a host file watcher over `~/.plato/{duo,academy}.yaml`
+  re-reads on external edit/paste and refreshes the UI. Core gained a strict
+  `duo.yaml` parser + loader + run-spec resolver and canonical emitters
+  (`teams/duo.ts`, `teams/emit.ts`). Working tree clean. 202 vitest cases
+  across 20 files in `packages/core`. **Deferred (recorded in DECISIONS D46):**
   per-project council/academy override ("discussion later"); move convo
   history to `~/.plato/history/` (TODO).
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
@@ -44,8 +54,8 @@ may not be available when you work; everything you need is in this repo.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 178 passing
-  vitest cases across 18 files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 202 passing
+  vitest cases across 20 files in packages/core).
 
 ## How the packages connect
 
@@ -86,7 +96,7 @@ may not be available when you work; everything you need is in this repo.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 155/155 vitest in packages/core
+2. `pnpm -r test` — 202/202 vitest in packages/core
 3. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 4. `cd packages/vscode && pnpm run package` — produces
@@ -126,15 +136,12 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D45b — Duo customisation.** `~/.plato/duo.yaml` for the Duo
-   philosopher (deferred; see DECISIONS D45b — note the config dir is now
-   `~/.plato/` per D46, not `.plato/`).
-2. **Chat-log message rendering.** Markdown, code blocks, tool-call
+1. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.
-3. **History run-detail view.** Friendlier rendering of a run's
+2. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
-4. **Small wins:** title regenerate affordance (hover rename → add
+3. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
 > Deferred for later (see DECISIONS D46):
@@ -147,10 +154,12 @@ may not be available when you work; everything you need is in this repo.
 > `/system-prompt` PLATO.md materialization, empty-composer card), D45a-3
 > (0.22.0, one worker + N philosophers lock, `includeProjectRules` removed,
 > worker file-state in Orchestration, default body = identity + Karpathy),
-> D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode), and
+> D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode),
 > **D46 (0.24.0, home storage `~/.plato/`, global PLATO.md, ≤5 philosophers,
-> Academy-switch fix)**. Command surface is **Compact · History · System
-> prompt**. See DECISIONS D45a-2 / D45a-3 / D45a-4 / D46.
+> Academy-switch fix)**, and **D47 (0.25.0, Duo + Academy Settings editors
+> over yaml — ~/.plato/duo.yaml single store, edits-create-it, file-watcher
+> sync)**. Command surface is **Compact · History · System
+> prompt**. See DECISIONS D45a-2 / D45a-3 / D45a-4 / D46 / D47.
 
 ## Ground rules for any agent working here
 

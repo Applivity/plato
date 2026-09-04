@@ -19,7 +19,15 @@ import {
   loadMcpConfig,
   ObserverAgent,
   loadTeamConfig,
+  parseTeamConfig,
   TeamConfigError,
+  loadDuoConfig,
+  DuoConfigError,
+  parseDuoConfig,
+  defaultDuoPhilosopher,
+  duoObserverSpec,
+  emitTeamConfig,
+  emitDuoConfig,
   isSecretPath,
   loadProjectFile,
   DEFAULT_PLATO_BODY,
@@ -28,10 +36,10 @@ import {
   COMPACT_SYSTEM_PROMPT,
   compactMaxTokensFor,
   PERSONAS,
-  findPersona,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
+import type { DuoPhilosopher } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
@@ -327,6 +335,10 @@ class ChatHost {
   private pendingHistory: { title: string; text: string } | null = null;
   /** D44d: a cross-message fold (summary call + log rewrite) is in flight. */
   private folding = false;
+  /** D47: watchers on ~/.plato/{duo,academy}.yaml (armed once Settings opens). */
+  private homeWatchers: vscode.FileSystemWatcher[] = [];
+  /** D47: ms of the last home-file write — swallows our own watcher echoes. */
+  private lastHomeWrite = 0;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -423,6 +435,7 @@ class ChatHost {
           return;
         }
         if (m.type === 'openSettings') {
+          this.ensureHomeWatch();
           void this.sendSettings();
           return;
         }
@@ -619,54 +632,12 @@ class ChatHost {
           );
           return;
         }
-        if (m.type === 'set-observer') {
-          const cfg = vscode.workspace.getConfiguration('plato');
-          if (typeof m.enable === 'boolean') {
-            await cfg.update(
-              'observer.enable',
-              m.enable,
-              vscode.ConfigurationTarget.Global,
-            );
-          }
-          if (typeof m.model === 'string') {
-            await cfg.update(
-              'observer.model',
-              m.model,
-              vscode.ConfigurationTarget.Global,
-            );
-          }
-          if (typeof m.pause === 'boolean') {
-            await cfg.update(
-              'observer.pause',
-              m.pause,
-              vscode.ConfigurationTarget.Global,
-            );
-          }
-          if (typeof m.cancel === 'boolean') {
-            await cfg.update(
-              'observer.cancel',
-              m.cancel,
-              vscode.ConfigurationTarget.Global,
-            );
-          }
-          if (typeof m.maxInterventions === 'number') {
-            await cfg.update(
-              'observer.maxInterventions',
-              Math.max(1, Math.round(m.maxInterventions)),
-              vscode.ConfigurationTarget.Global,
-            );
-          }
-          void this.sendSettings(
-            'Observer updated — applies from the next run.',
-          );
-          return;
-        }
         if (m.type === 'set-orchestration' && typeof m.mode === 'string') {
           const mode =
             m.mode === 'duo' || m.mode === 'academy' ? m.mode : 'solo';
-          // D46: let the mode switch even when Academy has no academy.yaml yet
-          // — the Academy block's "Create example" affordance handles it. The
-          // run-time guard (run()) still blocks actually running Academy
+          // D47: let the mode switch even when Academy has no academy.yaml —
+          // the Academy block's council editor creates it on the first edit.
+          // The run-time guard (run()) still blocks actually running Academy
           // without a council.
           await vscode.workspace
             .getConfiguration('plato')
@@ -680,44 +651,103 @@ class ChatHost {
           );
           return;
         }
-        if (m.type === 'set-duo-persona' && typeof m.persona === 'string') {
-          if (findPersona(m.persona)) {
-            await vscode.workspace
-              .getConfiguration('plato')
-              .update(
-                'duo.persona',
-                m.persona,
-                vscode.ConfigurationTarget.Global,
-              );
-          }
-          void this.sendSettings('Philosopher updated — applies from the next run.');
-          return;
-        }
-        if (m.type === 'create-academy') {
-          // D46: the council is Plato's global config, not a project file —
-          // it lives in ~/.plato/ and never touches the shared repo.
-          const dir = this.homePlatoDir();
-          const file = vscode.Uri.file(join(dir, 'academy.yaml'));
+        // D47: the Settings editors persist the WHOLE model to yaml. Validate
+        // by emitting + re-parsing so the error text matches the parsers'; an
+        // invalid model never overwrites a good file. Missing file? The first
+        // edit materializes it (edits create it).
+        if (m.type === 'save-duo' && typeof m.philosopher === 'object' && m.philosopher !== null) {
           try {
-            // Pre-fill the worker with the user's current default model so
-            // the example is runnable as-is (D33).
-            const model = this.effectiveModel();
-            const body = this.academyExample(model);
-            await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
-            await vscode.workspace.fs.writeFile(
-              file,
-              Buffer.from(body, 'utf8'),
-            );
-            void this.sendSettings(
-              'academy.yaml created — edit members, then pick Academy.',
-            );
-            void vscode.window.showTextDocument(file);
+            const raw = m.philosopher as Record<string, unknown>;
+            const phil: DuoPhilosopher = {
+              persona: typeof raw['persona'] === 'string' ? raw['persona'] : '',
+            };
+            if (typeof raw['name'] === 'string' && raw['name'].trim().length > 0) {
+              phil.name = raw['name'].trim();
+            }
+            if (typeof raw['role'] === 'string' && raw['role'].trim().length > 0) {
+              phil.role = raw['role'].trim();
+            }
+            if (typeof raw['model'] === 'string' && raw['model'].trim().length > 0) {
+              phil.model = raw['model'].trim();
+            }
+            if (typeof raw['pause'] === 'boolean') {
+              phil.pause = raw['pause'];
+            }
+            if (typeof raw['cancel'] === 'boolean') {
+              phil.cancel = raw['cancel'];
+            }
+            if (typeof raw['maxInterventions'] === 'number') {
+              phil.maxInterventions = Math.max(0, Math.round(raw['maxInterventions']));
+            }
+            const body = emitDuoConfig({ philosopher: phil });
+            parseDuoConfig(body); // loud: unknown persona / bad fields never write
+            await this.writeHomeFile('duo.yaml', body);
+            this.ensureHomeWatch();
+            void this.sendSettings('Duo philosopher saved — applies from the next run.');
           } catch (e) {
             void this.sendSettings(
-              `Could not create academy.yaml — ${
-                e instanceof Error ? e.message : 'error'
-              }`,
+              `duo.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
             );
+          }
+          return;
+        }
+        if (m.type === 'save-academy' && Array.isArray(m.members)) {
+          try {
+            const members: TeamMember[] = (
+              m.members as Record<string, unknown>[]
+            ).map((raw) => {
+              if (
+                typeof raw['name'] !== 'string' ||
+                typeof raw['model'] !== 'string'
+              ) {
+                throw new TeamConfigError('each member needs name and model');
+              }
+              const mem: TeamMember = {
+                name: raw['name'].trim(),
+                model: raw['model'].trim(),
+                kind: raw['kind'] === 'philosopher' ? 'philosopher' : 'worker',
+              };
+              if (typeof raw['role'] === 'string' && raw['role'].trim().length > 0) {
+                mem.role = raw['role'].trim();
+              }
+              if (mem.kind === 'philosopher') {
+                if (typeof raw['guidance'] === 'boolean') {
+                  mem.guidance = raw['guidance'];
+                }
+                if (typeof raw['pause'] === 'boolean') {
+                  mem.pause = raw['pause'];
+                }
+                if (typeof raw['cancel'] === 'boolean') {
+                  mem.cancel = raw['cancel'];
+                }
+                if (typeof raw['maxInterventions'] === 'number') {
+                  mem.maxInterventions = Math.max(0, Math.round(raw['maxInterventions']));
+                }
+              }
+              return mem;
+            });
+            const body = emitTeamConfig({
+              name: typeof m.name === 'string' ? m.name.trim() : '',
+              members,
+            });
+            parseTeamConfig(body); // exactly-one-worker / at-most-5 / model shape
+            await this.writeHomeFile('academy.yaml', body);
+            this.ensureHomeWatch();
+            void this.sendSettings('Academy saved — applies from the next run.');
+          } catch (e) {
+            void this.sendSettings(
+              `academy.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
+            );
+          }
+          return;
+        }
+        if (m.type === 'open-duo') {
+          const file = vscode.Uri.file(join(this.homePlatoDir(), 'duo.yaml'));
+          try {
+            await vscode.workspace.fs.stat(file);
+            void vscode.window.showTextDocument(file);
+          } catch {
+            void this.sendSettings('No ~/.plato/duo.yaml yet — edits in the form create it.');
           }
           return;
         }
@@ -727,7 +757,7 @@ class ChatHost {
             await vscode.workspace.fs.stat(file);
             void vscode.window.showTextDocument(file);
           } catch {
-            void this.sendSettings('~/.plato/academy.yaml not found.');
+            void this.sendSettings('~/.plato/academy.yaml not found — edits in the form create it.');
           }
           return;
         }
@@ -886,6 +916,55 @@ class ChatHost {
     } catch {
       return false;
     }
+  }
+
+  /** D47: atomic writer for Plato's home config files (creates ~/.plato). */
+  private async writeHomeFile(name: string, body: string): Promise<void> {
+    const dir = this.homePlatoDir();
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.file(join(dir, name)),
+      Buffer.from(body, 'utf8'),
+    );
+    this.lastHomeWrite = Date.now();
+  }
+
+  /**
+   * D47: live yaml→UI sync — the raw-yaml surface is "Open file, edit there",
+   * so a watcher on the two config files re-reads + re-pushes the Settings
+   * state whenever the file changes externally. Armed lazily (idempotent),
+   * only once ~/.plato exists (a save creates it, then arms); disposed with
+   * the panel. Events within 500ms of our own write are the save echo.
+   */
+  private ensureHomeWatch(): void {
+    if (this.homeWatchers.length > 0) {
+      return;
+    }
+    const dir = this.homePlatoDir();
+    const arm = () => {
+      if (this.homeWatchers.length > 0) {
+        return;
+      }
+      const refresh = () => {
+        if (Date.now() - this.lastHomeWrite < 500) {
+          return;
+        }
+        void this.sendSettings();
+      };
+      for (const name of ['duo.yaml', 'academy.yaml']) {
+        const w = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(vscode.Uri.file(dir), name),
+        );
+        w.onDidChange(refresh);
+        w.onDidCreate(refresh);
+        w.onDidDelete(refresh);
+        this.homeWatchers.push(w);
+      }
+    };
+    void vscode.workspace.fs.stat(vscode.Uri.file(dir)).then(
+      arm,
+      () => { /* no ~/.plato yet — the first save creates it, then arms */ },
+    );
   }
 
   /**
@@ -1392,36 +1471,17 @@ class ChatHost {
         kind: p.kind,
         baseUrl: p.baseUrl,
       })),
-      observer: {
-        enable: vscode.workspace
-          .getConfiguration('plato')
-          .get('observer.enable', false),
-        model: vscode.workspace
-          .getConfiguration('plato')
-          .get('observer.model', ''),
-        pause: vscode.workspace
-          .getConfiguration('plato')
-          .get('observer.pause', false),
-        cancel: vscode.workspace
-          .getConfiguration('plato')
-          .get('observer.cancel', false),
-        maxInterventions: vscode.workspace
-          .getConfiguration('plato')
-          .get('observer.maxInterventions', 5),
-      },
       orchestration: {
         mode: vscode.workspace
           .getConfiguration('plato')
           .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo'),
-        persona: vscode.workspace
-          .getConfiguration('plato')
-          .get('duo.persona', 'aristotle'),
         personas: PERSONAS.map((p) => ({
           id: p.id,
           name: p.name,
           epithet: p.epithet,
           role: p.role,
         })),
+        duo: this.duoStatus(),
         academy: this.academyStatus(),
       },
       workers: await this.workersState(),
@@ -1457,46 +1517,82 @@ class ChatHost {
     return parts.length > 0 ? ` · ${parts.join(' · ')}` : '';
   }
 
-  /** Example academy.yaml body for the Create-example button (D33). */
-  private academyExample(model: string): string {
-    return [
-      '# Plato academy (D31/D32/D33). Activate in Settings -> Orchestration -> Academy.',
-      '# The worker does the work; philosophers watch and steer. Philosophers NEVER approve tool calls.',
-      'academy:',
-      '  name: my-academy',
-      '',
-      'members:',
-      '  - name: plato',
-      '    model: ' + model,
-      '    role: "You fix bugs. Enumerate defects, fix them, re-verify."',
-      '    kind: worker',
-      '',
-      '  - name: aristotle',
-      '    kind: philosopher',
-      '    model: ' + model,
-      '    guidance: true',
-      '    pause: false',
-      '    cancel: false',
-      '    maxInterventions: 3',
-      '',
-    ].join('\n');
+  /**
+   * D47: Duo state for the Settings editor + header chip. A missing file is
+   * NOT an error — the form pre-fills from the built-in default and the first
+   * edit materializes ~/.plato/duo.yaml (edits create it). A present-but-
+   * broken file surfaces its parse error and the form pre-fills defaults so
+   * the next edit repairs it.
+   */
+  private duoStatus(): {
+    source: 'file' | 'default';
+    name: string;
+    error: string;
+    philosopher: {
+      persona: string;
+      name: string;
+      role: string;
+      model: string;
+      pause: boolean;
+      cancel: boolean;
+      maxInterventions: number;
+    };
+  } {
+    let cfg: ReturnType<typeof loadDuoConfig> = null;
+    let source: 'file' | 'default' = 'default';
+    let error = '';
+    try {
+      cfg = loadDuoConfig(this.homePlatoDir());
+      if (cfg !== null) {
+        source = 'file';
+      }
+    } catch (e) {
+      source = 'file'; // the file exists but does not parse
+      error = e instanceof Error ? e.message : 'error';
+    }
+    const raw = cfg !== null ? cfg.philosopher : defaultDuoPhilosopher();
+    return {
+      source,
+      name: duoObserverSpec(raw, '').name,
+      error,
+      philosopher: {
+        persona: raw.persona,
+        name: raw.name ?? '',
+        role: raw.role ?? '',
+        model: raw.model ?? '',
+        pause: raw.pause ?? false,
+        cancel: raw.cancel ?? false,
+        maxInterventions: raw.maxInterventions ?? 5,
+      },
+    };
   }
 
-  /** Academy availability for the Settings page (D32/D33): file or error. */
+  /** Academy state for the Settings editor (D47): full member detail. */
   private academyStatus(): {
     available: boolean;
     name: string;
-    members: { name: string; kind: string; model: string }[];
+    members: {
+      name: string;
+      kind: string;
+      model: string;
+      role?: string;
+      guidance?: boolean;
+      pause?: boolean;
+      cancel?: boolean;
+      maxInterventions?: number;
+    }[];
     error: string;
   } {
     try {
       const team = loadTeamConfig(this.homePlatoDir());
       if (team === null) {
+        // Missing file is not an error: the Settings editor pre-seeds a
+        // council and the first change creates the file.
         return {
           available: false,
           name: '',
           members: [],
-          error: 'No ~/.plato/academy.yaml yet — create the example below.',
+          error: '',
         };
       }
       return {
@@ -1506,6 +1602,12 @@ class ChatHost {
           name: m.name,
           kind: m.kind,
           model: m.model,
+          role: m.role ?? '',
+          guidance: m.kind === 'philosopher' ? m.guidance ?? true : undefined,
+          pause: m.kind === 'philosopher' ? m.pause ?? false : undefined,
+          cancel: m.kind === 'philosopher' ? m.cancel ?? false : undefined,
+          maxInterventions:
+            m.kind === 'philosopher' ? m.maxInterventions ?? 5 : undefined,
         })),
         error: '',
       };
@@ -1533,10 +1635,8 @@ class ChatHost {
       orchestration: vscode.workspace
         .getConfiguration('plato')
         .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo'),
+      duo: this.duoStatus(),
       academy: this.academyStatus(),
-      persona: vscode.workspace
-        .getConfiguration('plato')
-        .get('duo.persona', 'aristotle'),
       // D37: live context UI state.
       compaction: this.compactionState(),
     });
@@ -1682,6 +1782,10 @@ class ChatHost {
    * stays persisted, so reopening the panel continues the conversation.
    */
   async dispose(): Promise<void> {
+    for (const w of this.homeWatchers) {
+      w.dispose();
+    }
+    this.homeWatchers = [];
     await this.archiveCurrentChat();
   }
 
@@ -2100,7 +2204,7 @@ class ChatHost {
     if (team === null && orchestration === 'academy') {
       this.send(
         'error',
-        'Academy mode needs ~/.plato/academy.yaml — create it from Settings → Orchestration → Create example, or switch to Solo/Duo.',
+        'Academy mode needs ~/.plato/academy.yaml — build a council in Settings → Orchestration → Academy (edits create the file), or switch to Solo/Duo.',
       );
       return;
     }
@@ -2233,21 +2337,30 @@ class ChatHost {
         }
       }
     } else if (orchestration === 'duo') {
-      const c = vscode.workspace.getConfiguration('plato');
-      const personaId = c.get<string>('duo.persona', 'aristotle');
-      const persona = findPersona(personaId) ?? PERSONAS[0]!;
-      const customRole = c.get('observer.role', '');
-      obsSpecs.push({
-        name: persona.name,
-        ref: c.get<string>('observer.model', '') || ref,
-        // A custom role overrides the persona prompt; otherwise the persona
-        // IS the role (D32b).
-        role: customRole.length > 0 ? customRole : persona.role,
-        guidance: true, // D30b: guidance tier always on
-        pause: c.get('observer.pause', false),
-        cancel: c.get('observer.cancel', false),
-        maxInterventions: c.get('observer.maxInterventions', 5),
-      });
+      // D47: ~/.plato/duo.yaml is the store (edits create it); a missing
+      // file runs the built-in default. A broken file aborts loudly, like
+      // Academy's — and, like academy.yaml, it is inert in the other modes
+      // because this branch never reads it.
+      let duoCfg: ReturnType<typeof loadDuoConfig> = null;
+      try {
+        duoCfg = loadDuoConfig(this.homePlatoDir());
+      } catch (e) {
+        this.send(
+          'error',
+          e instanceof DuoConfigError
+            ? e.message
+            : `duo.yaml could not be read — ${
+                e instanceof Error ? e.message : 'error'
+              }`,
+        );
+        return;
+      }
+      obsSpecs.push(
+        duoObserverSpec(
+          duoCfg !== null ? duoCfg.philosopher : defaultDuoPhilosopher(),
+          ref,
+        ),
+      );
     }
     const observers: { agent: ObserverAgent; name: string }[] = [];
     let interventionsUsed = 0; // hard cap 5 per run across members (D31d)

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Plato duo philosopher definition (D47)",
+  "type": "object",
+  "required": [
+    "philosopher"
+  ],
+  "properties": {
+    "philosopher": {
+      "type": "object",
+      "required": [
+        "persona"
+      ],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "enum": [
+            "aristotle",
+            "heraclitus",
+            "diogenes",
+            "pythagoras",
+            "thales"
+          ],
+          "description": "Philosopher persona - one of the five presets. Its name and default role anchor the philosopher."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name; empty uses the persona's name."
+        },
+        "role": {
+          "type": "string",
+          "description": "Role prompt override; empty uses the persona's role."
+        },
+        "model": {
+          "type": "string",
+          "description": "Model ref as <connection>:<model>; empty = same as Plato."
+        },
+        "pause": {
+          "type": "boolean",
+          "default": false,
+          "description": "May pause the run at safe points."
+        },
+        "cancel": {
+          "type": "boolean",
+          "default": false,
+          "description": "May cancel the run after the in-flight tool."
+        },
+        "maxInterventions": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 5,
+          "description": "Per-run intervention budget."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

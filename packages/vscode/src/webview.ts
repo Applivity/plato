@@ -1514,8 +1514,8 @@ export function chatHtml(): string {
       const nm = o.academy && o.academy.name ? ':' + o.academy.name : '';
       orchChip.textContent = '\u2727 academy' + nm;
     } else if (mode === 'duo') {
-      const p = (o.personas || []).find((x) => x.id === (o.persona || 'aristotle'));
-      orchChip.textContent = '\u25D0 duo' + (p ? ' \u00b7 ' + p.name : '');
+      const nm = o.duo && o.duo.name ? ' \u00b7 ' + o.duo.name : '';
+      orchChip.textContent = '\u25D0 duo' + nm;
     } else {
       orchChip.textContent = '\u25CF solo';
     }
@@ -2002,113 +2002,345 @@ export function chatHtml(): string {
     }
     oblock.appendChild(wBlock);
 
-    // Academy status block (D33, D44b, D45a-4): only in Academy mode.
-    // In solo/duo, academy.yaml is never surfaced (D45a-4) — it's a
-    // council file, irrelevant until the mode is Academy.
-    const st = orch.academy || {};
+    // D47: Duo + Academy are edited entirely here. The yaml file is the
+    // single store: every control change posts the whole model (save-duo /
+    // save-academy), the host validates + writes it, and re-pushes state.
+    // academy.yaml only shows in Academy mode; duo only in Duo (D45a-4).
+    const mkToggle = (checked, text, on) => {
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = checked;
+      const lbl = el('label', 'tog', text);
+      lbl.insertBefore(c, lbl.firstChild);
+      c.addEventListener('change', () => on(c.checked));
+      return lbl;
+    };
+    const modelOptions = [{ value: '', label: '(same as Plato)' }].concat(d.modelItems || []);
     if (orch.mode === 'academy') {
-      const stBox = el('div', 'astat');
-      if (st.available) {
-        stBox.appendChild(el(
-          'div', 'aok',
-          '\u2713 ~/.plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
-            (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
-        ));
-        stBox.appendChild(sbtn('Open academy.yaml', () => {
-          vsapi.postMessage({ type: 'open-academy' });
-        }, 'ghost'));
-      } else if (st.error) {
-        stBox.appendChild(el('div', 'aerr', String(st.error)));
-        stBox.appendChild(sbtn('Create example', () => {
-          vsapi.postMessage({ type: 'create-academy' });
-        }, 'secondary'));
-      } else {
-        stBox.appendChild(el(
-          'div', 'note',
-          'No ~/.plato/academy.yaml yet - create the example to start a council.',
-        ));
-        stBox.appendChild(sbtn('Create example', () => {
-          vsapi.postMessage({ type: 'create-academy' });
-        }, 'secondary'));
+      const acBox = el('div', 'duo');
+      const defModel = String(d.defaultModel || '');
+      // Academy members each need their own model ref (no "(same as Plato)"
+      // empty option — the parser requires a <conn>:<model> per member).
+      let acadModelOptions = (d.modelItems || []).slice();
+      if (defModel && !acadModelOptions.some((o) => String(o.value) === defModel)) {
+        acadModelOptions = [{ value: defModel, label: defModel }].concat(acadModelOptions);
       }
-      oblock.appendChild(stBox);
+      const st = orch.academy || {};
+      const members = (Array.isArray(st.members) ? st.members : []).map((mem) => ({
+        name: String(mem.name || ''),
+        kind: mem.kind === 'philosopher' ? 'philosopher' : 'worker',
+        model: String(mem.model || ''),
+        role: String(mem.role || ''),
+        guidance: mem.guidance !== false,
+        pause: Boolean(mem.pause),
+        cancel: Boolean(mem.cancel),
+        maxInterventions: typeof mem.maxInterventions === 'number' ? mem.maxInterventions : 5,
+      }));
+      let cname = String(st.name || '');
+      let nameSeq = 1;
+      const uniqueName = (base) => {
+        if (!members.some((x) => x.name === base)) return base;
+        for (let k = nameSeq; k < 1000; k++) {
+          const cand = base + '-' + k;
+          if (!members.some((x) => x.name === cand)) return cand;
+        }
+        return base + '-' + (nameSeq++);
+      };
+      // No council on disk yet -> pre-seed one worker so the first edit
+      // produces a runnable council (edits create academy.yaml).
+      if (members.length === 0) {
+        members.push({
+          name: 'plato', kind: 'worker', model: defModel,
+          role: '', guidance: true, pause: false, cancel: false, maxInterventions: 5,
+        });
+      }
+      const memberOut = (mi) => {
+        const o = { name: mi.name, kind: mi.kind, model: mi.model };
+        if (mi.role) o.role = mi.role;
+        if (mi.kind === 'philosopher') {
+          o.guidance = mi.guidance;
+          o.pause = mi.pause;
+          o.cancel = mi.cancel;
+          o.maxInterventions = mi.maxInterventions;
+        }
+        return o;
+      };
+      const save = () => {
+        vsapi.postMessage({
+          type: 'save-academy',
+          name: cname.trim(),
+          members: members.map(memberOut),
+        });
+      };
+      const nameIn = el('input');
+      nameIn.type = 'text';
+      nameIn.value = cname;
+      nameIn.placeholder = 'council name (optional)';
+      nameIn.style.width = '100%';
+      nameIn.style.boxSizing = 'border-box';
+      nameIn.addEventListener('change', () => {
+        cname = nameIn.value;
+        save();
+      });
+      const listEl = el('div');
+      const pushRow = (mi) => {
+        const card = el('div');
+        card.style.border = '1px solid var(--pl-border)';
+        card.style.borderRadius = '6px';
+        card.style.padding = '8px';
+        card.style.margin = '8px 0';
+        const top = el('div');
+        top.style.display = 'flex';
+        top.style.gap = '8px';
+        top.style.alignItems = 'center';
+        if (mi.kind === 'worker') {
+          const chip = el('span', null, 'worker');
+          chip.style.fontSize = '11px';
+          chip.style.letterSpacing = '.5px';
+          chip.style.color = 'var(--pl-dim)';
+          top.appendChild(chip);
+        } else {
+          const ks = sel(
+            [{ value: 'philosopher', label: 'philosopher' }, { value: 'worker', label: 'make the worker' }],
+            'philosopher',
+          );
+          ks.style.fontSize = '12px';
+          ks.addEventListener('change', () => {
+            const old = members.find((x) => x !== mi && x.kind === 'worker');
+            if (old) { old.kind = 'philosopher'; }
+            mi.kind = 'worker';
+            save();
+          });
+          top.appendChild(ks);
+        }
+        const nIn = el('input');
+        nIn.type = 'text';
+        nIn.value = mi.name;
+        nIn.placeholder = 'name';
+        nIn.style.flex = '1 1 auto';
+        nIn.style.minWidth = '0';
+        nIn.addEventListener('change', () => {
+          mi.name = nIn.value.trim();
+          save();
+        });
+        top.appendChild(nIn);
+        const rowOpts = acadModelOptions.some((o) => String(o.value) === mi.model)
+          ? acadModelOptions
+          : acadModelOptions.concat([{ value: mi.model, label: mi.model }]);
+        const mSel = sel(rowOpts, mi.model);
+        mSel.addEventListener('change', () => {
+          mi.model = mSel.value;
+          save();
+        });
+        top.appendChild(mSel);
+        if (mi.kind === 'philosopher') {
+          const rm = sbtn('Remove', () => {
+            const i = members.indexOf(mi);
+            if (i >= 0) { members.splice(i, 1); }
+            save();
+          }, 'danger');
+          rm.style.fontSize = '12px';
+          top.appendChild(rm);
+        }
+        card.appendChild(top);
+        const rIn = el('input');
+        rIn.type = 'text';
+        rIn.value = mi.role;
+        rIn.placeholder = 'role prompt (optional)';
+        rIn.style.width = '100%';
+        rIn.style.boxSizing = 'border-box';
+        rIn.style.marginTop = '6px';
+        rIn.addEventListener('change', () => {
+          mi.role = rIn.value.trim();
+          save();
+        });
+        card.appendChild(rIn);
+        if (mi.kind === 'philosopher') {
+          const tr = el('div');
+          tr.style.display = 'flex';
+          tr.style.gap = '12px';
+          tr.style.marginTop = '6px';
+          tr.style.alignItems = 'center';
+          tr.appendChild(mkToggle(mi.guidance, 'Guidance', (v) => {
+            mi.guidance = v;
+            save();
+          }));
+          tr.appendChild(mkToggle(mi.pause, 'May pause', (v) => {
+            mi.pause = v;
+            save();
+          }));
+          tr.appendChild(mkToggle(mi.cancel, 'May cancel', (v) => {
+            mi.cancel = v;
+            save();
+          }));
+          const cap = el('input');
+          cap.type = 'number';
+          cap.min = '0';
+          cap.max = '50';
+          cap.value = String(mi.maxInterventions);
+          cap.style.width = '64px';
+          cap.style.padding = '2px 6px';
+          cap.style.fontSize = '12px';
+          cap.addEventListener('change', () => {
+            mi.maxInterventions = Number(cap.value) || 5;
+            save();
+          });
+          const capLbl = el('label', 'tog', 'Max/run');
+          capLbl.appendChild(cap);
+          tr.appendChild(capLbl);
+          card.appendChild(tr);
+        }
+        listEl.appendChild(card);
+      };
+      members.forEach(pushRow);
+
+      let srcTxt;
+      if (st.error) {
+        srcTxt = '~/.plato/academy.yaml is broken (' + st.error + ') - the next change here repairs it.';
+      } else if (st.available) {
+        srcTxt = 'Editing ~/.plato/academy.yaml - any change saves it.';
+      } else {
+        srcTxt = 'No ~/.plato/academy.yaml yet - changes here create it. Runs are held until a council exists.';
+      }
+      acBox.appendChild(el('div', 'note', srcTxt));
+      acBox.appendChild(el('label', null, 'Council name'));
+      acBox.appendChild(nameIn);
+      acBox.appendChild(listEl);
+      const addBtn = sbtn('Add philosopher', () => {
+        members.push({
+          name: uniqueName('philosopher'), kind: 'philosopher', model: defModel,
+          role: '', guidance: true, pause: false, cancel: false, maxInterventions: 5,
+        });
+        save();
+      }, 'secondary');
+      if (members.filter((x) => x.kind === 'philosopher').length >= 5) {
+        addBtn.disabled = true;
+      }
+      acBox.appendChild(addBtn);
+      acBox.appendChild(sbtn('Open academy.yaml', () => {
+        vsapi.postMessage({ type: 'open-academy' });
+      }, 'ghost'));
+      acBox.appendChild(el('div', 'note',
+        'Exactly one worker (promote a philosopher to change who it is); at most 5 philosophers. Guidance is always available; pause/cancel need the toggles.'));
+      oblock.appendChild(acBox);
     }
 
-    // D38: Duo sub-block only renders when mode === 'duo'. Replaces
-    // the old top-level "Duo - philosopher" details that was appearing
-    // in all three modes.
     if (orch.mode === 'duo') {
       const duo = el('div', 'duo');
+      const dSt = orch.duo || {};
+      const raw = dSt.philosopher || {};
       const personas = orch.personas || [];
-      const obs = d.observer || {};
-      const grid = el('div', 'grid');
-
-      const pSel = sel(
-        personas.map((p) => ({ value: p.id, label: p.name + ' \u2014 ' + p.epithet })),
-        String(orch.persona || 'aristotle'),
-      );
-      const pDesc = el('div', 'pdesc');
-      const syncPDesc = () => {
-        const p = personas.find((x) => x.id === pSel.value);
-        pDesc.textContent = p ? p.role : '';
+      const m = {
+        persona: String(raw.persona || 'aristotle'),
+        name: String(raw.name || ''),
+        role: String(raw.role || ''),
+        model: String(raw.model || ''),
+        pause: Boolean(raw.pause),
+        cancel: Boolean(raw.cancel),
+        maxInterventions: typeof raw.maxInterventions === 'number' ? raw.maxInterventions : 5,
       };
-      syncPDesc();
-      pSel.addEventListener('change', () => {
-        syncPDesc();
-        vsapi.postMessage({ type: 'set-duo-persona', persona: pSel.value });
-      });
-      grid.appendChild(el('label', null, 'Philosopher'));
-      grid.appendChild(pSel);
-      grid.appendChild(pDesc);
-
-      const oSel = sel(
-        [{ value: '', label: '(same as Plato)' }, ...(d.modelItems || [])],
-        String(obs.model || ''),
+      const save = () => {
+        vsapi.postMessage({
+          type: 'save-duo',
+          philosopher: {
+            persona: m.persona,
+            name: m.name,
+            role: m.role,
+            model: m.model,
+            pause: m.pause,
+            cancel: m.cancel,
+            maxInterventions: m.maxInterventions,
+          },
+        });
+      };
+      const personaOf = (id) => personas.find((x) => x.id === id) || null;
+      const pSel = sel(
+        personas.map((p) => ({ value: p.id, label: p.name + ' - ' + p.epithet })),
+        m.persona,
       );
-      const pTog = document.createElement('input');
-      pTog.type = 'checkbox';
-      pTog.checked = Boolean(obs.pause);
-      const cTog = document.createElement('input');
-      cTog.type = 'checkbox';
-      cTog.checked = Boolean(obs.cancel);
+      pSel.addEventListener('change', () => {
+        m.persona = pSel.value;
+        save();
+      });
+      const nameIn = el('input');
+      nameIn.type = 'text';
+      nameIn.value = m.name;
+      const np = personaOf(m.persona);
+      nameIn.placeholder = np ? np.name : 'Name';
+      nameIn.addEventListener('change', () => {
+        m.name = nameIn.value.trim();
+        save();
+      });
+      const roleIn = el('input');
+      roleIn.type = 'text';
+      roleIn.value = m.role;
+      roleIn.placeholder = np ? np.role : 'Role prompt';
+      roleIn.addEventListener('change', () => {
+        m.role = roleIn.value.trim();
+        save();
+      });
+      const duoOpts = modelOptions.some((o) => String(o.value) === m.model)
+        ? modelOptions
+        : modelOptions.concat([{ value: m.model, label: m.model }]);
+      const oSel = sel(duoOpts, m.model);
+      oSel.addEventListener('change', () => {
+        m.model = oSel.value;
+        save();
+      });
+
+      let srcTxt;
+      if (dSt.error) {
+        srcTxt = '~/.plato/duo.yaml is broken (' + dSt.error + ') - the next change here repairs it.';
+      } else if (dSt.source === 'file') {
+        srcTxt = 'Editing ~/.plato/duo.yaml - any change saves it.';
+      } else {
+        srcTxt = 'No ~/.plato/duo.yaml yet - changes here create it. Until then, Duo runs the default (Aristotle).';
+      }
+      duo.appendChild(el('div', 'note', srcTxt));
+
+      const grid = el('div', 'grid');
+      grid.appendChild(el('label', null, 'Persona'));
+      grid.appendChild(pSel);
+      grid.appendChild(el('label', null, 'Name'));
+      grid.appendChild(nameIn);
+      grid.appendChild(el('label', null, 'Role override'));
+      grid.appendChild(roleIn);
+      grid.appendChild(el('label', null, 'Model'));
+      grid.appendChild(oSel);
+      const togWrap = el('div', 'toggles');
+      togWrap.appendChild(mkToggle(m.pause, 'May pause runs', (v) => {
+        m.pause = v;
+        save();
+      }));
+      togWrap.appendChild(mkToggle(m.cancel, 'May cancel runs', (v) => {
+        m.cancel = v;
+        save();
+      }));
       const mCap = el('input');
       mCap.type = 'number';
-      mCap.min = '1';
+      mCap.min = '0';
       mCap.max = '50';
-      mCap.value = String(obs.maxInterventions ?? 5);
+      mCap.value = String(m.maxInterventions);
       mCap.style.width = '64px';
       mCap.style.padding = '2px 6px';
       mCap.style.fontSize = '12px';
-      const sendObs = () => {
-        vsapi.postMessage({
-          type: 'set-observer', enable: true, model: oSel.value,
-          pause: pTog.checked, cancel: cTog.checked,
-          maxInterventions: Number(mCap.value),
-        });
-      };
-      oSel.addEventListener('change', sendObs);
-      pTog.addEventListener('change', sendObs);
-      cTog.addEventListener('change', sendObs);
-      mCap.addEventListener('change', sendObs);
-      grid.appendChild(el('label', null, 'Philosopher model'));
-      grid.appendChild(oSel);
-
-      const togWrap = el('div', 'toggles');
-      const pLbl = el('label', 'tog', 'May pause runs');
-      pLbl.insertBefore(pTog, pLbl.firstChild);
-      togWrap.appendChild(pLbl);
-      const cLbl = el('label', 'tog', 'May cancel runs');
-      cLbl.insertBefore(cTog, cLbl.firstChild);
-      togWrap.appendChild(cLbl);
-      const mCapLbl = el('label', 'tog', 'Max/run');
-      mCapLbl.appendChild(mCap);
-      togWrap.appendChild(mCapLbl);
+      mCap.addEventListener('change', () => {
+        m.maxInterventions = Number(mCap.value) || 5;
+        save();
+      });
+      const capLbl = el('label', 'tog', 'Max/run');
+      capLbl.appendChild(mCap);
+      togWrap.appendChild(capLbl);
       grid.appendChild(el('label', null, 'Behavior'));
       grid.appendChild(togWrap);
-
       duo.appendChild(grid);
+      const pp = personaOf(m.persona);
+      duo.appendChild(el('div', 'note', 'Persona default role: ' + (pp ? pp.role : '')));
+      duo.appendChild(sbtn('Open duo.yaml', () => {
+        vsapi.postMessage({ type: 'open-duo' });
+      }, 'ghost'));
       duo.appendChild(el('div', 'note',
-        'Guidance is always allowed; pause/cancel need the toggles. The persona role prompt can be overridden in settings.json (plato.observer.role).'));
+        'Guidance is always allowed. Leave Name and Role override empty to use the persona; an empty Model uses the same as Plato.'));
       oblock.appendChild(duo);
     }
 
@@ -2541,9 +2773,8 @@ export function chatHtml(): string {
       case 'models': {
         syncOrchChip({
           mode: m.orchestration,
+          duo: m.duo,
           academy: m.academy,
-          persona: m.persona,
-          personas: [],
         });
         // D37: header caption + compaction state.
         applyCompaction(m.compaction);

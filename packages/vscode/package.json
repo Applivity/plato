@@ -1,6 +1,6 @@
 {
   "name": "plato-vscode",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "private": true,
   "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
   "publisher": "applivity",
@@ -18,7 +18,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-vscode-0.24.0.vsix --force"
+    "install:vsix": "code --install-extension plato-vscode-0.25.0.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -74,42 +74,6 @@
           "default": "solo",
           "description": "Orchestration mode (D32): solo = Plato alone; duo = worker + one philosopher; academy = the council defined in academy.yaml."
         },
-        "plato.duo.persona": {
-          "type": "string",
-          "enum": ["aristotle", "heraclitus", "diogenes", "pythagoras", "thales"],
-          "default": "aristotle",
-          "description": "Philosopher persona for Duo mode (D32): role prompt the watcher uses."
-        },
-        "plato.observer.enable": {
-          "type": "boolean",
-          "default": false,
-          "description": "Observer-AI (D30): a second model watches each run and can inject guidance, pause, or cancel."
-        },
-        "plato.observer.model": {
-          "type": "string",
-          "default": "",
-          "description": "Observer model as connection:model (e.g. anthropic:claude-3-5-haiku-latest). Empty = use the coder's model."
-        },
-        "plato.observer.role": {
-          "type": "string",
-          "default": "",
-          "description": "Extra instructions for the observer (appended to its system prompt)."
-        },
-        "plato.observer.pause": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow the observer to pause runs at safe points."
-        },
-        "plato.observer.cancel": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow the observer to cancel runs after the in-flight tool."
-        },
-        "plato.observer.maxInterventions": {
-          "type": "number",
-          "default": 5,
-          "description": "Hard cap on observer interventions per run."
-        },
         "plato.compaction.threshold": {
           "type": "number",
           "default": 0.8,
@@ -124,6 +88,10 @@
         "%applivity.plato-vscode/schemas/academy.schema.json": [
           "academy.yaml",
           ".plato/academy.yaml"
+        ],
+        "%applivity.plato-vscode/schemas/duo.schema.json": [
+          "duo.yaml",
+          ".plato/duo.yaml"
         ]
       }
     }
