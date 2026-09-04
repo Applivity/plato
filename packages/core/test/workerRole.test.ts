@@ -82,6 +82,32 @@ describe('buildWorkerRole', () => {
     expect(r.layers.find((l) => l.layer === 'plato')?.source).toBe('disk');
   });
 
+  it('uses the global ~/.plato PLATO.md when the project has none (D46)', async () => {
+    const global = mkdtempSync(join(tmpdir(), 'plato-global-'));
+    try {
+      writeFileSync(join(global, 'PLATO.md'), 'GLOBAL TUNING: be concise.');
+      const r = await buildWorkerRole({ root: dir, globalConfigDir: global });
+      expect(r.system).toContain('GLOBAL TUNING: be concise.');
+      expect(r.layers.find((l) => l.layer === 'plato')?.source).toBe('global');
+    } finally {
+      rmSync(global, { recursive: true, force: true });
+    }
+  });
+
+  it('prefers the project PLATO.md over the global one (D46)', async () => {
+    const global = mkdtempSync(join(tmpdir(), 'plato-global-'));
+    try {
+      write('PLATO.md', 'PROJECT WINS');
+      writeFileSync(join(global, 'PLATO.md'), 'GLOBAL LOSES');
+      const r = await buildWorkerRole({ root: dir, globalConfigDir: global });
+      expect(r.system).toContain('PROJECT WINS');
+      expect(r.system).not.toContain('GLOBAL LOSES');
+      expect(r.layers.find((l) => l.layer === 'plato')?.source).toBe('disk');
+    } finally {
+      rmSync(global, { recursive: true, force: true });
+    }
+  });
+
   it('reads AGENTS.md when present', async () => {
     write('AGENTS.md', 'AGENTS BODY: build with gradle.');
     const r = await buildWorkerRole({ root: dir });

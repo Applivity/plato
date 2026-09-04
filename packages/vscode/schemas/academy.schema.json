@@ -35,7 +35,7 @@
               "philosopher"
             ],
             "default": "worker",
-            "description": "Exactly one worker; up to 3 philosophers"
+            "description": "Exactly one worker; up to 5 philosophers"
           },
           "guidance": {
             "type": "boolean",

@@ -17,21 +17,22 @@ may not be available when you work; everything you need is in this repo.
   `main`). Note: `applivity-com` is a personal user account, not an org.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.23.0).
-- HEAD (`main`) is at **D45a-4** — UI terminology + academy.yaml scoping
-  (this session's commit). The acting agent is **"Plato"** in user-facing
-  copy; "worker" stays internal + the academy.yaml `kind` label; the product
-  name stays **Plato**. Mode copy = Plato alone / Plato + one philosopher /
-  Plato + a council of philosophers. academy.yaml is surfaced only in Academy
-  mode (the Solo/Duo "switch to Academy" hint and the host run() notices are
-  gone). Underlying model (D45a-3): one worker + N philosophers; project
-  files (PLATO.md + AGENTS.md/CLAUDE.md) ALWAYS join the worker prompt when
-  present (no opt-out); Settings → Orchestration holds a "Plato — project
-  files" block; `/system-prompt` materializes PLATO.md (identity header +
-  Karpathy guidance); command surface = Compact · History · System prompt.
-  Working tree clean. 179 vitest cases across 18 files in `packages/core`.
-  Known deferred: Academy mode select reverts to Duo (founder has
-  Duo/Academy mode-UI plans); philosopher count cap (~5) is undecided.
+  extension shell, v0.24.0).
+- HEAD (`main`) is at **D46** — home storage (`~/.plato/`) + global PLATO.md
+  + ≤5 philosophers + Academy-switch fix. **Plato is a personal
+  pair-programmer: it never pollutes the shared repo.** Everything Plato owns
+  lives in a flat `~/.plato/` — `academy.yaml` (council), `mcp.yaml`,
+  `PLATO.md` (global default), and `runs/<project-key>/` (transcripts). The
+  repo is only ever read: `<repo>/PLATO.md` (project override, via
+  `/system-prompt`) and `<repo>/AGENTS.md`/`CLAUDE.md`. Worker-prompt join =
+  project PLATO.md > global PLATO.md > bundled default > AGENTS.md. Academy
+  mode now switches without a pre-existing council (block offers "Create
+  example"); philosopher cap = 5. Model (D45a-3/4): one worker + N
+  philosophers; "Plato" in UI; project files always on; command surface =
+  Compact · History · System prompt. Working tree clean. 178 vitest cases
+  across 18 files in `packages/core`. **Deferred (recorded in DECISIONS D46):**
+  per-project council/academy override ("discussion later"); move convo
+  history to `~/.plato/history/` (TODO).
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -43,7 +44,7 @@ may not be available when you work; everything you need is in this repo.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 181 passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 178 passing
   vitest cases across 18 files in packages/core).
 
 ## How the packages connect
@@ -125,8 +126,9 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-1. **D45b — Duo customisation.** `.plato/duo.yaml` for the Duo
-   philosopher (deferred; see DECISIONS D45b).
+1. **D45b — Duo customisation.** `~/.plato/duo.yaml` for the Duo
+   philosopher (deferred; see DECISIONS D45b — note the config dir is now
+   `~/.plato/` per D46, not `.plato/`).
 2. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.
@@ -135,13 +137,20 @@ may not be available when you work; everything you need is in this repo.
 4. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
-> Project-files + model work shipped 2026-09-03: D45a-2 (0.21.0,
+> Deferred for later (see DECISIONS D46):
+> - **Per-project council/academy override** — "discussion later" (founder
+>   deferred 2026-09-04; v1 is a single global council).
+> - **Move convo history to `~/.plato/history/`** — TODO (history is in VS
+>   Code workspaceState today, not the repo).
+
+> Project-files + model + storage work shipped 2026-09-03/04: D45a-2 (0.21.0,
 > `/system-prompt` PLATO.md materialization, empty-composer card), D45a-3
 > (0.22.0, one worker + N philosophers lock, `includeProjectRules` removed,
 > worker file-state in Orchestration, default body = identity + Karpathy),
-> and **D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode)**.
-> Command surface is **Compact · History · System prompt**. See DECISIONS
-> D45a-2 / D45a-3 / D45a-4.
+> D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode), and
+> **D46 (0.24.0, home storage `~/.plato/`, global PLATO.md, ≤5 philosophers,
+> Academy-switch fix)**. Command surface is **Compact · History · System
+> prompt**. See DECISIONS D45a-2 / D45a-3 / D45a-4 / D46.
 
 ## Ground rules for any agent working here
 

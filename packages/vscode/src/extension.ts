@@ -20,7 +20,6 @@ import {
   ObserverAgent,
   loadTeamConfig,
   TeamConfigError,
-  legacyConfigAtRoot,
   isSecretPath,
   loadProjectFile,
   DEFAULT_PLATO_BODY,
@@ -37,6 +36,8 @@ import type { ApprovalRequest, Mode } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 
@@ -663,16 +664,10 @@ class ChatHost {
         if (m.type === 'set-orchestration' && typeof m.mode === 'string') {
           const mode =
             m.mode === 'duo' || m.mode === 'academy' ? m.mode : 'solo';
-          // Loud at selection time too (D32a): Academy needs a valid file.
-          if (mode === 'academy') {
-            const st = this.academyStatus();
-            if (!st.available) {
-              void this.sendSettings(
-                `Academy not set — ${st.error}`,
-              );
-              return;
-            }
-          }
+          // D46: let the mode switch even when Academy has no academy.yaml yet
+          // — the Academy block's "Create example" affordance handles it. The
+          // run-time guard (run()) still blocks actually running Academy
+          // without a council.
           await vscode.workspace
             .getConfiguration('plato')
             .update(
@@ -699,19 +694,16 @@ class ChatHost {
           return;
         }
         if (m.type === 'create-academy') {
-          const folder = vscode.workspace.workspaceFolders?.[0];
-          if (!folder) {
-            return;
-          }
-          const file = vscode.Uri.joinPath(folder.uri, '.plato', 'academy.yaml');
+          // D46: the council is Plato's global config, not a project file —
+          // it lives in ~/.plato/ and never touches the shared repo.
+          const dir = this.homePlatoDir();
+          const file = vscode.Uri.file(join(dir, 'academy.yaml'));
           try {
             // Pre-fill the worker with the user's current default model so
             // the example is runnable as-is (D33).
             const model = this.effectiveModel();
             const body = this.academyExample(model);
-            await vscode.workspace.fs.createDirectory(
-              vscode.Uri.joinPath(folder.uri, '.plato'),
-            );
+            await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
             await vscode.workspace.fs.writeFile(
               file,
               Buffer.from(body, 'utf8'),
@@ -730,20 +722,12 @@ class ChatHost {
           return;
         }
         if (m.type === 'open-academy') {
-          const folder = vscode.workspace.workspaceFolders?.[0];
-          if (!folder) {
-            return;
-          }
-          const file = vscode.Uri.joinPath(
-            folder.uri,
-            '.plato',
-            'academy.yaml',
-          );
+          const file = vscode.Uri.file(join(this.homePlatoDir(), 'academy.yaml'));
           try {
             await vscode.workspace.fs.stat(file);
             void vscode.window.showTextDocument(file);
           } catch {
-            void this.sendSettings('.plato/academy.yaml not found.');
+            void this.sendSettings('~/.plato/academy.yaml not found.');
           }
           return;
         }
@@ -874,6 +858,16 @@ class ChatHost {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
   }
 
+  /** D46: Plato's own home folder (`~/.plato`) — personal state + config, never committed. */
+  private homePlatoDir(): string {
+    return join(homedir(), '.plato');
+  }
+
+  /** D46: stable per-project key for invisible home state (transcripts). */
+  private projectKey(root: string): string {
+    return createHash('sha1').update(root).digest('hex').slice(0, 8);
+  }
+
   /** Stat-only existence probe — never reads a body (a giant PLATO.md must not be slurped). */
   private async existsAt(root: string, rel: string): Promise<boolean> {
     try {
@@ -884,22 +878,35 @@ class ChatHost {
     }
   }
 
+  /** Stat-only probe for an absolute path (home files, e.g. ~/.plato/PLATO.md). */
+  private async existsAbs(absPath: string): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.file(absPath));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
-   * D45a-3: read-only project-file state for the Settings → Orchestration
-   * worker block. Stat-only — PLATO.md is 'custom' when a file exists, else
-   * the bundled default is in use; agentsFile reports which project-manual
-   * file the join would read (AGENTS.md first, CLAUDE.md alias).
+   * D46: read-only project-file state for the Settings → Orchestration worker
+   * block. Stat-only. `plato` reports which PLATO.md layer is in effect:
+   * project file, the global ~/.plato default, or the bundled default.
    */
   private async workersState(): Promise<{
     noRoot: boolean;
-    plato: 'custom' | 'default';
+    plato: 'project' | 'global' | 'default';
     agentsFile: 'AGENTS.md' | 'CLAUDE.md' | null;
   }> {
     const root = this.workspaceRoot();
     if (root === null) {
       return { noRoot: true, plato: 'default', agentsFile: null };
     }
-    const plato = (await this.existsAt(root, 'PLATO.md')) ? 'custom' : 'default';
+    const plato = (await this.existsAt(root, 'PLATO.md'))
+      ? 'project'
+      : (await this.existsAbs(join(this.homePlatoDir(), 'PLATO.md')))
+        ? 'global'
+        : 'default';
     const agentsFile = (await this.existsAt(root, 'AGENTS.md'))
       ? 'AGENTS.md'
       : (await this.existsAt(root, 'CLAUDE.md'))
@@ -1481,33 +1488,15 @@ class ChatHost {
     name: string;
     members: { name: string; kind: string; model: string }[];
     error: string;
-    legacy: boolean;
   } {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!root) {
-      return { available: false, name: '', members: [], error: '', legacy: false };
-    }
-    // D33: configs live in .plato/ — anything at the ROOT is not ours to
-    // interpret; ask the user to move it rather than guess.
-    const legacy = legacyConfigAtRoot(root);
-    if (legacy !== null) {
-      return {
-        available: false,
-        name: '',
-        members: [],
-        error: `"${legacy}" found at the workspace root — configs moved to .plato/ (D33). Move the file to .plato/academy.yaml${legacy === 'teams.yaml' ? ' (and rename it — it was renamed by D32)' : ''}.`,
-        legacy: true,
-      };
-    }
     try {
-      const team = loadTeamConfig(root);
+      const team = loadTeamConfig(this.homePlatoDir());
       if (team === null) {
         return {
           available: false,
           name: '',
           members: [],
-          error: 'No .plato/academy.yaml yet — create the example below.',
-          legacy: false,
+          error: 'No ~/.plato/academy.yaml yet — create the example below.',
         };
       }
       return {
@@ -1519,7 +1508,6 @@ class ChatHost {
           model: m.model,
         })),
         error: '',
-        legacy: false,
       };
     } catch (e) {
       return {
@@ -1527,7 +1515,6 @@ class ChatHost {
         name: '',
         members: [],
         error: e instanceof Error ? e.message : 'error',
-        legacy: false,
       };
     }
   }
@@ -1740,7 +1727,7 @@ class ChatHost {
 
   private runsDir(): string | null {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    return root ? join(root, '.plato', 'runs') : null;
+    return root ? join(this.homePlatoDir(), 'runs', this.projectKey(root)) : null;
   }
 
   private listRuns(): Record<string, unknown>[] {
@@ -2090,11 +2077,12 @@ class ChatHost {
     const orchestration = vscode.workspace
       .getConfiguration('plato')
       .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo');
-    // Academy (D31/D32): academy.yaml at the root defines the council.
-    // Validation is loud — a broken file aborts the run before it starts.
+    // Academy (D31/D32/D46): the council lives in ~/.plato/academy.yaml —
+    // Plato's global config, not a project file. Validation is loud: a broken
+    // file aborts the run before it starts.
     let team: ReturnType<typeof loadTeamConfig> = null;
     try {
-      team = loadTeamConfig(root);
+      team = loadTeamConfig(this.homePlatoDir());
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'error';
       if (orchestration === 'academy') {
@@ -2110,12 +2098,9 @@ class ChatHost {
       // (D45a-4: academy.yaml is only surfaced in Academy mode).
     }
     if (team === null && orchestration === 'academy') {
-      const legacy = legacyConfigAtRoot(root);
       this.send(
         'error',
-        legacy !== null
-          ? `"${legacy}" found at the workspace root — configs live in .plato/ (D33). Move it to .plato/academy.yaml${legacy === 'teams.yaml' ? ' (renamed from teams.yaml by D32)' : ''}.`
-          : 'Academy mode needs .plato/academy.yaml — create it from Settings → Orchestration → Create example, or switch to Solo/Duo.',
+        'Academy mode needs ~/.plato/academy.yaml — create it from Settings → Orchestration → Create example, or switch to Solo/Duo.',
       );
       return;
     }
@@ -2182,18 +2167,19 @@ class ChatHost {
     void this.maybeGenerateTitle(conn, apiKey, ref, task);
     const started = Date.now();
     let toolsUsed = 0;
-    // M2: every run is transcribed under <root>/.plato/runs/ (D24c).
+    // M2: every run is transcribed under ~/.plato/runs/<project-key>/ (D24c,
+    // D46) — personal state, never the shared repo.
     const bus = new AgentBus();
-    const writer = new TranscriptWriter(join(root, '.plato', 'runs'), {
-      task,
-      root,
-    });
+    const writer = new TranscriptWriter(
+      join(this.homePlatoDir(), 'runs', this.projectKey(root)),
+      { task, root },
+    );
     writer.attach(bus);
-    // MCP servers (D06): start from <root>/mcp.yaml; failures degrade
+    // MCP servers (D06, D46): read from ~/.plato/mcp.yaml; failures degrade
     // to zero tools for that server, never break the run.
     const mcpServers: McpServer[] = [];
     try {
-      const cfg = loadMcpConfig(root);
+      const cfg = loadMcpConfig(this.homePlatoDir());
       for (const [name, c] of Object.entries(cfg)) {
         const srv = new McpServer(name, c);
         try {
@@ -2470,8 +2456,10 @@ class ChatHost {
         role: workerMember?.role,
         // D45a-3: project files (PLATO.md + AGENTS.md/CLAUDE.md) always join
         // the worker prompt when present — the includeProjectRules opt-out was
-        // removed. The loop calls buildWorkerRole() to assemble the joined
-        // prompt; the Academy override (role above) is layered on top.
+        // removed. D46: globalConfigDir feeds the ~/.plato/PLATO.md fallback.
+        // The loop calls buildWorkerRole() to assemble the joined prompt; the
+        // Academy override (role above) is layered on top.
+        globalConfigDir: this.homePlatoDir(),
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),

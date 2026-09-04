@@ -995,14 +995,47 @@ A small polish pass settled in discussion with the founder:
 - **"The worker — project files" → "Plato — project files"** (in Settings →
   Orchestration), with top spacing restored.
 
+**D46 — Home storage (`~/.plato/`) + global PLATO.md + ≤5 philosophers + Academy-switch fix (M4.1, 0.24.0, shipped 2026-09-04).**
+
+Debated and settled with the founder (2026-09-04). **Plato is a personal
+pair-programmer, not a team-wide standard** — it must never pollute the user's
+shared repo. Everything Plato *owns* moves to a home folder; the repo is only
+ever *read*, never written.
+
+- **Flat global `~/.plato/`** (no per-project keying for config): `academy.yaml`
+  (the council), `mcp.yaml` (MCP servers), `PLATO.md` (global default). One
+  council / MCP set / global role for the machine. `duo.yaml` lands here later.
+- **The project is only read:** `<repo>/PLATO.md` (project override, created via
+  `/system-prompt`) and `<repo>/AGENTS.md`/`CLAUDE.md` (the user's manual).
+- **Join:** `[mode override] >> [project PLATO.md ?? ~/.plato/PLATO.md ??
+  bundled DEFAULT_PLATO_BODY] >> [AGENTS.md/CLAUDE.md]`. `buildWorkerRole`
+  gains `globalConfigDir`; `LayerSource.source` widens to
+  `disk | global | fallback`.
+- **Run transcripts** (the actual git polluter) move from `<root>/.plato/runs/`
+  to `~/.plato/runs/<project-key>/` (8-char sha1 of the root path; invisible,
+  per-project). Convo history was already in VS Code `workspaceState` (not the
+  repo) and stays for now.
+- **Config-as-code stays personal:** `loadTeamConfig`/`loadMcpConfig` now take a
+  config dir (the host passes `~/.plato`). `legacyConfigAtRoot` and the
+  root-`teams.yaml`/`academy.yaml`/`mcp.yaml` fallbacks are dropped (D45d: no
+  legacy/migration — a stray in-project `.plato/*` is ignored, never read).
+- **≤5 philosopher cap** (was ≤3, un-enforced): `teams/config.ts` rejects >5
+  philosophers; schema description updated.
+- **Academy-switch fix:** the `set-orchestration` handler no longer rejects the
+  switch to Academy when `academy.yaml` is absent — the mode switches and the
+  Academy block offers "Create example"; `run()` still guards actually running.
+- **Deferred (recorded, NOT built):** per-project council/academy override
+  (founder: "discussion later"); move convo history to `~/.plato/history/`
+  (TODO).
+
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD).**
 
 Duo philosophers are hardcoded in `core/src/teams/personas.ts` (five personas, literal role strings). The user has one override surface today (`plato.observer.role` replaces the persona's role wholesale) and a flat list of settings for the other tiers. Academy has richer per-member config via yaml. The asymmetry is real and the user needs richer Duo config too.
 
 **Deferred scope** (recorded so the direction is locked):
-- New file: `.plato/duo.yaml` with `philosopher: { name, role, model, persona, pause, cancel, maxInterventions }`.
+- New file: `~/.plato/duo.yaml` with `philosopher: { name, role, model, persona, pause, cancel, maxInterventions }`. (Config dir is `~/.plato/` per D46, not `.plato/`.)
 - New schema: `duo.schema.json` bound via YAML extension.
-- Discovery: `.plato/duo.yaml` if present, else settings (legacy default). Precedence: yaml > settings.
+- Discovery: `~/.plato/duo.yaml` if present, else settings (legacy default). Precedence: yaml > settings.
 - Settings UI: a "Duo — philosopher" block that shows the file's parsed config and offers "Open duo.yaml" + "Edit in settings" affordances. Round-trip between file and settings.
 - The `plato.observer.role` setting becomes the *fallback* when `duo.yaml` is absent.
 

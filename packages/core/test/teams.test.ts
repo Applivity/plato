@@ -2,10 +2,9 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
   parseTeamConfig,
   loadTeamConfig,
-  legacyConfigAtRoot,
 } from '../src/teams/config.js';
 import { PERSONAS, findPersona } from '../src/teams/personas.js';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -125,8 +124,8 @@ members:
     ).toThrowError(/exactly one worker/);
   });
 
-  it('rejects more than three philosophers', () => {
-    const members = [1, 2, 3, 4]
+  it('rejects more than five philosophers', () => {
+    const members = [1, 2, 3, 4, 5, 6]
       .map(
         (n) => `  - name: p${n}
     kind: philosopher
@@ -136,7 +135,7 @@ members:
     expect(() =>
       parseTeamConfig(`members:\n  - name: w
     model: anthropic:claude-sonnet-4-5\n${members}\n`),
-    ).toThrowError(/at most 3/);
+    ).toThrowError(/at most 5/);
   });
 
   it('rejects a member missing model', () => {
@@ -229,33 +228,14 @@ describe('loadTeamConfig', () => {
     expect(loadTeamConfig(dir)).toBeNull();
   });
 
-  it('loads .plato/academy.yaml (D33: configs live under .plato/)', () => {
-    mkdirSync(join(dir, '.plato'), { recursive: true });
+  it('loads academy.yaml from the config dir (D46: ~/.plato)', () => {
     writeFileSync(
-      join(dir, '.plato', 'academy.yaml'),
+      join(dir, 'academy.yaml'),
       'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
     );
     const t = loadTeamConfig(dir);
     expect(t?.members[0]?.name).toBe('w');
     expect(t?.members[0]?.kind).toBe('worker');
-  });
-
-  it('ignores an academy.yaml at the repo ROOT (not ours to interpret)', () => {
-    writeFileSync(
-      join(dir, 'academy.yaml'),
-      'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
-    );
-    expect(loadTeamConfig(dir)).toBeNull();
-    expect(legacyConfigAtRoot(dir)).toBe('academy.yaml');
-  });
-
-  it('flags leftover teams.yaml at the root', () => {
-    writeFileSync(join(dir, 'teams.yaml'), 'x: y\n');
-    expect(legacyConfigAtRoot(dir)).toBe('teams.yaml');
-  });
-
-  it('reports no legacy files when the root is clean', () => {
-    expect(legacyConfigAtRoot(dir)).toBeNull();
   });
 });
 

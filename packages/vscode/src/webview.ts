@@ -1972,11 +1972,13 @@ export function chatHtml(): string {
       const pline = el('div', 'pline');
       pline.appendChild(el('span', 'pname', 'PLATO.md'));
       pline.appendChild(el('span', 'pst',
-        w.plato === 'custom'
-          ? 'Custom — this file tunes Plato.'
-          : 'Using the bundled default'));
+        w.plato === 'project'
+          ? 'Custom — this project'
+          : w.plato === 'global'
+            ? 'Using the global default (~/.plato/PLATO.md)'
+            : 'Using the bundled default'));
       pline.appendChild(el('span', 'spacer'));
-      pline.appendChild(w.plato === 'custom'
+      pline.appendChild(w.plato === 'project'
         ? sbtn('Open PLATO.md', () => {
             vsapi.postMessage({ type: 'plato-open', from: 'settings' });
           }, 'secondary')
@@ -1992,9 +1994,10 @@ export function chatHtml(): string {
           : 'Not present — Plato reads it when it exists.'));
       pf.appendChild(aline);
       pf.appendChild(el('div', 'note',
-        'No PLATO.md means the bundled default is in use; creating one writes ' +
-        'that default so the file starts where the shipped role leaves off. ' +
-        'Your AGENTS.md / CLAUDE.md stays yours.'));
+        'A project PLATO.md overrides the global default; with neither, Plato ' +
+        'uses the bundled default. Creating one writes that default so the file ' +
+        'starts where the shipped role leaves off. Your AGENTS.md / CLAUDE.md ' +
+        'stays yours.'));
       wBlock.appendChild(pf);
     }
     oblock.appendChild(wBlock);
@@ -2008,7 +2011,7 @@ export function chatHtml(): string {
       if (st.available) {
         stBox.appendChild(el(
           'div', 'aok',
-          '\u2713 .plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
+          '\u2713 ~/.plato/academy.yaml: "' + (st.name || 'unnamed') + '" \u2014 ' +
             (st.members || []).map((mm) => mm.name + ' (' + mm.kind + ')').join(', '),
         ));
         stBox.appendChild(sbtn('Open academy.yaml', () => {
@@ -2016,15 +2019,13 @@ export function chatHtml(): string {
         }, 'ghost'));
       } else if (st.error) {
         stBox.appendChild(el('div', 'aerr', String(st.error)));
-        if (!st.legacy) {
-          stBox.appendChild(sbtn('Create example', () => {
-            vsapi.postMessage({ type: 'create-academy' });
-          }, 'secondary'));
-        }
+        stBox.appendChild(sbtn('Create example', () => {
+          vsapi.postMessage({ type: 'create-academy' });
+        }, 'secondary'));
       } else {
         stBox.appendChild(el(
           'div', 'note',
-          'No .plato/academy.yaml yet - create the example to start a council.',
+          'No ~/.plato/academy.yaml yet - create the example to start a council.',
         ));
         stBox.appendChild(sbtn('Create example', () => {
           vsapi.postMessage({ type: 'create-academy' });

@@ -123,6 +123,11 @@ export interface LoopOptions {
   model: string;
   /** Extra system text appended for this run (D31: team coder role). */
   role?: string;
+  /**
+   * D46: Plato's global config dir (`~/.plato`). Feeds the worker-prompt join
+   * as the PLATO.md fallback when the project has none.
+   */
+  globalConfigDir?: string;
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
   /**
@@ -243,6 +248,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   const workerRole = await buildWorkerRole({
     override: opts.role,
     root: opts.root,
+    globalConfigDir: opts.globalConfigDir,
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`

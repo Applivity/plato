@@ -5,19 +5,20 @@
  * with one prompt, regardless of how many philosophers watch; only the
  * sources differ by mode.
  *
- *   [mode-specific override] >> [PLATO.md body or shipped default] >> [AGENTS.md body]
+ *   [mode-specific override] >> [PLATO.md body] >> [AGENTS.md body]
  *
  * - Solo/Duo: override slot is empty.
  * - Academy: override slot is `academy.yaml` `workerMember.role` if present.
  * - Philosophers never see any of these files. Their prompt is built in
  *   observer.ts from PERSONAS[].role / academy.yaml member.role only.
  *
- * Files are read from the workspace root, never written. Project files are
- * ALWAYS included when present (D45a-3 removed the includeProjectRules
- * opt-out — file presence is the switch): no PLATO.md means the bundled
- * DEFAULT_PLATO_BODY is used, and AGENTS.md (or its CLAUDE.md alias) joins
- * only when it exists. Each layer is hard-capped (DEFAULT_MAX_LAYER_CHARS)
- * so an oversized file cannot blow up the context.
+ * Files are read, never written. Project files are ALWAYS included when
+ * present (D45a-3 removed the includeProjectRules opt-out — file presence is
+ * the switch). The PLATO.md layer resolves project-first: `<repo>/PLATO.md`,
+ * else `~/.plato/PLATO.md` (D46 global default), else the bundled
+ * DEFAULT_PLATO_BODY. AGENTS.md (or its CLAUDE.md alias) joins only when it
+ * exists. Each layer is hard-capped (DEFAULT_MAX_LAYER_CHARS) so an oversized
+ * file cannot blow up the context.
  */
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,7 +33,7 @@ const TRUNCATED_MARKER = '\n\n[…truncated…]';
 /** Trace of where each layer's body came from, for `/system-prompt` later. */
 export type LayerSource =
   | { layer: 'override'; chars: number; present: boolean }
-  | { layer: 'plato'; chars: number; source: 'disk' | 'fallback'; present: boolean }
+  | { layer: 'plato'; chars: number; source: 'disk' | 'global' | 'fallback'; present: boolean }
   | { layer: 'agents'; chars: number; source: 'disk' | 'fallback' | 'missing'; present: boolean; filename: 'AGENTS.md' | 'CLAUDE.md' | null };
 
 export interface BuildWorkerRoleOpts {
@@ -40,6 +41,11 @@ export interface BuildWorkerRoleOpts {
   override?: string;
   /** Workspace root (absolute path). Required for disk reads. */
   root: string;
+  /**
+   * D46: Plato's global config dir (`~/.plato`). When the project has no
+   * PLATO.md, this dir's PLATO.md is the personal default layer.
+   */
+  globalConfigDir?: string;
   /** Override the per-layer cap; tests pass smaller values. */
   maxLayerChars?: number;
 }
@@ -265,6 +271,18 @@ export async function buildWorkerRole(
     const c = clip(plato.body, cap);
     platoBody = c.body;
     layers.push({ layer: 'plato', chars: c.body.length, source: 'disk', present: true });
+  } else if (opts.globalConfigDir) {
+    // D46: project has no PLATO.md → the personal global default (~/.plato).
+    const global = await loadProjectFile('PLATO.md', opts.globalConfigDir, DEFAULT_READ_BYTES);
+    if (global.found) {
+      const c = clip(global.body, cap);
+      platoBody = c.body;
+      layers.push({ layer: 'plato', chars: c.body.length, source: 'global', present: true });
+    } else {
+      const c = clip(DEFAULT_PLATO_BODY, cap);
+      platoBody = c.body;
+      layers.push({ layer: 'plato', chars: c.body.length, source: 'fallback', present: true });
+    }
   } else {
     // Missing, IO error, or too-big — all fall back to the bundled default
     // so the operator-tuning layer is never absent.

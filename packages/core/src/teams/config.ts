@@ -206,9 +206,9 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
     );
   }
   const philosophers = members.filter((m) => m.kind === 'philosopher');
-  if (philosophers.length > 3) {
+  if (philosophers.length > 5) {
     throw new TeamConfigError(
-      `academy.yaml: ${philosophers.length} philosopher members — at most 3 (D31c)`,
+      `academy.yaml: ${philosophers.length} philosopher members — at most 5 (D46)`,
     );
   }
   for (const m of members) {
@@ -229,31 +229,18 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
   return { name: teamName, members };
 }
 
-/** Reads and parses <root>/.plato/academy.yaml; missing file → null (solo). */
-export function loadTeamConfig(root: string): TeamConfig | null {
+/**
+ * Reads and parses `<configDir>/academy.yaml`; missing file → null (solo).
+ * D46: the config dir is Plato's home folder (`~/.plato`), NOT the project —
+ * a stray/broken academy.yaml in the project is never read.
+ */
+export function loadTeamConfig(configDir: string): TeamConfig | null {
   let text: string;
   try {
-    text = readFileSync(join(root, '.plato', 'academy.yaml'), 'utf8');
+    text = readFileSync(join(configDir, 'academy.yaml'), 'utf8');
   } catch {
     return null; // missing file = solo mode, not an error
   }
   return parseTeamConfig(text);
-}
-
-/**
- * Old-location check (D33): any config left at the repo ROOT is not ours to
- * interpret. Reports which legacy file was found so the host can ask the
- * user to move it — never silently ignored, never silently adopted.
- */
-export function legacyConfigAtRoot(root: string): string | null {
-  for (const name of ['academy.yaml', 'teams.yaml']) {
-    try {
-      readFileSync(join(root, name), 'utf8');
-      return name;
-    } catch {
-      // not present — keep looking
-    }
-  }
-  return null;
 }
 
