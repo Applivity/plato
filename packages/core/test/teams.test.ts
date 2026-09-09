@@ -228,9 +228,9 @@ describe('loadTeamConfig', () => {
     expect(loadTeamConfig(dir)).toBeNull();
   });
 
-  it('loads academy.yaml from the config dir (D46: ~/.plato)', () => {
+  it('loads ACADEMY.yaml from the config dir (D46: ~/.plato)', () => {
     writeFileSync(
-      join(dir, 'academy.yaml'),
+      join(dir, 'ACADEMY.yaml'),
       'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
     );
     const t = loadTeamConfig(dir);

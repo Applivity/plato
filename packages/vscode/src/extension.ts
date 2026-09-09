@@ -635,7 +635,7 @@ class ChatHost {
         if (m.type === 'set-orchestration' && typeof m.mode === 'string') {
           const mode =
             m.mode === 'duo' || m.mode === 'academy' ? m.mode : 'solo';
-          // D47: let the mode switch even when Academy has no academy.yaml —
+          // D47: let the mode switch even when Academy has no ACADEMY.yaml —
           // the Academy block's council editor creates it on the first edit.
           // The run-time guard (run()) still blocks actually running Academy
           // without a council.
@@ -681,12 +681,12 @@ class ChatHost {
             }
             const body = emitDuoConfig({ philosopher: phil });
             parseDuoConfig(body); // loud: unknown persona / bad fields never write
-            await this.writeHomeFile('duo.yaml', body);
+            await this.writeHomeFile('DUO.yaml', body);
             this.ensureHomeWatch();
             void this.sendSettings('Duo philosopher saved — applies from the next run.');
           } catch (e) {
             void this.sendSettings(
-              `duo.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
+              `DUO.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
             );
           }
           return;
@@ -731,33 +731,59 @@ class ChatHost {
               members,
             });
             parseTeamConfig(body); // exactly-one-worker / at-most-5 / model shape
-            await this.writeHomeFile('academy.yaml', body);
+            await this.writeHomeFile('ACADEMY.yaml', body);
             this.ensureHomeWatch();
             void this.sendSettings('Academy saved — applies from the next run.');
           } catch (e) {
             void this.sendSettings(
-              `academy.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
+              `ACADEMY.yaml not saved — ${e instanceof Error ? e.message : 'error'}`,
             );
           }
           return;
         }
         if (m.type === 'open-duo') {
-          const file = vscode.Uri.file(join(this.homePlatoDir(), 'duo.yaml'));
+          const file = vscode.Uri.file(join(this.homePlatoDir(), 'DUO.yaml'));
           try {
             await vscode.workspace.fs.stat(file);
             void vscode.window.showTextDocument(file);
           } catch {
-            void this.sendSettings('No ~/.plato/duo.yaml yet — edits in the form create it.');
+            // No file yet: Open materializes the built-in default so the
+            // button always lands on a real, editable DUO.yaml (with the
+            // persona's role text written out, not a bare persona stub).
+            const dflt = defaultDuoPhilosopher();
+            const persona = PERSONAS.find((p) => p.id === dflt.persona);
+            try {
+              const body = emitDuoConfig({
+                philosopher: {
+                  persona: dflt.persona,
+                  name: persona ? persona.name : undefined,
+                  role: persona ? persona.role : undefined,
+                  pause: false,
+                  cancel: false,
+                  maxInterventions: 5,
+                },
+              });
+              await this.writeHomeFile('DUO.yaml', body);
+              this.ensureHomeWatch();
+              void this.sendSettings();
+              void vscode.window.showTextDocument(file);
+            } catch (e) {
+              void this.sendSettings(
+                `DUO.yaml could not be created — ${
+                  e instanceof Error ? e.message : 'error'
+                }`,
+              );
+            }
           }
           return;
         }
         if (m.type === 'open-academy') {
-          const file = vscode.Uri.file(join(this.homePlatoDir(), 'academy.yaml'));
+          const file = vscode.Uri.file(join(this.homePlatoDir(), 'ACADEMY.yaml'));
           try {
             await vscode.workspace.fs.stat(file);
             void vscode.window.showTextDocument(file);
           } catch {
-            void this.sendSettings('~/.plato/academy.yaml not found — edits in the form create it.');
+            void this.sendSettings('~/.plato/ACADEMY.yaml not found — edits in the form create it.');
           }
           return;
         }
@@ -951,7 +977,7 @@ class ChatHost {
         }
         void this.sendSettings();
       };
-      for (const name of ['duo.yaml', 'academy.yaml']) {
+      for (const name of ['DUO.yaml', 'ACADEMY.yaml']) {
         const w = vscode.workspace.createFileSystemWatcher(
           new vscode.RelativePattern(vscode.Uri.file(dir), name),
         );
@@ -1520,7 +1546,7 @@ class ChatHost {
   /**
    * D47: Duo state for the Settings editor + header chip. A missing file is
    * NOT an error — the form pre-fills from the built-in default and the first
-   * edit materializes ~/.plato/duo.yaml (edits create it). A present-but-
+   * edit materializes ~/.plato/DUO.yaml (edits create it). A present-but-
    * broken file surfaces its parse error and the form pre-fills defaults so
    * the next edit repairs it.
    */
@@ -2181,7 +2207,7 @@ class ChatHost {
     const orchestration = vscode.workspace
       .getConfiguration('plato')
       .get<'solo' | 'duo' | 'academy'>('orchestration', 'solo');
-    // Academy (D31/D32/D46): the council lives in ~/.plato/academy.yaml —
+    // Academy (D31/D32/D46): the council lives in ~/.plato/ACADEMY.yaml —
     // Plato's global config, not a project file. Validation is loud: a broken
     // file aborts the run before it starts.
     let team: ReturnType<typeof loadTeamConfig> = null;
@@ -2194,17 +2220,17 @@ class ChatHost {
           'error',
           e instanceof TeamConfigError
             ? msg
-            : `academy.yaml could not be read — ${msg}`,
+            : `ACADEMY.yaml could not be read — ${msg}`,
         );
         return;
       }
-      // Not in Academy mode: a stray/broken academy.yaml is inert — ignore it
-      // (D45a-4: academy.yaml is only surfaced in Academy mode).
+      // Not in Academy mode: a stray/broken ACADEMY.yaml is inert — ignore it
+      // (D45a-4: ACADEMY.yaml is only surfaced in Academy mode).
     }
     if (team === null && orchestration === 'academy') {
       this.send(
         'error',
-        'Academy mode needs ~/.plato/academy.yaml — build a council in Settings → Orchestration → Academy (edits create the file), or switch to Solo/Duo.',
+        'Academy mode needs ~/.plato/ACADEMY.yaml — build a council in Settings → Orchestration → Academy (edits create the file), or switch to Solo/Duo.',
       );
       return;
     }
@@ -2242,7 +2268,7 @@ class ChatHost {
       this.send(
         'error',
         `Unknown connection in "${ref}"${
-          workerMember ? ` (academy.yaml member '${workerMember.name}')` : ''
+          workerMember ? ` (ACADEMY.yaml member '${workerMember.name}')` : ''
         }. Configured: ${readConnections()
           .map((c) => c.id)
           .join(', ')}.`,
@@ -2310,7 +2336,7 @@ class ChatHost {
         `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
       );
     }
-    // Philosophers (D30 + D32): academy.yaml members in Academy mode; the
+    // Philosophers (D30 + D32): ACADEMY.yaml members in Academy mode; the
     // Duo philosopher from settings otherwise. Solo = none.
     // Invariant unchanged: philosophers NEVER approve tool calls.
     const obsSpecs: {
@@ -2337,9 +2363,9 @@ class ChatHost {
         }
       }
     } else if (orchestration === 'duo') {
-      // D47: ~/.plato/duo.yaml is the store (edits create it); a missing
+      // D47: ~/.plato/DUO.yaml is the store (edits create it); a missing
       // file runs the built-in default. A broken file aborts loudly, like
-      // Academy's — and, like academy.yaml, it is inert in the other modes
+      // Academy's — and, like ACADEMY.yaml, it is inert in the other modes
       // because this branch never reads it.
       let duoCfg: ReturnType<typeof loadDuoConfig> = null;
       try {
@@ -2349,7 +2375,7 @@ class ChatHost {
           'error',
           e instanceof DuoConfigError
             ? e.message
-            : `duo.yaml could not be read — ${
+            : `DUO.yaml could not be read — ${
                 e instanceof Error ? e.message : 'error'
               }`,
         );

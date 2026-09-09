@@ -1,7 +1,7 @@
 /**
  * Philosopher personas (D32b): name + default role prompt. A persona is
  * its instructions — the ObserverAgent machinery is identical underneath.
- * Used by the Duo picker and as copy-paste academy.yaml members.
+ * Used by the Duo picker and as copy-paste ACADEMY.yaml members.
  */
 export interface Persona {
   id: string;

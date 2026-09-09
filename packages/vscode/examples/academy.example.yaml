@@ -1,4 +1,4 @@
-# Plato academy definition (D31/D32/D33). Lives at ~/.plato/academy.yaml —
+# Plato academy definition (D31/D32/D33). Lives at ~/.plato/ACADEMY.yaml —
 # edit it in Settings → Orchestration → Academy, or copy this into place.
 # Activate in Settings → Orchestration → Academy; switch back to Solo/Duo
 # any time. Philosophers NEVER approve tool calls.

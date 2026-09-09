@@ -1,4 +1,4 @@
-# Plato duo philosopher (D47). Lives in ~/.plato/duo.yaml - edit it in
+# Plato duo philosopher (D47). Lives in ~/.plato/DUO.yaml - edit it in
 # Settings -> Orchestration -> Duo, or copy this into place. The philosopher
 # watches the run and steers it. Philosophers NEVER approve tool calls.
 philosopher:

@@ -1067,6 +1067,45 @@ two views (D45c realized, in the same milestone as the code, per D45c/D45d).
 - **Academy editor** enforces exactly-one-worker + ≤5 philosophers in the UI and
   host; the header chip shows `duo · <name>` / `academy:<name>` from the files.
 
+**D47b — Duo editor polish + DUO.yaml self-contained (M4.1, 0.25.0 — in the working
+tree, uncommitted, 2026-09-09).**
+
+Founder review of the D47 editors read "amateur"; several polish rounds followed,
+Duo first. Decisions recorded beyond D47:
+
+- **Store files are `DUO.yaml` / `ACADEMY.yaml`** — capitalized to match `PLATO.md`.
+  The lowercase names are gone from loaders, emitters, the file watcher, schema
+  globs, examples, and copy. macOS is case-insensitive, so a pre-existing lowercase
+  file is still read and written — D45d: no migration. (The open-file buttons now
+  sit at the same visual weight as "Open PLATO.md".)
+- **DUO.yaml is self-contained, not a persona stub.** D47 wrote the file from the
+  form's stored *deltas*: persona-equal name/role were sent as `''` and the emitter
+  dropped them, so a created file was just `persona: aristotle` — and the founder
+  asked "why is the role field missing?". Superseded: the form saves the
+  **effective** name + role text it displays (`effName`/`effRole`), so every created
+  DUO.yaml carries `name:` and `role:` and reads as a complete spec. Persona remains
+  the seed — the persona `change` handler reconciles: when the stored name/role
+  still equal the *previous* persona's defaults they are refilled from the new
+  persona; a genuine hand-edit survives the switch; clearing a field still restores
+  the persona default (D47 semantics). Accepted side effect: a DUO.yaml is a
+  snapshot of its persona's role text, so editing the built-in persona copy in
+  `personas.ts` no longer retro-updates an existing file.
+- **Open DUO.yaml creates on a clean start.** No file → the Open button
+  materializes `~/.plato/DUO.yaml` from the built-in default (Aristotle, name +
+  role written out) and opens it — the "No ~/.plato/DUO.yaml yet — edits in the form
+  create it" dead-end is gone. (Academy's Open button still shows its not-found
+  message — Duo-first round; giving Academy the same create-on-open is a candidate
+  follow-up.)
+- **UI polish:** pause/cancel are compact round-track switch toggles (not
+  checkboxes, not an oversized pill — two earlier sizes still read "elongated");
+  each '?' tooltip anchors below its own control (it used to land closer to the
+  *next* option); the cap field is relabeled **Max interventions** ("guidance,
+  pauses, cancels each count as one"); Open-file buttons reuse the `.btn-secondary`
+  of Open PLATO.md; note spacing is uniform; **Academy member cards fixed** — a
+  generic `.mrow { display:flex }` (run-team rows) was flexing every `.duo .mrow`
+  card's fields horizontally; cards are `display:block` and each member's model
+  select sits on its own full-width row so a long model ref can't overflow.
+
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD — SUPERSEDED by D47, shipped 2026-09-04).**
 
 Duo philosophers are hardcoded in `core/src/teams/personas.ts` (five personas, literal role strings). The user has one override surface today (`plato.observer.role` replaces the persona's role wholesale) and a flat list of settings for the other tiers. Academy has richer per-member config via yaml. The asymmetry is real and the user needs richer Duo config too.

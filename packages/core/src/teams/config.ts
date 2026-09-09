@@ -1,5 +1,5 @@
 /**
- * academy.yaml reader (D31/D32): tiny zero-dependency parser for the subset
+ * ACADEMY.yaml reader (D31/D32): tiny zero-dependency parser for the subset
  * we document —
  *   academy:
  *     name: hcad-audit
@@ -59,7 +59,7 @@ function unquote(s: string): string {
   return t;
 }
 
-/** Parses academy.yaml text. Throws TeamConfigError naming file+line on any issue. */
+/** Parses ACADEMY.yaml text. Throws TeamConfigError naming file+line on any issue. */
 export function parseTeamConfig(text: string): TeamConfig {
   const lines = text.split('\n');
   let teamName = '';
@@ -70,7 +70,7 @@ export function parseTeamConfig(text: string): TeamConfig {
   let inTeamBlock = false;
 
   const fail = (ln: number, why: string): never => {
-    throw new TeamConfigError(`academy.yaml line ${ln + 1}: ${why}`);
+    throw new TeamConfigError(`ACADEMY.yaml line ${ln + 1}: ${why}`);
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -192,29 +192,29 @@ export function parseTeamConfig(text: string): TeamConfig {
 /** Cross-member validation (D31c/D32f). */
 function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
   if (members.length === 0) {
-    throw new TeamConfigError('academy.yaml: no members found under members:');
+    throw new TeamConfigError('ACADEMY.yaml: no members found under members:');
   }
   const workers = members.filter((m) => m.kind === 'worker');
   if (workers.length === 0) {
     throw new TeamConfigError(
-      'academy.yaml: no worker member — add kind: worker',
+      'ACADEMY.yaml: no worker member — add kind: worker',
     );
   }
   if (workers.length > 1) {
     throw new TeamConfigError(
-      `academy.yaml: ${workers.length} worker members — exactly one worker is allowed (D31c)`,
+      `ACADEMY.yaml: ${workers.length} worker members — exactly one worker is allowed (D31c)`,
     );
   }
   const philosophers = members.filter((m) => m.kind === 'philosopher');
   if (philosophers.length > 5) {
     throw new TeamConfigError(
-      `academy.yaml: ${philosophers.length} philosopher members — at most 5 (D46)`,
+      `ACADEMY.yaml: ${philosophers.length} philosopher members — at most 5 (D46)`,
     );
   }
   for (const m of members) {
     if (m.model.length === 0) {
       throw new TeamConfigError(
-        `academy.yaml: member '${m.name}' is missing 'model'`,
+        `ACADEMY.yaml: member '${m.name}' is missing 'model'`,
       );
     }
     // Same semantics as splitModelRef: first ':' separates connection from
@@ -222,7 +222,7 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
     const c = m.model.indexOf(':');
     if (c <= 0 || c >= m.model.length - 1) {
       throw new TeamConfigError(
-        `academy.yaml: member '${m.name}' model must be a '<connection>:<model>' ref, got '${m.model}'`,
+        `ACADEMY.yaml: member '${m.name}' model must be a '<connection>:<model>' ref, got '${m.model}'`,
       );
     }
   }
@@ -230,14 +230,14 @@ function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
 }
 
 /**
- * Reads and parses `<configDir>/academy.yaml`; missing file → null (solo).
+ * Reads and parses `<configDir>/ACADEMY.yaml`; missing file → null (solo).
  * D46: the config dir is Plato's home folder (`~/.plato`), NOT the project —
- * a stray/broken academy.yaml in the project is never read.
+ * a stray/broken ACADEMY.yaml in the project is never read.
  */
 export function loadTeamConfig(configDir: string): TeamConfig | null {
   let text: string;
   try {
-    text = readFileSync(join(configDir, 'academy.yaml'), 'utf8');
+    text = readFileSync(join(configDir, 'ACADEMY.yaml'), 'utf8');
   } catch {
     return null; // missing file = solo mode, not an error
   }

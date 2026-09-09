@@ -72,7 +72,7 @@
           "type": "string",
           "enum": ["solo", "duo", "academy"],
           "default": "solo",
-          "description": "Orchestration mode (D32): solo = Plato alone; duo = worker + one philosopher; academy = the council defined in academy.yaml."
+          "description": "Orchestration mode (D32): solo = Plato alone; duo = worker + one philosopher; academy = the council defined in ACADEMY.yaml."
         },
         "plato.compaction.threshold": {
           "type": "number",
@@ -86,12 +86,12 @@
     "configurationDefaults": {
       "yaml.schemas": {
         "%applivity.plato-vscode/schemas/academy.schema.json": [
-          "academy.yaml",
-          ".plato/academy.yaml"
+          "ACADEMY.yaml",
+          ".plato/ACADEMY.yaml"
         ],
         "%applivity.plato-vscode/schemas/duo.schema.json": [
-          "duo.yaml",
-          ".plato/duo.yaml"
+          "DUO.yaml",
+          ".plato/DUO.yaml"
         ]
       }
     }

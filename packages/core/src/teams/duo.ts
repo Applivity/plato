@@ -1,6 +1,6 @@
 /**
- * duo.yaml reader + run-resolution (D47): tiny zero-dependency parser for
- * the single-philosopher file, mirroring the academy.yaml parser. Shape:
+ * DUO.yaml reader + run-resolution (D47): tiny zero-dependency parser for
+ * the single-philosopher file, mirroring the ACADEMY.yaml parser. Shape:
  *   philosopher:
  *     persona: aristotle      # required; one of the PERSONAS
  *     name: Aristotle         # optional override of the persona name
@@ -54,14 +54,14 @@ function unquote(s: string): string {
   return t;
 }
 
-/** Parses duo.yaml text. Throws DuoConfigError naming file+line on any issue. */
+/** Parses DUO.yaml text. Throws DuoConfigError naming file+line on any issue. */
 export function parseDuoConfig(text: string): DuoConfig {
   const lines = text.split('\n');
   const ph: DuoPhilosopher = { persona: '' };
   let inPhilosopher = false;
 
   const fail = (ln: number, why: string): never => {
-    throw new DuoConfigError(`duo.yaml line ${ln + 1}: ${why}`);
+    throw new DuoConfigError(`DUO.yaml line ${ln + 1}: ${why}`);
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -139,20 +139,20 @@ export function parseDuoConfig(text: string): DuoConfig {
 
   if (ph.persona.length === 0) {
     throw new DuoConfigError(
-      `duo.yaml: philosopher is missing 'persona' — use one of ${PERSONAS.map((p) => p.id).join(', ')}`,
+      `DUO.yaml: philosopher is missing 'persona' — use one of ${PERSONAS.map((p) => p.id).join(', ')}`,
     );
   }
   return { philosopher: ph };
 }
 
 /**
- * Reads and parses `<configDir>/duo.yaml`; missing file → null (run-time
+ * Reads and parses `<configDir>/DUO.yaml`; missing file → null (run-time
  * falls back to the built-in default philosopher).
  */
 export function loadDuoConfig(configDir: string): DuoConfig | null {
   let text: string;
   try {
-    text = readFileSync(join(configDir, 'duo.yaml'), 'utf8');
+    text = readFileSync(join(configDir, 'DUO.yaml'), 'utf8');
   } catch {
     return null; // missing file = the default philosopher, not an error
   }

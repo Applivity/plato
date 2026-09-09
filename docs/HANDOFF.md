@@ -10,7 +10,7 @@ may not be available when you work; everything you need is in this repo.
 3. [ARCHITECTURE.md](ARCHITECTURE.md) — binding design contracts
 4. [PROGRESS.md](PROGRESS.md) — the running change log (newest first)
 
-## Current repository state (verified 2026-09-04)
+## Current repository state (verified 2026-09-09)
 
 - Location: `/Users/ai/Desktop/plato` (canonical remote is
   `https://github.com/applivity-com/plato`, private, default branch
@@ -18,31 +18,41 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
-- HEAD (`main`) is at **D47** — Duo + Academy fully configurable from the
-  Settings UI over yaml (two-way sync). **Plato is a personal
-  pair-programmer: it never pollutes the shared repo.** Everything Plato owns
-  lives in a flat `~/.plato/` — `academy.yaml` (council), `duo.yaml` (the Duo
-  philosopher), `mcp.yaml`, `PLATO.md` (global default), and
-  `runs/<project-key>/` (transcripts). The repo is only ever read:
-  `<repo>/PLATO.md` (project override, via `/system-prompt`) and
+- HEAD (`main`) = **D47** (committed 83ecdcd, 0.25.0). The working tree adds
+  **D47b — Duo Settings-editor polish, NOT yet committed** (same 0.25.0).
+  **Plato is a personal pair-programmer: it never pollutes the shared repo.**
+  Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
+  philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
+  default), and `runs/<project-key>/` (transcripts). The repo is only ever
+  read: `<repo>/PLATO.md` (project override, via `/system-prompt`) and
   `<repo>/AGENTS.md`/`CLAUDE.md`. Worker-prompt join = project PLATO.md >
   global PLATO.md > bundled default > AGENTS.md. Model (D45a-3/4): one worker
   + N philosophers (cap 5); "Plato" in UI; project files always on; command
   surface = Compact · History · System prompt. **D47 (0.25.0):** the in-panel
   Orchestration blocks are live editors — Duo (persona, name, role override,
   model, pause/cancel/maxInterventions) and Academy (council name + full
-  per-member CRUD). `~/.plato/duo.yaml` is the only Duo store
-  (`plato.duo.persona` + `plato.observer.*` settings deleted); a missing
-  duo.yaml runs the built-in Aristotle default and the first edit creates the
-  file; Academy dropped "Create example" for the same edits-create-it editor
-  (a one-worker pre-seed when no council exists). Both directions sync: edits
-  write the yaml, and a host file watcher over `~/.plato/{duo,academy}.yaml`
-  re-reads on external edit/paste and refreshes the UI. Core gained a strict
-  `duo.yaml` parser + loader + run-spec resolver and canonical emitters
-  (`teams/duo.ts`, `teams/emit.ts`). Working tree clean. 202 vitest cases
-  across 20 files in `packages/core`. **Deferred (recorded in DECISIONS D46):**
-  per-project council/academy override ("discussion later"); move convo
-  history to `~/.plato/history/` (TODO).
+  per-member CRUD). `~/.plato/DUO.yaml` is the only Duo store
+  (`plato.duo.persona` + `plato.observer.*` settings deleted); a missing file
+  runs the built-in Aristotle default and the first edit creates it; Academy
+  dropped "Create example" for the same edits-create-it editor (a one-worker
+  pre-seed when no council exists). Both directions sync: edits write the
+  yaml, and a host file watcher over `~/.plato/{DUO,ACADEMY}.yaml` re-reads on
+  external edit/paste and refreshes the UI. Core gained a strict parser +
+  loader + run-spec resolver and canonical emitters (`teams/duo.ts`,
+  `teams/emit.ts`). **D47b (uncommitted):** store files are capitalized
+  (`DUO.yaml`/`ACADEMY.yaml` — macOS is case-insensitive, so an existing
+  lowercase file still works); DUO.yaml is **self-contained** — the form saves
+  the effective name + role, so a created file always carries `name:`/`role:`
+  (persona switch refills them while they equal the previous persona's
+  defaults; hand-edits survive; clearing restores the persona); **Open DUO.yaml
+  with no file creates it** and opens it; UI: compact switch toggles, per-
+  control '?' tooltips, Open-file buttons matching Open PLATO.md, Academy
+  member cards fixed (generic `.mrow` flex collision → cards are block, model
+  on its own row), 'Max/run' → 'Max interventions'. **Academy is unchanged this
+  round** (Duo first). 202 vitest cases across 20 files in `packages/core`.
+  **Deferred (recorded in DECISIONS D46):** per-project council/academy
+  override ("discussion later"); move convo history to `~/.plato/history/`
+  (TODO).
 - Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
   repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
   when committing (see history).
@@ -136,6 +146,12 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
+0. **Close D47b** (working tree, uncommitted). Founder visual sign-off on the
+   Duo polish (switch size, Open DUO.yaml create-on-open, role present in the
+   created file) → commit the tree with these docs; push stays with the founder.
+   Candidate parity follow-ups after sign-off: give **Open ACADEMY.yaml the same
+   create-on-open** (Duo got it this round, Academy didn't), and any remaining
+   UI polish the founder flags from the reload.
 1. **Chat-log message rendering.** Markdown, code blocks, tool-call
    cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
    surfaces users actually stare at.

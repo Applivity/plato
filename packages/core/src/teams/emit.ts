@@ -58,10 +58,10 @@ function memberLines(m: TeamMember): string[] {
   return lines;
 }
 
-/** Canonical academy.yaml body for a TeamConfig. */
+/** Canonical ACADEMY.yaml body for a TeamConfig. */
 export function emitTeamConfig(cfg: TeamConfig): string {
   const out = [
-    '# Plato academy (D47). Lives in ~/.plato/academy.yaml - edit in Settings -> Orchestration -> Academy.',
+    '# Plato academy (D47). Lives in ~/.plato/ACADEMY.yaml - edit in Settings -> Orchestration -> Academy.',
     '# The worker does the work; philosophers watch and steer. Philosophers NEVER approve tool calls.',
   ];
   if (cfg.name.trim().length > 0) {
@@ -80,11 +80,11 @@ export function emitTeamConfig(cfg: TeamConfig): string {
   return out.join('\n');
 }
 
-/** Canonical duo.yaml body for a DuoConfig. */
+/** Canonical DUO.yaml body for a DuoConfig. */
 export function emitDuoConfig(cfg: DuoConfig): string {
   const ph = cfg.philosopher;
   const out = [
-    '# Plato duo philosopher (D47). Lives in ~/.plato/duo.yaml - edit in Settings -> Orchestration -> Duo.',
+    '# Plato duo philosopher (D47). Lives in ~/.plato/DUO.yaml - edit in Settings -> Orchestration -> Duo.',
     '# The philosopher watches the run and steers it. Philosophers NEVER approve tool calls.',
     'philosopher:',
     `  persona: ${yamlScalar(ph.persona)}`,

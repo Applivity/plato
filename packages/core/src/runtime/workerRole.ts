@@ -8,9 +8,9 @@
  *   [mode-specific override] >> [PLATO.md body] >> [AGENTS.md body]
  *
  * - Solo/Duo: override slot is empty.
- * - Academy: override slot is `academy.yaml` `workerMember.role` if present.
+ * - Academy: override slot is `ACADEMY.yaml` `workerMember.role` if present.
  * - Philosophers never see any of these files. Their prompt is built in
- *   observer.ts from PERSONAS[].role / academy.yaml member.role only.
+ *   observer.ts from PERSONAS[].role / ACADEMY.yaml member.role only.
  *
  * Files are read, never written. Project files are ALWAYS included when
  * present (D45a-3 removed the includeProjectRules opt-out — file presence is

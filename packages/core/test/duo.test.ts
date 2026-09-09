@@ -78,7 +78,7 @@ describe('parseDuoConfig', () => {
       throw new Error('should have thrown');
     } catch (e) {
       expect(e).toBeInstanceOf(DuoConfigError);
-      expect((e as DuoConfigError).message).toMatch(/duo\.yaml/);
+      expect((e as DuoConfigError).message).toMatch(/DUO\.yaml/);
       expect((e as DuoConfigError).message).toMatch(/philosopher:/);
     }
   });
@@ -130,12 +130,12 @@ describe('loadDuoConfig', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('returns null when duo.yaml is absent', () => {
+  it('returns null when DUO.yaml is absent', () => {
     expect(loadDuoConfig(dir)).toBeNull();
   });
 
-  it('reads + parses a present duo.yaml', () => {
-    writeFileSync(join(dir, 'duo.yaml'), FULL, 'utf8');
+  it('reads + parses a present DUO.yaml', () => {
+    writeFileSync(join(dir, 'DUO.yaml'), FULL, 'utf8');
     expect(loadDuoConfig(dir)?.philosopher.persona).toBe('heraclitus');
   });
 });
