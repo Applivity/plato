@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Plato academy definition (D31/D32)",
+  "title": "Plato academy definition (D47e)",
   "type": "object",
   "required": [
     "members"
@@ -8,7 +8,8 @@
   "properties": {
     "members": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 2,
+      "maxItems": 5,
       "items": {
         "type": "object",
         "required": [
@@ -18,7 +19,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Member name, unique in the team"
+            "description": "Philosopher name, unique in the council"
           },
           "model": {
             "type": "string",
@@ -26,21 +27,28 @@
           },
           "role": {
             "type": "string",
-            "description": "Extra system text for this member"
+            "maxLength": 1000,
+            "description": "Extra system text for this philosopher (max 1000 characters; one line)"
           },
-          "kind": {
+          "persona": {
+            "type": "string",
+            "description": "Optional persona id (aristotle, heraclitus, diogenes, pythagoras, thales) — supplies the default name and role"
+          },
+          "color": {
             "type": "string",
             "enum": [
-              "worker",
-              "philosopher"
+              "violet",
+              "blue",
+              "teal",
+              "amber",
+              "rose"
             ],
-            "default": "worker",
-            "description": "Exactly one worker; up to 5 philosophers"
+            "description": "Identity colour for this philosopher, shown in Settings, the chat notices and the run-start team card. Assigned once when the philosopher is created."
           },
           "guidance": {
             "type": "boolean",
             "default": true,
-            "description": "Philosopher tier: may inject guidance"
+            "description": "Always on: every philosopher can speak (D47d)"
           },
           "pause": {
             "type": "boolean",
@@ -67,7 +75,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "Display name of the team"
+          "description": "Display name of the council"
         }
       },
       "additionalProperties": false

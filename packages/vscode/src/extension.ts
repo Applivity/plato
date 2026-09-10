@@ -26,6 +26,7 @@ import {
   parseDuoConfig,
   defaultDuoPhilosopher,
   duoObserverSpec,
+  defaultAcademyMembers,
   emitTeamConfig,
   emitDuoConfig,
   isSecretPath,
@@ -36,6 +37,9 @@ import {
   COMPACT_SYSTEM_PROMPT,
   compactMaxTokensFor,
   PERSONAS,
+  PHILOSOPHER_COLORS,
+  ROLE_MAX_CHARS,
+  colorHex,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
@@ -670,6 +674,9 @@ class ChatHost {
             if (typeof raw['model'] === 'string' && raw['model'].trim().length > 0) {
               phil.model = raw['model'].trim();
             }
+            if (typeof raw['color'] === 'string' && raw['color'].trim().length > 0) {
+              phil.color = raw['color'].trim();
+            }
             if (typeof raw['pause'] === 'boolean') {
               phil.pause = raw['pause'];
             }
@@ -705,24 +712,28 @@ class ChatHost {
               const mem: TeamMember = {
                 name: raw['name'].trim(),
                 model: raw['model'].trim(),
-                kind: raw['kind'] === 'philosopher' ? 'philosopher' : 'worker',
+                kind: 'philosopher',
               };
               if (typeof raw['role'] === 'string' && raw['role'].trim().length > 0) {
                 mem.role = raw['role'].trim();
               }
-              if (mem.kind === 'philosopher') {
-                if (typeof raw['guidance'] === 'boolean') {
-                  mem.guidance = raw['guidance'];
-                }
-                if (typeof raw['pause'] === 'boolean') {
-                  mem.pause = raw['pause'];
-                }
-                if (typeof raw['cancel'] === 'boolean') {
-                  mem.cancel = raw['cancel'];
-                }
-                if (typeof raw['maxInterventions'] === 'number') {
-                  mem.maxInterventions = Math.max(0, Math.round(raw['maxInterventions']));
-                }
+              if (typeof raw['persona'] === 'string' && raw['persona'].trim().length > 0) {
+                mem.persona = raw['persona'].trim();
+              }
+              if (typeof raw['color'] === 'string' && raw['color'].trim().length > 0) {
+                mem.color = raw['color'].trim();
+              }
+              if (typeof raw['guidance'] === 'boolean') {
+                mem.guidance = raw['guidance'];
+              }
+              if (typeof raw['pause'] === 'boolean') {
+                mem.pause = raw['pause'];
+              }
+              if (typeof raw['cancel'] === 'boolean') {
+                mem.cancel = raw['cancel'];
+              }
+              if (typeof raw['maxInterventions'] === 'number') {
+                mem.maxInterventions = Math.max(0, Math.round(raw['maxInterventions']));
               }
               return mem;
             });
@@ -783,7 +794,27 @@ class ChatHost {
             await vscode.workspace.fs.stat(file);
             void vscode.window.showTextDocument(file);
           } catch {
-            void this.sendSettings('~/.plato/ACADEMY.yaml not found — edits in the form create it.');
+            // No file yet: Open materializes the starter council (Plato +
+            // Aristotle + Pythagoras) so the button always lands on a real,
+            // editable ACADEMY.yaml — parity with open-duo. D47d: at least
+            // two philosophers by default.
+            try {
+              const body = emitTeamConfig({
+                name: '',
+                members: defaultAcademyMembers(this.effectiveModel()),
+              });
+              parseTeamConfig(body); // must satisfy exactly-one-worker etc.
+              await this.writeHomeFile('ACADEMY.yaml', body);
+              this.ensureHomeWatch();
+              void this.sendSettings();
+              void vscode.window.showTextDocument(file);
+            } catch (e) {
+              void this.sendSettings(
+                `ACADEMY.yaml could not be created — ${
+                  e instanceof Error ? e.message : 'error'
+                }`,
+              );
+            }
           }
           return;
         }
@@ -897,8 +928,14 @@ class ChatHost {
     );
   }
 
-  private send(type: string, text?: unknown): void {
-    void this.panel.webview.postMessage({ type, text });
+  private send(type: string, text?: unknown, meta?: Record<string, unknown>): void {
+    void this.panel.webview.postMessage({
+      type,
+      text,
+      // D47f: optional extras (e.g. a philosopher notice's colour) ride beside
+      // `text` so existing handlers that read only `text` are unaffected.
+      ...(meta ? { meta } : {}),
+    });
   }
 
   // ---- D44a/D44c: paperclip attachment + real slash commands ------------
@@ -1507,6 +1544,12 @@ class ChatHost {
           epithet: p.epithet,
           role: p.role,
         })),
+        // D47f: the philosopher colour palette. The webview is a plain
+        // template literal with no imports, so the ids + hexes ride along.
+        colors: PHILOSOPHER_COLORS.map((c) => ({ id: c.id, hex: c.hex })),
+        // D47g: the role cap, for the same reason — the parser enforces it,
+        // and the box mirrors it with maxlength.
+        roleMaxChars: ROLE_MAX_CHARS,
         duo: this.duoStatus(),
         academy: this.academyStatus(),
       },
@@ -1559,6 +1602,7 @@ class ChatHost {
       name: string;
       role: string;
       model: string;
+      color: string;
       pause: boolean;
       cancel: boolean;
       maxInterventions: number;
@@ -1586,6 +1630,7 @@ class ChatHost {
         name: raw.name ?? '',
         role: raw.role ?? '',
         model: raw.model ?? '',
+        color: raw.color ?? '',
         pause: raw.pause ?? false,
         cancel: raw.cancel ?? false,
         maxInterventions: raw.maxInterventions ?? 5,
@@ -1602,6 +1647,8 @@ class ChatHost {
       kind: string;
       model: string;
       role?: string;
+      persona?: string;
+      color?: string;
       guidance?: boolean;
       pause?: boolean;
       cancel?: boolean;
@@ -1629,11 +1676,12 @@ class ChatHost {
           kind: m.kind,
           model: m.model,
           role: m.role ?? '',
-          guidance: m.kind === 'philosopher' ? m.guidance ?? true : undefined,
-          pause: m.kind === 'philosopher' ? m.pause ?? false : undefined,
-          cancel: m.kind === 'philosopher' ? m.cancel ?? false : undefined,
-          maxInterventions:
-            m.kind === 'philosopher' ? m.maxInterventions ?? 5 : undefined,
+          persona: m.persona ?? '',
+          color: m.color ?? '',
+          guidance: m.guidance ?? true,
+          pause: m.pause ?? false,
+          cancel: m.cancel ?? false,
+          maxInterventions: m.maxInterventions ?? 5,
         })),
         error: '',
       };
@@ -2235,9 +2283,6 @@ class ChatHost {
       return;
     }
     const useAcademy = orchestration === 'academy' && team !== null;
-    const workerMember: TeamMember | undefined = useAcademy
-      ? team?.members.find((m) => m.kind === 'worker')
-      : undefined;
     if (useAcademy && team) {
       this.send('notice', `Academy "${team.name || 'unnamed'}" active`);
       this.send('team', {
@@ -2246,6 +2291,7 @@ class ChatHost {
           name: m.name,
           kind: m.kind,
           model: m.model,
+          color: colorHex(m.color), // D47f: same colour as the Settings card
           tiers:
             m.kind === 'philosopher'
               ? [
@@ -2257,9 +2303,10 @@ class ChatHost {
         })),
       });
     }
-    // Resolve the composite ref to a connection profile (D26a). The academy
-    // worker's model wins over the chat dropdown choice (D31d/e).
-    const ref = workerMember?.model ?? this.effectiveModel();
+    // Resolve the composite ref to a connection profile (D26a). D47e: Plato is
+    // the doer in every mode, so the chat composer's model is the one used —
+    // there is no per-council worker model any more.
+    const ref = this.effectiveModel();
     const parts = splitModelRef(ref);
     const conn = parts
       ? readConnections().find((c) => c.id === parts.connectionId) ?? null
@@ -2267,9 +2314,7 @@ class ChatHost {
     if (!conn) {
       this.send(
         'error',
-        `Unknown connection in "${ref}"${
-          workerMember ? ` (ACADEMY.yaml member '${workerMember.name}')` : ''
-        }. Configured: ${readConnections()
+        `Unknown connection in "${ref}". Configured: ${readConnections()
           .map((c) => c.id)
           .join(', ')}.`,
       );
@@ -2347,6 +2392,8 @@ class ChatHost {
       pause: boolean;
       cancel: boolean;
       maxInterventions: number;
+      /** D47f: identity colour hex, shown with every notice this one emits. */
+      hex: string;
     }[] = [];
     if (useAcademy && team) {
       for (const m of team.members) {
@@ -2359,6 +2406,7 @@ class ChatHost {
             pause: m.pause ?? false,
             cancel: m.cancel ?? false,
             maxInterventions: m.maxInterventions ?? 5,
+            hex: colorHex(m.color),
           });
         }
       }
@@ -2381,12 +2429,17 @@ class ChatHost {
         );
         return;
       }
-      obsSpecs.push(
-        duoObserverSpec(
+      obsSpecs.push({
+        ...duoObserverSpec(
           duoCfg !== null ? duoCfg.philosopher : defaultDuoPhilosopher(),
           ref,
         ),
-      );
+        // duoObserverSpec supplies the colour id; the wire wants the hex.
+        hex: colorHex(duoObserverSpec(
+          duoCfg !== null ? duoCfg.philosopher : defaultDuoPhilosopher(),
+          ref,
+        ).color),
+      });
     }
     const observers: { agent: ObserverAgent; name: string }[] = [];
     let interventionsUsed = 0; // hard cap 5 per run across members (D31d)
@@ -2423,12 +2476,13 @@ class ChatHost {
         },
       );
       const name = spec.name;
+      const noticeMeta = { color: spec.hex }; // D47f: colour-tag every notice
       observers.push({ agent, name });
       const digest: DigestEntry[] = [];
       let observing = true;
       let errNotified = false;
       let parseErrNotified = false;
-      this.send('notice', `[${name}] watching — ${spec.ref}`);
+      this.send('notice', `[${name}] watching — ${spec.ref}`, noticeMeta);
       // Arg summaries in digest entries (D33+): a philosopher steering code
       // needs to see WHICH files/commands are involved, not just tool names.
       const argHint = (args: Record<string, unknown>): string => {
@@ -2464,6 +2518,7 @@ class ChatHost {
                   this.send(
                     'notice',
                     `[${name}] unavailable — ${agent.lastError}`,
+                    noticeMeta,
                   );
                 }
                 if (agent.parseErrors > 0 && !parseErrNotified) {
@@ -2471,20 +2526,21 @@ class ChatHost {
                   this.send(
                     'notice',
                     `[${name}] reply not parseable as JSON (${agent.parseErrors} so far) — try a stronger model or tighten the role prompt`,
+                    noticeMeta,
                   );
                 }
                 if (a.action === 'guidance') {
                   interventionsUsed += 1;
                   this.controller.sendGuidance(a.message);
-                  this.send('notice', `[${name}] guidance: ${a.message}`);
+                  this.send('notice', `[${name}] guidance: ${a.message}`, noticeMeta);
                 } else if (a.action === 'pause') {
                   interventionsUsed += 1;
                   this.controller.pause();
-                  this.send('notice', `[${name}] paused the run`);
+                  this.send('notice', `[${name}] paused the run`, noticeMeta);
                 } else if (a.action === 'cancel') {
                   interventionsUsed += 1;
                   this.controller.cancel();
-                  this.send('notice', `[${name}] cancelled the run`);
+                  this.send('notice', `[${name}] cancelled the run`, noticeMeta);
                 }
               })
               .catch(() => undefined)
@@ -2592,12 +2648,11 @@ class ChatHost {
               : undefined,
         }),
         model: ref,
-        role: workerMember?.role,
         // D45a-3: project files (PLATO.md + AGENTS.md/CLAUDE.md) always join
         // the worker prompt when present — the includeProjectRules opt-out was
         // removed. D46: globalConfigDir feeds the ~/.plato/PLATO.md fallback.
-        // The loop calls buildWorkerRole() to assemble the joined prompt; the
-        // Academy override (role above) is layered on top.
+        // D47e: no Academy worker role override — the doer's prompt is the same
+        // in every mode (project PLATO.md > global PLATO.md > bundled default).
         globalConfigDir: this.homePlatoDir(),
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }

@@ -14,6 +14,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { TeamMember } from './config.js';
+import { ROLE_MAX_CHARS } from './config.js';
+import { PHILOSOPHER_COLORS, findColor } from './colors.js';
 import { PERSONAS, findPersona } from './personas.js';
 
 export interface DuoPhilosopher {
@@ -25,6 +28,8 @@ export interface DuoPhilosopher {
   role?: string;
   /** '<connection>:<model>' ref; empty -> the worker's ref (duo has none). */
   model?: string;
+  /** D47f: identity colour id (PHILOSOPHER_COLORS); absent -> violet. */
+  color?: string;
   pause?: boolean;
   cancel?: boolean;
   maxInterventions?: number;
@@ -109,12 +114,32 @@ export function parseDuoConfig(text: string): DuoConfig {
       case 'name':
         ph.name = unquote(val);
         break;
-      case 'role':
-        ph.role = unquote(val);
+      case 'role': {
+        // D47g: same cap as ACADEMY.yaml — one role rule for both files.
+        const r = unquote(val);
+        if (r.length > ROLE_MAX_CHARS) {
+          fail(
+            i,
+            `role is ${r.length} characters — the maximum is ${ROLE_MAX_CHARS}`,
+          );
+        }
+        ph.role = r;
         break;
+      }
       case 'model':
         ph.model = unquote(val);
         break;
+      case 'color': {
+        const c = unquote(val);
+        if (!findColor(c)) {
+          fail(
+            i,
+            `unknown color '${c}' — use one of ${PHILOSOPHER_COLORS.map((x) => x.id).join(', ')}`,
+          );
+        }
+        ph.color = c;
+        break;
+      }
       case 'pause':
       case 'cancel': {
         const v = unquote(val);
@@ -164,6 +189,36 @@ export function defaultDuoPhilosopher(): DuoPhilosopher {
   return { persona: 'aristotle' };
 }
 
+/**
+ * D47e: the starter council used when no ACADEMY.yaml exists (Open-with-no-file
+ * and the Settings pre-seed). Philosophers only — Plato is the implicit doer
+ * in every mode, so the file carries no worker. The two philosophers are the
+ * orthogonal pair the founder picked: Aristotle judges claims, Pythagoras
+ * judges structure. `workerModel` seeds each philosopher's own model ref
+ * (each member needs one); the doer's model is the chat composer's.
+ *
+ * D47f: every field the editor can show is written here — role, powers and
+ * colour included — so a file created by Open ACADEMY.yaml is complete and
+ * re-opening it shows no blank Role or Powers field.
+ */
+export function defaultAcademyMembers(workerModel: string): TeamMember[] {
+  return (['aristotle', 'pythagoras'] as const).map((id, i) => {
+    const persona = findPersona(id);
+    return {
+      name: persona ? persona.name : id,
+      kind: 'philosopher',
+      model: workerModel,
+      persona: id,
+      role: persona ? persona.role : '',
+      guidance: true,
+      pause: false,
+      cancel: false,
+      maxInterventions: 5,
+      color: PHILOSOPHER_COLORS[i]?.id,
+    };
+  });
+}
+
 /** Resolves a (possibly default) philosopher to the run() observer spec. */
 export function duoObserverSpec(
   ph: DuoPhilosopher,
@@ -176,6 +231,8 @@ export function duoObserverSpec(
   pause: boolean;
   cancel: boolean;
   maxInterventions: number;
+  /** D47f: identity colour id; a duo philosopher defaults to the first one. */
+  color: string;
 } {
   const persona = findPersona(ph.persona) ?? PERSONAS[0]!;
   const name = ph.name?.trim();
@@ -189,5 +246,6 @@ export function duoObserverSpec(
     pause: ph.pause ?? false,
     cancel: ph.cancel ?? false,
     maxInterventions: ph.maxInterventions ?? 5,
+    color: findColor(ph.color)?.id ?? PHILOSOPHER_COLORS[0]!.id,
   };
 }

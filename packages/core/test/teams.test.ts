@@ -18,43 +18,67 @@ afterEach(() => {
 
 const VALID = `
 academy:
-  name: hcad-audit
+  name: lyceum
 members:
-  - name: plato
-    model: anthropic:claude-sonnet-4-5
-    role: "You fix Android Java bugs."
-    kind: worker
   - name: aristotle
     kind: philosopher
-    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    model: anthropic:claude-sonnet-4-5
     role: "A skeptical senior reviewer."
     guidance: true
     pause: false
     cancel: true
     maxInterventions: 3
+  - name: pythagoras
+    kind: philosopher
+    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    role: "Checks structure and counts."
+    guidance: true
 `;
 
 describe('parseTeamConfig', () => {
-  it('parses a full valid academy with worker + philosopher tiers', () => {
+  it('parses a council of philosophers with tiers', () => {
     const t = parseTeamConfig(VALID);
-    expect(t.name).toBe('hcad-audit');
+    expect(t.name).toBe('lyceum');
     expect(t.members.length).toBe(2);
-    const worker = t.members[0]!;
-    expect(worker).toMatchObject({
-      name: 'plato',
-      model: 'anthropic:claude-sonnet-4-5',
-      role: 'You fix Android Java bugs.',
-      kind: 'worker',
-    });
-    const phil = t.members[1]!;
+    const phil = t.members[0]!;
     expect(phil).toMatchObject({
       name: 'aristotle',
       kind: 'philosopher',
+      model: 'anthropic:claude-sonnet-4-5',
+      role: 'A skeptical senior reviewer.',
       guidance: true,
       pause: false,
       cancel: true,
       maxInterventions: 3,
     });
+    expect(t.members[1]!.name).toBe('pythagoras');
+  });
+
+  // D47d: a philosopher may name a PERSONAS id as its identity anchor.
+  it('parses the optional persona key on a philosopher', () => {
+    const t = parseTeamConfig(
+      'members:\n' +
+        '  - name: aristotle\n    model: anthropic:claude-sonnet-4-5\n' +
+        "    kind: philosopher\n    persona: aristotle\n    guidance: true\n" +
+        '  - name: pythagoras\n    model: anthropic:claude-sonnet-4-5\n' +
+        "    kind: philosopher\n    persona: pythagoras\n    guidance: true\n",
+    );
+    expect(t.members[0]?.persona).toBe('aristotle');
+    expect(t.members[1]?.persona).toBe('pythagoras');
+  });
+
+  // D47e: the file carries no worker — Plato is the implicit doer.
+  it("rejects 'kind: worker' with a clear message (D47e)", () => {
+    expect(() =>
+      parseTeamConfig(`
+members:
+  - name: plato
+    model: anthropic:claude-sonnet-4-5
+    kind: worker
+  - name: aristotle
+    model: anthropic:claude-sonnet-4-5
+`),
+    ).toThrowError(/no longer a member/);
   });
 
   it('accepts the legacy team: header (renamed but tolerated)', () => {
@@ -62,20 +86,24 @@ describe('parseTeamConfig', () => {
 team:
   name: legacy
 members:
-  - name: w
+  - name: a
+    model: anthropic:claude-sonnet-4-5
+  - name: b
     model: anthropic:claude-sonnet-4-5
 `);
     expect(t.name).toBe('legacy');
   });
 
-  it('defaults kind to worker when omitted', () => {
+  it('defaults kind to philosopher when omitted', () => {
     const t = parseTeamConfig(`
 members:
-  - name: solo
+  - name: a
+    model: anthropic:claude-sonnet-4-5
+  - name: b
     model: anthropic:claude-sonnet-4-5
 `);
-    expect(t.members[0]!.kind).toBe('worker');
-    expect(t.members.length).toBe(1);
+    expect(t.members[0]!.kind).toBe('philosopher');
+    expect(t.members.length).toBe(2);
   });
 
   it('rejects unknown member keys loudly with the line number', () => {
@@ -101,27 +129,16 @@ members:
     ).toThrowError(/duplicate member name 'x'/);
   });
 
-  it('rejects zero workers (philosophers only)', () => {
+  // D47e: a council needs at least two philosophers.
+  it('rejects a single-philosopher council', () => {
     expect(() =>
       parseTeamConfig(`
 members:
-  - name: watchman
+  - name: only
     kind: philosopher
     model: anthropic:claude-3-5-haiku-latest
 `),
-    ).toThrowError(/no worker member/);
-  });
-
-  it('rejects two workers (D31c: exactly one)', () => {
-    expect(() =>
-      parseTeamConfig(`
-members:
-  - name: a
-    model: anthropic:claude-sonnet-4-5
-  - name: b
-    model: anthropic:claude-opus-4-1
-`),
-    ).toThrowError(/exactly one worker/);
+    ).toThrowError(/at least 2/);
   });
 
   it('rejects more than five philosophers', () => {
@@ -133,8 +150,7 @@ members:
       )
       .join('\n');
     expect(() =>
-      parseTeamConfig(`members:\n  - name: w
-    model: anthropic:claude-sonnet-4-5\n${members}\n`),
+      parseTeamConfig(`members:\n${members}\n`),
     ).toThrowError(/at most 5/);
   });
 
@@ -143,7 +159,9 @@ members:
       parseTeamConfig(`
 members:
   - name: x
-    kind: worker
+    kind: philosopher
+  - name: y
+    kind: philosopher
 `),
     ).toThrowError(/missing 'model'/);
   });
@@ -154,6 +172,8 @@ members:
 members:
   - name: x
     model: claude-sonnet-4-5
+  - name: y
+    model: anthropic:claude-sonnet-4-5
 `),
     ).toThrowError(/'<connection>:<model>' ref/);
   });
@@ -166,6 +186,8 @@ members:
     model: anthropic:claude-sonnet-4-5
     kind: philosopher
     guidance: maybe
+  - name: y
+    model: anthropic:claude-sonnet-4-5
 `),
     ).toThrowError(/guidance must be true or false/);
   });
@@ -190,7 +212,7 @@ members:
     model: anthropic:claude-sonnet-4-5
     kind: coder
 `),
-    ).toThrowError(/renamed — use 'worker' or 'philosopher'/);
+    ).toThrowError(/renamed — use 'philosopher'/);
     expect(() =>
       parseTeamConfig(`
 members:
@@ -198,7 +220,7 @@ members:
     model: anthropic:claude-sonnet-4-5
     kind: observer
 `),
-    ).toThrowError(/renamed — use 'worker' or 'philosopher'/);
+    ).toThrowError(/renamed — use 'philosopher'/);
   });
 });
 
@@ -231,11 +253,12 @@ describe('loadTeamConfig', () => {
   it('loads ACADEMY.yaml from the config dir (D46: ~/.plato)', () => {
     writeFileSync(
       join(dir, 'ACADEMY.yaml'),
-      'members:\n  - name: w\n    model: anthropic:claude-sonnet-4-5\n',
+      'members:\n  - name: a\n    model: anthropic:claude-sonnet-4-5\n'
+        + '  - name: b\n    model: anthropic:claude-sonnet-4-5\n',
     );
     const t = loadTeamConfig(dir);
-    expect(t?.members[0]?.name).toBe('w');
-    expect(t?.members[0]?.kind).toBe('worker');
+    expect(t?.members[0]?.name).toBe('a');
+    expect(t?.members[0]?.kind).toBe('philosopher');
   });
 });
 

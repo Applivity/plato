@@ -1,23 +1,36 @@
 /**
- * ACADEMY.yaml reader (D31/D32): tiny zero-dependency parser for the subset
- * we document —
+ * ACADEMY.yaml reader (D31/D32/D47e): tiny zero-dependency parser for the
+ * subset we document —
  *   academy:
- *     name: hcad-audit
+ *     name: lyceum
  *   members:
- *     - name: plato
- *       model: anthropic:claude-sonnet-4-5
- *       role: You fix bugs.
- *       kind: worker
  *     - name: aristotle
  *       kind: philosopher
- *       model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+ *       model: anthropic:claude-sonnet-4-5
+ *       persona: aristotle
  *       guidance: true
  *       maxInterventions: 3
- * Anything fancier is rejected with a clear error rather than guessed.
- * Validation is loud, never silent (D11 root cause).
+ * D47e: there is no worker member. Plato (the doer) is implicit in every
+ * mode and its model is the chat composer's; Solo/Duo/Academy are the same
+ * one worker with 0 / 1 / N philosophers (D45a-3). Anything fancier is
+ * rejected with a clear error rather than guessed. Validation is loud,
+ * never silent (D11 root cause).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PHILOSOPHER_COLORS, findColor } from './colors.js';
+
+/**
+ * D47g: the role prompt is injected into the observer's system prompt on EVERY
+ * turn (observer.ts: `SYSTEM + '\n' + role`), so an unbounded role is a
+ * per-call token cost, not just a layout problem. 1000 chars is ~4x the
+ * longest shipped persona role (Aristotle, 249) — generous for a custom role,
+ * while still forcing a philosopher to be brief. Enforced here so a
+ * hand-pasted 2000-char line in the yaml is rejected, not silently accepted.
+ * The webview carries the same number (it cannot import core) and mirrors it
+ * with `maxlength`, so the UI cannot produce a file this parser refuses.
+ */
+export const ROLE_MAX_CHARS = 1000;
 
 export interface TeamMember {
   name: string;
@@ -25,8 +38,20 @@ export interface TeamMember {
   model: string;
   /** Extra system text for this member. */
   role?: string;
-  kind: 'worker' | 'philosopher';
-  /** Philosopher tiers (D30); ignored for workers. */
+  /** D47e: Academy members are philosophers only; Plato is the implicit doer. */
+  kind: 'philosopher';
+  /**
+   * D47d: philosopher identity anchor — one of the PERSONAS ids. Optional;
+   * an empty/absent value means a custom philosopher with no preset.
+   */
+  persona?: string;
+  /**
+   * D47f: identity colour — one of PHILOSOPHER_COLORS ids. Assigned once at
+   * creation and stored, so it never shifts when another member is removed
+   * (unlike an index into the council). Absent = neutral grey.
+   */
+  color?: string;
+  /** Philosopher tiers (D30). */
   guidance?: boolean;
   pause?: boolean;
   cancel?: boolean;
@@ -124,7 +149,7 @@ export function parseTeamConfig(text: string): TeamConfig {
       if (members.some((m) => m.name === n)) {
         fail(i, `duplicate member name '${n}'`);
       }
-      cur = { name: n, model: '', kind: 'worker' };
+      cur = { name: n, model: '', kind: 'philosopher' };
       members.push(cur);
       continue;
     }
@@ -143,21 +168,50 @@ export function parseTeamConfig(text: string): TeamConfig {
         case 'model':
           cur.model = unquote(val);
           break;
-        case 'role':
-          cur.role = unquote(val);
+        case 'role': {
+          // D47g: a role is injected into every observer call, so it is capped.
+          const r = unquote(val);
+          if (r.length > ROLE_MAX_CHARS) {
+            fail(
+              i,
+              `role is ${r.length} characters — the maximum is ${ROLE_MAX_CHARS}`,
+            );
+          }
+          cur.role = r;
           break;
+        }
+        case 'persona':
+          cur.persona = unquote(val);
+          break;
+        case 'color': {
+          const c = unquote(val);
+          if (!findColor(c)) {
+            fail(
+              i,
+              `unknown color '${c}' — use one of ${PHILOSOPHER_COLORS.map((x) => x.id).join(', ')}`,
+            );
+          }
+          cur.color = c;
+          break;
+        }
         case 'kind': {
           const k = unquote(val);
           if (k === 'coder' || k === 'observer') {
             fail(
               i,
-              `kind '${k}' was renamed — use 'worker' or 'philosopher' (D32)`,
+              `kind '${k}' was renamed — use 'philosopher' (D32)`,
             );
           }
-          if (k !== 'worker' && k !== 'philosopher') {
-            fail(i, `kind must be 'worker' or 'philosopher', got '${k}'`);
+          if (k === 'worker') {
+            fail(
+              i,
+              "'kind: worker' is no longer a member — Plato is always the doer (D47e). Remove this entry.",
+            );
           }
-          cur.kind = k as 'worker' | 'philosopher';
+          if (k !== 'philosopher') {
+            fail(i, `kind must be 'philosopher', got '${k}'`);
+          }
+          cur.kind = 'philosopher';
           break;
         }
         case 'guidance':
@@ -189,26 +243,20 @@ export function parseTeamConfig(text: string): TeamConfig {
   return finishTeam(members, teamName);
 }
 
-/** Cross-member validation (D31c/D32f). */
+/** Cross-member validation (D31c/D32f/D47e). */
 function finishTeam(members: TeamMember[], teamName: string): TeamConfig {
   if (members.length === 0) {
     throw new TeamConfigError('ACADEMY.yaml: no members found under members:');
   }
-  const workers = members.filter((m) => m.kind === 'worker');
-  if (workers.length === 0) {
+  // D47e: every member is a philosopher; Plato is the implicit doer.
+  if (members.length < 2) {
     throw new TeamConfigError(
-      'ACADEMY.yaml: no worker member — add kind: worker',
+      `ACADEMY.yaml: ${members.length} philosopher — a council needs at least 2 (D47e)`,
     );
   }
-  if (workers.length > 1) {
+  if (members.length > 5) {
     throw new TeamConfigError(
-      `ACADEMY.yaml: ${workers.length} worker members — exactly one worker is allowed (D31c)`,
-    );
-  }
-  const philosophers = members.filter((m) => m.kind === 'philosopher');
-  if (philosophers.length > 5) {
-    throw new TeamConfigError(
-      `ACADEMY.yaml: ${philosophers.length} philosopher members — at most 5 (D46)`,
+      `ACADEMY.yaml: ${members.length} philosophers — at most 5 (D46)`,
     );
   }
   for (const m of members) {

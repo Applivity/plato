@@ -179,13 +179,24 @@ export function chatHtml(): string {
                       font-family:var(--vscode-editor-font-family, monospace);
                       background:var(--vscode-textCodeBlock-background, rgba(128,128,128,.09));
                       padding:4px 8px; border-radius:4px;
-                      border-left:2px solid var(--pl-border); }
+                      border-left:2px solid var(--vscode-charts-blue,#4aa3df);
+                      display:inline-block; }
+  /* Leading label so the chip reads as a tool summary, not stray text. */
+  .msg.tool-summary::before { content:'tools '; opacity:.6; }
   .msg .who { display:block; font-size:10px; letter-spacing:.08em;
               text-transform:uppercase; color:var(--pl-muted);
               margin-bottom:2px; }
   .msg.you { border-left:2px solid var(--pl-accent); padding-left:8px; }
   .msg.bot  { border-left:2px solid var(--pl-border); padding-left:8px; }
   .msg.sys, .msg.tool { color:var(--pl-muted); font-size:12px; }
+  /* D47f: a philosopher notice is tinted with that philosopher's colour, so
+     two of them speaking in a row are told apart at a glance. */
+  .msg.philosopher { border-left:2px solid var(--accent,var(--pl-border));
+                     padding-left:8px; color:var(--pl-muted); font-size:12px; }
+  .msg.philosopher .pdot { display:inline-block; width:7px; height:7px;
+                           border-radius:50%; margin-right:6px;
+                           background:var(--accent,var(--pl-muted));
+                           vertical-align:middle; }
   .msg.tool code { font-family:var(--vscode-editor-font-family, monospace); }
   .card { margin:6px 0 12px; border:1px solid var(--pl-border);
           border-radius:6px; overflow:hidden; }
@@ -328,12 +339,12 @@ export function chatHtml(): string {
   .duo .dhead { display:flex; align-items:center; gap:8px; margin:6px 0 2px; }
   .duo .dt { font-size:12.5px; font-weight:600; }
   .duo .dsp { flex:1; }
-  .duo .help { flex:none; width:16px; height:16px; padding:0; line-height:14px;
+  .duo .help, .help { flex:none; width:16px; height:16px; padding:0; line-height:14px;
                border-radius:50%; border:1px solid var(--pl-border);
                background:transparent; color:var(--pl-muted);
                font-size:9.5px; cursor:help; text-align:center;
                font-family:inherit; }
-  .duo .help:hover { color:var(--vscode-editor-foreground);
+  .duo .help:hover, .help:hover { color:var(--vscode-editor-foreground);
                      border-color:var(--vscode-focusBorder,#6a6a6a); }
   .duo .fld { margin-top:14px; }
   .duo .fld > label { display:flex; align-items:center; gap:6px;
@@ -344,16 +355,37 @@ export function chatHtml(): string {
               color:var(--vscode-input-foreground); outline:none; }
   .duo .fld select.ctl, .duo .fld textarea.ctl,
   .duo .fld input.ctl { width:100%; box-sizing:border-box; }
-  .duo textarea.ctl { line-height:1.5; resize:vertical; }
-  .duo textarea.ctl.rolearea { min-height:128px; }
-  .duo textarea.ctl.memrole { min-height:72px; }
+  .duo textarea.ctl { line-height:1.5; resize:none; overflow-y:auto; }
   .duo input[type=number].ctl { width:64px; padding:3px 6px; }
-  .duo .cols { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+  /* D47f: the name is an inline identity control, not a form field — it sits
+     next to the colour dot and grows with its text, so the header reads as a
+     title line instead of a grey disabled box. */
+  .duo .mrow .mhead input.mname { flex:0 1 auto; min-width:60px; max-width:60%;
+               background:transparent; border-color:transparent; font-weight:600;
+               font-size:13px; padding-left:2px; }
+  .duo .mrow .mhead input.mname:hover { border-color:var(--pl-border); }
+  .duo .mrow .mhead input.mname:focus { border-color:var(--vscode-focusBorder,#6a6a6a);
+               background:var(--vscode-input-background); }
+  /* D47g: the Role box is auto-fitted to its text plus one line in JS. The
+     height the text needs depends on the PANEL WIDTH, so no fixed min-height
+     can be right (64px hid ~2.5 lines at a 420px panel). min-height is a
+     3-line floor; max-height stops a pasted essay from owning the page. */
+  .duo .mrow textarea.ctl.rolearea { min-height:64px; max-height:300px; }
+  /* The character counter sits at the far right of the Role label row, so it
+     never moves when the box grows (a counter under the box would). */
+  .duo .fld > label .ccount { margin-left:auto; flex:none;
+               font-variant-numeric:tabular-nums; }
+  .duo .fld > label .ccount.is-warn { color:var(--vscode-charts-yellow,#cca700); }
+  .duo .fld > label .ccount.is-full { color:var(--vscode-testing-iconFailed,#f14c4c); }
   .duo .beh { display:inline-flex; align-items:center; gap:6px; }
   .duo .toggles { display:flex; gap:14px; flex-wrap:wrap; }
-  /* Academy member cards. */
+  /* Member cards (D47f): the SAME card is used by Duo and Academy — header is
+     the identity line (colour dot + display name + Remove), body is
+     Persona / Role / Model / Powers. The accent colour comes from the member's
+     own color field, set via the --accent custom property in JS. */
   .duo .mrow { display:block; border:1px solid var(--pl-border); border-radius:6px;
-               padding:10px 12px; margin:10px 0; }
+               padding:10px 12px; margin:10px 0;
+               border-left:3px solid var(--accent,var(--pl-border)); }
   .duo .mrow .mhead { display:flex; gap:8px; align-items:center; }
   .duo .mrow .mhead input.ctl { flex:1 1 auto; min-width:0; }
   .duo .mrow .mhead select.ctl { width:auto; }
@@ -362,6 +394,46 @@ export function chatHtml(): string {
   .duo .mrow .mrow-head select.ctl { width:auto; }
   .duo > .note { margin-top:16px; }
   .duo .dhead { min-height:26px; }
+  /* The colour dot: one per philosopher, identical in the Settings card, the
+     chat notices, and the run-start team card. */
+  .duo .cdot { flex:none; width:10px; height:10px; border-radius:50%;
+               background:var(--accent,var(--pl-muted)); }
+  /* D47c: Academy editor layout. The council is the identity of the whole
+     block, so its name sits in the header next to the title; each member card
+     leads with a colour dot + name and pushes Remove to the far right, so a
+     destructive action never sits between two inputs. */
+  .duo .dhead .dname { flex:0 1 200px; min-width:110px; }
+  .duo .dhead .dcount { flex:none; font-size:11.5px; color:var(--pl-muted);
+                        font-variant-numeric:tabular-nums; }
+  .duo .dhead .btn { flex:none; white-space:nowrap; }
+  .duo .subhead { display:flex; align-items:center; gap:8px;
+                  margin:2px 0 6px; font-size:11.5px; color:var(--pl-muted); }
+  /* D47e: Plato (the doer) model control — one session-wide value, shown in
+     Duo and Academy as well as the composer picker. */
+  .duo .doer-row { display:flex; align-items:center; gap:8px;
+                   margin:8px 0 2px; }
+  .duo .doer-label { flex:none; font-size:12px; font-weight:600; }
+  .duo .doer-model { flex:0 1 240px; min-width:140px; }
+  .duo .mhead { display:flex; align-items:center; gap:8px; }
+  .duo .mhead .mname { flex:1 1 auto; min-width:0; }
+  .duo .mhead .mspacer { flex:1 1 auto; }
+  .duo .mkind { flex:none; font-size:10px; font-weight:600;
+                letter-spacing:.06em; text-transform:uppercase;
+                padding:2px 7px; border-radius:10px;
+                border:1px solid var(--pl-border); color:var(--pl-muted); }
+  .duo .mrow .btn-danger { flex:none; }
+  .duo .mhead .btn { flex:none; white-space:nowrap; }
+  .duo .starter { display:flex; align-items:flex-start; gap:8px;
+                  margin:10px 0; padding:8px 10px; border-radius:6px;
+                  border:1px dashed var(--pl-border);
+                  font-size:11.5px; color:var(--pl-muted); line-height:1.5; }
+  .duo .starter.warn { border-style:solid;
+                       border-color:var(--vscode-charts-yellow,#cca700);
+                       color:var(--vscode-editor-foreground); }
+  .duo .listfoot { display:flex; align-items:center; gap:10px;
+                   margin-top:12px; }
+  .duo .listfoot .lcount { font-size:11.5px; color:var(--pl-muted);
+                           font-variant-numeric:tabular-nums; }
   /* D47b: powers are switch toggles, spaced so each '?' tooltip sits with
      its own control. The min-width:0 reset is required: the .sblock label
      rule (above) sets min-width:140px on every label in a section block,
@@ -482,11 +554,30 @@ export function chatHtml(): string {
                color:var(--pl-muted); }
   .btn-ghost:hover { color:var(--vscode-editor-foreground);
                      text-decoration:underline; }
-  .btn-icon-danger { background:transparent; border:1px solid transparent;
-                     color:var(--pl-muted); padding:3px 7px; border-radius:4px;
-                     font-size:11.5px; }
-  .btn-icon-danger:hover { color:var(--vscode-testing-iconFailed,#f14c4c);
-                           border-color:rgba(241,76,76,.35); }
+  /* D47g: the destructive icon button. The name MUST match what sbtn emits
+     ('btn-' + variant) — the old '.btn-icon-danger' spelling never matched,
+     so the browser painted its default white button. A small square that
+     borrows the header-icon language (#hist/#gear) and only turns red on
+     hover, so a card of philosophers is not a wall of red. */
+  .btn-danger { display:inline-flex; align-items:center; justify-content:center;
+                width:24px; height:24px; padding:0; flex:none;
+                background:transparent; border:1px solid transparent;
+                border-radius:4px; color:var(--pl-muted);
+                font-size:14px; line-height:1; }
+  .btn-danger:hover { color:var(--vscode-testing-iconFailed,#f14c4c);
+                      border-color:rgba(241,76,76,.45);
+                      background:rgba(241,76,76,.12); }
+  .btn-danger:focus-visible { outline:1px solid var(--vscode-focusBorder,#6a6a6a);
+                              outline-offset:1px; }
+  /* D47g: a wall, not a dead click. NOT the native disabled attribute —
+     that suppresses mouse events, so the tooltip could never explain the
+     reason. aria-disabled keeps it visible and hoverable while the click is
+     swallowed in JS, and the footer states the range permanently. */
+  .btn-danger.is-off, .btn-danger.is-off:hover {
+                color:var(--pl-muted); opacity:.35; cursor:default;
+                border-color:transparent; background:transparent; }
+  .btn.is-off, .btn.is-off:hover { opacity:.45; cursor:default;
+                border-color:var(--pl-border); background:transparent; }
   .note { font-size:11.5px; color:var(--pl-muted); margin-top:4px;
           line-height:1.45; }
   .msg.bot p { margin:.35em 0; }
@@ -535,6 +626,10 @@ export function chatHtml(): string {
                         text-transform:uppercase; letter-spacing:.04em; }
   .team-card .tm-kind.is-coder { background:rgba(70,130,180,.2); }
   .team-card .tm-kind.is-observer { background:rgba(140,100,180,.2); }
+  /* D47f: the same colour as the Settings card and the notices. */
+  .team-card .tdot { display:inline-block; width:8px; height:8px;
+                     border-radius:50%; margin-right:6px;
+                     background:var(--accent,var(--pl-muted)); flex:none; }
   .team-card .tm-model { color:var(--pl-muted); }
   .team-card .tm-tier { font-size:10px; color:var(--pl-muted);
                         border:1px solid var(--pl-border); border-radius:8px;
@@ -1377,6 +1472,43 @@ export function chatHtml(): string {
     currentModelLabel = label;
     currentModelMaxCtx = maxCtx;
     modelBtnLabel.textContent = label || (value ? value : 'select model');
+    // D47e: the doer rows in Duo/Academy show the same value as the composer —
+    // one session-wide model, two views of it.
+    for (const fn of doerRowPaints) { fn(); }
+  };
+  // Registered by doerRow(); each paints its label from currentModel/Label.
+  const doerRowPaints = [];
+  /**
+   * D47e: a model control for Plato (the doer) inside a mode block. It posts
+   * the same {type:'model'} message as the composer picker, so both views stay
+   * synced by construction — there is no second stored value.
+   */
+  const doerRow = (intro) => {
+    const row = el('div', 'doer-row');
+    row.appendChild(el('span', 'doer-label', "Plato\u2019s model")); // D47f: was 'Plato — the doer'
+    const selEl = el('select', 'ctl doer-model');
+    const paint = () => {
+      selEl.textContent = '';
+      const items = lastModelItems.slice();
+      if (currentModel && !items.some((it) => String(it.value) === currentModel)) {
+        items.push({ value: currentModel, label: currentModelLabel || currentModel });
+      }
+      for (const it of items) {
+        const o = el('option', null, String(it.label || it.value));
+        o.value = String(it.value);
+        selEl.appendChild(o);
+      }
+      selEl.value = currentModel;
+    };
+    paint();
+    doerRowPaints.push(paint);
+    selEl.addEventListener('change', () => {
+      vsapi.postMessage({ type: 'model', value: selEl.value });
+    });
+    row.appendChild(selEl);
+    row.appendChild(iHelp(intro + ' Shared with this chat and every mode; '
+      + 'change it here or in the composer - it is the same setting.'));
+    return row;
   };
   const renderModelPop = () => {
     modelPop.textContent = '';
@@ -1744,8 +1876,11 @@ export function chatHtml(): string {
     return n;
   }
   function sbtn(label, fn, variant) {
-    // D38: variant is one of 'primary' | 'secondary' | 'ghost' | 'danger'
-    // (defaults to 'secondary'). The class matches the .btn-* taxonomy.
+    // D38: variant is one of 'primary' | 'secondary' | 'ghost' | 'danger'.
+    // (defaults to 'secondary'). D47g: 'danger' now maps to the class the CSS
+    // actually defines (.btn-danger); it previously emitted .btn-danger while
+    // the stylesheet defined .btn-icon-danger, so the variant had NO rule and
+    // the browser painted its default white button.
     const cls = 'btn btn-' + (variant || 'secondary');
     const b = el('button', cls, label);
     b.type = 'button'; // never submit an enclosing form (0.4.2 bug)
@@ -1835,8 +1970,260 @@ export function chatHtml(): string {
     return b;
   }
 
+  // --- D47f: philosopher colours. -----------------------------------------
+  // The palette arrives with the settings payload (this webview has no
+  // imports). A member's colour is STORED in the yaml, so it never shifts when
+  // another philosopher is removed.
+  let colorPalette = [];
+  const setColorPalette = (list) => {
+    colorPalette = Array.isArray(list) ? list.slice() : [];
+  };
+  const colorHex = (id) => {
+    const hit = colorPalette.find((c) => c.id === id);
+    return hit ? hit.hex : '';
+  };
+  /** The first palette colour no member holds, so a new one is always distinct. */
+  const firstUnusedColor = (used) => {
+    const taken = {};
+    for (const u of used) { if (u) { taken[u] = true; } }
+    for (const c of colorPalette) { if (!taken[c.id]) { return c.id; } }
+    return colorPalette.length ? colorPalette[used.length % colorPalette.length].id : '';
+  };
+  /** One colour dot, used by the Settings card and the team card. */
+  const colorDot = (cls, hex) => {
+    const d = el('span', cls);
+    if (hex) { d.style.background = hex; }
+    return d;
+  };
+
+  // --- D47g: role cap + auto-fitting Role box. ----------------------------
+  // The cap mirrors ROLE_MAX_CHARS in core — this webview cannot import it, so
+  // the host sends the number and the parser enforces the same one. The box
+  // also cannot TYPE an over-long role (maxlength), so the UI can never write
+  // a file the parser would then reject.
+  let roleMax = 1000;
+  const setRoleMax = (n) => { if (typeof n === 'number' && n > 0) { roleMax = n; } };
+
+  /** Collapse to one line — the yaml cannot hold a role across lines.
+   *  NOTE: this file is a template literal, so the regex needs a DOUBLE
+   *  backslash. A single one is eaten by the literal and compiles to /s+/,
+   *  which matches the letter s and silently does nothing (D47g bug). */
+  const oneLine = (s) => String(s).replace(/\\s+/g, ' ').trim();
+
+  /**
+   * Fit the Role box to its text plus ONE line, so there is always breathing
+   * room at the bottom without an empty line in the value. Must re-run when
+   * the panel width changes: the same text needs more lines in a narrow panel,
+   * which is exactly how a fixed min-height clipped real roles.
+   *
+   * Measured with a hidden MIRROR of the same text, not the textarea's own
+   * scrollHeight: a textarea reports scrollHeight rounded up generously (5.01
+   * lines for text that needs 4), which rounded the box to a whole extra line.
+   * The mirror uses the resolved font, so it is exact.
+   */
+  const fitRole = (t) => {
+    if (!t.isConnected) { return; }
+    const cs = getComputedStyle(t);
+    const lh = parseFloat(cs.lineHeight) || 18.75;
+    const padT = parseFloat(cs.paddingTop) || 0;
+    const padB = parseFloat(cs.paddingBottom) || 0;
+    const border = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+    let mirror = t.__mirror;
+    if (!mirror) {
+      mirror = document.createElement('div');
+      mirror.style.position = 'absolute';
+      mirror.style.visibility = 'hidden';
+      mirror.style.pointerEvents = 'none';
+      mirror.style.whiteSpace = 'pre-wrap';
+      mirror.style.wordBreak = 'break-word';
+      mirror.style.top = '0';
+      mirror.style.left = '0';
+      document.body.appendChild(mirror);
+      t.__mirror = mirror;
+    }
+    mirror.style.font = cs.font;
+    mirror.style.letterSpacing = cs.letterSpacing;
+    mirror.style.lineHeight = cs.lineHeight;
+    // clientWidth is the content width; the textarea reserves its own scrollbar.
+    mirror.style.width = Math.max(20, t.clientWidth) + 'px';
+    mirror.textContent = t.value.length > 0 ? t.value : (t.placeholder || ' ');
+    const textH = mirror.getBoundingClientRect().height;
+    const lines = Math.max(1, Math.round(textH / lh));
+    // Exactly ONE spare line below the text.
+    t.style.height = ((lines + 1) * lh + padT + padB + border) + 'px';
+  };
+  // One observer for the whole settings page: a fit is only needed when the
+  // WIDTH changes (the box's own height change must not re-trigger it).
+  const roleBoxes = [];
+  let roleLastW = 0;
+  const fitAllRoles = () => { for (const t of roleBoxes) { if (t.isConnected) { fitRole(t); } } };
+
+  /** The "n / max" counter that lives at the right of a field label row. */
+  const charCount = (box) => {
+    const c = el('span', 'ccount');
+    const paint = () => {
+      const n = box.value.length;
+      c.textContent = n + ' / ' + roleMax;
+      c.classList.toggle('is-full', n >= roleMax);
+      c.classList.toggle('is-warn', n < roleMax && n >= roleMax * 0.9);
+    };
+    paint();
+    return { node: c, paint };
+  };
+
+  /** A card that fits its own text and one line, plus the fill-size helper. */
+  const sizeNameInput = (nIn) => {
+    const fit = () => { nIn.style.width = Math.max(6, nIn.value.length + 2) + 'ch'; };
+    fit();
+    nIn.addEventListener('input', fit);
+    return fit;
+  };
+
+  /**
+   * D47f: ONE philosopher card, shared by Duo and Academy so the two panels
+   * cannot drift apart. The header is the identity line — colour dot + display
+   * name + Remove (kept far right, never between two inputs) — and the body is
+   * Persona, Role, Model, Powers in that order in both modes.
+   *
+   * The helpers object supplies lab and beh, which are defined later in this
+   * function; they are passed in rather than captured so this builder stays
+   * hoist-safe. onPersona receives the two inputs it may refill, so each mode
+   * keeps its own save semantics without duplicating the layout.
+   */
+  const philosopherCard = (opts, helpers) => {
+    const { lab, beh } = helpers;
+    const {
+      hex, name, namePlaceholder, canRemove, onRename, onRemove, removeTip,
+      personaOptions, personaValue, onPersona, onRoleDraft,
+      roleLabel, roleHelp, rolePlaceholder,
+      modelOptions, modelValue, modelLabel, modelHelp, onModel,
+      pause, onPause, pauseLabel,
+      cancel, onCancel, cancelLabel,
+      maxInterventions, onMax, capHelp,
+      powersHelp,
+    } = opts;
+
+    const card = el('div', 'mrow');
+    if (hex) { card.style.setProperty('--accent', hex); }
+
+    // Header: identity.
+    const top = el('div', 'mhead');
+    top.appendChild(colorDot('cdot', hex));
+    const nIn = el('input');
+    nIn.type = 'text';
+    nIn.className = 'ctl mname';
+    nIn.value = name;
+    nIn.placeholder = namePlaceholder;
+    // Size the inline name to its text so the header reads as a title line.
+    sizeNameInput(nIn);
+    nIn.addEventListener('change', () => onRename(nIn.value.trim()));
+    top.appendChild(nIn);
+    // D47g: Remove is DRAWN at both walls (was: hidden at the floor), so the
+    // layout never reflows when the count crosses 2. At the floor it is
+    // aria-disabled rather than natively disabled — a native disabled button
+    // emits no mouse events, so its tooltip could never explain the reason.
+    const removeBtn = sbtn('\u2715', () => {
+      if (removeBtn.classList.contains('is-off')) { return; }
+      onRemove();
+    }, 'danger');
+    removeBtn.setAttribute('aria-label', 'Remove philosopher');
+    removeBtn.setAttribute('title', '');
+    removeBtn.addEventListener('mouseenter', (ev) => tipShow(ev, removeTip));
+    removeBtn.addEventListener('mousemove', tipMove);
+    removeBtn.addEventListener('mouseleave', tipHide);
+    removeBtn.addEventListener('focus', (ev) => tipShow(ev, removeTip));
+    removeBtn.addEventListener('blur', tipHide);
+    if (!canRemove) {
+      removeBtn.classList.add('is-off');
+      removeBtn.setAttribute('aria-disabled', 'true');
+    }
+    // Always rendered; Duo's single philosopher is not a bounded list, so it
+    // opts out with showRemove: false.
+    if (opts.showRemove !== false) {
+      top.appendChild(el('span', 'mspacer'));
+      top.appendChild(removeBtn);
+    }
+    card.appendChild(top);
+
+    // Persona.
+    const pSel = sel(personaOptions, personaValue);
+    pSel.className = 'ctl';
+    const fldP = el('div', 'fld');
+    fldP.appendChild(lab('Persona', 'A preset: it supplies the default display name and role prompt. Pick one, then edit the role below to shape it.'));
+    fldP.appendChild(pSel);
+    card.appendChild(fldP);
+
+    // Role. D47g: capped, counted, and fitted to its own text plus one line.
+    const rIn = document.createElement('textarea');
+    rIn.className = 'ctl rolearea';
+    rIn.value = opts.role;
+    rIn.placeholder = rolePlaceholder;
+    rIn.maxLength = roleMax; // the UI cannot exceed the parser's cap
+    const cc = charCount(rIn);
+    const repaintRole = () => { cc.paint(); fitRole(rIn); };
+    // Keystrokes change both the counter and the height the text needs.
+    rIn.addEventListener('input', repaintRole);
+    // Whitespace is folded on save (the yaml holds one line), so fold it here
+    // too — the box then shows exactly what will be stored.
+    rIn.addEventListener('change', () => {
+      const v = oneLine(rIn.value);
+      if (v !== rIn.value) { rIn.value = v; }
+      onRoleDraft(v);
+      repaintRole();
+    });
+    roleBoxes.push(rIn);
+    const fldR = el('div', 'fld');
+    fldR.appendChild(lab(roleLabel, roleHelp, cc.node));
+    fldR.appendChild(rIn);
+    card.appendChild(fldR);
+    // Fit after the card is in the DOM (scrollHeight is 0 while detached).
+    requestAnimationFrame(repaintRole);
+
+    // Model.
+    const mSel = sel(modelOptions, modelValue);
+    mSel.className = 'ctl';
+    mSel.addEventListener('change', () => onModel(mSel.value));
+    const fldM = el('div', 'fld');
+    fldM.appendChild(lab(modelLabel, modelHelp));
+    fldM.appendChild(mSel);
+    card.appendChild(fldM);
+
+    // Powers.
+    const tr = el('div', 'toggles');
+    tr.appendChild(beh(pause, pauseLabel, 'Allow this philosopher to pause a run at a safe point until you resume.', onPause));
+    tr.appendChild(beh(cancel, cancelLabel, 'Allow this philosopher to stop a run (after the in-flight tool) when it is going wrong.', onCancel));
+    const capWrap = el('div', 'beh');
+    const capLbl = el('label', 'tog', 'Max interventions');
+    const capIn = el('input');
+    capIn.type = 'number';
+    capIn.className = 'ctl';
+    capIn.min = '0';
+    capIn.max = '50';
+    capIn.value = String(maxInterventions);
+    capIn.addEventListener('change', () => onMax(Number(capIn.value) || 5));
+    capLbl.appendChild(capIn);
+    capWrap.appendChild(capLbl);
+    capWrap.appendChild(iHelp(capHelp));
+    tr.appendChild(capWrap);
+    const fldB = el('div', 'fld');
+    fldB.appendChild(lab('Powers', powersHelp));
+    fldB.appendChild(tr);
+    card.appendChild(fldB);
+
+    // Wire the persona picker last so it can refill the controls above it.
+    pSel.addEventListener('change', () => onPersona(pSel.value, { nIn, rIn }));
+
+    return card;
+  };
+
   function showSettings(d) {
     document.body.classList.add('show-settings');
+    // D47f: the palette arrives with the payload; nothing here can import core.
+    setColorPalette((d.orchestration && d.orchestration.colors) || []);
+    // D47g: same for the role cap — one number, enforced by the parser too.
+    setRoleMax(d.orchestration && d.orchestration.roleMaxChars);
+    // Rebuild the fit list: cards from the previous render are gone.
+    roleBoxes.length = 0;
     const body = document.getElementById('sbody');
     body.textContent = '';
     syncOrchChip(d.orchestration || {});
@@ -2097,7 +2484,14 @@ export function chatHtml(): string {
     // not as a separate top-level section. PLATO.md + AGENTS.md/CLAUDE.md
     // always join when present — there is no include opt-out.
     const w = d.workers || { noRoot: true, plato: 'default', agentsFile: null };
-    oblock.appendChild(el('h3', 'shead3 workers-head', 'Plato — project files'));
+    const wh = el('h3', 'shead3 workers-head', 'Plato — project files');
+    // D47f: the explainer moved behind a "?" so the block leads with state.
+    wh.appendChild(iHelp(
+      'A project PLATO.md overrides the global default; with neither, Plato ' +
+      'uses the bundled default. Creating one writes that default so the file ' +
+      'starts where the shipped role leaves off. Your AGENTS.md / CLAUDE.md ' +
+      'stays yours.'));
+    oblock.appendChild(wh);
     const wBlock = el('div', 'workers');
     if (w.noRoot) {
       wBlock.appendChild(el('div', 'note',
@@ -2128,11 +2522,6 @@ export function chatHtml(): string {
           ? w.agentsFile + ' present'
           : 'Not present — Plato reads it when it exists.'));
       pf.appendChild(aline);
-      pf.appendChild(el('div', 'note',
-        'A project PLATO.md overrides the global default; with neither, Plato ' +
-        'uses the bundled default. Creating one writes that default so the file ' +
-        'starts where the shipped role leaves off. Your AGENTS.md / CLAUDE.md ' +
-        'stays yours.'));
       wBlock.appendChild(pf);
     }
     oblock.appendChild(wBlock);
@@ -2141,9 +2530,12 @@ export function chatHtml(): string {
     // single store: every control change posts the whole model (save-duo /
     // save-academy), the host validates + writes it, and re-pushes state.
     // ACADEMY.yaml only shows in Academy mode; duo only in Duo (D45a-4).
-    const lab = (text, help) => {
+    const lab = (text, help, trail) => {
       const l = el('label', null, text);
       if (help) { l.appendChild(iHelp(help)); }
+      // D47g: an optional trailing node (the Role character counter) rides the
+      // label row, so it never moves when the box below it grows.
+      if (trail) { l.appendChild(trail); }
       return l;
     };
     const beh = (checked, text, help, on) => {
@@ -2161,16 +2553,6 @@ export function chatHtml(): string {
       if (help) { w.appendChild(iHelp(help)); }
       return w;
     };
-    const numCap = (value, on) => {
-      const c = el('input');
-      c.type = 'number';
-      c.className = 'ctl';
-      c.min = '0';
-      c.max = '50';
-      c.value = String(value);
-      c.addEventListener('change', () => on(Number(c.value) || 5));
-      return c;
-    };
 
     if (orch.mode === 'academy') {
       const acBox = el('div', 'duo');
@@ -2187,12 +2569,46 @@ export function chatHtml(): string {
         kind: mem.kind === 'philosopher' ? 'philosopher' : 'worker',
         model: String(mem.model || ''),
         role: String(mem.role || ''),
-        guidance: mem.guidance !== false,
+        persona: String(mem.persona || ''),
+        color: String(mem.color || ''),
+        // D47d: guidance is always on, matching Duo (duo.ts hard-codes it).
+        // A philosopher with every power off could never act — a costly noop.
+        guidance: true,
         pause: Boolean(mem.pause),
         cancel: Boolean(mem.cancel),
         maxInterventions: typeof mem.maxInterventions === 'number' ? mem.maxInterventions : 5,
       }));
-      let cname = String(st.name || '');
+
+      // D47e: the doer is implicit (Duo parity) — the editor shows only
+      // philosophers. A starter council seeds two; there is no worker member,
+      // so nothing can silently override the doer.
+      // Persona: same seed semantics as Duo (D47b) — picking one refills the
+      // name/role only while they still equal the previous persona's default.
+      // Declared before the seed below, which resolves each persona's role.
+      const personaOf = (id) => (orch.personas || []).find((p) => p.id === id) || null;
+      const isStarter = members.length === 0;
+      const seedDefaultPhilosophers = () => {
+        const have = new Set(members.map((x) => x.name));
+        for (const id of ['aristotle', 'pythagoras']) {
+          if (have.has(id)) continue;
+          const p = personaOf(id);
+          members.push({
+            name: p ? p.name : id, kind: 'philosopher', model: defModel,
+            // D47f: seed the role and powers too, so the created file is a
+            // complete spec and no field reads blank when it is re-opened.
+            role: p ? p.role : '', persona: id, guidance: true, pause: false,
+            cancel: false, maxInterventions: 5,
+            color: firstUnusedColor(members.map((x) => x.color)),
+          });
+          have.add(id);
+        }
+      };
+      if (members.filter((x) => x.kind === 'philosopher').length < 2) {
+        seedDefaultPhilosophers();
+      }
+      // D47f: a real default so the field is never a blank box — the starter
+      // council is already named, like duo's philosopher is already Aristotle.
+      let cname = String(st.name || '') || (isStarter ? 'Lyceum' : '');
       let nameSeq = 1;
       const uniqueName = (base) => {
         if (!members.some((x) => x.name === base)) return base;
@@ -2208,8 +2624,15 @@ export function chatHtml(): string {
           name: cname.trim(),
           members: members.map((mi) => {
             const o = { name: mi.name, kind: mi.kind, model: mi.model };
-            if (mi.role) o.role = mi.role;
+            // D47f: store the role the card shows (the persona's, unless it was
+            // hand-edited) and the colour, so the file is a complete spec and
+            // re-opening it never shows a blank Role field.
+            const p = (orch.personas || []).find((x) => x.id === mi.persona);
+            const effRole = mi.role || (p ? p.role : '');
+            if (effRole) o.role = effRole;
             if (mi.kind === 'philosopher') {
+              if (mi.persona) o.persona = mi.persona;
+              if (mi.color) o.color = mi.color;
               o.guidance = mi.guidance;
               o.pause = mi.pause;
               o.cancel = mi.cancel;
@@ -2225,12 +2648,30 @@ export function chatHtml(): string {
       if (st.error) {
         srcTxt = '~/.plato/ACADEMY.yaml has an error (' + st.error + ') - the next change here repairs it.';
       } else if (st.available) {
-        srcTxt = 'Editing ~/.plato/ACADEMY.yaml - every change saves it.';
+        srcTxt = 'Editing ~/.plato/ACADEMY.yaml - every change saves it. '
+          + 'Plato is the doer; philosophers watch, guide, and may pause or cancel.';
       } else {
-        srcTxt = 'No ~/.plato/ACADEMY.yaml yet - changes here create it. Runs are held until a council exists.';
+        srcTxt = 'No ~/.plato/ACADEMY.yaml yet - changes here create it. '
+          + 'A council starts with Plato plus two philosophers.';
       }
       const head = el('div', 'dhead');
       head.appendChild(el('span', 'dt', 'Academy'));
+
+      // Council name is the block's identity, so it sits right after the
+      // title. "Lyceum" is the Greek school where a council deliberated.
+      const nameIn = el('input');
+      nameIn.type = 'text';
+      nameIn.className = 'ctl dname';
+      // D47f: the starter council is named out of the box; the placeholder
+      // repeats the suggestion for a council that was cleared by hand.
+      nameIn.value = cname;
+      nameIn.placeholder = 'Lyceum';
+      nameIn.title = 'Optional. Shown in the header chip when Academy is active.';
+      nameIn.addEventListener('change', () => {
+        cname = nameIn.value;
+        save();
+      });
+      head.appendChild(nameIn);
       head.appendChild(iHelp(srcTxt));
       head.appendChild(el('span', 'dsp'));
       head.appendChild(sbtn('Open ACADEMY.yaml', () => {
@@ -2238,135 +2679,137 @@ export function chatHtml(): string {
       }, 'secondary'));
       acBox.appendChild(head);
 
-      // No council on disk yet -> pre-seed one worker so the first edit
-      // produces a runnable council (edits create ACADEMY.yaml).
-      if (members.length === 0) {
-        members.push({
-          name: 'plato', kind: 'worker', model: defModel,
-          role: '', guidance: true, pause: false, cancel: false, maxInterventions: 5,
-        });
+      // D47e: the doer is implicit. One control, two views — this row and the
+      // composer picker are the same session-wide setting.
+      acBox.appendChild(doerRow(
+        'The model Plato (the doer) runs on in Academy.'));
+      if (isStarter) {
+        const b = el('div', 'starter');
+        b.textContent = 'No ACADEMY.yaml yet - this is a starter council '
+          + '(Aristotle + Pythagoras). Your first change saves it to '
+          + '~/.plato/ACADEMY.yaml.';
+        acBox.appendChild(b);
       }
 
-      const nameIn = el('input');
-      nameIn.type = 'text';
-      nameIn.className = 'ctl';
-      nameIn.value = cname;
-      nameIn.placeholder = 'council name (optional)';
-      nameIn.addEventListener('change', () => {
-        cname = nameIn.value;
-        save();
-      });
-      const fldName = el('div', 'fld');
-      fldName.appendChild(lab('Council name', 'Shown in the header when Academy is active. Optional.'));
-      fldName.appendChild(nameIn);
-      acBox.appendChild(fldName);
+      const countEl = el('span', 'dcount', '');
+      const paintCount = () => {
+        const p = members.filter((x) => x.kind === 'philosopher').length;
+        countEl.textContent = p + (p === 1 ? ' philosopher' : ' philosophers');
+      };
+      paintCount();
 
       const listEl = el('div');
-      const pushRow = (mi) => {
-        const card = el('div', 'mrow');
-        const top = el('div', 'mhead');
-        if (mi.kind === 'worker') {
-          const chip = el('span', null, 'worker');
-          chip.style.fontSize = '10.5px';
-          chip.style.letterSpacing = '.5px';
-          chip.style.color = 'var(--pl-muted)';
-          top.appendChild(chip);
-        } else {
-          const ks = sel(
-            [{ value: 'philosopher', label: 'philosopher' }, { value: 'worker', label: 'make the worker' }],
-            'philosopher',
-          );
-          ks.className = 'ctl';
-          ks.addEventListener('change', () => {
-            const old = members.find((x) => x !== mi && x.kind === 'worker');
-            if (old) { old.kind = 'philosopher'; }
-            mi.kind = 'worker';
-            save();
-          });
-          top.appendChild(ks);
-        }
-        const nIn = el('input');
-        nIn.type = 'text';
-        nIn.className = 'ctl';
-        nIn.value = mi.name;
-        nIn.placeholder = 'name';
-        nIn.addEventListener('change', () => {
-          mi.name = nIn.value.trim();
-          save();
-        });
-        top.appendChild(nIn);
-        if (mi.kind === 'philosopher') {
-          const rm = sbtn('Remove', () => {
-            const i = members.indexOf(mi);
-            if (i >= 0) { members.splice(i, 1); }
-            save();
-          }, 'danger');
-          top.appendChild(rm);
-        }
-        card.appendChild(top);
+      const acadPersonaOpts = [{ value: '', label: 'custom (no persona)' }]
+        .concat((orch.personas || []).map((p) => ({
+          value: p.id, label: p.name + ' - ' + p.epithet,
+        })));
 
-        // Model on its own full-width row so a long ref never overflows.
+      const pushRow = (mi) => {
+        // D47f: one shared card builder, identical in Duo and Academy.
+        const cur = personaOf(mi.persona);
         const rowOpts = acadModelOptions.some((o) => String(o.value) === mi.model)
           ? acadModelOptions
           : acadModelOptions.concat([{ value: mi.model, label: mi.model }]);
-        const mSel = sel(rowOpts, mi.model);
-        mSel.className = 'ctl';
-        mSel.addEventListener('change', () => {
-          mi.model = mSel.value;
-          save();
-        });
-        const fldModel = el('div', 'fld');
-        fldModel.appendChild(lab('Model', 'Which model this member runs on. Required.'));
-        fldModel.appendChild(mSel);
-        card.appendChild(fldModel);
-
-        const rIn = document.createElement('textarea');
-        rIn.className = 'ctl memrole';
-        rIn.value = mi.role;
-        rIn.placeholder = 'role prompt (optional)';
-        rIn.addEventListener('change', () => {
-          mi.role = rIn.value.trim();
-          save();
-        });
-        const fldRole = el('div', 'fld');
-        fldRole.appendChild(lab('Role', 'Extra instructions for this member, appended to its system prompt. Optional.'));
-        fldRole.appendChild(rIn);
-        card.appendChild(fldRole);
-
-        if (mi.kind === 'philosopher') {
-          const tr = el('div', 'toggles');
-          tr.appendChild(beh(mi.guidance, 'Guidance', 'The philosopher may inject short steering notes into the run. Always on in Duo; toggle it here for the council.', (v) => { mi.guidance = v; save(); }));
-          tr.appendChild(beh(mi.pause, 'May pause', 'Allow this philosopher to pause a run at a safe point until you resume.', (v) => { mi.pause = v; save(); }));
-          tr.appendChild(beh(mi.cancel, 'May cancel', 'Allow this philosopher to stop a run (after the in-flight tool) when it is going wrong.', (v) => { mi.cancel = v; save(); }));
-          const capWrap = el('div', 'beh');
-          const capLbl = el('label', 'tog', 'Max interventions');
-          capLbl.appendChild(numCap(mi.maxInterventions, (v) => { mi.maxInterventions = v; save(); }));
-          capWrap.appendChild(capLbl);
-          capWrap.appendChild(iHelp('Intervention budget per run for this philosopher (guidance counts).'));
-          tr.appendChild(capWrap);
-          const fldB = el('div', 'fld');
-          fldB.appendChild(lab('Powers', 'What this philosopher is allowed to do to the run.'));
-          fldB.appendChild(tr);
-          card.appendChild(fldB);
-        }
-        listEl.appendChild(card);
+        // D47d: a council keeps at least two philosophers. Rather than disabling
+        // Remove (a greyed button invites a click that does nothing), the
+        // control is simply not rendered at the floor; the footer states why.
+        // D47g: Remove is drawn on EVERY card so the layout never reflows when
+        // the count crosses the floor; at 2 it is aria-disabled with a tooltip.
+        const canRemove = members.filter((x) => x.kind === 'philosopher').length > 2;
+        listEl.appendChild(philosopherCard({
+          removeTip: canRemove
+            ? 'Remove this philosopher from the council.'
+            : 'A council keeps at least two philosophers.',
+          hex: colorHex(mi.color),
+          name: mi.name,
+          namePlaceholder: 'philosopher name',
+          canRemove,
+          onRename: (v) => { mi.name = v; save(); },
+          onRemove: () => {
+            const i = members.indexOf(mi);
+            if (i >= 0) { members.splice(i, 1); }
+            save();
+          },
+          personaOptions: acadPersonaOpts,
+          personaValue: mi.persona || '',
+          onPersona: (id, ctl) => {
+            const prev = personaOf(mi.persona);
+            const next = personaOf(id);
+            if (next) {
+              if (!mi.role || (prev && mi.role === prev.role)) {
+                mi.role = next.role;
+                ctl.rIn.value = next.role;
+              }
+              if (!mi.name || (prev && mi.name === prev.name)) {
+                mi.name = next.name;
+                ctl.nIn.value = next.name;
+              }
+            }
+            mi.persona = id;
+            save();
+          },
+          role: mi.role || (cur ? cur.role : ''),
+          onRoleDraft: (v) => { mi.role = v; save(); },
+          roleLabel: 'Role',
+          roleHelp: 'Extra instructions for this philosopher, appended to its system prompt.',
+          rolePlaceholder: 'role prompt',
+          modelOptions: rowOpts,
+          modelValue: mi.model,
+          modelLabel: 'Model',
+          modelHelp: 'Which model this philosopher runs on. Required.',
+          onModel: (v) => { mi.model = v; save(); },
+          pause: mi.pause,
+          onPause: (v) => { mi.pause = v; save(); },
+          pauseLabel: 'May pause',
+          cancel: mi.cancel,
+          onCancel: (v) => { mi.cancel = v; save(); },
+          cancelLabel: 'May cancel',
+          maxInterventions: mi.maxInterventions,
+          onMax: (v) => { mi.maxInterventions = v; save(); },
+          capHelp: 'Intervention budget per run for this philosopher (guidance counts). Guidance is always on.',
+          powersHelp: 'What this philosopher may do to the run. Guidance is always on, so a philosopher can always speak.',
+        }, { lab, beh }));
       };
-      members.forEach(pushRow);
+      // Only philosophers render; the worker (Plato) is implicit, as in Duo.
+      members.filter((x) => x.kind === 'philosopher').forEach(pushRow);
       acBox.appendChild(listEl);
 
+      const foot = el('div', 'listfoot');
+      const nPhil = () => members.filter((x) => x.kind === 'philosopher').length;
       const addBtn = sbtn('Add philosopher', () => {
+        // D47f: default to the first UNUSED persona, so a new philosopher always
+        // has a role, a name and a colour — never a blank, actionless card.
+        const used = new Set(members.map((x) => x.persona));
+        const pick = (orch.personas || []).find((p) => !used.has(p.id)) ||
+          (orch.personas || [])[0] || null;
+        const p = pick ? personaOf(pick.id) : null;
         members.push({
-          name: uniqueName('philosopher'), kind: 'philosopher', model: defModel,
-          role: '', guidance: true, pause: false, cancel: false, maxInterventions: 5,
+          name: uniqueName(p ? p.name : 'philosopher'), kind: 'philosopher',
+          model: defModel,
+          role: p ? p.role : '',
+          persona: p ? p.id : '',
+          guidance: true, pause: false, cancel: false,
+          maxInterventions: 5,
+          color: firstUnusedColor(members.map((x) => x.color)),
         });
         save();
       }, 'secondary');
-      if (members.filter((x) => x.kind === 'philosopher').length >= 5) {
-        addBtn.disabled = true;
-      }
-      acBox.appendChild(addBtn);
+      const capEl = el('span', 'lcount', '');
+      const paintFoot = () => {
+        // D47g: a permanent statement of the range, never a narration of a
+        // control (the old 'remove is available'). The reason a control is off
+        // lives in that control's own tooltip and in this line.
+        const n = nPhil();
+        capEl.textContent = n + ' of 5 philosophers \u00b7 minimum 2';
+        addBtn.disabled = n >= 5;
+      };
+      paintFoot();
+      foot.appendChild(addBtn);
+      foot.appendChild(capEl);
+      acBox.appendChild(foot);
       acBox.appendChild(el('div', 'note',
-        'Exactly one worker (promote a philosopher to change who it is); at most 5 philosophers. Every member needs its own model.'));
+        'Plato is the doer; each philosopher needs its own model. A council '
+        + 'keeps 2 to 5 philosophers, and every philosopher can always speak.'));
       oblock.appendChild(acBox);
     }
 
@@ -2380,6 +2823,7 @@ export function chatHtml(): string {
         name: String(raw.name || ''),
         role: String(raw.role || ''),
         model: String(raw.model || ''),
+        color: String(raw.color || ''),
         pause: Boolean(raw.pause),
         cancel: Boolean(raw.cancel),
         maxInterventions: typeof raw.maxInterventions === 'number' ? raw.maxInterventions : 5,
@@ -2399,6 +2843,8 @@ export function chatHtml(): string {
             name: effName(),
             role: effRole(),
             model: m.model,
+            // D47f: duo's philosopher takes palette slot 1 unless chosen.
+            color: m.color || firstUnusedColor([]),
             pause: m.pause,
             cancel: m.cancel,
             maxInterventions: m.maxInterventions,
@@ -2423,94 +2869,74 @@ export function chatHtml(): string {
       }, 'secondary'));
       duo.appendChild(head);
 
-      // Persona + role, together (the role textarea starts from the persona
-      // role; editing it turns it into an explicit override).
-      const pSel = sel(
-        personas.map((p) => ({ value: p.id, label: p.name + ' - ' + p.epithet })),
-        m.persona,
-      );
-      pSel.className = 'ctl';
-      const fldP = el('div', 'fld');
-      fldP.appendChild(lab('Persona', 'A preset: it supplies the default display name and role prompt. Pick one, then edit the role below to shape it.'));
-      fldP.appendChild(pSel);
-      duo.appendChild(fldP);
+      // D47e: the same doer control as Academy — one session-wide model.
+      duo.appendChild(doerRow(
+        'The model Plato (the doer) runs on in Duo.'));
 
-      const roleIn = document.createElement('textarea');
-      roleIn.className = 'ctl rolearea';
-      roleIn.value = effRole();
-      const fldR = el('div', 'fld');
-      fldR.appendChild(lab('Role', 'The text the philosopher steers by. Starts from the persona role; edit it to make it your own.'));
-      fldR.appendChild(roleIn);
-      duo.appendChild(fldR);
-
-      const nameIn = el('input');
-      nameIn.type = 'text';
-      nameIn.className = 'ctl';
-      nameIn.value = effName();
-      const fldN = el('div', 'fld');
-      fldN.appendChild(lab('Display name', 'Shown in the header and transcripts. Defaults to the persona name.'));
-      fldN.appendChild(nameIn);
-
+      // D47f: the SAME card as Academy (one philosophy, one member). Duo keeps
+      // its "(same as Plato)" model option — that behaviour difference is
+      // deliberate and documented; only the layout is unified.
       const modelOptions = [{ value: '', label: '(same as Plato)' }].concat(d.modelItems || []);
       const duoOpts = modelOptions.some((o) => String(o.value) === m.model)
         ? modelOptions
         : modelOptions.concat([{ value: m.model, label: m.model }]);
-      const oSel = sel(duoOpts, m.model);
-      oSel.className = 'ctl';
-      const fldM = el('div', 'fld');
-      fldM.appendChild(lab('Model', 'Which model the philosopher runs on. Empty uses the same model as Plato.'));
-      fldM.appendChild(oSel);
-      const cols = el('div', 'cols');
-      cols.appendChild(fldN);
-      cols.appendChild(fldM);
-      duo.appendChild(cols);
-
-      const togWrap = el('div', 'toggles');
-      togWrap.appendChild(beh(m.pause, 'May pause runs', 'Allow the philosopher to pause a run at a safe point until you resume.', (v) => { m.pause = v; save(); }));
-      togWrap.appendChild(beh(m.cancel, 'May cancel runs', 'Allow the philosopher to stop a run (after the in-flight tool) when it is going wrong.', (v) => { m.cancel = v; save(); }));
-      const capWrap = el('div', 'beh');
-      const capLbl = el('label', 'tog', 'Max interventions');
-      capLbl.appendChild(numCap(m.maxInterventions, (v) => { m.maxInterventions = v; save(); }));
-      capWrap.appendChild(capLbl);
-      capWrap.appendChild(iHelp('The most times this philosopher may act in one run. Guidance notes, pauses, and cancels each count as one. Lower it for a quieter guide.'));
-      togWrap.appendChild(capWrap);
-      const fldB = el('div', 'fld');
-      fldB.appendChild(lab('Powers', 'What the philosopher is allowed to do to the run.'));
-      fldB.appendChild(togWrap);
-      duo.appendChild(fldB);
-
-      // Wire persona changes AFTER the inputs exist so it can refill them
-      // when no explicit override has been typed yet.
-      pSel.addEventListener('change', () => {
-        const oldP = personaOf(m.persona);
-        m.persona = pSel.value;
-        // Only a real hand-edit survives a persona change: a blank value — or
-        // one still equal to the previous persona's default (DUO.yaml now bakes
-        // the effective text) — follows the new persona.
-        if (!m.name || !m.name.trim().length || (oldP && m.name === oldP.name)) {
-          m.name = '';
-          nameIn.value = effName();
-        }
-        if (!m.role || !m.role.trim().length || (oldP && m.role === oldP.role)) {
-          m.role = '';
-          roleIn.value = effRole();
-        }
-        save();
-      });
-      roleIn.addEventListener('change', () => {
-        const v = roleIn.value.trim();
-        m.role = (v && v !== pr()) ? v : '';
-        save();
-      });
-      nameIn.addEventListener('change', () => {
-        const v = nameIn.value.trim();
-        m.name = (v && v !== pn()) ? v : '';
-        save();
-      });
-      oSel.addEventListener('change', () => {
-        m.model = oSel.value;
-        save();
-      });
+      const pOpts = personas.map((p) => ({ value: p.id, label: p.name + ' - ' + p.epithet }));
+      duo.appendChild(philosopherCard({
+        hex: colorHex(m.color || firstUnusedColor([])),
+        name: effName(),
+        namePlaceholder: 'display name',
+        canRemove: false,
+        // Duo has exactly one philosopher (not a bounded list), so it has no
+        // Remove button at all.
+        showRemove: false,
+        onRename: (v) => {
+          m.name = (v && v !== pn()) ? v : '';
+          save();
+        },
+        onRemove: () => undefined,
+        removeTip: '',
+        personaOptions: pOpts,
+        personaValue: m.persona,
+        onPersona: (id, ctl) => {
+          const oldP = personaOf(m.persona);
+          m.persona = id;
+          // Only a real hand-edit survives a persona change: a blank value — or
+          // one still equal to the previous persona's default (DUO.yaml now
+          // bakes the effective text) — follows the new persona.
+          if (!m.name || !m.name.trim().length || (oldP && m.name === oldP.name)) {
+            m.name = '';
+            ctl.nIn.value = effName();
+          }
+          if (!m.role || !m.role.trim().length || (oldP && m.role === oldP.role)) {
+            m.role = '';
+            ctl.rIn.value = effRole();
+          }
+          save();
+        },
+        role: effRole(),
+        onRoleDraft: (v) => {
+          m.role = (v && v !== pr()) ? v : '';
+          save();
+        },
+        roleLabel: 'Role',
+        roleHelp: 'The text the philosopher steers by. Starts from the persona role; edit it to make it your own.',
+        rolePlaceholder: 'role prompt',
+        modelOptions: duoOpts,
+        modelValue: m.model,
+        modelLabel: 'Model',
+        modelHelp: 'Which model the philosopher runs on. Empty uses the same model as Plato.',
+        onModel: (v) => { m.model = v; save(); },
+        pause: m.pause,
+        onPause: (v) => { m.pause = v; save(); },
+        pauseLabel: 'May pause runs',
+        cancel: m.cancel,
+        onCancel: (v) => { m.cancel = v; save(); },
+        cancelLabel: 'May cancel runs',
+        maxInterventions: m.maxInterventions,
+        onMax: (v) => { m.maxInterventions = v; save(); },
+        capHelp: 'The most times this philosopher may act in one run. Guidance notes, pauses, and cancels each count as one. Lower it for a quieter guide.',
+        powersHelp: 'What the philosopher is allowed to do to the run.',
+      }, { lab, beh }));
 
       duo.appendChild(el('div', 'note',
         'Guidance is always allowed. Editing the role or display name replaces the persona defaults; clearing them restores the persona.'));
@@ -2921,9 +3347,11 @@ export function chatHtml(): string {
     }
     toolBuffer = [];
     summaryCounts = counts;
-    const text = Array.from(counts.entries())
-      .map((p) => p[0] + ' \u00d7 ' + p[1])
-      .join(' \u00b7 ');
+    const parts = Array.from(counts.entries())
+      .map((p) => p[0] + ' \u00d7 ' + p[1]);
+    const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+    const text = total + (total === 1 ? ' tool call \u00b7 ' : ' tool calls \u00b7 ')
+      + parts.join(' \u00b7 ');
     if (merging) {
       summaryLine.textContent = text;
     } else {
@@ -3054,7 +3482,19 @@ export function chatHtml(): string {
         streaming = false;
         break;
       }
-      case 'notice': flushToolBuffer(); addMsg('sys', 'Plato', m.text); break;
+      case 'notice': {
+        flushToolBuffer();
+        // D47f: a philosopher notice carries its colour, so [aristotle] and
+        // [pythagoras] in the log are told apart at a glance.
+        const hex = m.meta && m.meta.color ? String(m.meta.color) : '';
+        const div = addMsg(hex ? 'philosopher' : 'sys', 'Plato', m.text);
+        if (hex) {
+          div.style.setProperty('--accent', hex);
+          div.querySelector('.who').textContent = '';
+          div.insertBefore(colorDot('pdot', hex), div.firstChild);
+        }
+        break;
+      }
       case 'team': flushToolBuffer(); showTeam(m); break;
       case 'tool':
         // Only completed calls count; pending/denied phases stay in the chip.
@@ -3179,9 +3619,12 @@ export function chatHtml(): string {
     for (const mem of m.members || []) {
       const row = document.createElement('div');
       row.className = 'team-member';
+      if (mem.color) { row.style.setProperty('--accent', String(mem.color)); }
       const left = document.createElement('span');
       left.className = 'tm-name';
-      left.textContent = mem.name;
+      if (mem.color) { left.appendChild(colorDot('tdot', String(mem.color))); }
+      // textContent-style append keeps the name adjacent to the dot.
+      left.appendChild(document.createTextNode(mem.name));
       const kind = document.createElement('span');
       kind.className = 'tm-kind ' + (mem.kind === 'worker' ? 'is-coder' : 'is-observer');
       kind.textContent = mem.kind;
@@ -3453,6 +3896,16 @@ export function chatHtml(): string {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
                     .replace(/>/g, '&gt;');
   }
+
+  // D47g: a Role box fits its text plus one line, and the lines the text needs
+  // depend on the PANEL WIDTH. Watching width only (not size) is essential:
+  // a fit changes the box's own height, and a size-observer would loop on it.
+  let roleFitW = window.innerWidth;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === roleFitW) { return; }
+    roleFitW = window.innerWidth;
+    fitAllRoles();
+  });
 
   // Follow new output only while the user is already near the bottom;
   // never yank the view if they scrolled up to read.

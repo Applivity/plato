@@ -1,23 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { parseTeamConfig } from '../src/teams/config.js';
 import { emitTeamConfig, yamlScalar } from '../src/teams/emit.js';
+import { defaultAcademyMembers } from '../src/teams/duo.js';
 
 const VALID = `
 academy:
-  name: hcad-audit
+  name: lyceum
 members:
-  - name: plato
-    model: anthropic:claude-sonnet-4-5
-    role: "You fix Android Java bugs."
-    kind: worker
   - name: aristotle
     kind: philosopher
-    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    model: anthropic:claude-sonnet-4-5
     role: "A skeptical senior reviewer."
     guidance: true
     pause: false
     cancel: true
     maxInterventions: 3
+  - name: pythagoras
+    kind: philosopher
+    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
+    role: "Checks structure and counts."
+    guidance: true
 `;
 
 describe('emitTeamConfig', () => {
@@ -34,13 +36,13 @@ describe('emitTeamConfig', () => {
       name: 'tricky',
       members: [
         {
-          name: 'plato',
+          name: 'phil-a',
           model: 'anthropic:claude-sonnet-4-5',
           role: 'Fix bugs #1 and #2: then re-verify',
-          kind: 'worker' as const,
+          kind: 'philosopher' as const,
         },
         {
-          name: 'phil',
+          name: 'phil-b',
           model: 'anthropic:claude-haiku',
           kind: 'philosopher' as const,
           role: 'say "done" only after a: verify step',
@@ -61,12 +63,51 @@ describe('emitTeamConfig', () => {
     const text = emitTeamConfig({
       name: '',
       members: [
-        { name: 'plato', model: 'anthropic:claude-sonnet-4-5', kind: 'worker' },
+        { name: 'a', model: 'anthropic:claude-sonnet-4-5', kind: 'philosopher' },
+        { name: 'b', model: 'anthropic:claude-sonnet-4-5', kind: 'philosopher' },
       ],
     });
     const again = parseTeamConfig(text);
     expect(again.name).toBe('');
-    expect(again.members).toHaveLength(1);
+    expect(again.members).toHaveLength(2);
+  });
+
+  // D47e: the starter council is philosophers only — Plato is the implicit
+  // doer, so the emitted file carries no worker at all.
+  it('emits the D47e starter council: philosophers only, personas intact', () => {
+    const text = emitTeamConfig({
+      name: '',
+      members: defaultAcademyMembers('anthropic:claude-sonnet-4-5'),
+    });
+    expect(text).not.toContain('kind: worker');
+    const again = parseTeamConfig(text);
+    expect(again.members).toHaveLength(2);
+    expect(again.members.every((m) => m.kind === 'philosopher')).toBe(true);
+    expect(again.members.map((p) => p.persona)).toEqual(['aristotle', 'pythagoras']);
+    expect(again.members.every((p) => p.guidance === true)).toBe(true);
+  });
+
+  // D47f regression: Open ACADEMY.yaml wrote a hollow council — no role, no
+  // pause/cancel/maxInterventions — so the file it created showed a blank Role
+  // and blank Powers when re-opened. The seed must be a complete spec.
+  it('D47f: the starter council writes role, powers and colour', () => {
+    const text = emitTeamConfig({
+      name: 'lyceum',
+      members: defaultAcademyMembers('anthropic:claude-sonnet-4-5'),
+    });
+    for (const key of ['role:', 'pause:', 'cancel:', 'maxInterventions:', 'color:']) {
+      expect(text).toContain(key);
+    }
+    const again = parseTeamConfig(text);
+    for (const m of again.members) {
+      expect(m.role && m.role.length > 0).toBe(true);
+      expect(m.pause).toBe(false);
+      expect(m.cancel).toBe(false);
+      expect(m.maxInterventions).toBe(5);
+    }
+    // Distinct so two philosophers never share one identity colour.
+    const colors = again.members.map((m) => m.color);
+    expect(new Set(colors).size).toBe(colors.length);
   });
 });
 
@@ -93,10 +134,11 @@ describe('yamlScalar', () => {
     // Both parsers strip single quotes, so the value reads back verbatim.
     const again = parseTeamConfig(
       'members:\n' +
-        "  - name: plato\n    model: anthropic:claude-sonnet-4-5\n    kind: worker\n" +
-        "  - name: phil\n    model: anthropic:claude-haiku\n    kind: philosopher\n" +
-        "    role: 'say \"hi\": then go'\n",
+        "  - name: phil-a\n    model: anthropic:claude-sonnet-4-5\n" +
+        "    kind: philosopher\n" +
+        "    role: 'say \"hi\": then go'\n" +
+        "  - name: phil-b\n    model: anthropic:claude-haiku\n    kind: philosopher\n",
     );
-    expect(again.members[1]?.role).toBe('say "hi": then go');
+    expect(again.members[0]?.role).toBe('say "hi": then go');
   });
 });

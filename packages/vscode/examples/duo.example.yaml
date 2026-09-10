@@ -6,6 +6,7 @@ philosopher:
   # name: Aristotle         # optional display name (default = the persona's)
   # role: "Your override"   # optional role prompt (default = the persona's)
   model: anthropic:claude-sonnet-4-5
+  color: violet             # one of: violet blue teal amber rose (default = violet)
   pause: false
   cancel: false
   maxInterventions: 5

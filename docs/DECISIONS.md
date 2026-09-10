@@ -1067,8 +1067,8 @@ two views (D45c realized, in the same milestone as the code, per D45c/D45d).
 - **Academy editor** enforces exactly-one-worker + ≤5 philosophers in the UI and
   host; the header chip shows `duo · <name>` / `academy:<name>` from the files.
 
-**D47b — Duo editor polish + DUO.yaml self-contained (M4.1, 0.25.0 — in the working
-tree, uncommitted, 2026-09-09).**
+**D47b — Duo editor polish + DUO.yaml self-contained (M4.1, 0.25.0 — committed
+477bd43, 2026-09-09).**
 
 Founder review of the D47 editors read "amateur"; several polish rounds followed,
 Duo first. Decisions recorded beyond D47:
@@ -1105,6 +1105,273 @@ Duo first. Decisions recorded beyond D47:
   generic `.mrow { display:flex }` (run-team rows) was flexing every `.duo .mrow`
   card's fields horizontally; cards are `display:block` and each member's model
   select sits on its own full-width row so a long model ref can't overflow.
+
+**D47g — Role field hardening + the two walls, after founder UI review (M4.1, 0.25.0
+— in the working tree, 2026-09-10).**
+
+Founder review of the D47f build raised three items. Two were defects I had
+shipped.
+
+- **The Role box clipped real text.** `min-height:64px` is a fixed number, but the
+  height the text needs depends on the **panel width**. Measured with the real
+  persona roles: at a 420px panel the box hid ~42px (about 2.5 lines) behind a
+  scrollbar; at 620px it hid 4px. I missed it because every render in D47f ran at
+  a **940px** viewport — the one width where it happened to fit. The box now
+  auto-fits its text plus **exactly one line**, re-fitting on input and when the
+  panel width changes. The fit measures a **hidden mirror** of the text, not the
+  textarea's own `scrollHeight`: a textarea over-reports (5.01 lines for text
+  needing 4), which rounded the box to a whole extra line. Verified 1.01 / 1.01 /
+  0.99 lines of slack at 420 / 520 / 740px, no clipping at any width.
+- **`✕` instead of the white "Remove" button — a class-name mismatch, not taste.**
+  The CSS defined `.btn-icon-danger`; `sbtn(label, fn, 'danger')` emitted
+  **`btn-danger`**, which had **no rule at all**. Only the bare `.btn` applied, so
+  the browser painted its default white button. It was the only `danger` call in
+  the file, so nothing else exposed it. Now `.btn-danger` is the real rule (a
+  24px transparent square, muted, red on hover) and the variant name **is** the
+  class name, so it cannot silently fall back again.
+- **The two walls now behave alike (founder chose "grey out").** At the floor,
+  Remove was *not drawn*, so going from 3 philosophers to 2 made two other
+  buttons vanish — the layout moved during a destructive action. Remove is now
+  **drawn on every card** and disabled at 2. It uses **`aria-disabled`, not the
+  native attribute**: a natively disabled button emits no mouse events, so its
+  tooltip could never explain the reason. The tooltip carries the reason, the
+  click is swallowed in JS, and the footer states the range permanently
+  (`3 of 5 philosophers · minimum 2`) instead of narrating a control.
+  Duo has one fixed philosopher — not a bounded list — so it has no `✕` at all.
+- **A 1,000-character cap on `role`, enforced in the file too.** A role is
+  injected into the observer's system prompt on **every turn**, so an unbounded
+  role is a per-call token cost, not only a layout problem. `ROLE_MAX_CHARS` lives
+  in core; **both** parsers reject an over-long role with the count (a
+  hand-pasted 2000-char line is refused: `role is 1001 characters — the maximum
+  is 1000`), both JSON schemas set `maxLength: 1000`, and the box carries
+  `maxlength`. The longest shipped persona role is 239 — 761 characters of
+  headroom. The counter sits at the **top-right of the Role label row**, so it
+  does not move when the box grows; muted, amber at 90%, red at the cap.
+- **A stray Enter used to produce an unparseable file.** The Role box is a
+  textarea, so Enter was possible, and the emitter quoted the value without
+  escaping the newline: `role: "line one` + a raw newline + `line two"`, which
+  YAML cannot hold that way. Our own parser then rejected the file and the save
+  was lost. `oneLine()` now folds runs of whitespace to single spaces **in the
+  emitter** (the guarantee for every caller) and in the webview (so the box
+  matches what is stored).
+
+**A template-literal trap, recorded so it is not repeated.** `webview.ts` builds
+the panel as one big template literal, so a `\s` in a regex written there is
+consumed by the literal and compiles to `/s+/` — which matches the letter **s**,
+so the fold silently did nothing while looking correct in the source. The
+correct spelling is `\\s`. A unit test now reads the source and asserts the
+escaped form, so this cannot return quietly. This bit twice: the existing
+regexes in the file only use character classes (`[^a-z0-9_-]`), which have no
+backslash, so no prior pattern revealed it.
+
+**D47f — Settings polish after founder UI review: a complete starter council, one
+shared card, and a stored identity colour per philosopher (M4.1, 0.25.0 — in the
+working tree, 2026-09-10).**
+
+Founder review of the D47e build produced seven items. Two were defects, five were
+polish. One changed the file format, so the reasoning is recorded here.
+
+- **Defect — `Open ACADEMY.yaml` wrote a hollow council.** `defaultAcademyMembers()`
+  seeded only `name/kind/model/persona/guidance`, so the file it created had **no
+  `role`, no `pause`, no `cancel`, no `maxInterventions`**. The UI *displayed* the
+  persona's role (it falls back), so the panel looked correct while the file was
+  incomplete — the same class of defect as DUO.yaml's missing role (D47b). Fixed at
+  the root: the seed now writes the persona's `role` plus
+  `pause:false, cancel:false, maxInterventions:5`. The webview pre-seed
+  (`seedDefaultPhilosophers`) and **Add philosopher** were fixed the same way.
+- **`save()` now writes the effective role** (the D47b rule, now applied to
+  Academy): the file receives the role the card shows, so clearing a role snaps
+  back to the persona's rather than leaving a blank field in the file.
+- **Add philosopher defaults to the first UNUSED persona.** Previously it created
+  `persona: ''` **and** `role: ''` — a philosopher with no steering text at all,
+  the "what would it even do?" problem from D47d. It now always has a name, a role
+  and a colour.
+- **Remove is not rendered at the 2-philosopher floor.** It was `disabled` (D47d);
+  a greyed button invites a click that does nothing. The footer now carries the
+  rule instead ("minimum 2" / "remove is available").
+- **One shared card builder** (`philosopherCard`) is used by **both** Duo and
+  Academy. The header is the identity line — colour dot + display name + Remove
+  (kept far right, never between two inputs); the body is
+  **Persona → Role → Model → Powers** in both modes. Duo's old
+  `.cols`/Display-name-beside-Model layout and the display-name-below-persona
+  layout in Academy are gone, so the two panels cannot drift apart again.
+- **`Plato — the doer` → `Plato's model`.** "The doer" is internal vocabulary
+  leaking into the UI (the same mistake as "worker"). The noun now matches every
+  other field's. Behaviour is unchanged: one session-wide value, two views.
+- **Model semantics deliberately left different.** Duo keeps its `(same as Plato)`
+  empty option; Academy still requires an explicit `<connection>:<model>` per
+  member because its parser demands one. Founder chose "whatever is safest"; only
+  the layout was unified, not this rule.
+- **The PLATO.md explainer moved behind a `?`** on the "Plato — project files"
+  heading (both modes render that heading). The `.help` CSS was widened from
+  `.duo .help` to `.help` so the button styles outside a `.duo` block.
+- **Lyceum is pre-filled** for a starter council (the placeholder repeats it), so
+  the name field is never a blank box.
+
+**A colour is a stored field, not a derived index.** Each philosopher carries
+`color:` — one of `violet, blue, teal, amber, rose` — assigned **once, at
+creation**, to the first palette entry no member holds. It is written to the yaml
+and re-read, so **removing a philosopher never re-colours the survivors**. A
+colour derived from council position would shift on every removal; this is why the
+field exists.
+
+**This is not a reversal of D47e.** D47e removed the worker because it duplicated
+the doer's *model* — a second source of truth for **behaviour**. A colour has no
+behaviour, and nothing else in the system can recompute it, so the file is its
+honest home. D47e's rule stands: never re-add a per-member *behavioural* field
+that the doer's model already owns.
+
+The file stores the **name**, not the hex, so the exact pastels can be tuned
+without invalidating anyone's saved council. The palette and its helpers
+(`PHILOSOPHER_COLORS`, `findColor`, `colorHex`, `firstUnusedColor`) live in core
+(`teams/colors.ts`); the webview is a template literal with no imports, so the
+palette rides the settings payload and the resolved hex rides the notice
+metadata. The colour appears in three places — the Settings card, the
+philosopher's chat notices, and the run-start team card.
+
+**Accepted consequences:** colour follows the member, so two philosophers with the
+same persona are still distinguishable (the point of the feature); a hand-edited
+file with no `color:` resolves to neutral grey; a member with an unknown colour id
+is a **loud parse error**, not a silent fallback.
+
+**D47e — The fail-proof upgrade: no worker in the Academy format; one doer model,
+two views (M4.1, 0.25.0 — committed, 2026-09-09).**
+
+Founder-approved closeout of D47d. B1 (hide the worker, warn about a deviation)
+is **replaced** by B2 (remove the worker from the format), because B1 still left
+the trap: with the doer hidden, a hand-edited `model:` would change the run
+silently.
+
+- **`ACADEMY.yaml` carries philosophers only.** `TeamMember.kind` is now the
+  literal `'philosopher'`; the parser defaults omitted `kind` to philosopher,
+  **rejects `kind: worker` loudly** ("no longer a member — Plato is always the
+  doer (D47e). Remove this entry."), and `finishTeam` enforces **2–5
+  philosophers** instead of the old exactly-one-worker rule. `emitTeamConfig`
+  no longer writes a `kind:` line. `defaultAcademyMembers()` returns Aristotle
+  + Pythagoras, no worker. Legacy files are out of scope by founder decision
+  (assume no `ACADEMY.yaml` exists; D45d allows the break).
+- **Plato is the doer in every mode.** The run path uses
+  `this.effectiveModel()` for the doer ref — the same resolution Solo and Duo
+  use. Deleted: the `workerMember` lookup and its three uses
+  (`ref`, the connection-error hint, and `role`). **Accepted consequence:** an
+  Academy worker's custom `role` text is gone; the doer's prompt is the shared
+  chain (project PLATO.md > global PLATO.md > bundled default), identical in
+  every mode. This is the point of the change, not a regression.
+- **One doer model, two views — no pin, no grey-out.** A `Plato — the doer`
+  select appears in the **Duo and Academy** blocks. It posts the existing
+  `{ type: 'model', value }` message and is repainted by `setModelSelected()`,
+  so the composer picker and the Settings control are two views of **one
+  session-wide value** — they cannot disagree, so there is nothing to pin and
+  no control is ever disabled. Reset on New Chat, like today's override.
+  (Rejected: a per-council doer model — it would re-create the second source of
+  truth this milestone removed.) Solo keeps its composer picker only; adding
+  the row there is a feedback-driven option.
+- **Removed with the worker:** the read-only `Plato runs on …` line and the
+  `.starter.warn` deviation notice (both D47d/B1). The `.starter` banner now
+  reads "(Aristotle + Pythagoras)".
+
+**Never revert this without re-adding a visibility mechanism.** If the worker
+returns to the file, a hidden doer model becomes silent again; the doer row and
+the parser's loud rejection are the pair that make the hidden doer safe.
+
+**D47d — Academy = Duo + council: implicit doer, forced guidance, persona picker
+(M4.1, 0.25.0 — committed, 2026-09-09).** Superseded in part by D47e (the
+`kind: worker` member, the B1 `workerNote`, and the doer line). Still in force:
+forced `guidance`, the persona picker, 2–5 philosophers, Aristotle + Pythagoras
+defaults, and `Lyceum (optional)`.
+
+
+Founder review of D47c: "I don't get what the worker section is doing" in
+Academy, and "if guidance can be off along with pause and cancel, what would
+the philosopher even do?". Re-read of the lock in **D45a-3** (one worker + N
+philosophers; Solo/Duo/Academy are the same worker with 0/1/N philosophers)
+showed the UI contradicted the thesis. Decisions:
+
+- **The doer is implicit in Academy, exactly as in Duo.** The editor renders
+  *only* philosophers; there is no worker card and no "Make worker" button
+  (D47c's promote control is deleted). A read-only line states
+  `Plato runs on <model>`; the doer's model is the chat composer's, not a
+  second control. This is the same framing Duo already used.
+- **B1 chosen over B2 for the hidden worker.** The `kind: worker` member stays
+  in `ACADEMY.yaml` (the parser's exactly-one-worker rule is untouched), but a
+  hand-edited file that disagrees with the UI is **surfaced, never silently
+  obeyed**: `academyStatus()` derives a `workerNote` when the file renames the
+  doer or gives it a model other than the effective chat model. Consequence
+  table reviewed: missing/duplicate worker already aborts loudly at parse time;
+  renamed worker and overridden model were the silent cases, and both are now
+  visible.
+- **B2 recorded as the fail-proof upgrade (not built).** Remove `kind: worker`
+  from the Academy file format so Academy is literally "Plato + council".
+  Touch-points to change: `config.ts` `TeamMember.kind` + the
+  exactly-one-worker validation (`finishTeam`), `emit.ts` `memberLines`,
+  `extension.ts` `run()`'s `useAcademy && team` branch, `academyStatus()`, and
+  `defaultAcademyMembers()`. Also deletes `workerNote` and the doer line. Until
+  then B1 is the honest state.
+- **Guidance is always on — a mute philosopher is impossible by construction.**
+  Duo hard-codes it (`duo.ts` `duoObserverSpec`: `guidance: true`); Academy
+  exposed a toggle, so a philosopher could have all three verbs off and
+  degrade to a paid `noop` on every check (`observer.ts` tier enforcement).
+  Academy now matches Duo: the Powers row is **May pause + May cancel**, and
+  the webview pins `guidance: true` on load and save. Old files with
+  `guidance: false` are repaired to true on the next save (intended).
+  If a "watch only, report at the end" capability is ever wanted, it is a
+  *different mechanism*, not a mute philosopher.
+- **Academy cards get a persona picker** (Duo parity). Picking a persona
+  refills the name/role only while they still equal the previous persona's
+  defaults (the D47b reconciliation). `persona` is now a real optional
+  `TeamMember` field — parsed, emitted, and carried through `save-academy`.
+- **Council = 2..5 philosophers; defaults Aristotle + Pythagoras.** Orthogonal
+  by design: Aristotle judges *claims* against evidence, Pythagoras judges
+  *structure/counts/invariants*. Seed applies both in the Settings pre-seed and
+  in `open-academy`'s create-on-open (`defaultAcademyMembers()` in core).
+  `Remove` is disabled at 2; Add is disabled at 5.
+- **Council name** moves to the header row beside the `Academy` title with
+  placeholder **`Lyceum (optional)`** (the Greek school where a council
+  deliberated) — no longer an `unnamed council` field above the list.
+
+**Recorded for a later debate:** the default role prompts in `personas.ts` may
+be too weak for real agentic flow; the founder flagged this as a separate
+discussion. Not changed here.
+
+**D47c — Academy editor UI + create-on-open, tool-summary polish (M4.1, 0.25.0 —
+committed, 2026-09-09).** Superseded in part by D47d (worker card, Make worker,
+Guidance toggle).
+
+
+Founder priority after D47b: the Academy Settings editor was "utterly
+disappointing". Fixes are markup + CSS in `webview.ts` (no store, parser, or
+sync contract change) plus one host path:
+
+- **`open-academy` creates on open** — parity with `open-duo`. No file → the
+  host emits a starter council (one worker on `effectiveModel()`), validates it
+  through `parseTeamConfig`, writes `~/.plato/ACADEMY.yaml`, arms the watcher,
+  re-pushes settings, and opens the file. The "not found" dead-end is gone.
+  A core test pins the seed as a runnable one-worker council
+  (`emit.test.ts` — "emits a runnable one-worker starter council").
+- **Member cards lead with identity.** A `.mkind` chip (worker / philosopher)
+  replaces the bare 10.5px grey word; the card carries a matching left border
+  (blue = worker, purple = philosopher). The name input is the only wide
+  field in the header row.
+- **`Remove` is pushed right, never mid-row.** A `.mspacer` separates the
+  promote control (`Make worker`, a compact button — the chip already states
+  the kind, so the old duplicate kind-select is gone) from `Remove` at the far
+  right edge.
+- **The council name is the block's identity**, so it rides the header row
+  next to the `Academy` title (placeholder "unnamed council"), instead of
+  living in a low-prominence field above the list.
+- **The pre-seed is no longer silent.** A dashed `.starter` banner states that
+  this is a starter council and the first change writes the file. A `.subhead`
+  line reports `N worker(s) · N philosopher(s)`, and the footer shows
+  `N of 5 philosophers` next to Add.
+- **Tool summary chip.** The live tool-summary line gains a total and a label
+  (`tools 26 tool calls · read_file × 15 · …`) and a blue accent edge.
+
+**Deferred (recorded so it is not mistaken for a styling job):** true
+*interleaved* tool-call cards in the live log. The host streams one cumulative
+markdown blob per turn into a fixed `#streaming` element, so tool summaries
+land after the whole reply rather than in place; fixing it needs **host-side
+reply segmentation** (a segmented `md` contract). The History run-detail view
+is the cheaper place to get correct ordering first.
 
 **D45b — Duo customisation: deferred to a follow-up (M4.1, TBD — SUPERSEDED by D47, shipped 2026-09-04).**
 

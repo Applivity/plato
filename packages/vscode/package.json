@@ -72,7 +72,7 @@
           "type": "string",
           "enum": ["solo", "duo", "academy"],
           "default": "solo",
-          "description": "Orchestration mode (D32): solo = Plato alone; duo = worker + one philosopher; academy = the council defined in ACADEMY.yaml."
+          "description": "Orchestration mode: solo = Plato alone; duo = Plato + one philosopher; academy = Plato + the council defined in ACADEMY.yaml."
         },
         "plato.compaction.threshold": {
           "type": "number",

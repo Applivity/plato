@@ -1,23 +1,34 @@
-# Plato academy definition (D31/D32/D33). Lives at ~/.plato/ACADEMY.yaml —
+# Plato academy definition (D47e). Lives at ~/.plato/ACADEMY.yaml —
 # edit it in Settings → Orchestration → Academy, or copy this into place.
 # Activate in Settings → Orchestration → Academy; switch back to Solo/Duo
 # any time. Philosophers NEVER approve tool calls.
+#
+# D47e: there is no worker member. Plato (the doer) is implicit in every mode
+# and runs on the model you pick in the chat composer or the "Plato's model"
+# row in Settings. A council is 2 to 5 philosophers.
 academy:
-  name: hcad-audit
+  name: lyceum
 
 members:
-  # The worker does the work. Its model overrides the chat dropdown for the run.
-  - name: plato
-    model: anthropic:claude-sonnet-4-5
-    role: "You fix bugs in Android Java code. Enumerate defects, fix them, re-verify."
-    kind: worker
-
-  # Philosophers watch the run and steer it.
+  # Philosophers watch the run and steer it. Each `color:` is assigned once,
+  # at creation, so removing a philosopher never re-colours the others.
+  # One of: violet blue teal amber rose.
   - name: aristotle
-    kind: philosopher
-    model: litellm:openrouter-nvidia/nemotron-3-ultra-550b-a55b:free
-    role: "You are a skeptical senior reviewer. Judge only from evidence."
+    model: anthropic:claude-sonnet-4-5
+    persona: aristotle
+    role: "You judge only from evidence in the digest."
+    color: violet
     guidance: true
     pause: false
     cancel: true
     maxInterventions: 3
+
+  - name: pythagoras
+    model: anthropic:claude-sonnet-4-5
+    persona: pythagoras
+    role: "You check structure, counts and invariants."
+    color: blue
+    guidance: true
+    pause: false
+    cancel: false
+    maxInterventions: 5

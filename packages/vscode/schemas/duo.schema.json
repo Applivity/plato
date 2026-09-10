@@ -23,13 +23,25 @@
           ],
           "description": "Philosopher persona - one of the five presets. Its name and default role anchor the philosopher."
         },
+        "color": {
+          "type": "string",
+          "enum": [
+            "violet",
+            "blue",
+            "teal",
+            "amber",
+            "rose"
+          ],
+          "description": "Identity colour for the philosopher, shown in Settings, the chat notices and the run-start team card."
+        },
         "name": {
           "type": "string",
           "description": "Display name; empty uses the persona's name."
         },
         "role": {
           "type": "string",
-          "description": "Role prompt override; empty uses the persona's role."
+          "maxLength": 1000,
+          "description": "Role prompt override; empty uses the persona's role (max 1000 characters; one line)."
         },
         "model": {
           "type": "string",

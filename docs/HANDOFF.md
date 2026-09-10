@@ -18,8 +18,12 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
-- HEAD (`main`) = **D47** (committed 83ecdcd, 0.25.0). The working tree adds
-  **D47b — Duo Settings-editor polish, NOT yet committed** (same 0.25.0).
+- HEAD (`main`) = **D47b** (committed 477bd43, 0.25.0). The working tree adds
+  **D47c + D47d + D47e + D47f + D47g — Academy editor work, NOT yet committed**
+  (same 0.25.0). D47f is the founder's UI-review pass: a complete starter
+  council (`Open ACADEMY.yaml` no longer writes a hollow file), one shared
+  Duo/Academy card, `Plato's model` replacing `Plato — the doer`, and a
+  **stored** `color:` per philosopher so removal never re-colours the rest.
   **Plato is a personal pair-programmer: it never pollutes the shared repo.**
   Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
   philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
@@ -39,7 +43,7 @@ may not be available when you work; everything you need is in this repo.
   yaml, and a host file watcher over `~/.plato/{DUO,ACADEMY}.yaml` re-reads on
   external edit/paste and refreshes the UI. Core gained a strict parser +
   loader + run-spec resolver and canonical emitters (`teams/duo.ts`,
-  `teams/emit.ts`). **D47b (uncommitted):** store files are capitalized
+  `teams/emit.ts`). **D47b (committed 477bd43):** store files are capitalized
   (`DUO.yaml`/`ACADEMY.yaml` — macOS is case-insensitive, so an existing
   lowercase file still works); DUO.yaml is **self-contained** — the form saves
   the effective name + role, so a created file always carries `name:`/`role:`
@@ -48,8 +52,58 @@ may not be available when you work; everything you need is in this repo.
   with no file creates it** and opens it; UI: compact switch toggles, per-
   control '?' tooltips, Open-file buttons matching Open PLATO.md, Academy
   member cards fixed (generic `.mrow` flex collision → cards are block, model
-  on its own row), 'Max/run' → 'Max interventions'. **Academy is unchanged this
-  round** (Duo first). 202 vitest cases across 20 files in `packages/core`.
+  on its own row), 'Max/run' → 'Max interventions'.
+  **D47f (committed with this bundle) — founder UI-review pass:** `Open
+  ACADEMY.yaml` used to write a **hollow** council (no `role`, no powers — the UI
+  faked the role from the persona, so the file was incomplete while the panel
+  looked right); the seed now writes role + powers + colour, and `save()` stores
+  the effective role (the D47b rule, applied to Academy). **Add philosopher**
+  defaults to the first *unused* persona, so a new card is never blank. One
+  **shared card builder** now serves both Duo and Academy — header = colour dot +
+  display name + Remove (far right); body = **Persona → Role → Model → Powers**.
+  `Plato — the doer` → **`Plato's model`**. The PLATO.md explainer moved behind a
+  `?`. `Lyceum` is pre-filled. Each philosopher carries a **stored `color:`** (5
+  pastels) so removing one **never re-colours the rest** — shown in the Settings
+  card, the chat notices and the run-start team card.
+  **D47g (committed with this bundle) — Role field + the two walls:** the Role box
+  **auto-fits its text plus exactly one line** and re-fits on panel-width change
+  (a fixed `min-height` was clipping ~2.5 lines at a 420px panel); a
+  **1,000-char cap** is enforced by both parsers, both schemas and `maxlength`
+  (a role is sent on every observer call), with a counter at the top-right of the
+  label row; a stray Enter no longer produces an unparseable file (`oneLine()`
+  folds whitespace in the emitter and the webview); the Remove control is now a
+  **`✕`** (the old `.btn-icon-danger` class never matched what `sbtn` emitted, so
+  the browser painted a default white button) and both walls behave alike —
+  drawn always, `aria-disabled` at the 2-philosopher floor.
+  **D47c (working tree):**
+  founder priority — the Academy editor was "utterly disappointing". Academy
+  got the polish Duo got in D47b and then some: `open-academy` **creates on
+  open**; cards lead with an identity chip and a matching left border; `Remove`
+  is pushed to the far right; tool-summary chip gained a total and a label.
+  **D47d (working tree) — Academy = Duo + council:** the founder did not accept
+  a visible worker section in Academy, and asked what a philosopher with every
+  power off could even do. Re-read of the D45a-3 thesis showed the UI
+  contradicted it. **guidance is always on** (Duo parity; Powers = May pause +
+  May cancel, so a mute philosopher is impossible); Academy cards gained a
+  **persona picker** (`persona` is a real optional `TeamMember` field);
+  **council = 2..5 philosophers** with **Aristotle + Pythagoras** seeded by
+  `defaultAcademyMembers()`; council name sits beside the `Academy` title
+  (D47f: **pre-filled `Lyceum`** for a starter council, no longer a placeholder).
+  **D47e (working tree) — the fail-proof upgrade:** D47d's B1 (hide the worker,
+  warn on a hand-edited deviation) still left the doer silently overridable, so
+  the worker is **removed from the format**. `ACADEMY.yaml` carries philosophers
+  only; `TeamMember.kind` is the literal `'philosopher'`; the parser rejects
+  `kind: worker` loudly and `finishTeam` enforces **2–5 philosophers**. Plato is
+  the doer in every mode (run path = `effectiveModel()`; the `workerMember`
+  lookup is deleted, along with its `role` override — accepted). A **`Plato's
+  model` select** (renamed from `Plato — the doer` in D47f) sits in the Duo and Academy blocks and is the *same
+  session-wide value* as the composer picker (two views, no pin, no grey-out).
+  Never revert D47e without re-adding a visibility mechanism.
+  **Recorded for a later debate:** the
+  `personas.ts` role prompts may be too weak for real agentic flow.
+  **Deferred (DECISIONS D47c):** true interleaved tool-call cards
+  need host-side reply segmentation, not styling. 219 vitest cases across 21
+  files in `packages/core`.
   **Deferred (recorded in DECISIONS D46):** per-project council/academy
   override ("discussion later"); move convo history to `~/.plato/history/`
   (TODO).
@@ -64,7 +118,7 @@ may not be available when you work; everything you need is in this repo.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 202 passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 219 passing
   vitest cases across 20 files in packages/core).
 
 ## How the packages connect
@@ -88,6 +142,12 @@ may not be available when you work; everything you need is in this repo.
 1. **webview.ts is one giant template string.** A stray backtick inside a
    JS comment or string literal closes the template and breaks the
    build. `tsc -b` usually catches it; always run it after editing.
+   **Backslashes are eaten too:** `\s` written on one line here compiles
+   to `/s+/` — which matches the letter *s* and silently does nothing.
+   Write `\\s`. `tsc` does NOT catch this one, because `/s+/` is valid
+   syntax. Caught the hard way in D47g; a unit test now asserts the
+   escaped form in `colors.test.ts`. Existing regexes in the file use
+   character classes (no backslash), which is why nothing exposed it.
 2. **CSS octal escapes break in the style block.** The webview CSS is
    inside the same template literal. Write `\u2190` (not `\2190`).
 3. **The `hidden` HTML attribute is overridden by author CSS.**
@@ -106,7 +166,7 @@ may not be available when you work; everything you need is in this repo.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 202/202 vitest in packages/core
+2. `pnpm -r test` — 219/219 vitest in packages/core
 3. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 4. `cd packages/vscode && pnpm run package` — produces
@@ -146,19 +206,30 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Close D47b** (working tree, uncommitted). Founder visual sign-off on the
-   Duo polish (switch size, Open DUO.yaml create-on-open, role present in the
-   created file) → commit the tree with these docs; push stays with the founder.
-   Candidate parity follow-ups after sign-off: give **Open ACADEMY.yaml the same
-   create-on-open** (Duo got it this round, Academy didn't), and any remaining
-   UI polish the founder flags from the reload.
-1. **Chat-log message rendering.** Markdown, code blocks, tool-call
-   cards, the "done in 26s · 11 tool calls · 66.7k tok" footer — the
-   surfaces users actually stare at.
+0. **Close D47c + D47d + D47e + D47f + D47g** (committed with this doc bundle).
+   Founder visual sign-off on the reload is what gates the *next* milestone —
+   check Academy at a **narrow** panel width (that is where the D47g Role-box
+   clip lived) and confirm: Academy shows only philosophers; the `Plato's model`
+   select stays in sync with the composer; Powers = pause/cancel; the council is
+   pre-filled `Lyceum`; a starter council seeds Aristotle + Pythagoras; the `✕`
+   is drawn on every card and disabled at 2; the Role counter reads `n / 1000`.
+1. **Chat-log message rendering.** Markdown, code blocks, the
+   "done in 26s · 11 tool calls · 66.7k tok" footer, and the labelled
+   tool-summary chip already ship (core `renderMarkdown` + `.md-*` CSS +
+   the done line + D47c's chip). What remains is *interleaving* — see the
+   deferred note below.
 2. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
 3. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
+
+> Deferred — recorded so it is not mistaken for a CSS job:
+> - **True interleaved tool-call cards in the live log.** The host streams one
+>   cumulative markdown blob per turn into a fixed `#streaming` element, so
+>   tool summaries land below the whole reply rather than in place. Fixing this
+>   needs **host-side reply segmentation** (a new segmented `md` contract), not
+>   styling. The History run-detail view is the cheaper place to get correct
+>   ordering first. See PROGRESS 2026-08-26 (0.7.5) known-limitation note.
 
 > Deferred for later (see DECISIONS D46):
 > - **Per-project council/academy override** — "discussion later" (founder
