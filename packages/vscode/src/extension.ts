@@ -1702,6 +1702,10 @@ class ChatHost {
       // D43: the webview toggles its empty-composer state from this.
       hasConnections: readConnections().length > 0,
       items: this.modelItems(),
+      // D47h: the authoritative model, so the panel cannot drift from what a
+      // run would actually use (the composer picker and the Duo/Academy doer
+      // rows are all views of this one value).
+      effectiveModel: this.effectiveModel(),
       reasoningCapable: this.reasoningCapable(),
       reasoning: vscode.workspace
         .getConfiguration('plato')

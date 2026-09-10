@@ -291,11 +291,20 @@ export function chatHtml(): string {
   /* Section blocks (Orchestration + Context). */
   .sblock { border:1px solid var(--pl-border); border-radius:8px;
             padding:16px 18px; background:var(--vscode-editorWidget-background,
-                                               rgba(128,128,128,.04)); }
-  .sblock .row { display:flex; align-items:center; gap:10px; }
+                                               rgba(128,128,128,.04));
+            min-width:0; overflow-wrap:anywhere; }
+  /* D47h: a flex row must be allowed to shrink below its content's natural
+     width, or a long child (a model ref, a state sentence) pushes the whole
+     block past the panel edge. */
+  .sblock .row { display:flex; align-items:center; gap:10px;
+                 flex-wrap:wrap; min-width:0; }
   .sblock .row + .row { margin-top:10px; }
+  .sblock .row > * { min-width:0; }
+  /* D47h: min-width:140px was applied to EVERY label in the block, which forced
+     the box wider than a narrow panel (the D47b switch-track trap again). It is
+     now a floor that can yield, and only for the direct label column. */
   .sblock label { font-size:12.5px; color:var(--vscode-editor-foreground);
-                  min-width:140px; }
+                  min-width:0; flex:0 1 140px; }
   .sblock select, .sblock input[type=range] {
       flex:1; padding:5px 8px; font-size:12.5px; border-radius:4px;
       border:1px solid var(--pl-border);
@@ -304,17 +313,21 @@ export function chatHtml(): string {
   .sblock input[type=range] { padding:0; height:6px; }
   .sblock .liveval { font-size:11.5px; color:var(--pl-muted);
                      min-width:80px; text-align:right; font-variant-numeric:tabular-nums; }
-  /* Mode picker cards. */
-  .modes { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  /* Mode picker cards. D47h: auto-fit, not a fixed 3-column grid — at a narrow
+     editor column (~290px of content) three fixed columns gave each card ~62px
+     of text, so the descriptions crammed and were clipped. auto-fit collapses
+     to ONE column when there is no room and still lays out three when wide. */
+  .modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));
+           gap:10px; }
   .mcard { border:1px solid var(--pl-border); border-radius:8px;
            padding:12px 14px; cursor:pointer; background:transparent;
-           transition:border-color .12s, background .12s; }
+           transition:border-color .12s, background .12s; min-width:0; }
   .mcard:hover { border-color:var(--vscode-focusBorder, #6a6a6a); }
   .mcard.on { border-color:var(--vscode-focusBorder, #6a9bd1);
               background:rgba(106,155,209,.10); }
   .mcard .mtitle { font-weight:600; font-size:13.5px; margin-bottom:3px; }
   .mcard .mdesc { font-size:11.5px; color:var(--pl-muted);
-                  line-height:1.4; }
+                  line-height:1.4; overflow-wrap:anywhere; }
   /* Academy status block. */
   .astat { margin-top:14px; padding:10px 12px; border-radius:6px;
            border:1px solid var(--pl-border); }
@@ -401,17 +414,20 @@ export function chatHtml(): string {
   /* D47c: Academy editor layout. The council is the identity of the whole
      block, so its name sits in the header next to the title; each member card
      leads with a colour dot + name and pushes Remove to the far right, so a
-     destructive action never sits between two inputs. */
+     destructive action never sits between two inputs.
+     D47h: the header WRAPS, so a long action label ("Open ACADEMY.yaml")
+     moves to a second line instead of running off the panel edge. */
+  .duo .dhead { flex-wrap:wrap; row-gap:6px; }
+  .duo .dhead .btn { flex:none; white-space:nowrap; }
   .duo .dhead .dname { flex:0 1 200px; min-width:110px; }
   .duo .dhead .dcount { flex:none; font-size:11.5px; color:var(--pl-muted);
                         font-variant-numeric:tabular-nums; }
-  .duo .dhead .btn { flex:none; white-space:nowrap; }
   .duo .subhead { display:flex; align-items:center; gap:8px;
                   margin:2px 0 6px; font-size:11.5px; color:var(--pl-muted); }
   /* D47e: Plato (the doer) model control — one session-wide value, shown in
      Duo and Academy as well as the composer picker. */
   .duo .doer-row { display:flex; align-items:center; gap:8px;
-                   margin:8px 0 2px; }
+                   margin:8px 0 2px; flex-wrap:wrap; row-gap:4px; }
   .duo .doer-label { flex:none; font-size:12px; font-weight:600; }
   .duo .doer-model { flex:0 1 240px; min-width:140px; }
   .duo .mhead { display:flex; align-items:center; gap:8px; }
@@ -458,15 +474,21 @@ export function chatHtml(): string {
   .duo .sw input:checked + .tk::after { left:14px; }
   .duo .sw input:focus-visible + .tk { box-shadow:0 0 0 2px var(--vscode-focusBorder,#6a6a6a); }
   .duo .swtxt { font-size:12px; }
-  /* Plato block in Orchestration (D45a-3/D45a-4): project-file state + actions. */
+  /* Plato block in Orchestration (D45a-3/D45a-4): project-file state + actions.
+     D47h: these rows wrap. The state text is long ("Using the global default
+     (~/.plato/PLATO.md)") and used to crush the Open button onto two lines at a
+     narrow width; now the button keeps its label and drops to its own line. */
   .workers-head { margin-top:18px; }
   .workers .pf { margin-top:14px; padding-top:12px;
                  border-top:1px solid var(--pl-border); }
   .workers .pline { display:flex; align-items:center; gap:10px;
-                    min-height:28px; }
+                    min-height:28px; flex-wrap:wrap; }
   .workers .pname { font-size:12.5px; font-weight:600; min-width:110px; }
-  .workers .pst { font-size:11.5px; color:var(--pl-muted); }
-  .workers .spacer { flex:1; }
+  .workers .pst { font-size:11.5px; color:var(--pl-muted);
+                  min-width:0; overflow-wrap:anywhere; }
+  .workers .spacer { flex:1 1 0; min-width:0; }
+  /* An action in a wrapping row must never be squeezed or broken. */
+  .workers .pline .btn { flex:none; white-space:nowrap; }
   /* Connection cards. */
   .conn-list { display:flex; flex-direction:column; gap:10px; }
   .conn { border:1px solid var(--pl-border); border-radius:8px;
@@ -1503,7 +1525,21 @@ export function chatHtml(): string {
     paint();
     doerRowPaints.push(paint);
     selEl.addEventListener('change', () => {
-      vsapi.postMessage({ type: 'model', value: selEl.value });
+      // D47h FIX: update the ONE shared value before posting, exactly as the
+      // composer popover does (setModelSelected + post). Previously this only
+      // posted, so the shared value kept the old model; the host accepted the
+      // new one and posted its state back, whose preserve logic then re-applied
+      // that stale value and the select snapped back. Writing the shared value
+      // here makes the host echo a no-op paint of the new value.
+      const chosen = selEl.value;
+      const item = lastModelItems.find(
+        (it) => String(it.value || '') === chosen);
+      setModelSelected(
+        chosen,
+        item ? String(item.label || chosen) : (currentModelLabel || chosen),
+        item ? item.maxContext : null,
+      );
+      vsapi.postMessage({ type: 'model', value: chosen });
     });
     row.appendChild(selEl);
     row.appendChild(iHelp(intro + ' Shared with this chat and every mode; '
@@ -3400,6 +3436,20 @@ export function chatHtml(): string {
           const first = lastModelItems[0];
           setModelSelected(String(first.value), String(first.label),
                            first.maxContext);
+        }
+        // D47h: the host is authoritative when it names the effective model.
+        // The webview's own closure state is only a cache; without this the
+        // panel can show a value the run is not using (e.g. the doer select
+        // echoing a value the host rejected).
+        if (typeof m.effectiveModel === 'string' && m.effectiveModel.length > 0
+            && m.effectiveModel !== currentModel) {
+          const authoritative = lastModelItems.find(
+            (it) => String(it.value || '') === m.effectiveModel);
+          setModelSelected(
+            m.effectiveModel,
+            authoritative ? String(authoritative.label) : m.effectiveModel,
+            authoritative ? authoritative.maxContext : null,
+          );
         }
         // Reasoning control (D28 phase 2): visible only for capable models.
         rsel.hidden = !m.reasoningCapable;

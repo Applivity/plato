@@ -1106,6 +1106,54 @@ Duo first. Decisions recorded beyond D47:
   card's fields horizontally; cards are `display:block` and each member's model
   select sits on its own full-width row so a long model ref can't overflow.
 
+**D47h — the doer model select did not stick, and the narrow panel (M4.1, 0.25.0
+— in the working tree, 2026-09-11).**
+
+Founder report: in **both** Duo and Academy, changing `Plato's model` snapped back
+to the composer's value; changing it in the **composer** worked. Two defects and a
+layout class.
+
+- **The doer select wrote the host, but never the shared value.** The composer
+  popover does `setModelSelected(value, label, max)` **and then** posts; the doer
+  select only posted. So `currentModel` kept the OLD value, the host accepted the
+  NEW one and returned its state, and the webview's preserve logic re-applied the
+  stale `currentModel` — the select reverted. **The composer worked precisely
+  because it updates first.** D47e's own comment claimed the two views "cannot
+  disagree by construction"; the posting half was built, the state-writing half
+  was not. The fix gives the doer select the same two steps, restoring the
+  documented invariant rather than adding a mechanism.
+  **Why the first regression test passed anyway:** `postModelState()` now also
+  sends the authoritative `effectiveModel`, and that line alone corrected the UI,
+  masking the defect. The harness therefore tests **both** echo shapes — the
+  legacy payload (no `effectiveModel`), which is the condition the bug was
+  reported under, and the new one. Reverting the fix fails the legacy cases; that
+  is the evidence the test is real.
+- **The host is now authoritative for the model.** `postModelState()` carries
+  `effectiveModel`, and the webview adopts it when it differs. Without this the
+  panel could display a value the run would not use — for example a doer select
+  echoing a model the host had rejected as an unknown connection.
+- **The Settings panel overflowed at a narrow editor column.** Three separate
+  causes, all now fixed and all measured:
+  1. `.modes` was `grid-template-columns:repeat(3, 1fr)`. At ~290px of content
+     each card got ~67px, cramming the descriptions into a clipped ribbon.
+     Now `repeat(auto-fit, minmax(190px, 1fr))` — **one column when narrow,
+     three when wide**, no JS.
+  2. `.sblock label { min-width:140px }` applied to **every** label in the block,
+     forcing the box wider than the panel. The same trap as D47b's switch track.
+     Now a yielding `flex:0 1 140px`, with `min-width:0` on rows and their
+     children so a long model ref or state sentence can shrink.
+  3. Long rows did not wrap: `.workers .pline` (the state text crushed
+     `Open PLATO.md` onto two lines) and `.duo .dhead` (`Open ACADEMY.yaml` ran
+     off the edge). Both now `flex-wrap:wrap`, with `white-space:nowrap` and
+     `flex:none` on the action so a button never breaks mid-label.
+- **Verification gap closed.** D47g added a width sweep for the **Role box only**;
+  this class of defect was still only found by the founder in screenshots. The
+  harness now asserts, for **every** settings row: no element overflows its
+  scroll container, each action button stays one line, and — the assertion that
+  matters most — **each mode card keeps a usable text width**. No-overflow alone
+  is not enough: three 67px columns do not overflow, they just cram. Reverting the
+  grid fails 6 cases.
+
 **D47g — Role field hardening + the two walls, after founder UI review (M4.1, 0.25.0
 — in the working tree, 2026-09-10).**
 

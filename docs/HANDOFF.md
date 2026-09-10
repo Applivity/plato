@@ -19,7 +19,7 @@ may not be available when you work; everything you need is in this repo.
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
 - HEAD (`main`) = **D47b** (committed 477bd43, 0.25.0). The working tree adds
-  **D47c + D47d + D47e + D47f + D47g — Academy editor work, NOT yet committed**
+  **D47c + D47d + D47e + D47f + D47g + D47h — Academy editor work, NOT yet committed**
   (same 0.25.0). D47f is the founder's UI-review pass: a complete starter
   council (`Open ACADEMY.yaml` no longer writes a hollow file), one shared
   Duo/Academy card, `Plato's model` replacing `Plato — the doer`, and a
@@ -75,6 +75,17 @@ may not be available when you work; everything you need is in this repo.
   **`✕`** (the old `.btn-icon-danger` class never matched what `sbtn` emitted, so
   the browser painted a default white button) and both walls behave alike —
   drawn always, `aria-disabled` at the 2-philosopher floor.
+  **D47h (committed with this bundle) — the doer model select + the narrow panel:**
+  changing `Plato's model` in Duo/Academy snapped back to the composer's value,
+  because the doer select posted to the host but **never wrote the shared value**
+  (the composer does `setModelSelected` *then* posts). The host accepted the new
+  model, echoed its state, and the preserve logic re-applied the stale value. The
+  doer select now updates first, exactly like the composer. `postModelState()`
+  also carries an authoritative `effectiveModel` the webview adopts, so the panel
+  can never show a model the run would not use. The Settings panel no longer
+  overflows at a narrow column: `.modes` auto-fits (1 column narrow, 3 wide),
+  `.sblock label` no longer forces `min-width:140px`, and the project-file /
+  Duo-Academy header rows wrap so `Open …` buttons keep their label on one line.
   **D47c (working tree):**
   founder priority — the Academy editor was "utterly disappointing". Academy
   got the polish Duo got in D47b and then some: `open-academy` **creates on
@@ -206,13 +217,15 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Close D47c + D47d + D47e + D47f + D47g** (committed with this doc bundle).
+0. **Close D47c–h** (committed with this doc bundle).
    Founder visual sign-off on the reload is what gates the *next* milestone —
    check Academy at a **narrow** panel width (that is where the D47g Role-box
-   clip lived) and confirm: Academy shows only philosophers; the `Plato's model`
-   select stays in sync with the composer; Powers = pause/cancel; the council is
-   pre-filled `Lyceum`; a starter council seeds Aristotle + Pythagoras; the `✕`
-   is drawn on every card and disabled at 2; the Role counter reads `n / 1000`.
+   clip and the D47h overflow lived) and confirm: Academy shows only philosophers;
+   changing `Plato's model` **sticks** and stays in sync with the composer; Powers
+   = pause/cancel; the council is pre-filled `Lyceum`; a starter council seeds
+   Aristotle + Pythagoras; the `✕` is drawn on every card and disabled at 2; the
+   Role counter reads `n / 1000`; and the mode cards stack to ONE column when the
+   panel is narrow.
 1. **Chat-log message rendering.** Markdown, code blocks, the
    "done in 26s · 11 tool calls · 66.7k tok" footer, and the labelled
    tool-summary chip already ship (core `renderMarkdown` + `.md-*` CSS +
