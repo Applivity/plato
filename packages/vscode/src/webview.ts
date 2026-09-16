@@ -2324,17 +2324,21 @@ export function chatHtml(): string {
   };
 
   // D47j: a full re-render used to close every section the user had opened, so
-  // clicking "Set key" or "Refresh models" collapsed Providers out from under
-  // them (both paths end in a fresh settings payload). The open/closed state
-  // of the sections, plus the scroll position, is now preserved across renders.
-  // Keyed by the section title, because that is stable while a member or
-  // connection count is not.
+  // clicking "Set key", "Refresh models" or "Add connection" collapsed Providers
+  // out from under them (all three end in a fresh settings payload). The
+  // open/closed state of the sections, plus the scroll position, is now
+  // preserved across renders.
+  //
+  // D47k: the key must be STABLE, not the summary text. Providers' summary
+  // embeds a live count ("Providers  —  1 configured"), so adding a connection
+  // changed the label and the restore missed — the section still collapsed.
+  // Each section now carries a fixed data-sec id.
   let settingsScroll = null;
-  const openSectionTitles = () => {
+  const openSectionIds = () => {
     const set = new Set();
-    for (const d of document.querySelectorAll('#sbody details.sec')) {
-      const sum = d.querySelector('summary');
-      if (d.open && sum) { set.add(sum.textContent.trim()); }
+    for (const d of document.querySelectorAll('#sbody .sec')) {
+      const id = d.getAttribute('data-sec');
+      if (d.open && id) { set.add(id); }
     }
     return set;
   };
@@ -2342,7 +2346,7 @@ export function chatHtml(): string {
   function showSettings(d) {
     // Capture the UI state BEFORE wiping the body, so a re-render is invisible.
     const wasOpen = document.body.classList.contains('show-settings')
-      ? openSectionTitles()
+      ? openSectionIds()
       : null;
     if (wasOpen) {
       const sb = document.getElementById('sbody');
@@ -2384,6 +2388,9 @@ export function chatHtml(): string {
     const userConns = (d.connections || []).filter((c) => !c.builtin);
     const sec1Det = document.createElement('details');
     sec1Det.className = 'sec';
+    // D47k: a STABLE id for the across-render open/closed restore. The summary
+    // text cannot be used — it embeds the live connection count.
+    sec1Det.setAttribute('data-sec', 'providers');
     sec1Det.appendChild(el('summary', null,
       'Providers  \u2014  ' + userConns.length + ' configured'));
     const sec1Body = el('div', 'secbody');
@@ -2628,6 +2635,7 @@ export function chatHtml(): string {
     // decision — the mode cards and the council are the point of the panel), so
     // it is a div with a non-toggling .sechead instead of a <details>.
     const secO = el('div', 'sec sec-static');
+    secO.setAttribute('data-sec', 'orchestration');
     const secOHead = el('div', 'sechead');
     secOHead.appendChild(el('span', null, 'Orchestration'));
     secO.appendChild(secOHead);
@@ -3133,6 +3141,7 @@ export function chatHtml(): string {
     const ctxInfo = d.compaction || { mode: 'auto', threshold: 0.8 };
     const secCtxDet = document.createElement('details');
     secCtxDet.className = 'sec';
+    secCtxDet.setAttribute('data-sec', 'context');
     secCtxDet.appendChild(el('summary', null, 'Context  \u2014  compaction'));
     const ctxBody = el('div', 'secbody');
     secCtxDet.appendChild(ctxBody);
@@ -3167,16 +3176,15 @@ export function chatHtml(): string {
     // (D47j: no ctxBody.appendChild(ctxBlock) here — ctxBlock IS ctxBody, so
     // that appendChild threw the same "contains the parent" error.)
 
-    // D47j: restore what the user had open, then their scroll position, so a
-    // re-render caused by Set key / Refresh models is invisible. On a first
-    // render (nothing was open yet) the section defaults are left alone.
+    // D47j/D47k: restore what the user had open, then their scroll position, so
+    // a re-render caused by an action is invisible. Keyed by the stable
+    // data-sec id, never the summary text (which carries a live count).
     if (wasOpen) {
-      for (const det of wrap.querySelectorAll('details.sec')) {
-        const sum = det.querySelector('summary');
-        if (!sum) { continue; }
-        // Sections are always re-rendered CLOSED except Providers-with-none,
-        // so an "open by default" rule cannot override the user's choice here.
-        det.open = wasOpen.has(sum.textContent.trim());
+      for (const sec of wrap.querySelectorAll('.sec')) {
+        const id = sec.getAttribute('data-sec');
+        if (!id) { continue; }
+        // An always-open section has no "open" property to set; skip it.
+        if (sec.tagName === 'DETAILS') { sec.open = wasOpen.has(id); }
       }
       const sb = document.getElementById('sbody');
       if (sb && settingsScroll !== null) { sb.scrollTop = settingsScroll; }

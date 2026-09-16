@@ -20,6 +20,43 @@ for (const w of [420, 900]) {
   checkPageClean(p, 'w=' + w);
   await p.close();
 }
+// 0b. "Add connection" must not close the section (D47k). The host replies with
+// a fresh settings payload, exactly like Set key / Refresh models, so the same
+// preserve-and-restore has to cover this third door into the same re-render.
+{
+  const p = await page(720, S({ connections: [] }));
+  const state = () => p.evaluate(() => [...document.querySelectorAll('details.sec')]
+    .map((d) => ({ t: d.querySelector('summary').textContent.trim(), open: d.open })));
+  await p.evaluate(() => {
+    const d = document.querySelector('details.sec');
+    d.open = true;
+    const sel = d.querySelector('.add-card select');
+    if (sel) { sel.value = 'openai'; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    const inputs = [...d.querySelectorAll('.add-card input')];
+    const url = inputs.find((i) => /Base URL|http/i.test(i.placeholder || ''));
+    if (url) { url.value = 'https://api.example.com/v1'; }
+    const key = inputs.find((i) => i.type === 'password');
+    if (key) { key.value = 'sk-test'; }
+  });
+  await p.waitForTimeout(150);
+  const before = await state();
+  await p.evaluate(() => {
+    const btn = [...document.querySelectorAll('.add-card .btn')].find((x) => /Add connection/.test(x.textContent));
+    btn.click();
+  });
+  await p.waitForTimeout(150);
+  const posted = await p.evaluate(() => (window.__posted || []).filter((m) => m.type === 'settings-add').length);
+  await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), S());
+  await p.waitForTimeout(340);
+  const after = await state();
+  check('add connection: the form posted settings-add', posted === 1, posted);
+  check('add connection: Providers stays OPEN',
+    before.find((x) => /Providers/.test(x.t)).open === true
+    && after.find((x) => /Providers/.test(x.t)).open === true, { before, after });
+  await p.close();
+}
+
+
 
 // 1. Delete is a labelled button on ONE line, at every width.
 for (const w of [420, 560, 720, 900]) {
