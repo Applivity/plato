@@ -86,6 +86,20 @@ may not be available when you work; everything you need is in this repo.
   overflows at a narrow column: `.modes` auto-fits (1 column narrow, 3 wide),
   `.sblock label` no longer forces `min-width:140px`, and the project-file /
   Duo-Academy header rows wrap so `Open …` buttons keep their label on one line.
+  **D47i (committed with this bundle) — one Settings surface:** the founder saw
+  Orchestration as "a different panel" from the other two, and that was literally
+  true — measured, it was a bare DIV with **no border and no radius** while
+  Providers and Context were framed DETAILS sections. All three now share one
+  shell (same border, radius, background, header bar); Orchestration keeps its
+  always-open behaviour through a `.sec-static` header that does not pretend to
+  toggle. The disclosure markers went from a 13px glyph to a 16px glyph in a 16px
+  hit area, the header bar grew to ~35px, the nested `.sblock` was dropped so all
+  sections share one nesting depth, and Delete is now pushed behind a divider so
+  it no longer reads as part of the Set key / Refresh group. The `Add a provider`
+  inputs no longer clip (the `130px 1fr` grid was hard-coded **in JS** as well as
+  CSS). **Layout trap recorded:** `repeat(auto-fit, minmax(190px, 1fr))` still
+  overflows a container narrower than 190px; the floor must be
+  `min(190px, 100%)`.
   **D47c (working tree):**
   founder priority — the Academy editor was "utterly disappointing". Academy
   got the polish Duo got in D47b and then some: `open-academy` **creates on

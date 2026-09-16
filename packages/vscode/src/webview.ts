@@ -285,39 +285,46 @@ export function chatHtml(): string {
             text-transform:uppercase; letter-spacing:.1em;
             color:var(--pl-muted); }
   .shead3 { margin:0 0 10px; font-size:14px; font-weight:600; }
-  .shead2 + .shelp { margin:0 0 14px; font-size:12px; color:var(--pl-muted);
-                     line-height:1.45; }
+  /* D47i: the section header bar names the section, so .shelp is no longer a
+     sibling of an in-body title. It states the section's purpose at the top of
+     the body, and needs its own spacing. */
+  .secbody > .shelp, .shelp { margin:0 0 14px; font-size:12px;
+                     color:var(--pl-muted); line-height:1.45; }
+  .secbody > .shelp:last-child { margin-bottom:0; }
   .sec { margin-bottom:28px; }
   /* Section blocks (Orchestration + Context). */
-  .sblock { border:1px solid var(--pl-border); border-radius:8px;
-            padding:16px 18px; background:var(--vscode-editorWidget-background,
-                                               rgba(128,128,128,.04));
-            min-width:0; overflow-wrap:anywhere; }
+  /* D47i: the section BODY is the container now (the nested .sblock is gone, so
+     all three sections share one depth). These rules keep their D47h safety
+     properties, retargeted to .secbody. */
+  .secbody { min-width:0; overflow-wrap:anywhere; }
   /* D47h: a flex row must be allowed to shrink below its content's natural
      width, or a long child (a model ref, a state sentence) pushes the whole
      block past the panel edge. */
-  .sblock .row { display:flex; align-items:center; gap:10px;
+  .secbody .row { display:flex; align-items:center; gap:10px;
                  flex-wrap:wrap; min-width:0; }
-  .sblock .row + .row { margin-top:10px; }
-  .sblock .row > * { min-width:0; }
+  .secbody .row + .row { margin-top:10px; }
+  .secbody .row > * { min-width:0; }
   /* D47h: min-width:140px was applied to EVERY label in the block, which forced
      the box wider than a narrow panel (the D47b switch-track trap again). It is
-     now a floor that can yield, and only for the direct label column. */
-  .sblock label { font-size:12.5px; color:var(--vscode-editor-foreground);
+     now a floor that can yield. */
+  .secbody .row label { font-size:12.5px; color:var(--vscode-editor-foreground);
                   min-width:0; flex:0 1 140px; }
-  .sblock select, .sblock input[type=range] {
+  .secbody select, .secbody input[type=range] {
       flex:1; padding:5px 8px; font-size:12.5px; border-radius:4px;
       border:1px solid var(--pl-border);
       background:var(--vscode-input-background);
       color:var(--vscode-input-foreground); outline:none; }
-  .sblock input[type=range] { padding:0; height:6px; }
-  .sblock .liveval { font-size:11.5px; color:var(--pl-muted);
+  .secbody input[type=range] { padding:0; height:6px; }
+  .secbody .liveval { font-size:11.5px; color:var(--pl-muted);
                      min-width:80px; text-align:right; font-variant-numeric:tabular-nums; }
   /* Mode picker cards. D47h: auto-fit, not a fixed 3-column grid — at a narrow
      editor column (~290px of content) three fixed columns gave each card ~62px
      of text, so the descriptions crammed and were clipped. auto-fit collapses
-     to ONE column when there is no room and still lays out three when wide. */
-  .modes { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));
+     to ONE column when there is no room and still lays out three when wide.
+     D47i: the floor is min(190px, 100%) — a bare 190px minimum still overflows
+     a container narrower than that. */
+  .modes { display:grid;
+           grid-template-columns:repeat(auto-fit, minmax(min(190px, 100%), 1fr));
            gap:10px; }
   .mcard { border:1px solid var(--pl-border); border-radius:8px;
            padding:12px 14px; cursor:pointer; background:transparent;
@@ -510,8 +517,17 @@ export function chatHtml(): string {
                       background:currentColor; }
   .conn .cbase { font-size:11.5px; color:var(--pl-muted);
                  word-break:break-all; margin-top:6px; }
+  /* D47i: the action row. Delete was jammed against Refresh (measured: an
+     identical 8px gap between Set key/Refresh and Refresh/Delete, so the
+     destructive action read as part of the same group). Delete is now pushed
+     to the far right behind a divider, so the eye groups Set key + Refresh and
+     reads Delete as a separate, destructive action. */
   .conn .crow { display:flex; align-items:center; gap:8px;
                 margin-top:10px; flex-wrap:wrap; }
+  .conn .crow .crow-fill { flex:1 1 0; min-width:0; }
+  .conn .crow .crow-sep { flex:none; width:1px; height:18px;
+                background:var(--pl-border); margin:0 4px; }
+  .conn .crow .btn-danger { margin-left:0; }
   /* Model multi-select inside a connection card. */
   .conn .picker { margin-top:10px; border:1px solid var(--pl-border);
                   border-radius:6px; overflow:hidden; }
@@ -547,8 +563,15 @@ export function chatHtml(): string {
   .onboard-card .onboard-body { margin:0; font-size:12px; line-height:1.55;
                                 color:var(--pl-muted); }
   .add-card .add-title { font-size:13px; font-weight:600; margin-bottom:12px; }
-  .add-card .grid { display:grid; grid-template-columns:130px 1fr;
+  /* D47i: the add-provider grid used a fixed 130px label column, so a narrow
+     panel crushed the inputs ("— or ent", "Base URL ("). auto-fit collapses it
+     to one column with the labels above their inputs. The floor is
+     min(220px, 100%) and NOT a bare 220px: auto-fit still honours a fixed
+     minimum inside a smaller container, which overflowed by 28px at 300px. */
+  .add-card .grid { display:grid;
+                    grid-template-columns:repeat(auto-fit, minmax(min(220px, 100%), 1fr));
                     gap:10px 12px; align-items:center; }
+  .add-card .grid > label { min-width:0; }
   .add-card label { font-size:12px; color:var(--pl-muted); }
   .add-card input, .add-card select { padding:6px 9px; font-size:12.5px;
                                       border-radius:4px;
@@ -557,7 +580,7 @@ export function chatHtml(): string {
                                       color:var(--vscode-input-foreground);
                                       outline:none; width:100%; }
   .add-card .actions { margin-top:14px; display:flex; gap:8px;
-                       align-items:center; }
+                       align-items:center; flex-wrap:wrap; }
   .add-card .err { color:var(--vscode-testing-iconFailed,#f14c4c);
                    font-size:11.5px; margin-top:8px; }
   /* Button taxonomy (D38): primary / secondary / ghost / danger-icon. */
@@ -656,14 +679,44 @@ export function chatHtml(): string {
   .team-card .tm-tier { font-size:10px; color:var(--pl-muted);
                         border:1px solid var(--pl-border); border-radius:8px;
                         padding:0 5px; }
-  details.sec { border:1px solid var(--pl-border); border-radius:5px;
-                margin-bottom:10px; }
-  details.sec > summary { padding:7px 10px; cursor:pointer; font-weight:600;
-                          font-size:12px; user-select:none; list-style:none; }
-  details.sec > summary::before { content:'\\25B8 '; display:inline-block;
-                   transition:transform .1s; }
+  /* D47i: ONE section shell for every panel on the Settings page. Before this,
+     Providers and Context were DETAILS sections (1px border, 5px radius) while
+     Orchestration was a bare DIV with NO border at all - measured, it was the
+     only section with no frame, which is why it read as a different kind of
+     panel. All three now share this shell. */
+  details.sec, .sec-static { border:1px solid var(--pl-border);
+                border-radius:8px; margin-bottom:10px;
+                background:var(--vscode-editorWidget-background,
+                                           rgba(128,128,128,.03));
+                overflow:hidden; }
+  /* The header bar: taller than the old 29px strip, with its own background and
+     a divider when open, so it reads as a title you can click, not a caption. */
+  details.sec > summary, .sec-static > .sechead {
+                display:flex; align-items:center; gap:8px;
+                padding:9px 12px; font-weight:600;
+                font-size:12.5px; user-select:none; list-style:none;
+                background:var(--vscode-editorWidget-background,
+                           rgba(128,128,128,.07));
+                border-bottom:1px solid transparent; }
+  details.sec > summary { cursor:pointer; }
+  details.sec[open] > summary { border-bottom-color:var(--pl-border); }
+  /* The disclosure marker: a real control with a hit area, not a 13px glyph. */
+  details.sec > summary::before, .sec-static > .sechead::before {
+                content:'\\25B8'; flex:none; width:16px; height:16px;
+                display:inline-flex; align-items:center; justify-content:center;
+                font-size:16px; line-height:1; color:var(--pl-muted);
+                transition:transform .12s; }
   details.sec[open] > summary::before { transform:rotate(90deg); }
-  details.sec .secbody { padding:0 10px 10px; }
+  details.sec > summary:hover, .sec-static > .sechead:hover {
+                background:rgba(128,128,128,.11); }
+  details.sec > summary:focus-visible, .sec-static > .sechead:focus-visible {
+                outline:1px solid var(--vscode-focusBorder,#6a6a6a);
+                outline-offset:-1px; }
+  /* Orchestration is intentionally always-open, so its marker states that
+     instead of pretending to toggle. */
+  .sec-static > .sechead { cursor:default; }
+  .sec-static > .sechead::before { transform:rotate(90deg); opacity:.55; }
+  details.sec .secbody, .sec-static > .secbody { padding:12px 14px 14px; }
   .mrow { display:flex; gap:8px; margin:6px 0; }
   .mcard { flex:1; border:1px solid var(--pl-border); border-radius:5px;
            padding:8px 10px; cursor:pointer; }
@@ -2297,7 +2350,8 @@ export function chatHtml(): string {
     if (userConns.length === 0) {
       sec1Det.open = true;
     }
-    sec1Body.appendChild(el('h2', 'shead2', 'Providers'));
+    // D47i: the header bar names the section, so the in-body title is gone;
+    // only the explanation stays, matching Orchestration and Context.
     sec1Body.appendChild(el('p', 'shelp',
       'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in SecretStorage and never displayed.'));
 
@@ -2391,6 +2445,10 @@ export function chatHtml(): string {
       }, 'secondary');
       refresh.disabled = Boolean(c.keyStatus !== 'set');
       crow.appendChild(refresh);
+      // D47i: push Delete away from the primary actions and separate it with a
+      // rule, so the destructive action is not read as part of the same group.
+      crow.appendChild(el('span', 'crow-fill'));
+      crow.appendChild(el('span', 'crow-sep'));
       // D38b: built-ins are no longer rendered as cards, so every card
       // here is user-managed. Always show Delete.
       crow.appendChild(sbtn('Delete', () => {
@@ -2412,7 +2470,11 @@ export function chatHtml(): string {
     const presetRow = el('div');
     presetRow.style.gridColumn = '1 / -1';
     presetRow.style.display = 'grid';
-    presetRow.style.gridTemplateColumns = '130px 1fr';
+    // D47i: this was a hard-coded '130px 1fr' set in JS, so it ignored the
+    // responsive .add-card .grid rule and crushed the select to 78px at a
+    // 300px panel. auto-fit collapses it like the rest of the card, and the
+    // floor is min(220px, 100%) so it cannot overflow a narrower container.
+    presetRow.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))';
     presetRow.style.gap = '10px 12px';
     presetRow.style.alignItems = 'center';
     const ppick = sel([
@@ -2493,11 +2555,24 @@ export function chatHtml(): string {
 
     // ---- 2. Orchestration (always-open) ----
     const orch = d.orchestration || {};
-    const secO = el('div', 'sec');
-    secO.appendChild(el('h2', 'shead2', 'Orchestration'));
-    secO.appendChild(el('p', 'shelp',
+    // D47i: Orchestration uses the SAME section shell as Providers and Context,
+    // so the page reads as one surface. It stays permanently open (founder
+    // decision — the mode cards and the council are the point of the panel), so
+    // it is a div with a non-toggling .sechead instead of a <details>.
+    const secO = el('div', 'sec sec-static');
+    const secOHead = el('div', 'sechead');
+    secOHead.appendChild(el('span', null, 'Orchestration'));
+    secO.appendChild(secOHead);
+    const secOBody = el('div', 'secbody');
+    secO.appendChild(secOBody);
+    wrap.appendChild(secO);
+    // The header bar already names the section, so the in-body title is gone;
+    // only the explanation stays.
+    secOBody.appendChild(el('p', 'shelp',
       'How Plato is staffed. Applies from the next run. The mode decides - a stray ACADEMY.yaml never takes over a run.'));
-    const oblock = el('div', 'sblock');
+    // D47i: no nested .sblock — the section body IS the container now, so all
+    // three sections share one nesting depth instead of two different ones.
+    const oblock = secOBody;
     const MODES = [
       { id: 'solo', label: 'Solo', desc: 'Plato alone. No philosopher watching.' },
       { id: 'duo', label: 'Duo', desc: 'Plato + one philosopher steering the run.' },
@@ -2991,10 +3066,10 @@ export function chatHtml(): string {
     const ctxBody = el('div', 'secbody');
     secCtxDet.appendChild(ctxBody);
     wrap.appendChild(secCtxDet);
-    ctxBody.appendChild(el('h2', 'shead2', 'Context'));
     ctxBody.appendChild(el('p', 'shelp',
       'Plato compacts automatically once the conversation outgrows the threshold. /compact, or the ring Compact-now button, forces it whenever you want.'));
-    const ctxBlock = el('div', 'sblock');
+    // D47i: the header bar names the section; no nested .sblock (see Orchestration).
+    const ctxBlock = ctxBody;
     const thrRow = el('div', 'row');
     const thrInput = el('input');
     thrInput.type = 'range';

@@ -1106,6 +1106,52 @@ Duo first. Decisions recorded beyond D47:
   card's fields horizontally; cards are `display:block` and each member's model
   select sits on its own full-width row so a long model ref can't overflow.
 
+**D47i — one Settings surface: unified panels, honest affordances (M4.1, 0.25.0 —
+in the working tree, 2026-09-11).**
+
+Founder review: the Providers and Context header arrows were too small, the
+connection action buttons were jammed together ("Set key and Refresh collapse the
+panel, and Delete is jammed right"), and **Orchestration read as a different panel
+from the other two**.
+
+**Measured, not asserted:** Providers and Context were `DETAILS` sections with a
+1px border and 5px radius, while Orchestration was a bare `DIV` with **`0px none`
+border and `0px` radius** — it was the only section with no frame at all, which is
+exactly why it looked like a different kind of panel. The founder's perception was
+structural fact.
+
+- **Every section now shares one shell** (`.sec` + `.sec-static`): same 1px
+  border, same 8px radius, same widget background, same header bar. Orchestration
+  gets the same treatment but stays **permanently open** (founder decision — the
+  mode cards and the council are the point of the panel), so it is a `div` with a
+  non-toggling `.sechead` whose marker states that instead of pretending to
+  toggle.
+- **The disclosure marker is a real control.** It was a 13px glyph with no box;
+  it is now a 16px glyph in a 16px hit area, and the header bar grew from 29px to
+  ~35px with its own background, a divider when open, and a hover/focus state.
+- **The nested `.sblock` is gone.** Orchestration and Context each wrapped their
+  content in a bordered box inside a bordered section, while Providers did not —
+  two different nesting depths. The section body is now the single container, and
+  the D47h narrow-safety rules were retargeted from `.sblock` to `.secbody`. The
+  in-body titles were dropped: the header bar already names each section, so only
+  the explanatory `.shelp` line remains in all three.
+- **Delete is separated from the primary actions.** Measured before: an identical
+  8px gap between Set key/Refresh *and* Refresh/Delete, so the destructive action
+  read as part of the same group. A flexible fill plus a 1px divider now push
+  Delete to the far right; at a very narrow width it wraps to its own line
+  instead of crowding.
+- **The `Add a provider` inputs no longer clip** (they showed "— or ent",
+  "Base URL ("). The grid's fixed `130px` label column becomes auto-fit — and it
+  was **also hard-coded as `130px 1fr` in JS**, so the CSS fix alone would not have
+  worked.
+- **A layout trap worth recording:** `repeat(auto-fit, minmax(190px, 1fr))` still
+  **overflows** a container narrower than 190px, because auto-fit honours a fixed
+  minimum. The floor is now `min(190px, 100%)` (and `min(220px, 100%)` in the add
+  card), which cannot overflow. The harness caught this at 300px after the first
+  version of the fix.
+
+Presentation only: no `postMessage` type, parser, emitter, or behaviour changed.
+
 **D47h — the doer model select did not stick, and the narrow panel (M4.1, 0.25.0
 — in the working tree, 2026-09-11).**
 
