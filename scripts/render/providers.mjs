@@ -54,6 +54,98 @@ for (const w of [420, 900]) {
     before.find((x) => /Providers/.test(x.t)).open === true
     && after.find((x) => /Providers/.test(x.t)).open === true, { before, after });
   await p.close();
+// 6. The key is entered INLINE (D47l), not via a native dialog.
+{
+  const p = await page(720, S());
+  await openAll(p);
+  const r = await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    const row = card.querySelector('.keyrow');
+    const input = card.querySelector('.keyrow .keyinput');
+    const setBtn = [...card.querySelectorAll('.crow .btn')].find((x) => /Set key/.test(x.textContent));
+    return {
+      rowExists: !!row,
+      hiddenFirst: row.hidden,
+      inputType: input ? input.type : null,
+      hasSave: !![...card.querySelectorAll('.keyrow .btn')].find((x) => /Save key/.test(x.textContent)),
+      hasCancel: !![...card.querySelectorAll('.keyrow .btn')].find((x) => /Cancel/.test(x.textContent)),
+      ariaExpanded: setBtn ? setBtn.getAttribute('aria-expanded') : null,
+      // The old path must be gone from the card.
+      stillPostsNativesettingsKey: null,
+    };
+  });
+  check('key field is hidden until Set key is pressed', r.rowExists && r.hiddenFirst === true, r);
+  check('key field is a password input', r.inputType === 'password', r);
+  check('the inline row has Save key and Cancel', r.hasSave && r.hasCancel, r);
+  check('Set key reports aria-expanded=false initially', r.ariaExpanded === 'false', r);
+
+  // Press Set key -> the row opens, focused.
+  await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    [...card.querySelectorAll('.crow .btn')].find((x) => /Set key/.test(x.textContent)).click();
+  });
+  await p.waitForTimeout(150);
+  const opened = await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    return {
+      hidden: card.querySelector('.keyrow').hidden,
+      focused: document.activeElement === card.querySelector('.keyrow .keyinput'),
+      expanded: [...card.querySelectorAll('.crow .btn')].find((x) => /Set key/.test(x.textContent)).getAttribute('aria-expanded'),
+      height: Math.round(card.querySelector('.keyrow').getBoundingClientRect().height),
+    };
+  });
+  check('pressing Set key opens the inline row', opened.hidden === false && opened.height > 20, opened);
+  check('the field takes focus', opened.focused === true, opened);
+  check('aria-expanded flips to true', opened.expanded === 'true', opened);
+
+  // Type a key and press Enter -> posts settings-set-key, never settings-key.
+  await p.evaluate(() => {
+    const input = document.querySelector('.conn .keyrow .keyinput');
+    input.value = 'sk-live-123';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await p.waitForTimeout(150);
+  const sent = await p.evaluate(() => (window.__posted || []).filter((m) => /settings-(set-)?key/.test(m.type)));
+  check('Enter posts settings-set-key with the value',
+    sent.length === 1 && sent[0].type === 'settings-set-key' && sent[0].connId === 'litellm' && sent[0].apiKey === 'sk-live-123',
+    sent);
+  check('the native settings-key message is NOT used', !sent.some((m) => m.type === 'settings-key'), sent);
+  const cleared = await p.evaluate(() => document.querySelector('.conn .keyrow .keyinput').value);
+  check('the field is cleared after sending (secret not left in the DOM)', cleared === '', cleared);
+
+  // Escape closes and clears.
+  await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    [...card.querySelectorAll('.crow .btn')].find((x) => /Set key/.test(x.textContent)).click();
+  });
+  await p.waitForTimeout(120);
+  await p.evaluate(() => {
+    const input = document.querySelector('.conn .keyrow .keyinput');
+    input.value = 'typing';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  await p.waitForTimeout(120);
+  const esc = await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    return { hidden: card.querySelector('.keyrow').hidden, value: card.querySelector('.keyrow .keyinput').value };
+  });
+  check('Escape closes the row and clears the field', esc.hidden === true && esc.value === '', esc);
+
+  // The section must survive the host reply after saving a key.
+  await p.evaluate(() => {
+    const card = document.querySelector('.conn');
+    [...card.querySelectorAll('.crow .btn')].find((x) => /Set key/.test(x.textContent)).click();
+  });
+  await p.waitForTimeout(120);
+  const before = await p.evaluate(() => document.querySelector('details.sec').open);
+  await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), S());
+  await p.waitForTimeout(340);
+  const after = await p.evaluate(() => [...document.querySelectorAll('details.sec')].map((d) => d.open));
+  check('Providers stays OPEN after a key save reply', before === true && after[0] === true, { before, after });
+  await p.close();
+}
+
+
 }
 
 

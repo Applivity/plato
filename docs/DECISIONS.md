@@ -1147,8 +1147,57 @@ removed, and every Playwright harness now **fails on any uncaught page error**
 and asserts that all three sections are present; reintroducing the call fails the
 guard immediately with the exact message.
 
+**D47l — the API key is entered in the panel (M4.1, 0.25.0 — in the working tree,
+2026-09-11).**
+
+Founder question: *"what is 'Set key' doing — it shows a Visual Studio in-build
+dialog"*. It called `vscode.window.showInputBox({ password: true })`, a native
+modal **above the editor area**.
+
+**Two problems, one cause.** `Add a provider` collected the key **inline in the
+panel** (`fkey`), while `Set key` on an existing card left the panel for a
+dialog — the same conceptual action on two different surfaces. And because the
+native box takes focus, the section re-rendered behind it and appeared to
+collapse. Founder chose option **B**: move key entry inline.
+
+- `Set key` now toggles an inline password field on the card, with `Save key` /
+  `Cancel`, mirroring the Add-provider inputs exactly. It is hidden until
+  pressed, so the card's resting state is unchanged.
+- **Enter** saves, **Escape** cancels. The field takes focus when it opens and
+  reports `aria-expanded`.
+- A new `settings-set-key` message carries the value once. The host stores it in
+  `SecretStorage` (and the legacy anthropic slot), then calls
+  `fetchAndStoreModels` so a new key immediately unblocks the model list — the
+  same behaviour as Add. The value is **never echoed back** to the webview, and
+  the webview clears the input as soon as it is sent, so the secret does not
+  linger in the DOM.
+
+**The command palette keeps the native box.** `plato.setApiKey` /
+`plato.manageKeys` still use `promptForKey`. That is deliberate: the panel is the
+canonical UI and the palette is a power-user shortcut, so there is one coherent
+story rather than three competing surfaces.
+
+**D47k — "Add connection" closed Providers: the restore key was not stable
+(M4.1, 0.25.0 — committed 6f15e52, 2026-09-11).**
+
+D47j restored the open/closed state by keying on the section's **summary text**.
+But the Providers summary embeds a live count:
+
+```
+before:  "Providers  —  0 configured"   (open)
+after:   "Providers  —  1 configured"   (closed — the key no longer matched)
+```
+
+So the restore silently missed for the one action that **changes the count**. Set
+key and Refresh appeared fixed only because neither alters the label. A
+title-derived key is not stable when the title carries state. Each section now
+carries a fixed `data-sec` id (`providers` / `orchestration` / `context`) and the
+restore keys on that; the always-open section is skipped by tag. The regression
+test replays the founder's exact sequence and was proven to fail when the key is
+reverted.
+
 **D47i — one Settings surface: unified panels, honest affordances (M4.1, 0.25.0 —
-in the working tree, 2026-09-11).**
+committed 87aa9cf, 2026-09-11).**
 
 Founder review: the Providers and Context header arrows were too small, the
 connection action buttons were jammed together ("Set key and Refresh collapse the

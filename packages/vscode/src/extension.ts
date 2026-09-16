@@ -564,6 +564,30 @@ class ChatHost {
           void this.sendSettings();
           return;
         }
+        // D47l: the in-panel key path (the Set key button). Stores the key and
+        // refreshes, mirroring the inline field in "Add a provider". The value
+        // arrives once and is never echoed back to the webview.
+        if (
+          m.type === 'settings-set-key' &&
+          typeof m.connId === 'string' &&
+          typeof m.apiKey === 'string'
+        ) {
+          const key = m.apiKey.trim();
+          if (key.length === 0) {
+            void this.sendSettings('Key not saved \u2014 it was empty.');
+            return;
+          }
+          await this.ctx.secrets.store(
+            `plato.providers.${m.connId}.apiKey`,
+            key,
+          );
+          if (m.connId === 'anthropic') {
+            await this.ctx.secrets.store(LEGACY_KEY, key);
+          }
+          // The key may unblock the model list, so refresh it like Add does.
+          void this.fetchAndStoreModels(m.connId);
+          return;
+        }
         if (m.type === 'settings-models' && typeof m.connId === 'string') {
           const sel = Array.isArray(m.models)
             ? (m.models as unknown[]).filter(

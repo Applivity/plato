@@ -528,6 +528,18 @@ export function chatHtml(): string {
   .conn .crow .crow-sep { flex:none; width:1px; height:18px;
                 background:var(--pl-border); margin:0 4px; }
   .conn .crow .btn-danger { margin-left:0; }
+  /* D47l: the inline key field. Hidden until "Set key" is pressed, so the
+     card's resting state is unchanged. It matches the Add-provider inputs. */
+  .conn .keyrow { display:flex; align-items:center; gap:8px;
+                  margin-top:8px; flex-wrap:wrap; }
+  .conn .keyrow[hidden] { display:none; }
+  .conn .keyrow .keyinput { flex:1 1 200px; min-width:0;
+                  padding:6px 9px; font-size:12.5px; font-family:inherit;
+                  border-radius:4px; border:1px solid var(--pl-border);
+                  background:var(--vscode-input-background);
+                  color:var(--vscode-input-foreground); outline:none; }
+  .conn .keyrow .keyinput:focus {
+                  border-color:var(--vscode-focusBorder,#6a6a6a); }
   /* Model multi-select inside a connection card. */
   .conn .picker { margin-top:10px; border:1px solid var(--pl-border);
                   border-radius:6px; overflow:hidden; }
@@ -2480,15 +2492,43 @@ export function chatHtml(): string {
           'No models yet - set a key and use Refresh to fetch the model list.'));
       }
       const crow = el('div', 'crow');
-      if (c.keyStatus !== 'set') {
-        crow.appendChild(sbtn('Set key', () => {
-          vsapi.postMessage({ type: 'settings-key', connId: c.id });
-        }, 'primary'));
-      } else {
-        crow.appendChild(sbtn('Set key', () => {
-          vsapi.postMessage({ type: 'settings-key', connId: c.id });
-        }, 'secondary'));
-      }
+      // D47l: the key is entered INLINE, exactly like "Add a provider". It used
+      // to open a native VS Code input box, which took focus out of the panel
+      // (the section then re-rendered and appeared to collapse), and it gave the
+      // same action two different surfaces. One pattern now covers both.
+      const keyRow = el('div', 'keyrow');
+      const keyInput = el('input');
+      keyInput.type = 'password';
+      keyInput.className = 'ctl keyinput';
+      keyInput.placeholder = c.keyStatus === 'set'
+        ? 'Replace API key\u2026'
+        : 'Paste the API key\u2026';
+      keyInput.autocomplete = 'off';
+      keyInput.setAttribute('aria-label', 'API key for ' + c.id);
+      const keySave = sbtn('Save key', () => {
+        const v = keyInput.value.trim();
+        if (v.length === 0) { return; }
+        vsapi.postMessage({ type: 'settings-set-key', connId: c.id, apiKey: v });
+        // Never keep the secret in the DOM after it is sent.
+        keyInput.value = '';
+      }, c.keyStatus === 'set' ? 'secondary' : 'primary');
+      const keyCancel = sbtn('Cancel', () => {
+        keyInput.value = '';
+        keyRow.hidden = true;
+      }, 'secondary');
+      keyInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); keySave.click(); }
+        if (e.key === 'Escape') { e.preventDefault(); keyCancel.click(); }
+      });
+      const setKeyBtn = sbtn('Set key', () => {
+        keyRow.hidden = !keyRow.hidden;
+        if (!keyRow.hidden) { keyInput.focus(); }
+      }, c.keyStatus === 'set' ? 'secondary' : 'primary');
+      setKeyBtn.setAttribute('aria-expanded', 'false');
+      setKeyBtn.addEventListener('click', () => {
+        setKeyBtn.setAttribute('aria-expanded', keyRow.hidden ? 'false' : 'true');
+      });
+      crow.appendChild(setKeyBtn);
       const refresh = sbtn('\u21BB Refresh models', () => {
         vsapi.postMessage({ type: 'settings-fetch', connId: c.id });
       }, 'secondary');
@@ -2530,6 +2570,13 @@ export function chatHtml(): string {
         'Delete this provider and its stored key (asks once to confirm)');
       crow.appendChild(del);
       card.appendChild(crow);
+      // D47l: the inline key field lives under the action row and is hidden
+      // until "Set key" is pressed, so the card's resting state is unchanged.
+      keyRow.hidden = true;
+      keyRow.appendChild(keyInput);
+      keyRow.appendChild(keySave);
+      keyRow.appendChild(keyCancel);
+      card.appendChild(keyRow);
       list.appendChild(card);
     }
     sec1Body.appendChild(list);

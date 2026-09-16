@@ -100,6 +100,17 @@ may not be available when you work; everything you need is in this repo.
   CSS). **Layout trap recorded:** `repeat(auto-fit, minmax(190px, 1fr))` still
   overflows a container narrower than 190px; the floor must be
   `min(190px, 100%)`.
+  **D47l (working tree) — the API key is entered in the panel:** `Set key` used a
+  native `showInputBox`, so the same action had two surfaces (`Add a provider`
+  was already inline) and the focus loss made the section appear to collapse. It
+  now toggles an inline password field with Save/Cancel (Enter saves, Escape
+  cancels). A new `settings-set-key` message stores into SecretStorage and
+  refreshes the model list; the value is never echoed back and the input is
+  cleared on send. The command palette keeps the native box by design.
+  **D47k (committed 6f15e52) — Add connection closed Providers:** the D47j
+  restore keyed on the section's summary TEXT, which for Providers embeds a live
+  count, so it stopped matching for the one action that changes it. Sections now
+  carry a stable `data-sec` id.
   **D47c (working tree):**
   founder priority — the Academy editor was "utterly disappointing". Academy
   got the polish Duo got in D47b and then some: `open-academy` **creates on
@@ -181,7 +192,23 @@ may not be available when you work; everything you need is in this repo.
 4. **The webview strips native `title` tooltips.** Custom hover bubbles
    are rendered as a `position:fixed` div tracked with `mousemove`
    (see the Compact-now tooltip, D42h/i).
-5. **The webview has a strict CSP** (nonce-gated script, no inline
+5. **An uncaught error in `showSettings` silently aborts the rest of the
+   render.** The page still loads, so nothing looks broken — but the sections
+   after the throw never appear and the state restore never runs. A D47i
+   `appendChild` of a node into its own parent shipped this way and killed the
+   Context section for a whole pass. Every render suite now fails on ANY
+   uncaught page error, and asserts all three sections exist.
+6. **Never key persistent UI state on displayed text.** The Providers summary
+   embeds a live count ("Providers — 1 configured"), so the D47j restore that
+   matched on summary text silently missed for the one action that changes the
+   count (Add connection) while appearing fixed for the others. Use a stable
+   `data-*` id — see `data-sec`.
+7. **Assert the requirement, not the absence of a symptom.** "Nothing overflows"
+   PASSED against three 67px mode cards, because cramming does not overflow. The
+   assertion that works is "each mode card keeps a usable width >= 150px". When a
+   fix lands, revert it and confirm the test fails — otherwise the test is not
+   evidence.
+8. **The webview has a strict CSP** (nonce-gated script, no inline
    handlers, no `eval`). All interactions use `addEventListener`; all
    host calls go through `vsapi.postMessage({ type, ... })`.
 6. **No new message types without a host handler.** Webview → host uses
