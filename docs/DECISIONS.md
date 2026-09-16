@@ -1106,6 +1106,47 @@ Duo first. Decisions recorded beyond D47:
   card's fields horizontally; cards are `display:block` and each member's model
   select sits on its own full-width row so a long model ref can't overflow.
 
+**D47j — the Providers row: collapse on action, a broken Delete, and no confirm
+(M4.1, 0.25.0 — in the working tree, 2026-09-11).**
+
+Founder report, all three missed by the previous pass:
+
+- **Providers collapsed on Set key / Refresh models.** Both paths end in a full
+  `settings` re-render, and `showSettings` wipes `#sbody` — so every section the
+  user had opened snapped shut, taking the connection card with it. The open /
+  closed state of each section (keyed by its title) **and** the scroll position
+  are now captured before the wipe and restored after, so a re-render caused by
+  an action is invisible. First-render defaults are untouched: with no
+  connections, Providers still opens itself.
+- **Delete wrapped to `Del/ete` at EVERY width.** This was a defect I introduced
+  in D47g. `.btn-danger` was sized as a 24px square for the philosopher Remove
+  **icon**, but `sbtn('Delete', …, 'danger')` puts a **text label** in the same
+  class — measured, the button was 24px wide with `white-space: normal`. One
+  class cannot be both shapes. `sbtn` now picks the shape from the label it was
+  given: a glyph-only label gets `.btn-icon` (the 24px square), a word gets a
+  labelled button with `white-space: nowrap`. Verified: Delete is one line at
+  420/560/720/900px, and the Remove icon is still exactly 24×24 with its `✕`.
+- **Delete had no confirmation.** It now deletes a connection **and its stored
+  key** in one click, with no way back. It is a **two-step** button: the first
+  click arms it (label becomes `Confirm delete`, filled red), the second
+  deletes. It disarms on blur or after 6 seconds. A native `confirm()` was
+  rejected — it blocks the whole webview.
+
+**A crash I had introduced in D47i, found while fixing the above.** The D47i
+refactor aliased `oblock = secOBody` and `ctxBlock = ctxBody`, but left two
+`appendChild` calls that re-appended those nodes **into their own parent**:
+
+```
+Failed to execute 'appendChild' on 'Node': The new child element contains the parent.
+```
+
+That threw inside `showSettings` and **aborted the rest of the render** — so the
+Context section never appeared and the new section-restore never ran. It was
+invisible because nothing asserted the page rendered cleanly. Both calls are
+removed, and every Playwright harness now **fails on any uncaught page error**
+and asserts that all three sections are present; reintroducing the call fails the
+guard immediately with the exact message.
+
 **D47i — one Settings surface: unified panels, honest affordances (M4.1, 0.25.0 —
 in the working tree, 2026-09-11).**
 

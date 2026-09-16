@@ -599,30 +599,39 @@ export function chatHtml(): string {
                color:var(--pl-muted); }
   .btn-ghost:hover { color:var(--vscode-editor-foreground);
                      text-decoration:underline; }
-  /* D47g: the destructive icon button. The name MUST match what sbtn emits
-     ('btn-' + variant) — the old '.btn-icon-danger' spelling never matched,
-     so the browser painted its default white button. A small square that
-     borrows the header-icon language (#hist/#gear) and only turns red on
-     hover, so a card of philosophers is not a wall of red. */
-  .btn-danger { display:inline-flex; align-items:center; justify-content:center;
-                width:24px; height:24px; padding:0; flex:none;
-                background:transparent; border:1px solid transparent;
-                border-radius:4px; color:var(--pl-muted);
-                font-size:14px; line-height:1; }
+  /* D47g/D47j: TWO danger shapes, because one class cannot be both.
+     D47g sized .btn-danger as a 24px square for the philosopher Remove icon,
+     but sbtn('Delete', ..., 'danger') renders a TEXT label in the same class —
+     measured, Delete became 24px wide with white-space:normal and wrapped to
+     "Del/ete" at EVERY width. The icon and the labelled button are now distinct
+     classes; sbtn picks the shape from the label it was given. */
+  .btn-danger { background:transparent; border:1px solid var(--pl-border);
+                color:var(--pl-muted); }
   .btn-danger:hover { color:var(--vscode-testing-iconFailed,#f14c4c);
                       border-color:rgba(241,76,76,.45);
                       background:rgba(241,76,76,.12); }
   .btn-danger:focus-visible { outline:1px solid var(--vscode-focusBorder,#6a6a6a);
                               outline-offset:1px; }
-  /* D47g: a wall, not a dead click. NOT the native disabled attribute —
-     that suppresses mouse events, so the tooltip could never explain the
-     reason. aria-disabled keeps it visible and hoverable while the click is
-     swallowed in JS, and the footer states the range permanently. */
-  .btn-danger.is-off, .btn-danger.is-off:hover {
+  /* The icon form: a small square with a real hit area, never a text label. */
+  .btn-danger.btn-icon { display:inline-flex; align-items:center;
+                justify-content:center; width:24px; height:24px; padding:0;
+                border-color:transparent; font-size:14px; line-height:1; }
+  /* A wall, not a dead click. NOT the native disabled attribute — that
+     suppresses mouse events, so the tooltip could never explain the reason. */
+  .btn-danger.btn-icon.is-off, .btn-danger.btn-icon.is-off:hover {
                 color:var(--pl-muted); opacity:.35; cursor:default;
                 border-color:transparent; background:transparent; }
   .btn.is-off, .btn.is-off:hover { opacity:.45; cursor:default;
                 border-color:var(--pl-border); background:transparent; }
+  /* A labelled button never breaks its own label. */
+  .btn-danger:not(.btn-icon) { white-space:nowrap; flex:none; }
+  /* D47j: the armed state of a two-step destructive button. Filled red so the
+     second click is unmistakably the confirming one. */
+  .btn-danger.is-armed,
+  .btn-danger.is-armed:hover {
+                background:var(--vscode-testing-iconFailed,#f14c4c);
+                border-color:var(--vscode-testing-iconFailed,#f14c4c);
+                color:#fff; }
   .note { font-size:11.5px; color:var(--pl-muted); margin-top:4px;
           line-height:1.45; }
   .msg.bot p { margin:.35em 0; }
@@ -1964,13 +1973,22 @@ export function chatHtml(): string {
     if (text !== undefined && text !== null) { n.textContent = text; }
     return n;
   }
+  // D47j: a glyph-only label means an ICON button (square, no text metrics);
+  // a word means a labelled button that must never break its own label. The
+  // danger variant alone cannot express both — that is how Delete became a
+  // 24px box and wrapped to "Del/ete".
+  const isGlyphLabel = (s) => s.length > 0 && s.length <= 2
+    && !/[\w\s]/.test(s);
   function sbtn(label, fn, variant) {
     // D38: variant is one of 'primary' | 'secondary' | 'ghost' | 'danger'.
-    // (defaults to 'secondary'). D47g: 'danger' now maps to the class the CSS
+    // (defaults to 'secondary'). D47g: 'danger' maps to the class the CSS
     // actually defines (.btn-danger); it previously emitted .btn-danger while
     // the stylesheet defined .btn-icon-danger, so the variant had NO rule and
     // the browser painted its default white button.
-    const cls = 'btn btn-' + (variant || 'secondary');
+    let cls = 'btn btn-' + (variant || 'secondary');
+    if (variant === 'danger' && isGlyphLabel(String(label))) {
+      cls += ' btn-icon';
+    }
     const b = el('button', cls, label);
     b.type = 'button'; // never submit an enclosing form (0.4.2 bug)
     b.addEventListener('click', fn);
@@ -2305,7 +2323,31 @@ export function chatHtml(): string {
     return card;
   };
 
+  // D47j: a full re-render used to close every section the user had opened, so
+  // clicking "Set key" or "Refresh models" collapsed Providers out from under
+  // them (both paths end in a fresh settings payload). The open/closed state
+  // of the sections, plus the scroll position, is now preserved across renders.
+  // Keyed by the section title, because that is stable while a member or
+  // connection count is not.
+  let settingsScroll = null;
+  const openSectionTitles = () => {
+    const set = new Set();
+    for (const d of document.querySelectorAll('#sbody details.sec')) {
+      const sum = d.querySelector('summary');
+      if (d.open && sum) { set.add(sum.textContent.trim()); }
+    }
+    return set;
+  };
+
   function showSettings(d) {
+    // Capture the UI state BEFORE wiping the body, so a re-render is invisible.
+    const wasOpen = document.body.classList.contains('show-settings')
+      ? openSectionTitles()
+      : null;
+    if (wasOpen) {
+      const sb = document.getElementById('sbody');
+      settingsScroll = sb ? sb.scrollTop : null;
+    }
     document.body.classList.add('show-settings');
     // D47f: the palette arrives with the payload; nothing here can import core.
     setColorPalette((d.orchestration && d.orchestration.colors) || []);
@@ -2451,9 +2493,35 @@ export function chatHtml(): string {
       crow.appendChild(el('span', 'crow-sep'));
       // D38b: built-ins are no longer rendered as cards, so every card
       // here is user-managed. Always show Delete.
-      crow.appendChild(sbtn('Delete', () => {
+      // D47j: Delete destroys a connection AND its stored key, so it is a
+      // two-step button: the first click arms it, the second confirms. A native
+      // confirm dialog is avoided — it blocks the whole webview. The row is
+      // re-rendered in place, so the layout (and the section's open state) is
+      // untouched, and the armed state reverts on blur or after a timeout.
+      const del = sbtn('Delete', () => undefined, 'danger');
+      let armed = false;
+      let armTimer = null;
+      const disarm = () => {
+        armed = false;
+        if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+        del.textContent = 'Delete';
+        del.classList.remove('is-armed');
+      };
+      del.addEventListener('click', () => {
+        if (!armed) {
+          armed = true;
+          del.textContent = 'Confirm delete';
+          del.classList.add('is-armed');
+          armTimer = setTimeout(disarm, 6000);
+          return;
+        }
+        disarm();
         vsapi.postMessage({ type: 'settings-delete', connId: c.id });
-      }, 'danger'));
+      });
+      del.addEventListener('blur', disarm);
+      del.setAttribute('aria-label',
+        'Delete this provider and its stored key (asks once to confirm)');
+      crow.appendChild(del);
       card.appendChild(crow);
       list.appendChild(card);
     }
@@ -3054,8 +3122,11 @@ export function chatHtml(): string {
       oblock.appendChild(duo);
     }
 
-    secO.appendChild(oblock);
-    wrap.appendChild(secO);
+    // D47j: this block used to end with secO.appendChild(oblock) followed by
+    // wrap.appendChild(secO). Since D47i, oblock IS secOBody and secO is
+    // already in the tree, so the appendChild threw "The new child element
+    // contains the parent" and aborted the rest of showSettings — which killed
+    // the section-preservation restore and the whole Context section.
 
 
     // ---- 3. Context (compaction) (collapsed) ----
@@ -3093,7 +3164,24 @@ export function chatHtml(): string {
     thrRow.appendChild(thrInput);
     thrRow.appendChild(thrLive);
     ctxBlock.appendChild(thrRow);
-    ctxBody.appendChild(ctxBlock);
+    // (D47j: no ctxBody.appendChild(ctxBlock) here — ctxBlock IS ctxBody, so
+    // that appendChild threw the same "contains the parent" error.)
+
+    // D47j: restore what the user had open, then their scroll position, so a
+    // re-render caused by Set key / Refresh models is invisible. On a first
+    // render (nothing was open yet) the section defaults are left alone.
+    if (wasOpen) {
+      for (const det of wrap.querySelectorAll('details.sec')) {
+        const sum = det.querySelector('summary');
+        if (!sum) { continue; }
+        // Sections are always re-rendered CLOSED except Providers-with-none,
+        // so an "open by default" rule cannot override the user's choice here.
+        det.open = wasOpen.has(sum.textContent.trim());
+      }
+      const sb = document.getElementById('sbody');
+      if (sb && settingsScroll !== null) { sb.scrollTop = settingsScroll; }
+      settingsScroll = null;
+    }
 
     scroll();
   }
