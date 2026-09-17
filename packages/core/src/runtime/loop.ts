@@ -41,44 +41,6 @@ function clampThreshold(t: number): number {
   return Math.max(0.5, Math.min(0.95, t));
 }
 
-/** D49h: fraction of the budget at which the user is warned before the stop. */
-const BUDGET_WARN_AT = 0.9;
-
-/**
- * D49h: the reason to stop with, or null to keep going. `turn` is a turn that
- * has COMPLETED, so a `turns` budget of 3 allows exactly three turns.
- *
- * A `usd` budget is checked against the run's accumulated *estimate* — the price
- * table is a display-only approximation (cost.ts), so this is a guard rail, not
- * an accountant. It stops a runaway run; it does not promise an exact bill.
- */
-function budgetBreach(
-  budget: { usd?: number; turns?: number } | undefined,
-  state: { costUsd: number; turn: number },
-): string | null {
-  if (budget === undefined) {
-    return null;
-  }
-  if (budget.turns !== undefined && state.turn >= budget.turns) {
-    return `turn budget reached (${budget.turns} turns) — stopping`;
-  }
-  if (budget.usd !== undefined && budget.usd > 0 && state.costUsd >= budget.usd) {
-    return `run budget reached ($${state.costUsd.toFixed(4)} of $${budget.usd.toFixed(2)}) — stopping`;
-  }
-  return null;
-}
-
-function budgetNear(
-  budget: { usd?: number } | undefined,
-  costUsd: number,
-): boolean {
-  return (
-    budget?.usd !== undefined &&
-    budget.usd > 0 &&
-    costUsd >= budget.usd * BUDGET_WARN_AT
-  );
-}
-
 export interface ApprovalRequest {
   tool: string;
   args: ToolArgs;
@@ -192,13 +154,6 @@ export interface LoopOptions {
    * identical on every turn, so after the first turn it is read at a discount.
    */
   cache?: boolean;
-  /**
-   * D49h: stop the run cleanly once it has spent this much. Checked after each
-   * COMPLETED turn, so tools are never cut off mid-flight. `usd` is compared
-   * against the estimated cost (a guard rail, not an exact bill); `turns` is a
-   * hard turn count. Omit either to leave it unbounded; `usd: 0` means no cap.
-   */
-  budget?: { usd?: number; turns?: number };
   /**
    * D49f: retry policy for the worker's provider call. Compaction and the
    * observer are NOT wrapped — both already degrade gracefully, and a second
@@ -367,8 +322,6 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
   let turn = 1;
-  /** D49h: warn about the budget once, not on every turn. */
-  let budgetWarned = false;
   for (; turn <= MAX_TURNS; turn++) {
     // Safe point (D24b): honour cancel/pause and drain observer guidance.
     if (!(await ctrl.gate())) {
@@ -752,29 +705,6 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
     }
     messages.push({ role: 'user', content: userContent });
-
-    // D49h: the budget is checked at the END of a COMPLETED turn, not at the top
-    // of the next one. Two reasons: a turn's tools always finish, so nothing is
-    // cut off mid-flight, and `turn` here is a turn that actually ran, so the
-    // reported count stays honest. The first turn always runs, even against a
-    // budget that is already exceeded.
-    const breach = budgetBreach(opts.budget, { costUsd, turn });
-    if (breach !== null) {
-      reason = 'cap';
-      capNote = breach;
-      bus.emit({ type: 'notice', runId, text: `[plato] ${breach}` });
-      break;
-    }
-    if (!budgetWarned && budgetNear(opts.budget, costUsd)) {
-      budgetWarned = true;
-      bus.emit({
-        type: 'notice',
-        runId,
-        text:
-          `[plato] approaching the run budget — $${costUsd.toFixed(4)} of ` +
-          `$${(opts.budget?.usd ?? 0).toFixed(2)} spent`,
-      });
-    }
   }
 
   if (capNote) {

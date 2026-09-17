@@ -315,18 +315,8 @@ export function chatHtml(): string {
       background:var(--vscode-input-background);
       color:var(--vscode-input-foreground); outline:none; }
   .secbody input[type=range] { padding:0; height:6px; }
-  /* D49h: the run-budget field. Bounded rather than fixed so it does not reflow
-     as the digits change, and shrinkable so a narrow panel squeezes it instead
-     of overflowing. */
-  .secbody input.budget-input { flex:0 1 140px; font-variant-numeric:tabular-nums;
-      text-align:right; }
   .secbody .liveval { font-size:11.5px; color:var(--pl-muted);
                      min-width:80px; text-align:right; font-variant-numeric:tabular-nums; }
-  /* The live value lands flush right, the same as the Auto-threshold row above
-     it. Without this the budget row's live label sits hard against its field
-     and the two rows in one section disagree about where the value goes.
-     (A no-op on the threshold row: its slider is flex:1, so no space is free.) */
-  .secbody .row .liveval { margin-left:auto; }
   /* Mode picker cards. D47h: auto-fit, not a fixed 3-column grid — at a narrow
      editor column (~290px of content) three fixed columns gave each card ~62px
      of text, so the descriptions crammed and were clipped. auto-fit collapses
@@ -3199,9 +3189,7 @@ export function chatHtml(): string {
     const secCtxDet = document.createElement('details');
     secCtxDet.className = 'sec';
     secCtxDet.setAttribute('data-sec', 'context');
-    // D49h: this section holds two limits now \u2014 the compaction threshold and the
-    // run budget \u2014 so naming it "compaction" had stopped being true.
-    secCtxDet.appendChild(el('summary', null, 'Context  \u2014  limits'));
+    secCtxDet.appendChild(el('summary', null, 'Context  \u2014  compaction'));
     const ctxBody = el('div', 'secbody');
     secCtxDet.appendChild(ctxBody);
     wrap.appendChild(secCtxDet);
@@ -3232,34 +3220,6 @@ export function chatHtml(): string {
     thrRow.appendChild(thrInput);
     thrRow.appendChild(thrLive);
     ctxBlock.appendChild(thrRow);
-
-    // D49h: the run budget. A number input, not a slider — dollars are not a
-    // 0..1 scale, and the useful range spans 0 to about 20. 0 means no cap, and
-    // the label says so in words rather than showing "$0.00", which reads like a
-    // cap of zero.
-    const budInfo = d.budget || { usd: 0 };
-    const budLabel = (v) => {
-      if (!Number.isFinite(v) || v <= 0) { return 'no cap'; }
-      return 'stops at $' + v.toFixed(2) + ' (estimated)';
-    };
-    const budRow = el('div', 'row');
-    const budInput = el('input');
-    budInput.type = 'number';
-    budInput.min = '0';
-    budInput.step = '0.5';
-    budInput.className = 'budget-input';
-    budInput.value = String(budInfo.usd ?? 0);
-    const budLive = el('span', 'liveval', budLabel(budInfo.usd ?? 0));
-    budInput.addEventListener('input', () => {
-      budLive.textContent = budLabel(Number(budInput.value));
-    });
-    budInput.addEventListener('change', () => {
-      vsapi.postMessage({ type: 'set-budget', value: Number(budInput.value) });
-    });
-    budRow.appendChild(el('label', null, 'Run budget'));
-    budRow.appendChild(budInput);
-    budRow.appendChild(budLive);
-    ctxBlock.appendChild(budRow);
     // (D47j: no ctxBody.appendChild(ctxBlock) here — ctxBlock IS ctxBody, so
     // that appendChild threw the same "contains the parent" error.)
 

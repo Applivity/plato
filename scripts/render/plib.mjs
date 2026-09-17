@@ -16,8 +16,6 @@ const BASE = {
   defaultModel: '', workers: { noRoot: false, plato: 'global', agentsFile: null },
   orchestration: { mode: 'solo', personas: [], colors: [], roleMaxChars: 1000, duo: {}, academy: { available: false, name: '', members: [], error: '' } },
   compaction: { mode: 'auto', threshold: 0.8 },
-  // D49h: the run budget rides the settings payload alongside compaction.
-  budget: { usd: 0 },
 };
 export const S = (over) => ({ ...BASE, ...(over || {}) });
 

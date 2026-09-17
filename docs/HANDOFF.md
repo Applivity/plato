@@ -40,10 +40,6 @@ are now only in PROGRESS.
   marked cacheable. **`inputTokens` is a TOTAL** (Anthropic reports it net of
   cache, OpenAI gross) — do not map either straight through, or the context ring
   and the cost will disagree between providers.
-- **A run has a budget (D49h).** Settings → **Context — limits** holds the
-  compaction threshold and a run budget in USD (`0` = no cap). The check runs
-  after a completed turn, so tools are never cut mid-flight. It is a guard rail
-  against the *estimated* cost, not an exact bill.
 - **Cancel now aborts the call in flight (D49i).** `RunController.cancel()`
   aborts a signal threaded through `TurnRequest` to both HTTP layers. **An abort
   and a transport failure look identical** (status `null`, which is retryable),
@@ -110,12 +106,12 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **274** passing
-  vitest cases across **26** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **267** passing
+  vitest cases across **25** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Seven suites, **182 assertions**; see
+  unit tests + render suites. Six suites, **160 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -203,7 +199,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 274/274 vitest in packages/core (26 files)
+2. `pnpm -r test` — 267/267 vitest in packages/core (25 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -220,7 +216,9 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** Phases 0 and 1 are done (D49a–i). **Next
+the roadmap — do not restate it here.** Phases 0 and 1 are done (D49a–g, D49i —
+**D49h was built and then removed the same day**; do not re-add a run budget
+without reading why it went). **Next
 is Phase 2, real streaming**, whose design is settled in D49; the one thing D49
 cannot tell you is that the working precedent for the Anthropic half was the M0
 provider deleted in D49e, which is in git history at `136564b`,

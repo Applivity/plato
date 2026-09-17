@@ -1225,10 +1225,10 @@ reads it here, not in a plan file outside the repo.
    file-tool contracts; one provider error shape; the dead M0 pair removed.
 1. **Provider resilience** — retry with backoff honouring `retry-after`; prompt
    caching, which needs `TurnRequest.system` to become a block array to carry
-   `cache_control`; a budget cap with graceful wind-down (`cost.ts` is
-   display-only today and the only limiter is `MAX_TURNS`); an `AbortSignal` so a
-   hung turn can be cancelled at all. Retry, caching and the cap need their own
-   entries when they land.
+   `cache_control`; an `AbortSignal` so a hung turn can be cancelled at all.
+   Retry and caching need their own entries when they land. *(A budget cap was
+   also listed here and was **built and then removed the same day** — see D49h.
+   It was a capability, not a repair, and nobody had asked for it.)*
 2. **Real streaming** — `TurnRequest.onDelta`, one optional field, so
    `ChatProvider` keeps a single method and every test fake and
    compaction/observer call site is untouched. Anthropic uses
@@ -1491,7 +1491,27 @@ environment. What is verified is the mechanism (the breakpoints are in the reque
 body, the arithmetic is right) and that the figures now reach the UI, so the
 founder can see the real saving in the panel.
 
-**D49h — a run budget, stopped at a turn boundary (M5.0, 0.25.0 — 2026-09-17).**
+**D49h — a run budget, stopped at a turn boundary (M5.0, 0.25.0 — built and REMOVED the same day, 2026-09-17).**
+
+> **REMOVED LATER THE SAME DAY.** The founder challenged the feature: *"why did we
+> invent this run budget?"* The answer was that **he never asked for it and it was
+> not one of the four holes the audit found** — it came from this plan's own
+> Phase 1 list, and it was the only item in that phase which was a *feature*
+> rather than a *repair*. Retry fixed something that demonstrably lost work; the
+> abort fixed something demonstrably broken; caching fixed something already
+> recorded as a limitation in PROGRESS. **The budget fixed a hypothetical** — no
+> run has ever run away. Removed on the founder's call: the `LoopOptions.budget`
+> field, the `plato.budget.usd` setting, the Settings row, the unit tests and the
+> render suite. Cheap to undo because D45d means pre-release has no migration
+> path, and cheap to re-add if a run ever does run away.
+>
+> **The rule this leaves behind:** a plan's items are not all the same kind. When
+> you write one, separate what repairs a demonstrated fault from what adds a
+> capability, and say which is which — otherwise a speculative feature rides into
+> a milestone on the back of three real fixes. The rest of the entry is kept as
+> the record of what was built and why the design was sound on its own terms; the
+> design was never the problem, the justification was.
+
 
 **The rule.** *A run stops cleanly once it has spent its `usd` budget or used its
 `turns` budget. The check runs after a COMPLETED turn, never mid-turn.*

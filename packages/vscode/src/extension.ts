@@ -887,16 +887,6 @@ class ChatHost {
           this.postModelState();
           return;
         }
-        // D49h: the run budget posts set-budget. Clamped at 0 (no cap) here too,
-        // so a hand-typed negative cannot stop every run before it starts.
-        if (m.type === 'set-budget' && typeof m.value === 'number') {
-          const usd = Number.isFinite(m.value) && m.value > 0 ? m.value : 0;
-          await vscode.workspace
-            .getConfiguration('plato')
-            .update('budget.usd', usd, vscode.ConfigurationTarget.Global);
-          this.postModelState();
-          return;
-        }
         if (m.type === 'request-compact') {
           // Mid-run: force the live run to compact. Idle: fold the older
           // turns into a summary (same as /compact).
@@ -1752,23 +1742,7 @@ class ChatHost {
       academy: this.academyStatus(),
       // D37: live context UI state.
       compaction: this.compactionState(),
-      // D49h: the run budget.
-      budget: this.budgetState(),
     });
-  }
-
-  /**
-   * D49h: the run budget in USD. 0 (the default) means no cap. Negative or
-   * non-finite values are treated as no cap rather than as an instant stop —
-   * a bad setting must not silently kill every run.
-   */
-  private budgetState(): { usd: number } {
-    const raw = vscode.workspace
-      .getConfiguration('plato')
-      .get<number>('budget.usd', 0);
-    return {
-      usd: typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0,
-    };
   }
 
   /**
@@ -2716,10 +2690,6 @@ class ChatHost {
         // of a run, so mark them cacheable. A no-op for OpenAI, which caches
         // implicitly; on Anthropic it is a straight input-cost saving.
         cache: true,
-        // D49h: 0 means no cap, so only pass a budget when one is set.
-        ...(this.budgetState().usd > 0
-          ? { budget: { usd: this.budgetState().usd } }
-          : {}),
         history: this.historyFor(),
         mcpServers,
         // D37: context compaction. Mode + threshold come from settings
