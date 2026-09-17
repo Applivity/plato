@@ -18,6 +18,51 @@ function stripPrefix(ref: string): string {
   return i >= 0 ? ref.slice(i + 1) : ref;
 }
 
+/**
+ * D49j: the one response mapping, shared by the streaming and blocking paths.
+ * `messages.stream().finalMessage()` resolves with the same assembled Message
+ * `messages.create()` returns, so both callers can hand it to this function —
+ * which is what keeps the two paths from drifting apart.
+ */
+function mapMessage(res: Message): TurnResponse {
+  const content: CanonicalContent[] = [];
+  for (const block of res.content as ContentBlockParam[]) {
+    if (block.type === 'text') {
+      content.push({ type: 'text', text: block.text });
+    } else if (block.type === 'tool_use') {
+      content.push({
+        type: 'tool_use',
+        id: block.id,
+        name: block.name,
+        input: (block.input ?? {}) as Record<string, unknown>,
+      });
+    }
+  }
+
+  // D49g: `input_tokens` is reported NET of cache, so add the cache figures
+  // back to keep `inputTokens` a true total across both adapters.
+  const cacheWriteTokens = res.usage?.cache_creation_input_tokens ?? 0;
+  const cacheReadTokens = res.usage?.cache_read_input_tokens ?? 0;
+  return {
+    content,
+    usage: {
+      inputTokens:
+        (res.usage?.input_tokens ?? 0) + cacheWriteTokens + cacheReadTokens,
+      outputTokens: res.usage?.output_tokens ?? 0,
+      cacheReadTokens,
+      cacheWriteTokens,
+    },
+    stopReason:
+      res.stop_reason === 'max_tokens'
+        ? 'max_tokens'
+        : res.stop_reason === 'tool_use'
+          ? 'tool_use'
+          : res.stop_reason === 'end_turn'
+            ? 'stop'
+            : 'other',
+  };
+}
+
 export class AnthropicNativeProvider implements ChatProvider {
   readonly id = 'anthropic' as const;
   private readonly client: Anthropic;
@@ -58,42 +103,59 @@ export class AnthropicNativeProvider implements ChatProvider {
 
     // D40b: omit tools entirely for tool-less turns instead of sending
     // an empty array — consistent with the OpenAI-compat adapter.
+    // Deliberately un-annotated: this object is handed to BOTH
+    // messages.create and messages.stream. Annotating it as the shared base
+    // type widens `stream` to `boolean`, which makes `create` resolve to the
+    // streaming overload and return a union.
+    const params = {
+      model: stripPrefix(req.model),
+      max_tokens: maxTokens,
+      // D49g: mark the stable prefix cacheable. The system prompt is the same
+      // on every turn of a run, so after the first turn it is read at a tenth
+      // of the input rate instead of re-sent at full price.
+      system: req.cache
+        ? [
+            {
+              type: 'text' as const,
+              text: req.system,
+              cache_control: { type: 'ephemeral' as const },
+            },
+          ]
+        : req.system,
+      ...(req.tools.length > 0
+        ? {
+            tools: req.tools.map((t, i) => ({
+              name: t.name,
+              description: t.description,
+              input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
+              // A breakpoint on the LAST tool caches the whole array.
+              ...(req.cache && i === req.tools.length - 1
+                ? { cache_control: { type: 'ephemeral' as const } }
+                : {}),
+            })),
+          }
+        : {}),
+      messages,
+      ...extra,
+    };
+
+    // D49i: the SDK takes request options as a second argument; the signal
+    // aborts the request in flight rather than waiting for the response.
+    const options = { signal: req.signal };
+
     let res: Message;
     try {
-      res = await this.client.messages.create({
-        model: stripPrefix(req.model),
-        max_tokens: maxTokens,
-        // D49g: mark the stable prefix cacheable. The system prompt is the same
-        // on every turn of a run, so after the first turn it is read at a tenth
-        // of the input rate instead of re-sent at full price.
-        system: req.cache
-          ? [
-              {
-                type: 'text' as const,
-                text: req.system,
-                cache_control: { type: 'ephemeral' as const },
-              },
-            ]
-          : req.system,
-        ...(req.tools.length > 0
-          ? {
-              tools: req.tools.map((t, i) => ({
-                name: t.name,
-                description: t.description,
-                input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
-                // A breakpoint on the LAST tool caches the whole array.
-                ...(req.cache && i === req.tools.length - 1
-                  ? { cache_control: { type: 'ephemeral' as const } }
-                  : {}),
-              })),
-            }
-          : {}),
-        messages,
-        ...extra,
-      },
-      // D49i: the SDK takes request options as a second argument; the signal
-      // aborts the request in flight rather than waiting for the response.
-      { signal: req.signal });
+      if (req.onDelta) {
+        // D49j: stream when someone is watching the answer being written.
+        // Awaiting `finalMessage()` — rather than only listening for 'error' —
+        // is what keeps a mid-stream failure a normal rejection instead of an
+        // unhandled one, and it aborts through the same `signal` as `create`.
+        const stream = this.client.messages.stream(params, options);
+        stream.on('text', req.onDelta);
+        res = await stream.finalMessage();
+      } else {
+        res = await this.client.messages.create(params, options);
+      }
     } catch (e) {
       // D49d: previously this file had NO error handling — the SDK's error
       // escaped raw and the shell replaced it with a fixed sentence. The SDK
@@ -101,41 +163,6 @@ export class AnthropicNativeProvider implements ChatProvider {
       throw toProviderError(e, 'anthropic');
     }
 
-    const content: CanonicalContent[] = [];
-    for (const block of res.content as ContentBlockParam[]) {
-      if (block.type === 'text') {
-        content.push({ type: 'text', text: block.text });
-      } else if (block.type === 'tool_use') {
-        content.push({
-          type: 'tool_use',
-          id: block.id,
-          name: block.name,
-          input: (block.input ?? {}) as Record<string, unknown>,
-        });
-      }
-    }
-
-    // D49g: `input_tokens` is reported NET of cache, so add the cache figures
-    // back to keep `inputTokens` a true total across both adapters.
-    const cacheWriteTokens = res.usage?.cache_creation_input_tokens ?? 0;
-    const cacheReadTokens = res.usage?.cache_read_input_tokens ?? 0;
-    return {
-      content,
-      usage: {
-        inputTokens:
-          (res.usage?.input_tokens ?? 0) + cacheWriteTokens + cacheReadTokens,
-        outputTokens: res.usage?.output_tokens ?? 0,
-        cacheReadTokens,
-        cacheWriteTokens,
-      },
-      stopReason:
-        res.stop_reason === 'max_tokens'
-          ? 'max_tokens'
-          : res.stop_reason === 'tool_use'
-            ? 'tool_use'
-            : res.stop_reason === 'end_turn'
-              ? 'stop'
-              : 'other',
-    };
+    return mapMessage(res);
   }
 }

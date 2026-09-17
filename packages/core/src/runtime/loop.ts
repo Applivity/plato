@@ -122,6 +122,16 @@ export interface LoopOptions {
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
   onText?: (text: string) => void;
+  /**
+   * D49j: the CURRENT turn's text as it arrives, so the reply is visible while
+   * it is written rather than after the whole turn. The argument is the text
+   * SO FAR, not the newest fragment — a caller replaces what it shows instead
+   * of appending, which is also what makes a retried turn correct: the second
+   * attempt starts from '' and overwrites the attempt it abandoned.
+   *
+   * Absent, the loop makes blocking calls exactly as it did before.
+   */
+  onTextDelta?: (textSoFar: string) => void;
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
@@ -434,8 +444,13 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       // instead of ending the run and losing every turn so far. Each retry is
       // announced, so a stalled turn is explained rather than looking hung.
       res = await withRetry(
-        () =>
-          client.completeTurn({
+        () => {
+          // D49j: a fresh accumulator per attempt. The adapter reports
+          // fragments; the caller wants the text so far. Resetting here is what
+          // stops a retry from concatenating onto the text of the attempt it
+          // just abandoned — the second attempt REPLACES the first.
+          let streamed = '';
+          return client.completeTurn({
             model: opts.model,
             system: currentSystem,
             tools: allTools,
@@ -444,7 +459,18 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
             reasoning: opts.reasoning,
             cache: opts.cache,
             signal: ctrl.signal,
-          }),
+            // Only ask for a stream when someone is watching; otherwise the
+            // blocking path is used, which is what every test fake expects.
+            ...(opts.onTextDelta
+              ? {
+                  onDelta: (t: string) => {
+                    streamed += t;
+                    opts.onTextDelta!(streamed);
+                  },
+                }
+              : {}),
+          });
+        },
         {
           policy: opts.retry?.policy,
           sleep: opts.retry?.sleep,

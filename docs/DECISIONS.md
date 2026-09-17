@@ -1564,6 +1564,63 @@ request options for Anthropic, `fetch`'s `init` for the OpenAI-compatible path.
 Both are asserted directly, because "the signal is plumbed" is exactly the kind of
 claim that is easy to make and easy to get wrong.
 
+**D49j — real streaming: the wire format changes, the answer does not (M5.0,
+0.25.0 — 2026-09-17).**
+
+**The rule.** *Streaming changes WHEN the text is visible, never WHAT it says.
+The assembled `TurnResponse` is identical whether or not anyone was watching.*
+
+**The shape.** `TurnRequest.onDelta?: (text: string) => void` — one optional
+field, as the plan sketched. `ChatProvider` keeps its single method, so every test
+fake, the compactor and the observer are untouched and automatically
+non-streaming: they build their own `TurnRequest` without a sink. `LoopOptions`
+gained `onTextDelta`, and the loop forwards to the adapter only when someone is
+watching, so the blocking path is what runs by default.
+
+**Parity is structural, not asserted.** The Anthropic adapter's response mapping
+became one `mapMessage(res)`, and `messages.stream().finalMessage()` resolves with
+the *same assembled `Message`* `messages.create()` returns — so both callers hand
+the same object to the same function. The OpenAI-compatible SSE parser
+**rebuilds the non-streaming JSON shape** and passes it to the shared
+`mapResponse(json)`. Neither path can drift from the other without deleting the
+shared function, which is why the parity tests compare whole responses rather than
+fields. Verified against the **real SDK**, not only the mock: `scripts/smoke-stream.mjs`
+points `@anthropic-ai/sdk` at a local SSE stub through `ANTHROPIC_BASE_URL` and
+confirms deltas arrive as separate fragments and that streamed equals blocking
+byte for byte.
+
+**The retry trap — the one non-obvious part.** Retry (D49f) and streaming
+interact badly: attempt 1 delivers `"Hel"` and dies, attempt 2 delivers `"Hello"`,
+and a shared accumulator reports **`"HelHello"`** — text the model never produced.
+So the loop keeps a *fresh accumulator per attempt* and hands the caller the text
+**so far** rather than the newest fragment. The caller then *replaces* what it
+shows instead of appending, and a retry corrects itself. Falsified directly: a
+shared accumulator makes the retry test fail with exactly `"HelHello"`.
+
+**The content-type guard is load-bearing.** Some compatible servers accept
+`stream: true` and answer with plain JSON. Trusting the request flag would turn
+that into a **silently empty answer**, so the response `content-type` decides, and
+a non-`text/event-stream` body falls back to `res.json()`. Removing the guard
+makes the fallback test fail with `[]`.
+
+**The UI is a preview that a commit supersedes.** The host holds the streaming
+text in `streamPreview` and posts `renderMarkdown(replyBuffer + streamPreview)` on
+a ~50 ms trailing throttle — `renderMarkdown` re-parses the whole buffer, so
+per-fragment posting is quadratic. A committed block **clears** the preview rather
+than appending to it, so the turn's text cannot appear twice; a turn cut short
+mid-stream has its preview folded in, because the user watched that text appear.
+Deltas deliberately do **not** ride the bus: `transcript.ts` writes every event
+verbatim, so per-fragment text events would put hundreds of lines in the
+transcript and fragment the observer's digest. The completed-block `text` events
+are unchanged, and a test pins that the bus still sees one event per block.
+
+**Verification.** 21 new core tests including split-line reassembly, fragmented
+and interleaved `tool_calls`, CRLF and heartbeats, the `[DONE]` sentinel, missing
+usage, and both parity claims. A seventh render suite asserts the DOM contract
+(replace-not-append, turn-boundary commit, chronological ordering) — falsified by
+making `streamHtml` append, which produced `"HelloHello worHello world"` and five
+failures.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

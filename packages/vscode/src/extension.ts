@@ -286,6 +286,12 @@ type PendingResolve = (v: boolean) => void;
 
 const LOG_KEY = 'plato.chatLog';
 const LOG_MAX = 400;
+/**
+ * D49j: how often the in-progress reply is re-rendered. `renderMarkdown`
+ * re-parses the WHOLE buffer, so posting per fragment is quadratic; a trailing
+ * throttle caps it at ~20 posts/second, which still reads as live typing.
+ */
+const STREAM_THROTTLE_MS = 50;
 const TITLE_KEY = 'plato.chatTitle';
 const SESSIONS_KEY = 'plato.chatSessions';
 const SESSIONS_MAX = 30;
@@ -323,6 +329,14 @@ class ChatHost {
   private pendingApproval: PendingResolve | null = null;
   private pendingQuestion: ((answers: string[]) => void) | null = null;
   private replyBuffer = '';
+  /**
+   * D49j: the current turn's text as it arrives, and the pending throttle
+   * timer. This is a PREVIEW, never a source of truth — a committed block
+   * supersedes it. It exists only so the reply can be shown while it is
+   * written instead of after the whole turn lands.
+   */
+  private streamPreview = '';
+  private streamTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private modelOverride: string | null = null;
   private readonly log: Entry[];
@@ -2027,6 +2041,43 @@ class ChatHost {
     }
   }
 
+  /**
+   * D49j: re-render the in-progress reply, at most once per throttle window.
+   * Trailing rather than leading — the LAST fragment of a turn is the one that
+   * must end up on screen, and a leading throttle would drop it.
+   */
+  private postStreamSoon(): void {
+    if (this.streamTimer !== null) {
+      return;
+    }
+    this.streamTimer = setTimeout(() => {
+      this.streamTimer = null;
+      this.send('md', renderMarkdown(this.replyBuffer + this.streamPreview));
+    }, STREAM_THROTTLE_MS);
+  }
+
+  /** Drop a pending repaint; the caller is about to post its own. */
+  private cancelStreamTimer(): void {
+    if (this.streamTimer !== null) {
+      clearTimeout(this.streamTimer);
+      this.streamTimer = null;
+    }
+  }
+
+  /**
+   * D49j: fold streamed-but-uncommitted text into the reply buffer. A turn that
+   * ran to completion has none — every block was committed, and committing
+   * clears the preview. A turn cut short mid-stream does, and the user watched
+   * that text appear, so it is what should be recorded.
+   */
+  private foldPreview(): void {
+    this.cancelStreamTimer();
+    if (this.streamPreview.length > 0) {
+      this.replyBuffer += this.streamPreview;
+      this.streamPreview = '';
+    }
+  }
+
   private push(entry: Entry): void {
     this.log.push(entry);
     if (this.log.length > LOG_MAX) {
@@ -2067,6 +2118,10 @@ class ChatHost {
     this.pendingHistory = null;
     this.pendingApproval = null;
     this.replyBuffer = '';
+    // D49j: the webview is about to be blanked; a pending repaint would post
+    // the old conversation's text into the new one.
+    this.streamPreview = '';
+    this.cancelStreamTimer();
     await this.panel.webview.postMessage({
       type: 'restore',
       log: [],
@@ -2366,6 +2421,11 @@ class ChatHost {
       return;
     }
     this.replyBuffer = '';
+    // D49j: drop anything the previous run left in the streaming preview, and
+    // the pending repaint with it — a timer firing into a fresh run would post
+    // the old turn's text over the new one.
+    this.streamPreview = '';
+    this.cancelStreamTimer();
     // D41: name the conversation from the prompt immediately — the
     // title arrives a second or two into the run, not after it.
     void this.maybeGenerateTitle(conn, apiKey, ref, task);
@@ -2637,6 +2697,8 @@ class ChatHost {
     bus.on((e) => {
       if (e.type === 'turn-started' && e.turn > 1) {
         this.send('turn', {});
+        // D49j: a turn cut short mid-stream leaves uncommitted preview text.
+        this.foldPreview();
         if (this.replyBuffer.trim().length > 0) {
           this.push({
             k: 'msg',
@@ -2695,7 +2757,19 @@ class ChatHost {
         // D37: context compaction. Mode + threshold come from settings
         // (the header pill toggles mode; the slider sets threshold).
         compact: this.compactionState(),
+        // D49j: the reply appears as it is written. The loop hands us the text
+        // SO FAR for this turn, so the preview is replaced rather than appended
+        // and a retried turn cannot concatenate onto the text it abandoned.
+        onTextDelta: (soFar) => {
+          this.streamPreview = soFar;
+          this.postStreamSoon();
+        },
         onText: (t) => {
+          // D49j: a committed block is authoritative, so it SUPERSEDES the
+          // preview instead of following it — keeping both would show the
+          // turn's text twice.
+          this.streamPreview = '';
+          this.cancelStreamTimer();
           if (t.trim().length > 0) {
             this.replyBuffer += t;
             // Host renders cumulative markdown once per turn (D25a).
@@ -2717,6 +2791,9 @@ class ChatHost {
           }
         },
       });
+      // D49j: a run cancelled mid-stream leaves text in the preview that never
+      // reached a committed block. Fold it in before the reply is recorded.
+      this.foldPreview();
       if (this.replyBuffer.trim().length > 0) {
         this.push({
           k: 'msg',
@@ -2751,6 +2828,13 @@ class ChatHost {
             : '',
       });
     } catch (e) {
+      // D49j: drop the streaming preview. This path has never recorded a
+      // partial reply (it reports the failure and stops), so the preview is not
+      // folded in — but it must not linger as state the next run would inherit.
+      // A user CANCELLED run does record its partial text: it returns normally
+      // with `reason === 'cancelled'`, not through here.
+      this.streamPreview = '';
+      this.cancelStreamTimer();
       // D49d: report what actually failed. This used to be one fixed sentence
       // for a 401, a 429 and a dead socket alike, while the provider's own
       // message — built by the adapter and carried on the error — was discarded

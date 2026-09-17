@@ -29,13 +29,29 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49h–i** — Phase 1 of the agent capability plan **complete**
-  (roadmap in DECISIONS **D49**). Everything through D48 is pushed; the M5 work
-  (D49a–i) is **committed locally and not pushed — push stays with the founder.**
+- HEAD = **M5.0 / D49j** — Phases 0, 1 and 2 of the agent capability plan are
+  **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
+- **The reply now streams (D49j).** `TurnRequest.onDelta` is optional; absent, the
+  adapters make the blocking call exactly as before, so every test fake and the
+  compactor/observer are untouched. **The assembled `TurnResponse` is IDENTICAL
+  either way** — streaming changes only *when* the text is visible. The Anthropic
+  path uses `messages.stream()` + `finalMessage()` and maps through the same
+  `mapMessage`; the OpenAI-compatible path rebuilds the non-streaming JSON shape
+  from SSE and maps through the same `mapResponse`. **Three things not to
+  re-derive:** the loop keeps a **fresh text accumulator per attempt** (a shared
+  one turns a retried turn into `"HelHello"`); the **content-type guard** is what
+  stops a server that ignores `stream: true` from returning a silently empty
+  answer; and the host's streaming text is a **preview that a committed block
+  supersedes** (never appended to, or the turn's text shows twice). `onDeltaText`
+  gets the text **so far**, not the newest fragment. Deltas deliberately do **not**
+  ride the bus — `transcript.ts` writes every event verbatim.
 - **A transient provider failure no longer ends a run (D49f).** The worker turn
-  retries 429 / 5xx / transport failures with backoff, and says so in the chat.
-  A 4xx other than 429 is *not* retried — it would fail identically.
+  retries 429 / 5xx / transport failures with backoff. A 4xx other than 429 is
+  *not* retried — it would fail identically. **Caveat:** the retry notice is
+  emitted on the bus, and bus `notice` events are **log-only** — the extension
+  never `send()`s them — so it is visible after a reload, not during the run.
+  Recorded in the PROGRESS backlog with the reason it is not a one-line fix.
 - **The stable prefix is cached (D49g).** The system prompt and tool schemas are
   marked cacheable. **`inputTokens` is a TOTAL** (Anthropic reports it net of
   cache, OpenAI gross) — do not map either straight through, or the context ring
@@ -106,17 +122,26 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **267** passing
-  vitest cases across **25** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **288** passing
+  vitest cases across **26** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Six suites, **160 assertions**; see
+  unit tests + render suites. Seven suites, **170 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
   message it posted) rather than only rendering it, and why the screenshot is
   part of the check.
+- Validate the **provider adapters against the real SDK** with
+  `node scripts/smoke-stream.mjs`. The unit tests **mock** `@anthropic-ai/sdk`,
+  so they prove the adapter's wiring but not that the installed SDK behaves as
+  assumed. This points the real SDK at a local SSE stub via `ANTHROPIC_BASE_URL`
+  and checks that deltas arrive separately through `stream.on('text')`, that
+  `finalMessage()` assembles them, that streamed equals blocking, and that an
+  abort rejects instead of hanging. Needs `packages/core/dist` built
+  (`pnpm exec tsc -b packages/core`). Use this pattern for any future claim about
+  an SDK's behaviour.
 
 ## How the packages connect
 
@@ -200,19 +225,38 @@ used to claim.
     deliberately **retryable** (D49f). So cancellation must be special-cased in
     **two** places or it misbehaves in both directions: `withRetry` refuses to
     retry once the signal aborts, and the loop's catch checks `signal.aborted` to
-    end as `cancelled` instead of reporting a failure. **Phase 2 sharpens this** —
-    a stream that died and a stream the user cancelled will look identical, so any
-    new streaming error path must consult the signal before deciding what
-    happened. Getting it wrong is not a crash; it is a truthful-sounding lie
-    ("provider request failed") about something the user did on purpose.
+    end as `cancelled` instead of reporting a failure. **Phase 2 sharpened it as
+    predicted** (D49j): a stream that died and a stream the user cancelled look
+    identical, and the streaming error path had to consult the signal before
+    deciding what happened — `finalMessage()` rejects on abort, so an aborted
+    stream reaches the same catch as a network failure. Getting it wrong is not a
+    crash; it is a truthful-sounding lie ("provider request failed") about
+    something the user did on purpose.
+13. **Streaming changes WHEN the text is visible, never WHAT it says (D49j).**
+    Three traps, all found by falsification rather than review. **(a) A shared
+    text accumulator turns a retried turn into `"HelHello"`** — text the model
+    never produced — so the loop resets it *per attempt* and passes the text **so
+    far**, not the newest fragment. **(b) A server that ignores `stream: true` and
+    answers with plain JSON yields a silently EMPTY answer** unless the response
+    `content-type` (not the request flag) decides the parse path. **(c) A
+    committed block must SUPERSEDE the streaming preview, never follow it**, or
+    the turn's text is shown twice. Also: deltas must **not** ride the bus —
+    `transcript.ts` writes every event verbatim, so per-fragment `text` events
+    would bloat every transcript and fragment the observer's digest. The bottom
+    line: if you change a wire path, prove the assembled response is identical to
+    the old one — that is what `streaming.test.ts` and `scripts/smoke-stream.mjs`
+    exist for.
 
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 267/267 vitest in packages/core (25 files)
+2. `pnpm -r test` — 288/288 vitest in packages/core (26 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
+3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
+   adapter, run the check the mocked unit tests cannot make: the real SDK against
+   a local stub. See "Environment prerequisites".
 4. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 5. `cd packages/vscode && pnpm run package` — produces
@@ -226,14 +270,14 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** Phases 0 and 1 are done (D49a–g, D49i —
-**D49h was built and then removed the same day**; do not re-add a run budget
-without reading why it went). **Next
-is Phase 2, real streaming**, whose design is settled in D49; the one thing D49
-cannot tell you is that the working precedent for the Anthropic half was the M0
-provider deleted in D49e, which is in git history at `136564b`,
-`packages/core/src/providers/anthropic.ts`. **Subagents are deliberately deferred
-and must not be added without amending the one-worker lock (D45a-3) in the open.**
+the roadmap — do not restate it here.** Phases 0, 1 and 2 are done (D49a–g,
+D49i, D49j — **D49h was built and then removed the same day**; do not re-add a
+run budget without reading why it went). **Next is Phase 3, the agent tool
+surface** — regex `grep` with output modes, a `glob` tool, `list_dir` with a
+path, `replace_all` as an explicit per-block opt-in, an atomic multi-file
+`apply_patch`, and a background `shell` with output polling and kill. **Subagents
+are deliberately deferred and must not be added without amending the one-worker
+lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:
 

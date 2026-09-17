@@ -82,9 +82,16 @@ export interface TurnRequest {
    * Adapters pass it to their HTTP layer.
    */
   signal?: AbortSignal;
+  /**
+   * D49j: receives the turn's text as it comes off the wire. When set the
+   * adapter streams; when absent it makes one blocking request. The returned
+   * TurnResponse is IDENTICAL either way — streaming changes only WHEN the
+   * text is visible, never what it says — so no caller has to branch on it.
+   */
+  onDelta?: (text: string) => void;
 }
 
-/** One non-streaming API turn. Instances bind their credentials. */
+/** One API turn. Instances bind their credentials. */
 export interface ChatProvider {
   readonly id: 'anthropic' | 'openai';
   completeTurn(req: TurnRequest): Promise<TurnResponse>;
