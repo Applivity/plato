@@ -1147,6 +1147,60 @@ removed, and every Playwright harness now **fails on any uncaught page error**
 and asserts that all three sections are present; reintroducing the call fails the
 guard immediately with the exact message.
 
+**D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
+this commit, 2026-09-17).**
+
+Two stale strings survived D47m, both found while closing it out.
+
+**1. The History page's empty Runs state** (user-facing):
+
+```
+Every Plato run is transcribed to .plato/runs/ automatically.
+```
+
+Wrong twice. D46 moved transcripts to a flat `~/.plato/`, so the path had been
+dead for four releases; and a bare `.plato/runs/` reads as a folder inside the
+user's **own project** — exactly the place D46 decided Plato must never write.
+Copy that is wrong about *where the user's data is* is worse than copy that says
+nothing. It now reads `~/.plato/runs/`.
+
+**2. The `TranscriptWriter` header comment** (internal):
+
+```
+one JSONL file per run under `<root>/.plato/runs/`
+```
+
+Wrong at a level deeper than the path. The class **never computes a path** — it
+appends into a **caller-supplied** `runsDir` (a constructor argument) and the VS
+Code host passes `join(homePlatoDir(), 'runs', projectKey(root))`. Substituting a
+different literal would have preserved the same false model of the class, so the
+comment now states the real contract — the directory belongs to the caller — and
+names the host's location as the current caller.
+
+**Contract, and where it stops.** *Live copy names the real location.* This
+extends D47m from mode cards to user-facing text generally. It deliberately does
+**not** reach two things, both left alone:
+
+- **Historical rows.** PROGRESS and DECISIONS entries written during the `.plato/`
+  era (D33, the M2 transcript rows) describe what was true on their date.
+  Rewriting them would falsify the record, and the docs already carry the rule
+  that a historical row is not corrected in place.
+- **BLUEPRINT.md and ARCHITECTURE.md.** Both still describe `.aplivity/teams.yaml`
+  with `profiles:` / `budget:` / `supervises:`, superseded by D33 (`.plato/`),
+  D46 (flat `~/.plato/`) and the D45a-3 product lock (Academy carries
+  philosophers, not profiles). These are the founder's design-tree record, and
+  ARCHITECTURE.md's own terms are "binding unless a DECISIONS.md entry supersedes
+  them" — the superseding entries exist. **Flagged for a founder decision, not
+  rewritten unilaterally:** they are product documents, not stale copy.
+
+**Asserted.** A new suite, `scripts/render/history.mjs`, pins the user-facing
+string by posting an empty `{type:'history', runs:[], chats:[]}` payload. The
+subtle part: the correct string **contains** the stale one — `~/.plato/runs/`
+ends in `.plato/runs/` — so a bare `/\.plato\/runs\//` would match the fixed copy
+and pass either way. The check strips `~/.plato/runs/` before searching for the
+stale form, and that construction was confirmed to PASS on the good string and
+FAIL on the bad one.
+
 **D47m — a mode description describes the mode, not the file behind it (M4.1,
 0.25.0 — this commit, 2026-09-17).**
 

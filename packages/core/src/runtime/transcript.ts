@@ -1,9 +1,11 @@
 /**
- * M2 transcript writer (D24c): one JSONL file per run under
- * `<root>/.plato/runs/`. Header line first (schemaVersion 1), then one
- * line per bus event. Secret-safety by construction: fields are
- * whitelisted — tool args, approval previews and raw outputs are never
- * written (file content can carry secrets).
+ * M2 transcript writer (D24c): one JSONL file per run, appended into the
+ * runs directory the CALLER supplies — the VS Code host passes
+ * `~/.plato/runs/<project-key>/` (D46: personal state, never the repo).
+ * Header line first (schemaVersion 1), then one line per bus event.
+ * Secret-safety by construction: fields are whitelisted — tool args,
+ * approval previews and raw outputs are never written (file content can
+ * carry secrets).
  */
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';

@@ -42,6 +42,7 @@ Both were proven by reverting the fix and watching the suite fail.
 | `core` | Role box: no clip, ~1 line slack, `maxlength` at 6 widths; wall matrix 2/3/4/5; colours do not shift on removal |
 | `panels` | all three sections share one frame; marker >=16px; header >=32px; every section named; Delete separated from Refresh; add-provider inputs not clipped |
 | `narrow` | no overflow, buttons one line, mode cards >=150px, 1 column <=420px / 3 at 720px |
+| `history` | the empty Runs state names the real (`~/.plato/runs/`) transcript location, not the pre-D46 repo-relative path |
 
 ## Playwright
 

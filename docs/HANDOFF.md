@@ -18,15 +18,19 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
-- HEAD (`main`) = **D47m** (0.25.0). Everything through D47l (committed a62d682,
-  docs synced in 0660bd8) is committed and pushed; **D47m is committed locally and
-  not yet pushed — push stays with the founder.** The working tree is clean. The
-  D47 series closed the Academy Settings editor (D47b–g), unified the Settings
-  page (D47i), fixed the Providers row (D47j–l: the collapse on action, a broken
-  Delete, a missing confirm, and a crash that silently truncated the render), and
-  took the config path out of the Academy mode card (D47m: a mode description
-  describes the mode, never a file — and the path it named was stale anyway; a
-  render assertion now pins the rule).
+- HEAD (`main`) = **D47n** (0.25.0). Everything through D47l (committed a62d682,
+  docs synced in 0660bd8) is committed and pushed; **D47m (33be18f) and D47n are
+  committed locally and not yet pushed — push stays with the founder.** The
+  working tree is clean. The D47 series closed the Academy Settings editor
+  (D47b–g), unified the Settings page (D47i), fixed the Providers row (D47j–l:
+  the collapse on action, a broken Delete, a missing confirm, and a crash that
+  silently truncated the render), and then fixed the same class of copy defect
+  three times: a **mode card** naming a config file (D47m), and the two **live
+  strings** that still pointed at the pre-D46 repo-relative path — the History
+  empty state and the `TranscriptWriter` header comment (D47n). A render
+  assertion pins each. The **blueprint documents still describe the superseded
+  `.aplivity/teams.yaml` format** — deliberately left alone and flagged for a
+  founder decision; see DECISIONS D47n.
   **Plato is a personal pair-programmer: it never pollutes the shared repo.**
   Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
   philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
@@ -190,7 +194,7 @@ may not be available when you work; everything you need is in this repo.
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Five
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Six
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
@@ -282,8 +286,8 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Reload and sign off on D47c–m** (D47c–l committed and pushed; D47m committed
-   locally, pending your push). Founder visual
+0. **Reload and sign off on D47c–n** (D47c–l committed and pushed; D47m and D47n
+   committed locally, pending your push). Founder visual
    sign-off gates the *next* milestone — check Academy at a **narrow** panel
    width (that is where the D47g Role-box clip and the D47h overflow lived) and
    confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
@@ -293,7 +297,8 @@ may not be available when you work; everything you need is in this repo.
    the mode cards stack to ONE column when narrow; and in Providers the section
    stays OPEN across **Set key**, **Refresh models** and **Add connection**, with
    the key entered inline on the card. And **D47m**: the Academy mode card reads
-   `Plato + a council of philosophers.` — no file path in it.
+   `Plato + a council of philosophers.` — no file path in it. And **D47n**: the
+   History page's empty Runs note reads `~/.plato/runs/`, not `.plato/runs/`.
    **Settle the `personas.ts` role prompts** (recorded in D47d as possibly too
    weak for real agentic flow).
 1. **Chat-log message rendering.** Markdown, code blocks, the

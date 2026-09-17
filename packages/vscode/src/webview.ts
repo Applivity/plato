@@ -1887,7 +1887,7 @@ export function chatHtml(): string {
       sec2.appendChild(el(
         'div',
         'note',
-        'No runs recorded yet. Every Plato run is transcribed to .plato/runs/ automatically.',
+        'No runs recorded yet. Every Plato run is transcribed to ~/.plato/runs/ automatically.',
       ));
     } else {
       for (const r of hRuns) {

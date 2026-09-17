@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SUITES = ['providers', 'modelsync', 'core', 'panels', 'narrow'];
+const SUITES = ['providers', 'modelsync', 'core', 'panels', 'narrow', 'history'];
 
 let failed = 0;
 for (const s of SUITES) {
