@@ -195,6 +195,16 @@ used to claim.
     never define a local `check`** — that is exactly how the two counters drifted.
     When you add an assertion, break the thing it guards and watch the command
     fail, or you have not verified anything.
+12. **An abort and a transport failure are indistinguishable (D49i).** Both reach
+    the loop as `ProviderError` with status `null`, and status `null` is
+    deliberately **retryable** (D49f). So cancellation must be special-cased in
+    **two** places or it misbehaves in both directions: `withRetry` refuses to
+    retry once the signal aborts, and the loop's catch checks `signal.aborted` to
+    end as `cancelled` instead of reporting a failure. **Phase 2 sharpens this** —
+    a stream that died and a stream the user cancelled will look identical, so any
+    new streaming error path must consult the signal before deciding what
+    happened. Getting it wrong is not a crash; it is a truthful-sounding lie
+    ("provider request failed") about something the user did on purpose.
 
 ## Verification loop (every change)
 

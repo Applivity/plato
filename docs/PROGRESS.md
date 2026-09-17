@@ -137,6 +137,10 @@ One combined workstream, per founder decision 2026-08-25:
   but with Plato's own formatting. Related structural item: the host streams one
   cumulative markdown blob into a fixed `#streaming` element, so narration and
   tool activity cannot interleave; needs host-side reply segmentation.
+  **Phase 2 (streaming, D49) rewrites exactly this path** — the host's
+  cumulative-blob `md` posting. Do them together, or sequence them deliberately
+  and say which came first; changing the transport underneath an unresolved
+  rendering problem is how the problem gets re-diagnosed from scratch.
 - **Mermaid diagram rendering (founder, 2026-08-26):** Plato emits mermaid fences
   (architecture diagrams); the renderer shows them as labeled code blocks, not
   rendered diagrams. Needs its own decision: bundle mermaid.js (~1MB, breaks the
@@ -149,8 +153,16 @@ One combined workstream, per founder decision 2026-08-25:
 - ~~Observer digest is thin~~ RESOLVED 2026-08-26 (0.9.2 arg hints + recent-
   reply tail) — validated by trial #4 where Diogenes caught no-op diff
   thrashing and analysis paralysis mid-run (5 interventions).
-- Auto-continuation of turns truncated by the token cap (stopReason is now
-  surfaced; the loop still just stops with a note).
+- ~~Auto-continuation of turns truncated by the token cap~~ **STALE — corrected
+  2026-09-17 (D49 clean-up).** The item said *"stopReason is now surfaced; the
+  loop still just stops with a note."* That stopped being true at **D25f**: the
+  loop marks a no-tool turn truncated, pushes a *"Continue exactly where you left
+  off"* user turn and `continue`s, bounded to **one continuation per run**
+  (`autoContinued`, `loop.ts`). The cap note is now the **fallback** for a second
+  truncation, not the behaviour — so the note is what you see when the retry
+  *also* got cut, which is a different thing from what this item described. Two
+  loop tests pin both halves (`loop.test.ts`). Removed from the backlog. Same
+  class as the `.msg.tool` item above: a status written once and never re-derived.
 - Add-connection transition animation (founder-requested, deferred twice).
 - ~~Dead `.msg.tool` CSS rules in webview~~ **WRONG — corrected 2026-09-17 (D48).**
   The class is **live**: `webview.ts:1970` still emits `el('div', 'msg tool')`, and
