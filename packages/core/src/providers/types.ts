@@ -76,6 +76,12 @@ export interface TurnRequest {
    * away and re-written at a premium every time it fired.
    */
   cache?: boolean;
+  /**
+   * D49i: aborts the in-flight request. Without it a cancel could only be
+   * honoured at a safe point, so a hung provider call hung the whole run.
+   * Adapters pass it to their HTTP layer.
+   */
+  signal?: AbortSignal;
 }
 
 /** One non-streaming API turn. Instances bind their credentials. */

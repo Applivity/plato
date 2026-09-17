@@ -1491,6 +1491,59 @@ environment. What is verified is the mechanism (the breakpoints are in the reque
 body, the arithmetic is right) and that the figures now reach the UI, so the
 founder can see the real saving in the panel.
 
+**D49h — a run budget, stopped at a turn boundary (M5.0, 0.25.0 — 2026-09-17).**
+
+**The rule.** *A run stops cleanly once it has spent its `usd` budget or used its
+`turns` budget. The check runs after a COMPLETED turn, never mid-turn.*
+
+**What was wrong.** The only thing bounding a run was `MAX_TURNS = 40`. Cost was
+computed and displayed, and nothing acted on it — a runaway run could spend
+without limit, and the user had no control that said "stop at $2".
+
+**Why the check is at the END of a turn.** Two reasons, and both matter. A turn's
+tools always finish, so a multi-file edit is never cut off half-applied — cutting
+mid-turn would leave the repo in a state neither the model nor the user planned.
+And `turn` at that point is a turn that actually **ran**, so the reported count
+stays honest; checking at the top of the next turn would report one turn too many.
+The first turn always runs, even against a budget that is already exceeded, so a
+budget can never produce a run that did nothing.
+
+**It is a guard rail, not an accountant.** `usd` is compared against the
+accumulated *estimate* from the hardcoded price table, which is display-only and
+drifts (cost.ts). The setting's own description says so. What it promises is that
+a runaway run stops; not that the bill matches to the cent.
+
+**`0` means no cap, and says so in words.** The field's live label reads "no cap",
+never "$0.00" — a cap of zero and no cap at all are opposites, and the number
+alone cannot tell them apart. The host clamps a negative or non-finite value to
+`0` as well, so a hand-typed bad setting cannot silently stop every run before it
+starts.
+
+**D49i — a cancel aborts the call in flight (M5.0, 0.25.0 — 2026-09-17).**
+
+**The rule.** *`RunController.cancel()` aborts the provider request, and an
+aborted request ends the run as `cancelled` — never as a failure.*
+
+**What was wrong.** `gate()` can only refuse at a safe point: between turns or
+between tool calls. A provider call already in flight was **unstoppable**, so a
+hung request hung the run with no way out. Phase 2's streaming would make a
+stalled stream more likely, not less, which is why this landed first.
+
+**The trap that made this more than plumbing.** An aborted request and a transport
+failure are *indistinguishable at the error level* — both are `ProviderError` with
+status `null` — and status `null` is deliberately **retryable** (D49f). So the
+naive version would answer a user's cancel with a fresh round of retries. The
+retry policy therefore takes the signal and refuses to retry once it aborts, and
+the loop checks `signal.aborted` in its catch to tell a deliberate stop from a
+genuine failure. Reporting *"provider request failed"* for a cancel the user asked
+for would be a lie about what happened.
+
+**Why the signal lives on the controller.** It is created once per run and passed
+into `TurnRequest`, so both adapters hand it to their HTTP layer — the SDK's
+request options for Anthropic, `fetch`'s `init` for the OpenAI-compatible path.
+Both are asserted directly, because "the signal is plumbed" is exactly the kind of
+claim that is easy to make and easy to get wrong.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

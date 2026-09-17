@@ -29,9 +29,9 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49f–g** — Phase 1 of the agent capability plan, part 1
+- HEAD = **M5.0 / D49h–i** — Phase 1 of the agent capability plan **complete**
   (roadmap in DECISIONS **D49**). Everything through D48 is pushed; the M5 work
-  (D49a–g) is **committed locally and not pushed — push stays with the founder.**
+  (D49a–i) is **committed locally and not pushed — push stays with the founder.**
   Working tree clean.
 - **A transient provider failure no longer ends a run (D49f).** The worker turn
   retries 429 / 5xx / transport failures with backoff, and says so in the chat.
@@ -40,6 +40,15 @@ are now only in PROGRESS.
   marked cacheable. **`inputTokens` is a TOTAL** (Anthropic reports it net of
   cache, OpenAI gross) — do not map either straight through, or the context ring
   and the cost will disagree between providers.
+- **A run has a budget (D49h).** Settings → **Context — limits** holds the
+  compaction threshold and a run budget in USD (`0` = no cap). The check runs
+  after a completed turn, so tools are never cut mid-flight. It is a guard rail
+  against the *estimated* cost, not an exact bill.
+- **Cancel now aborts the call in flight (D49i).** `RunController.cancel()`
+  aborts a signal threaded through `TurnRequest` to both HTTP layers. **An abort
+  and a transport failure look identical** (status `null`, which is retryable),
+  so both the retry policy and the loop's catch have to special-case it — a
+  cancel must never be answered with retries or reported as a failure.
 - **The render suites now FAIL THE PROCESS on a failed assertion (D49a).** Until
   D49a they could not: `check()` only logged, and no suite set `process.exitCode`,
   so a suite printing `FAIL: 12` exited 0 and the run still ended **ALL RENDER
@@ -101,14 +110,17 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **260** passing
-  vitest cases across **24** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **274** passing
+  vitest cases across **26** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Six suites, **160 assertions**; see
+  unit tests + render suites. Seven suites, **182 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
-  since D49a a **failed assertion also fails the command**.
+  since D49a a **failed assertion also fails the command**. That README also says
+  how to **drive** a control (type into it, fire its real event, read back the
+  message it posted) rather than only rendering it, and why the screenshot is
+  part of the check.
 
 ## How the packages connect
 
@@ -191,7 +203,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 260/260 vitest in packages/core (24 files)
+2. `pnpm -r test` — 274/274 vitest in packages/core (26 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -208,16 +220,23 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan — the roadmap is in
-DECISIONS D49.** Phase 0 (D49a–e) has landed, and Phase 1 is **partly** done:
-**D49f** (retry with backoff honouring `retry-after`) and **D49g** (prompt caching
-on the stable prefix, priced honestly) have shipped. **Phase 1 still has two
-items: a budget cap with graceful wind-down, and an `AbortSignal` so a hung turn
-can actually be cancelled** — `RunController.cancel` only gates at safe points
-today, so an in-flight provider call cannot be stopped, and Phase 2's streaming
-makes a stalled stream more likely. Then Phase 2 streaming, Phase 3 the tool
-surface, Phase 4 image input, Phase 5 web access, Phase 6 todos. Phase 7 is
-recorded-not-built — **subagents are deliberately deferred and must not be added
-without amending the one-worker lock (D45a-3) in the open.**
+DECISIONS D49.** Phases 0 and 1 are **complete**: D49a–e (the evidence loop and
+the file-tool contracts), D49f (retry with backoff), D49g (prompt caching, priced
+honestly), D49h (a run budget), D49i (cancel aborts the call in flight).
+
+**Next is Phase 2, real streaming** — the largest user-visible change left in the
+plan. The shape is settled in D49: `TurnRequest.onDelta`, one optional field, so
+`ChatProvider` keeps a single method and compaction, the observer and every test
+fake are untouched; Anthropic via `messages.stream()` + `finalMessage()`; the
+OpenAI-compatible path via a hand-written SSE parser, since that path has no SDK
+by doctrine. **The working precedent for the Anthropic half was the M0 provider
+deleted in D49e — it is in git history at `136564b`,
+`packages/core/src/providers/anthropic.ts`.** Two things it must handle: a
+`data:` line split across reads, and `tool_calls` deltas fragmented across chunks
+and keyed by `tc.index`. Then Phase 3 the tool surface, Phase 4 image input,
+Phase 5 web access, Phase 6 todos. Phase 7 is recorded-not-built — **subagents are
+deliberately deferred and must not be added without amending the one-worker lock
+(D45a-3) in the open.**
 
 The items below predate that plan and remain open:
 

@@ -74,6 +74,12 @@
           "default": "solo",
           "description": "Orchestration mode: solo = Plato alone; duo = Plato + one philosopher; academy = Plato + the council defined in ACADEMY.yaml."
         },
+        "plato.budget.usd": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "D49h: stop a run cleanly once its estimated cost reaches this many US dollars (0 = no cap). Checked after each completed turn, so tools are never cut off mid-flight. The price table is an approximation — treat this as a guard rail, not an exact bill."
+        },
         "plato.compaction.threshold": {
           "type": "number",
           "default": 0.8,

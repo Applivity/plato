@@ -90,7 +90,10 @@ export class AnthropicNativeProvider implements ChatProvider {
           : {}),
         messages,
         ...extra,
-      });
+      },
+      // D49i: the SDK takes request options as a second argument; the signal
+      // aborts the request in flight rather than waiting for the response.
+      { signal: req.signal });
     } catch (e) {
       // D49d: previously this file had NO error handling — the SDK's error
       // escaped raw and the shell replaced it with a fixed sentence. The SDK

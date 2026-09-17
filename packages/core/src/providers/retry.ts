@@ -63,6 +63,12 @@ export interface RetryOptions {
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
   random?: () => number;
+  /**
+   * D49i: stop retrying once this aborts. An aborted request looks exactly like
+   * a transport failure — status `null`, which is retryable — so without this
+   * check a user cancel would be answered with a fresh round of retries.
+   */
+  signal?: AbortSignal;
 }
 
 const defaultSleep = (ms: number): Promise<void> =>
@@ -101,6 +107,9 @@ export async function withRetry<T>(
       return await fn();
     } catch (e) {
       last = e;
+      if (opts.signal?.aborted) {
+        throw e; // cancelled: never retry
+      }
       if (!isRetryable(e) || attempt === policy.attempts) {
         throw e;
       }

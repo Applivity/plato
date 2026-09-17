@@ -127,6 +127,18 @@ export class RunController {
   private cancelled = false;
   private waiter: (() => void) | null = null;
   private compactRequested = false;
+  /**
+   * D49i: `gate()` can only stop the run at a safe point — between turns or
+   * between tool calls. A provider call already in flight was unstoppable, so a
+   * hung request hung the run with no way out. This signal reaches the HTTP
+   * layer, and the loop passes it on every turn.
+   */
+  private readonly abort = new AbortController();
+
+  /** Threaded into the provider call so a cancel interrupts it. */
+  get signal(): AbortSignal {
+    return this.abort.signal;
+  }
 
   sendGuidance(text: string): void {
     if (text.trim().length > 0) {
@@ -146,6 +158,9 @@ export class RunController {
 
   cancel(): void {
     this.cancelled = true;
+    // D49i: abort AFTER setting the flag, so a caller that observes the abort
+    // can still tell a cancel apart from a transport failure.
+    this.abort.abort();
     this.waiter?.();
     this.waiter = null;
   }

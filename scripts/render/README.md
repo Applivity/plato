@@ -44,6 +44,20 @@ through a green build and was found by the founder in a screenshot:
 All three were proven by breaking the thing and watching the run fail. Do the same
 for every new assertion: revert the fix, confirm the suite fails, restore it.
 
+## Driving the UI, not just rendering it
+
+Assertions that only read the DOM after a render cannot see a broken handler. A
+control can render perfectly and do nothing. `budget.mjs` is the template for the
+stronger check: **type into the control, fire its real event, then read back the
+message the webview posted** (`window.__posted`, stubbed in `page()`). Do that
+for anything with behaviour behind it.
+
+**And look at the screenshot.** `p.screenshot({ path: '/tmp/….png' })` costs
+nothing, and the D49h budget row shipped its first version with the live label
+sitting hard against its field while the row above it right-aligned — every
+assertion passed, because no assertion said where the label should *be*. A
+screenshot caught it in one glance. Render, assert, then LOOK.
+
 ## Adding a suite
 
 Import everything from `plib.mjs` — the browser, `check`, `page()`, and `finish`.
@@ -64,6 +78,7 @@ Do not import `harness.mjs` directly and roll your own browser: the whole point 
 | `panels` | all three sections share one frame; marker >=16px; header >=32px; every section named; Delete separated from Refresh; add-provider inputs not clipped |
 | `narrow` | no overflow, buttons one line, mode cards >=150px, 1 column <=420px / 3 at 720px |
 | `history` | the empty Runs state names the real (`~/.plato/runs/`) transcript location, not the pre-D46 repo-relative path |
+| `budget` | the run-budget row is **driven**: typed into, its `change` event fired, and the `set-budget` message read back off `window.__posted`; `0` and a negative read "no cap" rather than "$0.00"; the field neither reflows nor overflows at 300/360/720px |
 
 ## Playwright
 

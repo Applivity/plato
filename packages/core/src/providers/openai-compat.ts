@@ -132,6 +132,7 @@ export class OpenAICompatProvider implements ChatProvider {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: req.signal,
       });
     } catch (e) {
       // D49d: a rejected fetch (DNS failure, refused socket) has no status —
