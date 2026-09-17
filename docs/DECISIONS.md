@@ -1147,6 +1147,65 @@ removed, and every Playwright harness now **fails on any uncaught page error**
 and asserts that all three sections are present; reintroducing the call fails the
 guard immediately with the exact message.
 
+**D48 — documentation ownership: one home per fact, and blueprints carry a
+superseded map (docs only — 2026-09-17).**
+
+An audit of the five documents after the D47 series found four drifts. The
+pattern behind all four is the same: **a fact restated in a second place goes
+stale there and is believed there.**
+
+**The rule.** Every fact has exactly one home:
+
+| Kind of fact | Home |
+|---|---|
+| What is true *now* | `HANDOFF.md` |
+| What changed, and when | `PROGRESS.md` (change log) |
+| Why, and what is locked | `DECISIONS.md` (this file) |
+| The founding design record | `BLUEPRINT.md`, `ARCHITECTURE.md` — historical |
+
+When something goes stale, fix it **where it lives** and delete the copy, rather
+than correcting it in the place you happened to notice it. HANDOFF is a *state*
+document, not a narrative: it answers "what is true and how do I work here", and
+it points at PROGRESS for history.
+
+**What was wrong.**
+
+- **PROGRESS's milestone table** said M4 was "in closeout (code shipped through
+  **0.9.8**)" and listed **D34 as pending** — the code was at 0.25.0 and D34
+  shipped 2026-09-01. A status table nobody re-derived is a status table nobody
+  can trust.
+- **HANDOFF** had grown a second copy of the entire D47 series (D47b through
+  D47n, ~130 lines) plus a "Shipped this session (D37 → D43, 0.16.0)" section —
+  two milestones stale, and every fact already in PROGRESS or DECISIONS.
+- **BLUEPRINT/ARCHITECTURE** still presented `.aplivity/teams.yaml`, `profiles:`,
+  `Team`, and `Profile` as current contracts.
+- **The backlog** listed "Dead `.msg.tool` CSS rules" as cleanup; `webview.ts:1970`
+  still emits that class.
+
+**The acceptance test has never been run.** This surfaced while auditing the M4
+row: M4's definition of done is the acceptance test in BLUEPRINT §4, and no run
+of it is recorded anywhere — and its blueprint form (architect → coder →
+Socrates) predates the product lock, so it must be restated for one worker plus
+philosophers before it can be executed. M4 is **not** in closeout. Both HANDOFF
+and PROGRESS now say so.
+
+**BLUEPRINT and ARCHITECTURE are NOT rewritten.** They are the founder's
+design-tree record — BLUEPRINT was confirmed after the Q1–Q22 interview, and
+ARCHITECTURE's own terms are "binding unless a DECISIONS.md entry supersedes
+them". Editing their bodies would destroy the record of what was decided and
+replace it with a moving target. Instead each carries a **status banner** with a
+superseded map (`.aplivity/teams.yaml` → `~/.plato/ACADEMY.yaml`; `Profile` →
+`TeamMember`/philosopher; `src/eventbus/` → `core/src/runtime/bus.ts`; the
+`cli` package → does not exist) **and names the parts that still bind**
+(the monorepo rule, no-VS-Code-imports in core, the event bus as spine, the
+security invariants, the verification approach). A reader now gets both: the
+original decision and the current truth.
+
+**Consequence for future work.** Adding a fact to HANDOFF is now a decision
+about ownership, not just prose — if it describes *what changed*, it belongs in
+PROGRESS as a row. The one deliberate exception is the queue and the deferred
+notes, which are "what to do next" and belong with the state.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

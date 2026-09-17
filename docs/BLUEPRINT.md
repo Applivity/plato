@@ -4,6 +4,28 @@ Confirmed by the founder after a full design-tree interview (Q1–Q22).
 Every decision behind this document is logged with rationale in
 [DECISIONS.md](DECISIONS.md).
 
+> ## ⚠ Status: historical — the founding record, kept verbatim
+>
+> This is what was decided at the start. **The product has moved; do not read
+> §§3–5 as current.** The body below is deliberately unchanged, because it is the
+> record of the original design. What it says now, and where the current answer
+> lives:
+>
+> | Blueprint says | Now |
+> |---|---|
+> | `.aplivity/teams.yaml` (repo) + `~/.applivity/teams.yaml` (global) | flat `~/.plato/` — `ACADEMY.yaml` (council), `DUO.yaml` (Duo philosopher), `mcp.yaml` (D33 → D46 → D47) |
+> | `profiles:` — `name` / `role` / `model` / `tools` / `supervises` | `philosophers:` — a `TeamMember` with `persona` / `role` / `model` / `powers` / `color` (D47e, D47f) |
+> | "Teams" = coordinator + workers, ordered profiles | **one worker + N philosophers.** Solo / Duo / Academy are the same worker with 0 / 1 / N watchers; cap 5; Plato is always the doer (D45a-3, D47e) |
+> | Preset teams ship as example files (Solo, Architect+Coder, Coder+Observer) | shipped examples are `academy.example.yaml` and `duo.example.yaml`; Solo/Duo/Academy are **modes**, not files |
+> | Non-goal: "visual team editor (config file + schema instead; editor comes later)" | **shipped** in D47 — the Settings UI edits Duo and Academy over the yaml, two-way |
+> | §4 acceptance test (architect → coder → Socrates) | predates the product lock; **must be restated before it can be run**, and it has not been run — see HANDOFF and PROGRESS |
+>
+> **Still binding and unchanged:** the differentiator (§2 — the event bus, and
+> live mid-flight supervision with a write-back channel), the six-tool surface,
+> the four modes, user-supplied keys in SecretStorage only, transcripts on disk,
+> and the hard requirement that secret-bearing / `.gitignore`d files never reach
+> a model context.
+
 ## 1. What it is
 
 An AI coding agent: a VS Code extension where a developer composes **a team

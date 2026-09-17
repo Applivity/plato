@@ -4,6 +4,31 @@ This describes the system we committed to in BLUEPRINT.md. It is the
 design contracts, not yet implementation. Package names and config shapes
 here are binding unless a DECISIONS.md entry supersedes them.
 
+> ## ⚠ Status: historical — the v0.1 target, kept verbatim
+>
+> Read this for the contracts that still hold, not for the module list. The body
+> below is unchanged as the record; here is what is superseded:
+>
+> | Here | Now |
+> |---|---|
+> | `src/eventbus/`, `src/cost/` | the bus is `core/src/runtime/bus.ts` and cost is `core/src/runtime/cost.ts` — neither has its own directory (D24) |
+> | `packages/cli/` (phase 2) | **does not exist.** `packages/` is `core` + `vscode` only |
+> | `Profile {name, rolePrompt, model, allowedTools[], permissions}` | `TeamMember` / philosopher (D47e) |
+> | `Team` = ordered set of profiles; Solo = team-of-one | one worker + N philosophers; Solo/Duo/Academy are modes over the same worker (D45a-3) |
+> | `.aplivity/teams.yaml` + `~/.applivity/teams.yaml` | `~/.plato/ACADEMY.yaml` for the council, `~/.plato/DUO.yaml` for Duo (D33, D46, D47) |
+> | `mcp.yaml` at the repo root | `~/.plato/mcp.yaml` (D46). Parsed by a zero-dependency subset parser in core; it has **no JSON schema and no editor binding** — only `academy.yaml` and `duo.yaml` are bound in `package.json` |
+> | "supervisor channel … rate-limited injections" | shipped as `core/src/runtime/observer.ts` + `RunController` (pause / cancel / guidance) |
+>
+> **Still binding, verbatim:** the monorepo rule (`packages/vscode` and
+> `packages/cli` are thin shells; all logic, tools, providers and team logic live
+> in `core` and communicate through the event bus — read "cli" as "any shell"),
+> the **no VS Code imports in `packages/core`** rule, the event bus as the spine
+> with the runtime as single emitter and isolated listeners, the four modes as
+> permission filters over one runtime rather than separate loops, transcripts on
+> disk, and **§ Security invariants 1–4** in full. The verification approach
+> also holds, with one addition since: the real-DOM render suites in
+> `scripts/render/` (see HANDOFF).
+
 ## Monorepo layout
 
 ```

@@ -5,164 +5,77 @@ may not be available when you work; everything you need is in this repo.
 
 ## Read order
 
-1. [BLUEPRINT.md](BLUEPRINT.md) — what to build and what NOT to build
-2. [DECISIONS.md](DECISIONS.md) — why, and what was already debated
-3. [ARCHITECTURE.md](ARCHITECTURE.md) — binding design contracts
-4. [PROGRESS.md](PROGRESS.md) — the running change log (newest first)
+1. **This file** — what is true *now*, and how to work here.
+2. [PROGRESS.md](PROGRESS.md) — the running change log, newest first. **The
+   D-series history lives there.** Do not re-narrate it in this file.
+3. [DECISIONS.md](DECISIONS.md) — why, and what was already debated. Each `D#`
+   is a locked decision; later entries supersede earlier ones explicitly.
+4. [BLUEPRINT.md](BLUEPRINT.md) — **historical.** The founding design record
+   (the Q1–Q22 interview), kept verbatim. Read its status banner before its body.
+5. [ARCHITECTURE.md](ARCHITECTURE.md) — **historical.** The v0.1 target. Same
+   banner; the parts that still bind are named there.
 
-## Current repository state (verified 2026-09-17)
+**Ownership rule (D48):** every fact has exactly one home — *current state* →
+this file, *what changed* → PROGRESS, *why / what is locked* → DECISIONS. When
+something goes stale, fix it where it lives instead of restating it elsewhere.
+This file used to carry the whole D47 series and `D37 → D43` release notes; both
+are now only in PROGRESS.
 
-- Location: `/Users/ai/Desktop/plato` (canonical remote is
-  `https://github.com/applivity-com/plato`, private, default branch
-  `main`). Note: `applivity-com` is a personal user account, not an org.
-- **Code exists and ships.** Monorepo (pnpm workspaces):
-  `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
-  extension shell, v0.25.0).
-- HEAD (`main`) = **D47n** (0.25.0). Everything through D47l (committed a62d682,
-  docs synced in 0660bd8) is committed and pushed; **D47m (33be18f) and D47n are
-  committed locally and not yet pushed — push stays with the founder.** The
-  working tree is clean. The D47 series closed the Academy Settings editor
-  (D47b–g), unified the Settings page (D47i), fixed the Providers row (D47j–l:
-  the collapse on action, a broken Delete, a missing confirm, and a crash that
-  silently truncated the render), and then fixed the same class of copy defect
-  three times: a **mode card** naming a config file (D47m), and the two **live
-  strings** that still pointed at the pre-D46 repo-relative path — the History
-  empty state and the `TranscriptWriter` header comment (D47n). A render
-  assertion pins each. The **blueprint documents still describe the superseded
-  `.aplivity/teams.yaml` format** — deliberately left alone and flagged for a
-  founder decision; see DECISIONS D47n.
-  **Plato is a personal pair-programmer: it never pollutes the shared repo.**
-  Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
-  philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
-  default), and `runs/<project-key>/` (transcripts). The repo is only ever
-  read: `<repo>/PLATO.md` (project override, via `/system-prompt`) and
-  `<repo>/AGENTS.md`/`CLAUDE.md`. Worker-prompt join = project PLATO.md >
-  global PLATO.md > bundled default > AGENTS.md. Model (D45a-3/4): one worker
-  + N philosophers (cap 5); "Plato" in UI; project files always on; command
-  surface = Compact · History · System prompt. **D47 (0.25.0):** the in-panel
-  Orchestration blocks are live editors — Duo (persona, name, role override,
-  model, pause/cancel/maxInterventions) and Academy (council name + full
-  per-member CRUD). `~/.plato/DUO.yaml` is the only Duo store
-  (`plato.duo.persona` + `plato.observer.*` settings deleted); a missing file
-  runs the built-in Aristotle default and the first edit creates it; Academy
-  dropped "Create example" for the same edits-create-it editor (a one-worker
-  pre-seed when no council exists). Both directions sync: edits write the
-  yaml, and a host file watcher over `~/.plato/{DUO,ACADEMY}.yaml` re-reads on
-  external edit/paste and refreshes the UI. Core gained a strict parser +
-  loader + run-spec resolver and canonical emitters (`teams/duo.ts`,
-  `teams/emit.ts`). **D47b (committed 477bd43):** store files are capitalized
-  (`DUO.yaml`/`ACADEMY.yaml` — macOS is case-insensitive, so an existing
-  lowercase file still works); DUO.yaml is **self-contained** — the form saves
-  the effective name + role, so a created file always carries `name:`/`role:`
-  (persona switch refills them while they equal the previous persona's
-  defaults; hand-edits survive; clearing restores the persona); **Open DUO.yaml
-  with no file creates it** and opens it; UI: compact switch toggles, per-
-  control '?' tooltips, Open-file buttons matching Open PLATO.md, Academy
-  member cards fixed (generic `.mrow` flex collision → cards are block, model
-  on its own row), 'Max/run' → 'Max interventions'.
-  **D47f (committed 68dc451) — founder UI-review pass:** `Open
-  ACADEMY.yaml` used to write a **hollow** council (no `role`, no powers — the UI
-  faked the role from the persona, so the file was incomplete while the panel
-  looked right); the seed now writes role + powers + colour, and `save()` stores
-  the effective role (the D47b rule, applied to Academy). **Add philosopher**
-  defaults to the first *unused* persona, so a new card is never blank. One
-  **shared card builder** now serves both Duo and Academy — header = colour dot +
-  display name + Remove (far right); body = **Persona → Role → Model → Powers**.
-  `Plato — the doer` → **`Plato's model`**. The PLATO.md explainer moved behind a
-  `?`. `Lyceum` is pre-filled. Each philosopher carries a **stored `color:`** (5
-  pastels) so removing one **never re-colours the rest** — shown in the Settings
-  card, the chat notices and the run-start team card.
-  **D47g (committed 68dc451) — Role field + the two walls:** the Role box
-  **auto-fits its text plus exactly one line** and re-fits on panel-width change
-  (a fixed `min-height` was clipping ~2.5 lines at a 420px panel); a
-  **1,000-char cap** is enforced by both parsers, both schemas and `maxlength`
-  (a role is sent on every observer call), with a counter at the top-right of the
-  label row; a stray Enter no longer produces an unparseable file (`oneLine()`
-  folds whitespace in the emitter and the webview); the Remove control is now a
-  **`✕`** (the old `.btn-icon-danger` class never matched what `sbtn` emitted, so
-  the browser painted a default white button) and both walls behave alike —
-  drawn always, `aria-disabled` at the 2-philosopher floor.
-  **D47h (committed fe2cf26) — the doer model select + the narrow panel:**
-  changing `Plato's model` in Duo/Academy snapped back to the composer's value,
-  because the doer select posted to the host but **never wrote the shared value**
-  (the composer does `setModelSelected` *then* posts). The host accepted the new
-  model, echoed its state, and the preserve logic re-applied the stale value. The
-  doer select now updates first, exactly like the composer. `postModelState()`
-  also carries an authoritative `effectiveModel` the webview adopts, so the panel
-  can never show a model the run would not use. The Settings panel no longer
-  overflows at a narrow column: `.modes` auto-fits (1 column narrow, 3 wide),
-  `.sblock label` no longer forces `min-width:140px`, and the project-file /
-  Duo-Academy header rows wrap so `Open …` buttons keep their label on one line.
-  **D47i (committed 87aa9cf) — one Settings surface:** the founder saw
-  Orchestration as "a different panel" from the other two, and that was literally
-  true — measured, it was a bare DIV with **no border and no radius** while
-  Providers and Context were framed DETAILS sections. All three now share one
-  shell (same border, radius, background, header bar); Orchestration keeps its
-  always-open behaviour through a `.sec-static` header that does not pretend to
-  toggle. The disclosure markers went from a 13px glyph to a 16px glyph in a 16px
-  hit area, the header bar grew to ~35px, the nested `.sblock` was dropped so all
-  sections share one nesting depth, and Delete is now pushed behind a divider so
-  it no longer reads as part of the Set key / Refresh group. The `Add a provider`
-  inputs no longer clip (the `130px 1fr` grid was hard-coded **in JS** as well as
-  CSS). **Layout trap recorded:** `repeat(auto-fit, minmax(190px, 1fr))` still
-  overflows a container narrower than 190px; the floor must be
-  `min(190px, 100%)`.
-  **D47j (committed 4f6a45a) — the Providers row:** Providers collapsed on Set
-  key / Refresh models because both re-render the panel and `showSettings` wipes
-  `#sbody`; the open/closed state and scroll are now preserved across renders.
-  **Delete** wrapped to "Del/ete" at EVERY width — `.btn-danger` was sized as a
-  24px square for the philosopher Remove **icon** but reused for sbtn's text
-  label; `sbtn` now picks the shape from the label (glyph -> `.btn-icon`, word ->
-  nowrap). Delete also gained a **two-step confirm**. This commit also fixed a
-  **crash I had introduced in D47i** (appendChild of a node into its own parent),
-  which aborted the rest of the render and killed the Context section, and
-  checked the render suites into `scripts/render/`.
-  **D47l (committed a62d682) — the API key is entered in the panel:** `Set key` used a
-  native `showInputBox`, so the same action had two surfaces (`Add a provider`
-  was already inline) and the focus loss made the section appear to collapse. It
-  now toggles an inline password field with Save/Cancel (Enter saves, Escape
-  cancels). A new `settings-set-key` message stores into SecretStorage and
-  refreshes the model list; the value is never echoed back and the input is
-  cleared on send. The command palette keeps the native box by design.
-  **D47k (committed 6f15e52) — Add connection closed Providers:** the D47j
-  restore keyed on the section's summary TEXT, which for Providers embeds a live
-  count, so it stopped matching for the one action that changes it. Sections now
-  carry a stable `data-sec` id.
-  **D47c (working tree):**
-  founder priority — the Academy editor was "utterly disappointing". Academy
-  got the polish Duo got in D47b and then some: `open-academy` **creates on
-  open**; cards lead with an identity chip and a matching left border; `Remove`
-  is pushed to the far right; tool-summary chip gained a total and a label.
-  **D47d (working tree) — Academy = Duo + council:** the founder did not accept
-  a visible worker section in Academy, and asked what a philosopher with every
-  power off could even do. Re-read of the D45a-3 thesis showed the UI
-  contradicted it. **guidance is always on** (Duo parity; Powers = May pause +
-  May cancel, so a mute philosopher is impossible); Academy cards gained a
-  **persona picker** (`persona` is a real optional `TeamMember` field);
-  **council = 2..5 philosophers** with **Aristotle + Pythagoras** seeded by
-  `defaultAcademyMembers()`; council name sits beside the `Academy` title
-  (D47f: **pre-filled `Lyceum`** for a starter council, no longer a placeholder).
-  **D47e (working tree) — the fail-proof upgrade:** D47d's B1 (hide the worker,
-  warn on a hand-edited deviation) still left the doer silently overridable, so
-  the worker is **removed from the format**. `ACADEMY.yaml` carries philosophers
-  only; `TeamMember.kind` is the literal `'philosopher'`; the parser rejects
-  `kind: worker` loudly and `finishTeam` enforces **2–5 philosophers**. Plato is
-  the doer in every mode (run path = `effectiveModel()`; the `workerMember`
-  lookup is deleted, along with its `role` override — accepted). A **`Plato's
-  model` select** (renamed from `Plato — the doer` in D47f) sits in the Duo and Academy blocks and is the *same
-  session-wide value* as the composer picker (two views, no pin, no grey-out).
-  Never revert D47e without re-adding a visibility mechanism.
-  **Recorded for a later debate:** the
-  `personas.ts` role prompts may be too weak for real agentic flow.
-  **Deferred (DECISIONS D47c):** true interleaved tool-call cards
-  need host-side reply segmentation, not styling. 219 vitest cases across 21
-  files in `packages/core`.
-  **Deferred (recorded in DECISIONS D46):** per-project council/academy
-  override ("discussion later"); move convo history to `~/.plato/history/`
-  (TODO).
-- Git identity on this machine: `ukhan <umair1808@gmail.com>`. The local
-  repo uses `git -c user.name='plato-dev' -c user.email='plato@local'`
-  when committing (see history).
+## Current state (verified 2026-09-17)
+
+- Location: `/Users/ai/Desktop/plato`. Canonical remote
+  `https://github.com/applivity-com/plato` (private, default branch `main`;
+  `applivity-com` is a personal user account, **not** an org).
+- Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
+  imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
+  no `packages/cli` yet (phase 2).
+- HEAD = **D48** (this commit, docs-only). Everything through D47l is committed
+  and pushed; **D47m, D47n and D48 are committed locally and not yet pushed —
+  push stays with the founder.** Working tree clean.
+- **What Plato is: a personal pair-programmer that never pollutes the shared
+  repo.** Everything Plato owns lives in a flat `~/.plato/`: `ACADEMY.yaml` (the
+  council), `DUO.yaml` (the Duo philosopher), `mcp.yaml`, `PLATO.md` (global
+  default), and `runs/<project-key>/` (transcripts; the key is an 8-char sha1 of
+  the workspace root). The repo is only ever **read**: `<repo>/PLATO.md` (project
+  override, materialised by `/system-prompt`) and `<repo>/AGENTS.md` / `CLAUDE.md`.
+- **Product model (D45a-3/4, D47e): one worker + N philosophers.** Solo / Duo /
+  Academy are the *same* worker with 0 / 1 / N philosophers watching and steering;
+  cap is 5. The acting agent is "**Plato**" in all user-facing copy ("worker" is
+  the internal term). `ACADEMY.yaml` carries **philosophers only** — Plato is
+  always the doer — and the doer model is one session-wide value with two views
+  (the composer picker and the `Plato's model` select). **Never add a per-member
+  *behavioural* field back (a model, a role override) without also adding a way
+  to see it** — D47e removed the worker precisely because a hidden doer could be
+  silently changed by a hand-edited file, and the UI could not show the
+  difference.
+- **Worker prompt join:** project `PLATO.md` > global `~/.plato/PLATO.md` >
+  bundled default > `AGENTS.md` / `CLAUDE.md`. Project files are always on when
+  present — **file presence is the switch**.
+- **Command surface:** Compact · History · System prompt.
+- **Duo + Academy are edited entirely from the Settings UI** (D47), with the yaml
+  as the single store and two-way sync: edits write the file, and a host file
+  watcher over `~/.plato/{DUO,ACADEMY}.yaml` re-reads external edits. Editing
+  creates the file; a missing `DUO.yaml` runs the built-in Aristotle default.
+- Git identity: this machine is `ukhan <umair1808@gmail.com>`; commits in this
+  repo use `git -c user.name='plato-dev' -c user.email='plato@local'`.
+
+## M4 closeout — what is actually left
+
+M4 is *not* done. Its definition of done is the acceptance test in BLUEPRINT §4,
+and **that test has not been run** — no run of it is recorded anywhere in the
+docs, and the blueprint's version of it (architect → coder → Socrates) predates
+the product lock, so it needs restating for one-worker-plus-philosophers first.
+Open, in priority order:
+
+1. **The acceptance test** — restate it for the current model, then run it on
+   `/Users/ai/Desktop/HcadPublicAndroid-demo`.
+2. **Secret audit** (D15) — everything that leaves the machine: repo history,
+   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos.
+3. **Trademark sweep** (D16) and the **license decision** (D19).
+
+Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
+has shipped; the code is well past the `0.9.8` that PROGRESS's milestone table
+used to claim.
 
 ## Environment prerequisites (verified facts)
 
@@ -174,18 +87,18 @@ may not be available when you work; everything you need is in this repo.
   `pnpm exec tsc -b --force` then `pnpm -r test` (expect 219 passing
   vitest cases across 21 files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
-  browser, so they are not part of `pnpm test`):
-  `pnpm run render` (build first) or `pnpm run render:fast` (reuse the bundle).
-  `pnpm run verify` runs build + unit tests + render suites.
-  See `scripts/render/README.md` — every suite fails on ANY uncaught page error.
+  browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
+  or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
+  unit tests + render suites. Six suites today; see `scripts/render/README.md` —
+  every suite fails on ANY uncaught page error.
 
 ## How the packages connect
 
 - `packages/core` — pure logic, no VS Code imports. Providers
   (`anthropic-native`, `openai-compat`, discovery, registry), runtime
-  (`loop`, `context`, `bus`, `modes`, `observer`, `solo`, `transcript`,
-  `cost`), plus `format`, `tools`, `mcp`, `teams`, `security`. The test
-  suite lives at `packages/core/test/*.test.ts`.
+  (`loop`, `context`, `bus`, `modes`, `observer`, `solo`, `transcript`, `cost`,
+  `commands`, `workerRole`), plus `format`, `tools`, `mcp`, `teams`, `security`.
+  The test suite lives at `packages/core/test/*.test.ts`.
 - `packages/vscode` — thin shell. `src/extension.ts` is the VS Code host
   (commands, webview wiring, settings, workspace/secret storage, the
   chat `run()` loop orchestration, conversation-title generation,
@@ -233,20 +146,28 @@ may not be available when you work; everything you need is in this repo.
    PASSED against three 67px mode cards, because cramming does not overflow. The
    assertion that works is "each mode card keeps a usable width >= 150px". When a
    fix lands, revert it and confirm the test fails — otherwise the test is not
-   evidence.
+   evidence. Watch the **substring trap** too: D47n's check had to strip the
+   *correct* string before searching for the stale one, because `~/.plato/runs/`
+   contains `.plato/runs/`.
 8. **The webview has a strict CSP** (nonce-gated script, no inline
    handlers, no `eval`). All interactions use `addEventListener`; all
    host calls go through `vsapi.postMessage({ type, ... })`.
 9. **No new message types without a host handler.** Webview → host uses
    messages; host → webview uses `this.panel.webview.postMessage`. Keep
    the contracts in `extension.ts` and `webview.ts` in sync.
+10. **Live copy must name the real location (D47m/n).** A user-facing string
+    that names a path is a claim about where the user's data is. Three defects
+    shipped this way — a mode card naming `.plato/ACADEMY.yaml`, the History
+    empty state, and the `TranscriptWriter` header comment. Ask whether the
+    path is current *and* whether the surface should name a path at all.
 
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
 2. `pnpm -r test` — 219/219 vitest in packages/core
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
-   bundle). Add an assertion here for any UI defect you fix.
+   bundle). Add an assertion here for any UI defect you fix, and prove it
+   falsifiable.
 4. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 5. `cd packages/vscode && pnpm run package` — produces
@@ -257,92 +178,58 @@ may not be available when you work; everything you need is in this repo.
 8. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
    change warrants a decision; commit.
 
-## Shipped this session (D37 → D43, 0.16.0)
-
-- **D37** — context management: model max-context (catalog
-  `maxContextFor()` + opportunistic discovery `fetchModelPool()` from
-  Anthropic/OpenRouter), running-context **ring** in the composer with a
-  hover breakdown, agentic/manual **compaction** (`compactMessages()`
-  in core, auto-trigger threshold, manual via the ring's controls).
-- **D38/D38b** — Settings rewrite: 3 sections (Orchestration, Providers,
-  Context), connection cards, button taxonomy, `install:vsix` script.
-- **D39 → D39g** — composer redesign: custom model + mode pickers with
-  popovers, header restructure, history+settings nav pairing, header
-  pills, headnav restyle.
-- **D39e/f** — ring inside the textarea (top-right), mode colors
-  (plan=green, edit=blue, act=orange, auto=purple), full-width textbox,
-  border truncation fix.
-- **D40 → D40c** — model-generated conversation titles, new-chat button
-  to the right, compact label removed, title-call tools fix.
-- **D41** — history archives on panel close, title generates early.
-- **D42 → D42i** — title survives reasoning models, History shows the
-  current chat, history-dispatch fix, tooltip hover/click behavior,
-  compaction-control alignment, custom tooltip.
-- **D43** — empty first-run + provider onboarding: seeded
-  anthropic/openai connections removed; friendly empty composer state
-  with a Connect CTA when no provider exists; onboarding card in
-  Settings → Providers; Base URL field hidden for the Anthropic/OpenAI
-  presets.
-
 ## Queued next work (in priority order — pick up here)
 
-0. **Reload and sign off on D47c–n** (D47c–l committed and pushed; D47m and D47n
-   committed locally, pending your push). Founder visual
-   sign-off gates the *next* milestone — check Academy at a **narrow** panel
-   width (that is where the D47g Role-box clip and the D47h overflow lived) and
+0. **Founder sign-off on D47c–n** (D47c–l committed and pushed; D47m + D47n
+   committed locally, pending the push). Check Academy at a **narrow** panel
+   width — that is where the D47g Role-box clip and the D47h overflow lived — and
    confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
    and stays in sync with the composer; Powers = pause/cancel; the council is
    pre-filled `Lyceum`; a starter council seeds Aristotle + Pythagoras; the `✕`
    is drawn on every card and disabled at 2; the Role counter reads `n / 1000`;
-   the mode cards stack to ONE column when narrow; and in Providers the section
-   stays OPEN across **Set key**, **Refresh models** and **Add connection**, with
-   the key entered inline on the card. And **D47m**: the Academy mode card reads
-   `Plato + a council of philosophers.` — no file path in it. And **D47n**: the
-   History page's empty Runs note reads `~/.plato/runs/`, not `.plato/runs/`.
-   **Settle the `personas.ts` role prompts** (recorded in D47d as possibly too
-   weak for real agentic flow).
+   the mode cards stack to ONE column when narrow; in Providers the section stays
+   OPEN across **Set key**, **Refresh models** and **Add connection**, with the
+   key entered inline; the Academy mode card reads `Plato + a council of
+   philosophers.` with no file path (D47m); and the History empty Runs note reads
+   `~/.plato/runs/` (D47n).
+   **Then settle the `personas.ts` role prompts** (recorded in D47d as possibly
+   too weak for real agentic flow).
 1. **Chat-log message rendering.** Markdown, code blocks, the
    "done in 26s · 11 tool calls · 66.7k tok" footer, and the labelled
    tool-summary chip already ship (core `renderMarkdown` + `.md-*` CSS +
-   the done line + D47c's chip). What remains is *interleaving* — see the
+   the done line + the D47c chip). What remains is *interleaving* — see the
    deferred note below.
 2. **History run-detail view.** Friendlier rendering of a run's
    transcript (turns, tool calls, costs), instead of the raw file.
 3. **Small wins:** title regenerate affordance (hover rename → add
    regenerate), title-call token metering into run costs.
 
-> Deferred — recorded so it is not mistaken for a CSS job:
-> - **True interleaved tool-call cards in the live log.** The host streams one
->   cumulative markdown blob per turn into a fixed `#streaming` element, so
->   tool summaries land below the whole reply rather than in place. Fixing this
->   needs **host-side reply segmentation** (a new segmented `md` contract), not
->   styling. The History run-detail view is the cheaper place to get correct
->   ordering first. See PROGRESS 2026-08-26 (0.7.5) known-limitation note.
-
-> Deferred for later (see DECISIONS D46):
-> - **Per-project council/academy override** — "discussion later" (founder
->   deferred 2026-09-04; v1 is a single global council).
-> - **Move convo history to `~/.plato/history/`** — TODO (history is in VS
->   Code workspaceState today, not the repo).
-
-> Project-files + model + storage work shipped 2026-09-03/04: D45a-2 (0.21.0,
-> `/system-prompt` PLATO.md materialization, empty-composer card), D45a-3
-> (0.22.0, one worker + N philosophers lock, `includeProjectRules` removed,
-> worker file-state in Orchestration, default body = identity + Karpathy),
-> D45a-4 (0.23.0, "Plato" in UI, academy.yaml scoped to Academy mode),
-> **D46 (0.24.0, home storage `~/.plato/`, global PLATO.md, ≤5 philosophers,
-> Academy-switch fix)**, and **D47 (0.25.0, Duo + Academy Settings editors
-> over yaml — ~/.plato/duo.yaml single store, edits-create-it, file-watcher
-> sync)**. Command surface is **Compact · History · System
-> prompt**. See DECISIONS D45a-2 / D45a-3 / D45a-4 / D46 / D47.
+> **Deferred / backlog — the full list lives in PROGRESS →
+> "Deferred / backlog (do not lose these)",** with dates and the resolved items.
+> Two of them matter for planning, and both are bigger than they look:
+> - **Interleaved tool-call cards in the live log** need **host-side reply
+>   segmentation** (a new segmented `md` contract), not styling — the host
+>   streams one cumulative markdown blob per turn, so tool summaries land below
+>   the whole reply. The History run-detail view is the cheaper place to get
+>   correct ordering first.
+> - **Mermaid fences render as labelled code blocks.** Needs its own decision:
+>   bundling a ~1MB renderer breaks the zero-dependency doctrine and adds an SVG
+>   XSS surface inside the escape-first webview.
+>
+> Deferred by decision (see DECISIONS D46): per-project council override
+> ("discussion later" — v1 is one global council) and moving convo history to
+> `~/.plato/history/` (it is in VS Code `workspaceState` today).
 
 ## Ground rules for any agent working here
 
 - Surgical changes only; touch only what the current milestone requires.
 - Every milestone ends in something runnable — demo it, then commit.
-- Do not add features from the non-goals list in BLUEPRINT section 3.
-- If a design contract in ARCHITECTURE.md conflicts with reality, stop
-  and record the proposed change in DECISIONS.md before deviating.
+- Do not add features from the non-goals list in BLUEPRINT section 3 — **but
+  check that banner first:** one of those non-goals ("visual team editor …
+  comes later") has since shipped.
+- If a design contract in ARCHITECTURE.md conflicts with reality, check whether
+  a DECISIONS entry already supersedes it; if not, stop and record the proposed
+  change in DECISIONS.md before deviating.
 - Match existing conventions; no new frameworks/libraries without a
   recorded reason.
 - **Customisation principle (D45c): UI first, yaml as backup.** Every
