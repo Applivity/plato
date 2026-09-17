@@ -1106,8 +1106,8 @@ Duo first. Decisions recorded beyond D47:
   card's fields horizontally; cards are `display:block` and each member's model
   select sits on its own full-width row so a long model ref can't overflow.
 
-**D47j — the Providers row: collapse on action, a broken Delete, and no confirm
-(M4.1, 0.25.0 — in the working tree, 2026-09-11).**
+**D47j — the Providers row: collapse on action, a broken Delete, no confirm, and a
+render-aborting crash (M4.1, 0.25.0 — committed 4f6a45a, 2026-09-11).**
 
 Founder report, all three missed by the previous pass:
 
@@ -1147,7 +1147,7 @@ removed, and every Playwright harness now **fails on any uncaught page error**
 and asserts that all three sections are present; reintroducing the call fails the
 guard immediately with the exact message.
 
-**D47l — the API key is entered in the panel (M4.1, 0.25.0 — in the working tree,
+**D47l — the API key is entered in the panel (M4.1, 0.25.0 — committed a62d682,
 2026-09-11).**
 
 Founder question: *"what is 'Set key' doing — it shows a Visual Studio in-build
@@ -1243,7 +1243,7 @@ structural fact.
 Presentation only: no `postMessage` type, parser, emitter, or behaviour changed.
 
 **D47h — the doer model select did not stick, and the narrow panel (M4.1, 0.25.0
-— in the working tree, 2026-09-11).**
+— committed fe2cf26, 2026-09-11).**
 
 Founder report: in **both** Duo and Academy, changing `Plato's model` snapped back
 to the composer's value; changing it in the **composer** worked. Two defects and a
@@ -1291,7 +1291,7 @@ layout class.
   grid fails 6 cases.
 
 **D47g — Role field hardening + the two walls, after founder UI review (M4.1, 0.25.0
-— in the working tree, 2026-09-10).**
+— committed 68dc451, 2026-09-10).**
 
 Founder review of the D47f build raised three items. Two were defects I had
 shipped.

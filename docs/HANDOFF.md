@@ -18,12 +18,11 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
-- HEAD (`main`) = **D47b** (committed 477bd43, 0.25.0). The working tree adds
-  **D47c + D47d + D47e + D47f + D47g + D47h — Academy editor work, NOT yet committed**
-  (same 0.25.0). D47f is the founder's UI-review pass: a complete starter
-  council (`Open ACADEMY.yaml` no longer writes a hollow file), one shared
-  Duo/Academy card, `Plato's model` replacing `Plato — the doer`, and a
-  **stored** `color:` per philosopher so removal never re-colours the rest.
+- HEAD (`main`) = **D47l** (committed a62d682, 0.25.0). Everything through D47l
+  is committed and pushed — the working tree is clean. The D47 series closed the
+  Academy Settings editor (D47b–g), unified the Settings page (D47i), and fixed
+  the Providers row (D47j–l: the collapse on action, a broken Delete, a missing
+  confirm, and a crash that silently truncated the render).
   **Plato is a personal pair-programmer: it never pollutes the shared repo.**
   Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
   philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
@@ -53,7 +52,7 @@ may not be available when you work; everything you need is in this repo.
   control '?' tooltips, Open-file buttons matching Open PLATO.md, Academy
   member cards fixed (generic `.mrow` flex collision → cards are block, model
   on its own row), 'Max/run' → 'Max interventions'.
-  **D47f (committed with this bundle) — founder UI-review pass:** `Open
+  **D47f (committed 68dc451) — founder UI-review pass:** `Open
   ACADEMY.yaml` used to write a **hollow** council (no `role`, no powers — the UI
   faked the role from the persona, so the file was incomplete while the panel
   looked right); the seed now writes role + powers + colour, and `save()` stores
@@ -65,7 +64,7 @@ may not be available when you work; everything you need is in this repo.
   `?`. `Lyceum` is pre-filled. Each philosopher carries a **stored `color:`** (5
   pastels) so removing one **never re-colours the rest** — shown in the Settings
   card, the chat notices and the run-start team card.
-  **D47g (committed with this bundle) — Role field + the two walls:** the Role box
+  **D47g (committed 68dc451) — Role field + the two walls:** the Role box
   **auto-fits its text plus exactly one line** and re-fits on panel-width change
   (a fixed `min-height` was clipping ~2.5 lines at a 420px panel); a
   **1,000-char cap** is enforced by both parsers, both schemas and `maxlength`
@@ -75,7 +74,7 @@ may not be available when you work; everything you need is in this repo.
   **`✕`** (the old `.btn-icon-danger` class never matched what `sbtn` emitted, so
   the browser painted a default white button) and both walls behave alike —
   drawn always, `aria-disabled` at the 2-philosopher floor.
-  **D47h (committed with this bundle) — the doer model select + the narrow panel:**
+  **D47h (committed fe2cf26) — the doer model select + the narrow panel:**
   changing `Plato's model` in Duo/Academy snapped back to the composer's value,
   because the doer select posted to the host but **never wrote the shared value**
   (the composer does `setModelSelected` *then* posts). The host accepted the new
@@ -86,7 +85,7 @@ may not be available when you work; everything you need is in this repo.
   overflows at a narrow column: `.modes` auto-fits (1 column narrow, 3 wide),
   `.sblock label` no longer forces `min-width:140px`, and the project-file /
   Duo-Academy header rows wrap so `Open …` buttons keep their label on one line.
-  **D47i (committed with this bundle) — one Settings surface:** the founder saw
+  **D47i (committed 87aa9cf) — one Settings surface:** the founder saw
   Orchestration as "a different panel" from the other two, and that was literally
   true — measured, it was a bare DIV with **no border and no radius** while
   Providers and Context were framed DETAILS sections. All three now share one
@@ -100,7 +99,17 @@ may not be available when you work; everything you need is in this repo.
   CSS). **Layout trap recorded:** `repeat(auto-fit, minmax(190px, 1fr))` still
   overflows a container narrower than 190px; the floor must be
   `min(190px, 100%)`.
-  **D47l (working tree) — the API key is entered in the panel:** `Set key` used a
+  **D47j (committed 4f6a45a) — the Providers row:** Providers collapsed on Set
+  key / Refresh models because both re-render the panel and `showSettings` wipes
+  `#sbody`; the open/closed state and scroll are now preserved across renders.
+  **Delete** wrapped to "Del/ete" at EVERY width — `.btn-danger` was sized as a
+  24px square for the philosopher Remove **icon** but reused for sbtn's text
+  label; `sbtn` now picks the shape from the label (glyph -> `.btn-icon`, word ->
+  nowrap). Delete also gained a **two-step confirm**. This commit also fixed a
+  **crash I had introduced in D47i** (appendChild of a node into its own parent),
+  which aborted the rest of the render and killed the Context section, and
+  checked the render suites into `scripts/render/`.
+  **D47l (committed a62d682) — the API key is entered in the panel:** `Set key` used a
   native `showInputBox`, so the same action had two surfaces (`Add a provider`
   was already inline) and the focus loss made the section appear to collapse. It
   now toggles an inline password field with Save/Cancel (Enter saves, Escape
@@ -155,7 +164,12 @@ may not be available when you work; everything you need is in this repo.
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
   `pnpm exec tsc -b --force` then `pnpm -r test` (expect 219 passing
-  vitest cases across 20 files in packages/core).
+  vitest cases across 21 files in packages/core).
+- Validate the **UI** separately with the render suites (they need a headless
+  browser, so they are not part of `pnpm test`):
+  `pnpm run render` (build first) or `pnpm run render:fast` (reuse the bundle).
+  `pnpm run verify` runs build + unit tests + render suites.
+  See `scripts/render/README.md` — every suite fails on ANY uncaught page error.
 
 ## How the packages connect
 
@@ -172,6 +186,10 @@ may not be available when you work; everything you need is in this repo.
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Five
+  suites driving the actual webview in headless Chromium. They exist because
+  `tsc` and the unit tests cannot see the rendered page; see its README for the
+  list of defects they caught.
 
 ## Critical gotchas
 
@@ -211,7 +229,7 @@ may not be available when you work; everything you need is in this repo.
 8. **The webview has a strict CSP** (nonce-gated script, no inline
    handlers, no `eval`). All interactions use `addEventListener`; all
    host calls go through `vsapi.postMessage({ type, ... })`.
-6. **No new message types without a host handler.** Webview → host uses
+9. **No new message types without a host handler.** Webview → host uses
    messages; host → webview uses `this.panel.webview.postMessage`. Keep
    the contracts in `extension.ts` and `webview.ts` in sync.
 
@@ -219,14 +237,16 @@ may not be available when you work; everything you need is in this repo.
 
 1. `pnpm exec tsc -b --force` — clean
 2. `pnpm -r test` — 219/219 vitest in packages/core
-3. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
+3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
+   bundle). Add an assertion here for any UI defect you fix.
+4. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
-4. `cd packages/vscode && pnpm run package` — produces
-   `plato-vscode-0.16.0.vsix`
-5. `cd packages/vscode && pnpm run install:vsix` — installs into the
+5. `cd packages/vscode && pnpm run package` — produces
+   `plato-vscode-0.25.0.vsix`
+6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
-6. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
-7. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
+7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
+8. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
    change warrants a decision; commit.
 
 ## Shipped this session (D37 → D43, 0.16.0)
@@ -258,15 +278,18 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Close D47c–h** (committed with this doc bundle).
-   Founder visual sign-off on the reload is what gates the *next* milestone —
-   check Academy at a **narrow** panel width (that is where the D47g Role-box
-   clip and the D47h overflow lived) and confirm: Academy shows only philosophers;
-   changing `Plato's model` **sticks** and stays in sync with the composer; Powers
-   = pause/cancel; the council is pre-filled `Lyceum`; a starter council seeds
-   Aristotle + Pythagoras; the `✕` is drawn on every card and disabled at 2; the
-   Role counter reads `n / 1000`; and the mode cards stack to ONE column when the
-   panel is narrow.
+0. **Reload and sign off on D47c–l** (all committed and pushed). Founder visual
+   sign-off gates the *next* milestone — check Academy at a **narrow** panel
+   width (that is where the D47g Role-box clip and the D47h overflow lived) and
+   confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
+   and stays in sync with the composer; Powers = pause/cancel; the council is
+   pre-filled `Lyceum`; a starter council seeds Aristotle + Pythagoras; the `✕`
+   is drawn on every card and disabled at 2; the Role counter reads `n / 1000`;
+   the mode cards stack to ONE column when narrow; and in Providers the section
+   stays OPEN across **Set key**, **Refresh models** and **Add connection**, with
+   the key entered inline on the card.
+   **Settle the `personas.ts` role prompts** (recorded in D47d as possibly too
+   weak for real agentic flow).
 1. **Chat-log message rendering.** Markdown, code blocks, the
    "done in 26s · 11 tool calls · 66.7k tok" footer, and the labelled
    tool-summary chip already ship (core `renderMarkdown` + `.md-*` CSS +
