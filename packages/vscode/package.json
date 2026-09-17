@@ -86,12 +86,10 @@
     "configurationDefaults": {
       "yaml.schemas": {
         "%applivity.plato-vscode/schemas/academy.schema.json": [
-          "ACADEMY.yaml",
-          ".plato/ACADEMY.yaml"
+          "ACADEMY.yaml"
         ],
         "%applivity.plato-vscode/schemas/duo.schema.json": [
-          "DUO.yaml",
-          ".plato/DUO.yaml"
+          "DUO.yaml"
         ]
       }
     }
