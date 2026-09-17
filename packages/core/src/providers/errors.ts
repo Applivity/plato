@@ -17,6 +17,12 @@ export class ProviderError extends Error {
     readonly detail: string,
     /** Which adapter produced it, e.g. 'anthropic'. */
     readonly provider: string,
+    /**
+     * The provider's own `Retry-After`, in milliseconds, when it sent one. The
+     * retry policy prefers this to its own backoff: the provider knows when it
+     * will accept work again and guessing wastes an attempt.
+     */
+    readonly retryAfterMs: number | null = null,
   ) {
     super(ProviderError.describe(status, detail, provider));
     this.name = 'ProviderError';
@@ -31,6 +37,40 @@ export class ProviderError extends Error {
       status === null ? `${provider} request failed` : `${provider} HTTP ${status}`;
     return detail.length > 0 ? `${head}: ${detail}` : head;
   }
+}
+
+/**
+ * `Retry-After` is either delta-seconds ("5") or an HTTP-date. Returns
+ * milliseconds, or null when the header is absent or unparseable.
+ */
+export function parseRetryAfter(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const v = raw.trim();
+  if (v.length === 0) {
+    return null;
+  }
+  if (/^\d+$/.test(v)) {
+    return Number(v) * 1000;
+  }
+  const when = Date.parse(v);
+  return Number.isNaN(when) ? null : Math.max(0, when - Date.now());
+}
+
+/** Reads a `Retry-After` off whatever the SDK attached to its error. */
+function headerRetryAfter(headers: unknown): number | null {
+  if (headers === null || typeof headers !== 'object') {
+    return null;
+  }
+  const get = (headers as { get?: unknown }).get;
+  if (typeof get === 'function') {
+    return parseRetryAfter(
+      (headers as { get: (k: string) => string | null }).get('retry-after'),
+    );
+  }
+  const v = (headers as Record<string, unknown>)['retry-after'];
+  return typeof v === 'string' ? parseRetryAfter(v) : null;
 }
 
 /** A one-line, user-facing summary of any thrown value. */
@@ -60,5 +100,9 @@ export function toProviderError(e: unknown, provider: string): ProviderError {
     }
   }
   const raw = e instanceof Error ? e.message : String(e);
-  return new ProviderError(status, raw.slice(0, 300), provider);
+  let retryAfterMs: number | null = null;
+  if (typeof e === 'object' && e !== null && 'headers' in e) {
+    retryAfterMs = headerRetryAfter((e as { headers: unknown }).headers);
+  }
+  return new ProviderError(status, raw.slice(0, 300), provider, retryAfterMs);
 }

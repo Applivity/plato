@@ -29,10 +29,17 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49a–e** — Phase 0 of the agent capability plan (roadmap in
-  DECISIONS **D49**). Everything through D48 is committed and pushed; this phase
-  is **committed locally and not pushed — push stays with the founder.** Working
-  tree clean.
+- HEAD = **M5.0 / D49f–g** — Phase 1 of the agent capability plan, part 1
+  (roadmap in DECISIONS **D49**). Everything through D48 is pushed; the M5 work
+  (D49a–g) is **committed locally and not pushed — push stays with the founder.**
+  Working tree clean.
+- **A transient provider failure no longer ends a run (D49f).** The worker turn
+  retries 429 / 5xx / transport failures with backoff, and says so in the chat.
+  A 4xx other than 429 is *not* retried — it would fail identically.
+- **The stable prefix is cached (D49g).** The system prompt and tool schemas are
+  marked cacheable. **`inputTokens` is a TOTAL** (Anthropic reports it net of
+  cache, OpenAI gross) — do not map either straight through, or the context ring
+  and the cost will disagree between providers.
 - **The render suites now FAIL THE PROCESS on a failed assertion (D49a).** Until
   D49a they could not: `check()` only logged, and no suite set `process.exitCode`,
   so a suite printing `FAIL: 12` exited 0 and the run still ended **ALL RENDER
@@ -94,8 +101,8 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **231** passing
-  vitest cases across **22** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **260** passing
+  vitest cases across **24** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
@@ -184,7 +191,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 231/231 vitest in packages/core (22 files)
+2. `pnpm -r test` — 260/260 vitest in packages/core (24 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -201,14 +208,16 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan — the roadmap is in
-DECISIONS D49.** Phase 0 (D49a–e) has landed. **Next is Phase 1, provider
-resilience:** retry with backoff honouring `retry-after`; prompt caching, which
-needs `TurnRequest.system` to become a block array to carry `cache_control`; a
-budget cap with graceful wind-down; and an `AbortSignal` so a hung turn can be
-cancelled. Then Phase 2 streaming, Phase 3 the tool surface, Phase 4 image input,
-Phase 5 web access, Phase 6 todos. Phase 7 is recorded-not-built — **subagents are
-deliberately deferred and must not be added without amending the one-worker lock
-(D45a-3) in the open.**
+DECISIONS D49.** Phase 0 (D49a–e) has landed, and Phase 1 is **partly** done:
+**D49f** (retry with backoff honouring `retry-after`) and **D49g** (prompt caching
+on the stable prefix, priced honestly) have shipped. **Phase 1 still has two
+items: a budget cap with graceful wind-down, and an `AbortSignal` so a hung turn
+can actually be cancelled** — `RunController.cancel` only gates at safe points
+today, so an in-flight provider call cannot be stopped, and Phase 2's streaming
+makes a stalled stream more likely. Then Phase 2 streaming, Phase 3 the tool
+surface, Phase 4 image input, Phase 5 web access, Phase 6 todos. Phase 7 is
+recorded-not-built — **subagents are deliberately deferred and must not be added
+without amending the one-worker lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:
 

@@ -63,13 +63,28 @@ export class AnthropicNativeProvider implements ChatProvider {
       res = await this.client.messages.create({
         model: stripPrefix(req.model),
         max_tokens: maxTokens,
-        system: req.system,
+        // D49g: mark the stable prefix cacheable. The system prompt is the same
+        // on every turn of a run, so after the first turn it is read at a tenth
+        // of the input rate instead of re-sent at full price.
+        system: req.cache
+          ? [
+              {
+                type: 'text' as const,
+                text: req.system,
+                cache_control: { type: 'ephemeral' as const },
+              },
+            ]
+          : req.system,
         ...(req.tools.length > 0
           ? {
-              tools: req.tools.map((t) => ({
+              tools: req.tools.map((t, i) => ({
                 name: t.name,
                 description: t.description,
                 input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
+                // A breakpoint on the LAST tool caches the whole array.
+                ...(req.cache && i === req.tools.length - 1
+                  ? { cache_control: { type: 'ephemeral' as const } }
+                  : {}),
               })),
             }
           : {}),
@@ -97,11 +112,18 @@ export class AnthropicNativeProvider implements ChatProvider {
       }
     }
 
+    // D49g: `input_tokens` is reported NET of cache, so add the cache figures
+    // back to keep `inputTokens` a true total across both adapters.
+    const cacheWriteTokens = res.usage?.cache_creation_input_tokens ?? 0;
+    const cacheReadTokens = res.usage?.cache_read_input_tokens ?? 0;
     return {
       content,
       usage: {
-        inputTokens: res.usage?.input_tokens ?? 0,
+        inputTokens:
+          (res.usage?.input_tokens ?? 0) + cacheWriteTokens + cacheReadTokens,
         outputTokens: res.usage?.output_tokens ?? 0,
+        cacheReadTokens,
+        cacheWriteTokens,
       },
       stopReason:
         res.stop_reason === 'max_tokens'

@@ -33,8 +33,19 @@ export interface ReasoningConfig {
 }
 
 export interface TurnUsage {
+  /**
+   * TOTAL input tokens for the turn — cache reads and cache writes included.
+   * Normalised across adapters on purpose: Anthropic reports `input_tokens`
+   * net of cache and OpenAI reports `prompt_tokens` gross, so mapping either
+   * one straight through would make the context ring and the cost display
+   * silently disagree between providers.
+   */
   inputTokens: number;
   outputTokens: number;
+  /** D49g: input tokens served from the prompt cache, billed at a discount. */
+  cacheReadTokens?: number;
+  /** D49g: input tokens written into the prompt cache, billed at a premium. */
+  cacheWriteTokens?: number;
 }
 
 export interface TurnResponse {
@@ -55,6 +66,16 @@ export interface TurnRequest {
   tools: CanonicalTool[];
   maxTokens: number;
   reasoning?: ReasoningConfig;
+  /**
+   * D49g: ask the adapter to mark the STABLE PREFIX (the system prompt and the
+   * tool schemas) as cacheable, when the provider has explicit prompt caching.
+   * A no-op where caching is automatic (OpenAI) or absent.
+   *
+   * Only the stable prefix is marked. The conversation is deliberately left
+   * out: compaction REPLACES the history, so a history cache would be thrown
+   * away and re-written at a premium every time it fired.
+   */
+  cache?: boolean;
 }
 
 /** One non-streaming API turn. Instances bind their credentials. */

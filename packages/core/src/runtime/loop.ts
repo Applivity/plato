@@ -18,6 +18,8 @@ import { decide } from './modes.js';
 import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
 import { AgentBus, RunController } from './bus.js';
+import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
+import type { RetryOptions } from '../providers/retry.js';
 import { estimateCost } from './cost.js';
 import { maxContextFor, maxOutputFor, splitModelRef } from '../providers/registry.js';
 import {
@@ -147,6 +149,19 @@ export interface LoopOptions {
   /** Reasoning config; only attach for catalog-flagged models. */
   reasoning?: ReasoningConfig;
   /**
+   * D49g: mark the stable prefix (system prompt + tool schemas) cacheable where
+   * the provider supports it. On by default for the shell — the prefix is
+   * identical on every turn, so after the first turn it is read at a discount.
+   */
+  cache?: boolean;
+  /**
+   * D49f: retry policy for the worker's provider call. Compaction and the
+   * observer are NOT wrapped — both already degrade gracefully, and a second
+   * retry budget would only hide how long a turn really takes. The injection
+   * points exist so a test does not wait in real time.
+   */
+  retry?: RetryOptions;
+  /**
    * Prior conversation as plain text pairs (oldest first) so resumed
    * chats keep context. Same-role neighbors are merged; leading
    * assistant messages are dropped to satisfy role alternation.
@@ -194,6 +209,8 @@ export interface LoopResult {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /** D49g: tokens served from the prompt cache across the run. */
+  cacheReadTokens: number;
 }
 
 export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
@@ -250,6 +267,9 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   let inputTokens = 0;
   let outputTokens = 0;
   let costUsd = 0;
+  /** D49g: so the saving from prompt caching is visible, not just smaller cost. */
+  let cacheReadTokens = 0;
+  let cacheWriteTokens = 0;
   let reason: LoopResult['reason'] = 'complete';
   let capNote: string | null = null;
   let truncatedStop = false;
@@ -410,14 +430,37 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
 
     let res;
     try {
-      res = await client.completeTurn({
-        model: opts.model,
-        system: currentSystem,
-        tools: allTools,
-        messages,
-        maxTokens,
-        reasoning: opts.reasoning,
-      });
+      // D49f: a transient 429 / 5xx / transport failure backs off and retries
+      // instead of ending the run and losing every turn so far. Each retry is
+      // announced, so a stalled turn is explained rather than looking hung.
+      res = await withRetry(
+        () =>
+          client.completeTurn({
+            model: opts.model,
+            system: currentSystem,
+            tools: allTools,
+            messages,
+            maxTokens,
+            reasoning: opts.reasoning,
+            cache: opts.cache,
+          }),
+        {
+          policy: opts.retry?.policy,
+          sleep: opts.retry?.sleep,
+          now: opts.retry?.now,
+          random: opts.retry?.random,
+          onRetry: ({ attempt, delayMs, reason }) => {
+            bus.emit({
+              type: 'notice',
+              runId,
+              // ceil, because a 500ms wait reported as "0s" reads like a bug.
+              text:
+                `[plato] ${reason} — retrying in ${Math.ceil(delayMs / 1000)}s ` +
+                `(attempt ${attempt + 1} of ${opts.retry?.policy?.attempts ?? DEFAULT_RETRY.attempts})`,
+            });
+          },
+        },
+      );
     } catch (e) {
       bus.emit({
         type: 'run-failed',
@@ -430,10 +473,14 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     const used = {
       inputTokens: res.usage.inputTokens,
       outputTokens: res.usage.outputTokens,
+      cacheReadTokens: res.usage.cacheReadTokens ?? 0,
+      cacheWriteTokens: res.usage.cacheWriteTokens ?? 0,
     };
     const quote = estimateCost(opts.model, used);
     inputTokens += used.inputTokens;
     outputTokens += used.outputTokens;
+    cacheReadTokens += used.cacheReadTokens;
+    cacheWriteTokens += used.cacheWriteTokens;
     costUsd += quote.usd;
     // D37: remember the authoritative input token count for the next
     // pre-turn `context` event.
@@ -445,6 +492,8 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       inputTokens: used.inputTokens,
       outputTokens: used.outputTokens,
       costUsd: quote.usd,
+      cacheReadTokens: used.cacheReadTokens,
+      cacheWriteTokens: used.cacheWriteTokens,
     });
 
     messages.push({ role: 'assistant', content: res.content });
@@ -669,6 +718,7 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
     inputTokens,
     outputTokens,
     costUsd,
+    cacheReadTokens,
     truncated: truncatedStop,
   };
 }

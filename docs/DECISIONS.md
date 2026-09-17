@@ -1413,6 +1413,84 @@ working streaming call in the repo (`messages.stream()` + `on('text')` +
 `finalMessage()`), which is the pattern phase 2 needs. It is preserved in git
 history at **`136564b`**.
 
+**D49f — a transient provider failure retries with backoff (M5.0, 0.25.0 —
+2026-09-17).**
+
+**The rule.** *The worker's provider call retries a retryable failure with
+exponential backoff and full jitter, honouring the provider's own `Retry-After`,
+and every retry is announced to the user.*
+
+**What was wrong.** There was **no retry anywhere in the repo**. A single 429 — or
+one dropped socket — ended the run and discarded every turn already completed.
+On a long agentic run that is the most expensive failure mode there is, and it is
+also the most common, because agents make many calls in quick succession.
+
+**What is retryable, and what is not.** `429`, `5xx`, and a transport failure
+(status `null`: DNS, reset socket, timeout). Any other `4xx` is **not** retried —
+a bad key (401), an unknown model (404) or a malformed body (400) will fail
+identically on the second attempt, so retrying only burns time and money. This is
+the reason `ProviderError` carries the status (D49d) rather than a formatted
+string: the policy has to branch on it.
+
+**Applied at the worker turn only, deliberately.** Compaction and the observer
+call `completeTurn` directly and both already degrade gracefully — a failed
+compaction emits a notice and continues, a failed observation degrades to `noop`
+— so neither can kill a run, and wrapping them would add a second, silently
+different retry budget.
+
+**Three limits, so a retry cannot become a hang.** A bounded attempt count
+(default 4); a bounded per-wait delay (default 20s); and a total elapsed budget
+(default 90s) checked *before* each wait, so the policy never starts a sleep that
+would run past it. The provider's `Retry-After` wins over the computed backoff
+when present — it knows when it will accept work again, and guessing wastes an
+attempt. Full jitter keeps several runs that were throttled together from coming
+back in lockstep.
+
+**The user sees it.** Each retry emits a `notice` — *"rate limited — retrying in
+4s (attempt 2 of 4)"* — so a stalled turn is explained instead of looking hung.
+Seconds are rounded **up**, because a 500 ms wait reported as "0s" reads like a bug.
+
+**D49g — prompt caching on the stable prefix, priced honestly (M5.0, 0.25.0 —
+2026-09-17).**
+
+**The rule.** *When caching is requested, the adapter marks the **stable prefix**
+— the system prompt and the tool schemas — as cacheable, and `TurnUsage` reports
+the cached subset so the saving is visible and priced correctly.*
+
+**The shape, and a deviation from the plan.** D49 sketched this as
+`TurnRequest.system` becoming a block array. It ships instead as a single optional
+`cache?: boolean`, with the adapters building whatever their wire protocol needs.
+Same benefit, no widening of a canonical type, and every existing caller — the
+loop, compaction, the observer — is untouched. Recorded because it is a change to
+the plan, not an omission from it.
+
+**`inputTokens` is now normalised to a true TOTAL, and that is the load-bearing
+part.** Anthropic reports `input_tokens` **net** of cache; OpenAI reports
+`prompt_tokens` **gross**. Mapping either one straight through would make the
+context ring and the cost display silently disagree between providers. So the
+Anthropic adapter adds the cache figures back, and the OpenAI adapter reports the
+`prompt_tokens_details.cached_tokens` subset without touching the total.
+
+**Why the cost model had to change at the same time.** Anthropic bills a cache
+write at **1.25×** input and a cache read at **0.1×**. Leaving `estimateCost`
+alone would have made the displayed cost **fall** the moment caching was switched
+on — because most of the prompt moves out of `inputTokens` — while the real bill
+rose. The price table now carries per-model cache multipliers and `estimateCost`
+splits the total into fresh, written and read. This supersedes the standing
+"cache discounts not modeled" limitation recorded in PROGRESS, for the model in
+the table.
+
+**Only the stable prefix is cached.** The conversation is deliberately left out.
+Compaction **replaces** the history, so a history cache would be discarded and
+re-written at a premium every time it fired — paying the 1.25× write penalty for
+a prefix that is about to change. Worth revisiting only alongside how compaction
+rewrites history.
+
+**Honest limit.** The saving is not measured here — there is no live key in this
+environment. What is verified is the mechanism (the breakpoints are in the request
+body, the arithmetic is right) and that the figures now reach the UI, so the
+founder can see the real saving in the panel.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

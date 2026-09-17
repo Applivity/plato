@@ -5,7 +5,7 @@
  * tools; reasoning_effort is attached only when requested AND the caller
  * resolved that the model supports it (registry flag).
  */
-import { ProviderError, toProviderError } from './errors.js';
+import { ProviderError, parseRetryAfter, toProviderError } from './errors.js';
 import type {
   CanonicalContent,
   ChatProvider,
@@ -28,7 +28,12 @@ interface ChatCompletionsResponse {
       }[];
     };
   }[];
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    /** D49g: OpenAI reports the implicitly-cached subset here. */
+    prompt_tokens_details?: { cached_tokens?: number };
+  };
 }
 
 export class OpenAICompatProvider implements ChatProvider {
@@ -136,7 +141,12 @@ export class OpenAICompatProvider implements ChatProvider {
     }
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 300);
-      throw new ProviderError(res.status, detail, 'openai');
+      throw new ProviderError(
+        res.status,
+        detail,
+        'openai',
+        parseRetryAfter(res.headers.get('retry-after')),
+      );
     }
     const json = (await res.json()) as ChatCompletionsResponse;
     const msg = json.choices?.[0]?.message;
@@ -160,11 +170,19 @@ export class OpenAICompatProvider implements ChatProvider {
       });
     }
 
+    // D49g: `prompt_tokens` is GROSS (it already counts the cached ones), and
+    // OpenAI caches implicitly — there is no `cache` request flag and no write
+    // premium. Report the cached subset so the saving is visible; the total is
+    // already correct, which is why this is the one adapter that needs no
+    // arithmetic.
+    const cached = json.usage?.prompt_tokens_details?.cached_tokens ?? 0;
     return {
       content,
       usage: {
         inputTokens: json.usage?.prompt_tokens ?? 0,
         outputTokens: json.usage?.completion_tokens ?? 0,
+        cacheReadTokens: cached,
+        cacheWriteTokens: 0,
       },
       stopReason:
         json.choices?.[0]?.finish_reason === 'length'

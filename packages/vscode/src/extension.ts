@@ -2686,6 +2686,10 @@ class ChatHost {
         ...(parts && modelSupportsReasoning(parts.model)
           ? { reasoning: this.reasoningFor() }
           : {}),
+        // D49g: the worker prompt and tool schemas are identical on every turn
+        // of a run, so mark them cacheable. A no-op for OpenAI, which caches
+        // implicitly; on Anthropic it is a straight input-cost saving.
+        cache: true,
         history: this.historyFor(),
         mcpServers,
         // D37: context compaction. Mode + threshold come from settings

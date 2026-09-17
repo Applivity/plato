@@ -138,7 +138,14 @@ describe('OpenAICompatProvider.completeTurn', () => {
       name: 'read_file',
       input: { path: 'a.txt' },
     });
-    expect(res.usage).toEqual({ inputTokens: 10, outputTokens: 5 });
+    // D49g widened TurnUsage with the cache figures; an endpoint that reports
+    // no cached tokens must still yield an explicit zero, not undefined.
+    expect(res.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
 
     const fn = fetchMock as unknown as ReturnType<typeof vi.fn>;
     const [url, init] = fn.mock.calls[0] as [string, RequestInit];

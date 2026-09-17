@@ -33,6 +33,9 @@ export type AgentEvent =
       inputTokens: number;
       outputTokens: number;
       costUsd: number;
+      /** D49g: the cached subset of `inputTokens`, when the provider reports it. */
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
     }
   | {
       /**

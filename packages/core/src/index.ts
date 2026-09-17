@@ -4,6 +4,7 @@ export * from './tools/diff.js';
 export * from './tools/schemas.js';
 export * from './providers/types.js';
 export * from './providers/errors.js';
+export * from './providers/retry.js';
 export * from './providers/registry.js';
 export * from './providers/presets.js';
 export * from './providers/discover.js';
