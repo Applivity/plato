@@ -2,8 +2,10 @@ import { prepareHtml, resolvePlaywright, TMP_DIR, join, readFileSync } from './h
 
 const { chromium } = await import(resolvePlaywright());
 
-// One build per process, shared by every suite that imports this module.
-prepareHtml();
+// One build per RUN. run.mjs prepares once, up front, and exports
+// PLATO_RENDER_PREPARED=1 so the six child processes do not each rebuild.
+// A suite run on its own (node scripts/render/core.mjs) still prepares itself.
+if (process.env['PLATO_RENDER_PREPARED'] !== '1') { prepareHtml(); }
 
 export const HTML_PATH = join(TMP_DIR, 'wv.html');
 export function html() { return readFileSync(HTML_PATH, 'utf8'); }
@@ -86,4 +88,24 @@ export async function checkSections(p, tag) {
     .map((d) => (d.querySelector('summary, .sechead') || {}).textContent.trim()));
   const ok = expectSections.every((want) => titles.some((t) => t.startsWith(want)));
   check(tag + ': all three sections rendered', ok, titles);
+}
+
+/**
+ * D49a: end a suite so a failed assertion FAILS THE PROCESS.
+ *
+ * Before this, `check()` only logged. Every suite ended with a bare
+ * `console.log(... PASS/FAIL ...)` and no suite set `process.exitCode`, so a
+ * suite printing "FAIL: 12" still exited 0 — and run.mjs, which decides on exit
+ * status alone, printed ALL RENDER SUITES PASS. The individual OK/FAIL lines on
+ * stdout were the only real signal, and they scroll away.
+ *
+ * Every suite must end by calling this. Do not close the browser or print the
+ * verdict by hand: that is how the two counters diverged in the first place.
+ */
+export async function finish(tag) {
+  console.log(counters.fail === 0
+    ? 'PASS: ' + tag
+    : 'FAIL: ' + tag + ' — ' + counters.fail + ' assertion(s) failed');
+  await b.close();
+  process.exitCode = counters.fail === 0 ? 0 : 1;
 }

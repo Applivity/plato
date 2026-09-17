@@ -5,6 +5,7 @@
  * tools; reasoning_effort is attached only when requested AND the caller
  * resolved that the model supports it (registry flag).
  */
+import { ProviderError, toProviderError } from './errors.js';
 import type {
   CanonicalContent,
   ChatProvider,
@@ -120,14 +121,22 @@ export class OpenAICompatProvider implements ChatProvider {
     if (this.apiKey.length > 0) {
       headers.authorization = `Bearer ${this.apiKey}`;
     }
-    const res = await this.fetchImpl(`${base}/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${base}/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      // D49d: a rejected fetch (DNS failure, refused socket) has no status —
+      // keep it distinguishable from an HTTP error so the retry policy can
+      // treat a transport failure as retryable.
+      throw toProviderError(e, 'openai');
+    }
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 300);
-      throw new Error(`provider ${res.status}: ${detail}`);
+      throw new ProviderError(res.status, detail, 'openai');
     }
     const json = (await res.json()) as ChatCompletionsResponse;
     const msg = json.choices?.[0]?.message;

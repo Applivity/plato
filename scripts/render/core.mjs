@@ -1,4 +1,4 @@
-import { b, check, page, academyS, counters } from './plib.mjs';
+import { check, page, academyS, finish } from './plib.mjs';
 
 // A. The Role box must not clip, at realistic widths, and keep ~1 line slack.
 for (const w of [300, 340, 420, 520, 740, 940]) {
@@ -72,5 +72,4 @@ for (const n of [2, 3, 4, 5]) {
   await p.close();
 }
 
-console.log(counters.fail === 0 ? 'PASS: role box + walls + colours' : 'FAIL: ' + counters.fail);
-await b.close();
+await finish('role box + walls + colours');

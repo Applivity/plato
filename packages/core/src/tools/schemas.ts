@@ -1,8 +1,12 @@
 /**
- * M1 tool contracts (D05, D22): six-tool surface as declared to the model.
+ * M1 tool contracts (D05, D22): the tool surface as declared to the model.
  * Schemas are provider-neutral JSON Schema (canonical D25b shape);
  * adapters map them onto their wire protocol. Implementations live in
  * execute.ts; the diff engine in diff.ts.
+ *
+ * Do not write a tool COUNT here — it has gone stale twice (ask_user in D34 and
+ * git both landed after "six-tool surface" was written). The array below is the
+ * source of truth.
  */
 import type { CanonicalTool } from '../providers/types.js';
 
@@ -11,20 +15,39 @@ export function toolDeclarations(): CanonicalTool[] {
   return [
     {
       name: 'read_file',
-      description: 'Read a text file from the workspace.',
+      description:
+        'Read a text file from the workspace. Returns the whole file when it is small. For a large file, read it in windows with offset and limit — when the output is cut it states which lines it covers and how to continue.',
       parameters: {
         type: 'object',
-        properties: { path: { type: 'string' } },
+        properties: {
+          path: { type: 'string' },
+          offset: {
+            type: 'number',
+            description: 'First line to return, 1-based. Default 1.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum number of lines to return.',
+          },
+        },
         required: ['path'],
       },
     },
     {
       name: 'write_file',
       description:
-        'Create or overwrite a file with full contents. Refused for existing non-empty files; prefer apply_diff.',
+        'Create a file, or replace one whose whole contents you already know. An existing EMPTY file is always writable. An existing non-empty file is refused unless you pass overwrite: true — use apply_diff for a targeted edit instead.',
       parameters: {
         type: 'object',
-        properties: { path: { type: 'string' }, content: { type: 'string' } },
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
+          overwrite: {
+            type: 'boolean',
+            description:
+              'Replace an existing non-empty file. Set this only when the entire file must change.',
+          },
+        },
         required: ['path', 'content'],
       },
     },

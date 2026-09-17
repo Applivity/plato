@@ -1,4 +1,4 @@
-import { b, check, page, openAll, S, counters, checkPageClean, checkSections } from './plib.mjs';
+import { check, page, openAll, S, checkPageClean, checkSections, finish } from './plib.mjs';
 
 const MDL = 'a:b';
 const ACAD = S({
@@ -254,5 +254,5 @@ for (const w of [420, 560, 720, 900]) {
   await p.close();
 }
 
-console.log(counters.fail === 0 ? '\nPASS: providers row' : '\nFAIL: ' + counters.fail);
-await b.close();
+console.log('');
+await finish('providers row');

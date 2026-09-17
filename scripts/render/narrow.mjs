@@ -1,4 +1,4 @@
-import { b, check, page, academyS, counters } from './plib.mjs';
+import { check, page, academyS, finish } from './plib.mjs';
 
 // The Settings page must not overflow at a narrow editor column, action buttons
 // must keep their label on one line, and mode cards must stay usable.
@@ -33,5 +33,4 @@ for (const w of [300, 340, 420, 720]) {
     await p.close();
   }
 }
-console.log(counters.fail === 0 ? 'PASS: narrow layout' : 'FAIL: ' + counters.fail);
-await b.close();
+await finish('narrow layout');

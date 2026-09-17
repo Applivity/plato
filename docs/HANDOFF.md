@@ -29,9 +29,19 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **D48** (this commit, docs-only). Everything through D47l is committed
-  and pushed; **D47m, D47n and D48 are committed locally and not yet pushed —
-  push stays with the founder.** Working tree clean.
+- HEAD = **M5.0 / D49a–e** — Phase 0 of the agent capability plan (roadmap in
+  DECISIONS **D49**). Everything through D48 is committed and pushed; this phase
+  is **committed locally and not pushed — push stays with the founder.** Working
+  tree clean.
+- **The render suites now FAIL THE PROCESS on a failed assertion (D49a).** Until
+  D49a they could not: `check()` only logged, and no suite set `process.exitCode`,
+  so a suite printing `FAIL: 12` exited 0 and the run still ended **ALL RENDER
+  SUITES PASS**. Treat any "ALL RENDER SUITES PASS" claim older than D49a as
+  evidence of *no uncaught exception* only — not of passing assertions.
+- **The tool surface changed this phase (D49b–d).** `write_file` always writes an
+  existing **empty** file and needs `overwrite: true` to replace a non-empty one;
+  `read_file` takes `offset`/`limit` and never truncates silently; and a provider
+  failure now arrives as a typed `ProviderError` carrying the HTTP status.
 - **What Plato is: a personal pair-programmer that never pollutes the shared
   repo.** Everything Plato owns lives in a flat `~/.plato/`: `ACADEMY.yaml` (the
   council), `DUO.yaml` (the Duo philosopher), `mcp.yaml`, `PLATO.md` (global
@@ -84,19 +94,20 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect 219 passing
-  vitest cases across 21 files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **231** passing
+  vitest cases across **22** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Six suites today; see `scripts/render/README.md` —
-  every suite fails on ANY uncaught page error.
+  unit tests + render suites. Six suites, **160 assertions**; see
+  `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
+  since D49a a **failed assertion also fails the command**.
 
 ## How the packages connect
 
 - `packages/core` — pure logic, no VS Code imports. Providers
-  (`anthropic-native`, `openai-compat`, discovery, registry), runtime
-  (`loop`, `context`, `bus`, `modes`, `observer`, `solo`, `transcript`, `cost`,
+  (`anthropic-native`, `openai-compat`, `errors`, discovery, registry), runtime
+  (`loop`, `context`, `bus`, `modes`, `observer`, `transcript`, `cost`,
   `commands`, `workerRole`), plus `format`, `tools`, `mcp`, `teams`, `security`.
   The test suite lives at `packages/core/test/*.test.ts`.
 - `packages/vscode` — thin shell. `src/extension.ts` is the VS Code host
@@ -160,11 +171,20 @@ used to claim.
     shipped this way — a mode card naming `.plato/ACADEMY.yaml`, the History
     empty state, and the `TranscriptWriter` header comment. Ask whether the
     path is current *and* whether the surface should name a path at all.
+11. **A suite that cannot fail is not evidence (D49a).** For the whole D47 series
+    the render suites printed `FAIL: n` and still **exited 0**, so `run.mjs`
+    reported **ALL RENDER SUITES PASS** either way. Two suites had also grown
+    their own browser and their own private failure counter. Every suite now ends
+    with `finish(tag)` from `plib.mjs`, which sets `process.exitCode` from the one
+    shared `counters`. **Never print the verdict or close the browser by hand, and
+    never define a local `check`** — that is exactly how the two counters drifted.
+    When you add an assertion, break the thing it guards and watch the command
+    fail, or you have not verified anything.
 
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 219/219 vitest in packages/core
+2. `pnpm -r test` — 231/231 vitest in packages/core (22 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -180,8 +200,20 @@ used to claim.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Founder sign-off on D47c–n** (D47c–l committed and pushed; D47m + D47n
-   committed locally, pending the push). Check Academy at a **narrow** panel
+**The active workstream is the M5 agent capability plan — the roadmap is in
+DECISIONS D49.** Phase 0 (D49a–e) has landed. **Next is Phase 1, provider
+resilience:** retry with backoff honouring `retry-after`; prompt caching, which
+needs `TurnRequest.system` to become a block array to carry `cache_control`; a
+budget cap with graceful wind-down; and an `AbortSignal` so a hung turn can be
+cancelled. Then Phase 2 streaming, Phase 3 the tool surface, Phase 4 image input,
+Phase 5 web access, Phase 6 todos. Phase 7 is recorded-not-built — **subagents are
+deliberately deferred and must not be added without amending the one-worker lock
+(D45a-3) in the open.**
+
+The items below predate that plan and remain open:
+
+0. **Founder sign-off on D47c–n** (all committed and pushed as of `136564b`).
+   Check Academy at a **narrow** panel
    width — that is where the D47g Role-box clip and the D47h overflow lived — and
    confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
    and stays in sync with the composer; Powers = pause/cancel; the council is

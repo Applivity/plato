@@ -21,7 +21,7 @@ through a green build and was found by the founder in a screenshot:
 | CSS defined `.btn-icon-danger`, code emitted `.btn-danger` → **no rule**, so the browser painted its default white button | nothing |
 | an exception in `showSettings` **aborted the rest of the render**, killing the Context section | nothing — the page still loaded |
 
-## The two rules that make these honest
+## The three rules that make these honest
 
 1. **Every suite fails on ANY uncaught page error.** An exception inside
    `showSettings` stops the remaining render, so a partially-built page must be a
@@ -30,8 +30,29 @@ through a green build and was found by the founder in a screenshot:
    test only checked "nothing overflows" — and it *passed* against three 67px
    columns, because cramming does not overflow. The assertion that works is "each
    mode card keeps a usable width".
+3. **Every suite must end by calling `finish(tag)` (D49a).** Until D49a a suite
+   ended with a bare `console.log(... PASS/FAIL ...)` and nothing set
+   `process.exitCode`, so a suite printing `FAIL: 12` still exited **0** — and
+   `run.mjs`, which decides on exit status alone, printed *ALL RENDER SUITES PASS*.
+   The `OK`/`FAIL` lines on stdout were the only signal, and they scroll away.
 
-Both were proven by reverting the fix and watching the suite fail.
+   `finish()` prints the verdict, closes the browser, and sets the exit code from
+   the shared `counters`. **Never print the verdict or close the browser by hand,
+   and never define a local `check`/counter** — that is exactly how `modelsync` and
+   `panels` drifted onto a second, invisible failure counter.
+
+All three were proven by breaking the thing and watching the run fail. Do the same
+for every new assertion: revert the fix, confirm the suite fails, restore it.
+
+## Adding a suite
+
+Import everything from `plib.mjs` — the browser, `check`, `page()`, and `finish`.
+Do not import `harness.mjs` directly and roll your own browser: the whole point of
+`plib` is that there is one counter and one build. Add the suite name to
+`SUITES` in `run.mjs`.
+
+`run.mjs` now builds **once** for the whole run and tells the children so with
+`PLATO_RENDER_PREPARED=1`. A suite run on its own prepares the HTML itself.
 
 ## Suites
 

@@ -40,6 +40,7 @@ import {
   PHILOSOPHER_COLORS,
   ROLE_MAX_CHARS,
   colorHex,
+  describeError,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
@@ -2745,14 +2746,14 @@ class ChatHost {
               )} interventions${this.obsExtras(observers)}`
             : '',
       });
-    } catch {
-      this.send('error', 'Provider request failed. Check the API key and network.');
-      this.push({
-        k: 'msg',
-        cls: 'bot',
-        who: 'Error',
-        text: 'Provider request failed. Check the API key and network.',
-      });
+    } catch (e) {
+      // D49d: report what actually failed. This used to be one fixed sentence
+      // for a 401, a 429 and a dead socket alike, while the provider's own
+      // message — built by the adapter and carried on the error — was discarded
+      // here by a bare `catch {}`.
+      const text = describeError(e);
+      this.send('error', text);
+      this.push({ k: 'msg', cls: 'bot', who: 'Error', text });
     } finally {
       this.running = false;
       // D44d: once idle, auto-fold the conversation tail on its cadence.

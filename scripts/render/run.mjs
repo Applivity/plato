@@ -28,15 +28,21 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { prepareHtml } from './harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SUITES = ['providers', 'modelsync', 'core', 'panels', 'narrow', 'history'];
+
+// Build once here rather than once per suite. PLATO_RENDER_PREPARED tells each
+// child that wv.html is already current, so plib skips its own prepareHtml().
+prepareHtml();
+const CHILD_ENV = { ...process.env, PLATO_RENDER_PREPARED: '1' };
 
 let failed = 0;
 for (const s of SUITES) {
   process.stdout.write('\n=== ' + s + ' ===\n');
   const r = spawnSync('node', [join(HERE, s + '.mjs')], {
-    stdio: 'inherit', cwd: join(HERE, '..', '..'), env: process.env,
+    stdio: 'inherit', cwd: join(HERE, '..', '..'), env: CHILD_ENV,
   });
   if (r.status !== 0) { failed++; }
 }

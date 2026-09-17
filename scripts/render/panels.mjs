@@ -1,7 +1,5 @@
-import { prepareHtml, resolvePlaywright, TMP_DIR, join, readFileSync } from './harness.mjs';
-const { chromium } = await import(resolvePlaywright());
+import { check, page, openAll, finish } from './plib.mjs';
 
-const html = readFileSync(join(TMP_DIR, 'wv.html'), 'utf8');
 const CONNS = [{ id: 'openrouter', kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1', models: ['a/b'], all: ['a/b'], keyStatus: 'missing', builtin: false }];
 const S = {
   type: 'settings', modelItems: [], presets: [], connections: CONNS,
@@ -10,24 +8,10 @@ const S = {
   compaction: { mode: 'auto', threshold: 0.8 },
 };
 
-const b = await chromium.launch();
-let fail = 0;
-const check = (n, ok, x) => { if (ok) { console.log('OK  ', n); } else { fail++; console.log('FAIL', n, JSON.stringify(x)); } };
-
 for (const w of [300, 340, 420, 720]) {
-  const p = await b.newPage({ viewport: { width: w, height: 1500 } });
-  await p.route('**/*', (r) => (r.request().url().endsWith('/plato.html')
-    ? r.fulfill({ contentType: 'text/html', body: html }) : r.abort()));
-  await p.addInitScript(() => { window.acquireVsCodeApi = () => ({ postMessage: () => undefined }); });
-  await p.goto('http://localhost/plato.html');
-  await p.waitForFunction(() => !!document.getElementById('gear'));
-  await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), S);
-  await p.waitForTimeout(320);
+  const p = await page(w, S);
   // Open every section so content that is collapsed by default is measurable.
-  await p.evaluate(() => {
-    for (const d of document.querySelectorAll('details.sec')) { d.open = true; }
-  });
-  await p.waitForTimeout(200);
+  await openAll(p);
 
   const r = await p.evaluate(() => {
     const secs = [...document.querySelectorAll('#sbody > .wrap > .sec')];
@@ -93,6 +77,4 @@ for (const w of [300, 340, 420, 720]) {
   check('w=' + w + ' no panel overflow', r.panelOverflow <= 2, r.panelOverflow);
   await p.close();
 }
-console.log('\nsection shape sample:', JSON.stringify((await (async () => 0)()) || {}));
-console.log(fail === 0 ? 'PASS: unified panels' : 'FAIL: ' + fail);
-await b.close();
+await finish('unified panels');

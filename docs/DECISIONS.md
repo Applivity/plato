@@ -1206,6 +1206,213 @@ about ownership, not just prose — if it describes *what changed*, it belongs i
 PROGRESS as a row. The one deliberate exception is the queue and the deferred
 notes, which are "what to do next" and belong with the state.
 
+**D49 — agent capability plan: seven phases, and the three forks settled with the
+founder (M5.0, 0.25.0 — approved 2026-09-17).**
+
+An audit of the tool surface, the provider contract and the render harness against
+what a modern coding agent does found **four capability holes and three live
+defects**. The holes: no streaming, no image input, no web access, and no retry on
+a failed provider call. The defects: `write_file` could not overwrite anything,
+`read_file` cut at 60,000 chars with no way to continue, and **the render suites
+could not fail their own exit code** — the most serious, because every other claim
+of "verified" in this project runs through them (D49a).
+
+**The phases**, in dependency order. Each ends in something runnable and gets its
+own PROGRESS row. This entry is the roadmap's home: an agent resuming the work
+reads it here, not in a plan file outside the repo.
+
+0. **Trust and correctness** (D49a–D49d) — the render suites fail the process; the
+   file-tool contracts; one provider error shape; the dead M0 pair removed.
+1. **Provider resilience** — retry with backoff honouring `retry-after`; prompt
+   caching, which needs `TurnRequest.system` to become a block array to carry
+   `cache_control`; a budget cap with graceful wind-down (`cost.ts` is
+   display-only today and the only limiter is `MAX_TURNS`); an `AbortSignal` so a
+   hung turn can be cancelled at all. Retry, caching and the cap need their own
+   entries when they land.
+2. **Real streaming** — `TurnRequest.onDelta`, one optional field, so
+   `ChatProvider` keeps a single method and every test fake and
+   compaction/observer call site is untouched. Anthropic uses
+   `messages.stream()` + `finalMessage()`, which returns the identical assembled
+   message. The OpenAI-compatible path is raw `fetch` and needs a hand-written SSE
+   parser — partial-line buffering, `tool_calls` deltas keyed by `tc.index` and
+   concatenated by string, and a `content-type` guard for servers that ignore
+   `stream: true` and would otherwise return a silently empty answer. **The
+   working precedent for the Anthropic half was the M0 provider deleted in D49e;
+   it is in git history at `136564b`,
+   `packages/core/src/providers/anthropic.ts`.**
+3. **Agent tool surface** — regex `grep` with output modes (it is literal-substring
+   and 100-hit-capped today); a `glob` tool, since there is no way to find a file
+   by name pattern; `list_dir` with a path argument; `replace_all` as an explicit
+   per-block opt-in on `apply_diff`; a new atomic multi-file `apply_patch`;
+   background `shell` with output polling and kill.
+4. **Image input** — a new `image` member on `CanonicalContent` (user turns only);
+   a binary attach path with a magic-byte sniff and its own raw-byte cap, because
+   the 200 KB text cap is meaningless for a screenshot and base64 inflates by 33%;
+   `img-src data:` in the CSP — the narrowest grant that renders, where
+   `asWebviewUri` would expose every file under the workspace root to an `img src`;
+   and a flat token estimate for the context ring, never chars/4 on base64.
+5. **Web access** — see the third fork below.
+6. **Task coherence** — a `todo_write` tool and a panel.
+7. **Recorded, not built** — subagents, checkpoints/undo, LSP diagnostics after
+   edits, hooks, skills, notebook and PDF input. Each needs its own decision.
+
+**The three forks, settled with the founder.**
+
+- **Subagents are DEFERRED, deliberately.** A `task` tool that spawns a nested
+  agent is the largest genuine gap against Claude Code, and `runAgentLoop` is a
+  pure function, so it is buildable. It is deferred because it **amends the
+  one-worker lock (D45a-3)**, and that lock was reached after explicit debate
+  (N workers need a supervisor, which regresses to one primary). Deferring is a
+  recorded choice, not an oversight. Revisiting it means amending D45a-3 in the
+  open, not slipping a tool in behind it.
+- **The edit surface is extended ADDITIVELY, not replaced.** A Claude-Code-style
+  `edit` (old_string / new_string / replace_all) was **rejected**: `apply_diff`
+  already takes multiple SEARCH/REPLACE blocks applied in order and treats a
+  re-apply as a no-op, and a single old/new pair can express neither. Adopting it
+  would have been a capability *loss* dressed as parity. `apply_diff` keeps its
+  shape; `replace_all` becomes an explicit opt-in and `apply_patch` is added for
+  multi-file atomicity.
+- **Web access is a new `net` tool-kind that ALWAYS ASKS — including in `auto`.**
+  Read-class in intent (you may look things up while planning) but consent-gated
+  in fact, because **egress is irreversible** — a request cannot be un-sent, and a
+  crafted URL can exfiltrate — so `auto` mode's blanket allow is wrong for it.
+  Per-call and per-session approval need **no new UI**: `decide()` already returns
+  `ask`, and the approval card already ships *Allow once* and *Approve all {tool}
+  for this session*. The approval preview must show the exact URL or query, because
+  that is what leaves the machine.
+
+**Out of scope, and why.** No public release, license text or marketplace publish
+before D19. M4 closeout — the acceptance test, the D15 secret audit, the D16
+trademark sweep — is **not** advanced by this work and is not claimed by it.
+
+**D49a — the render suites must FAIL THE PROCESS (M5.0, 0.25.0 — 2026-09-17).**
+
+**The rule.** *A suite that observed a failed assertion must exit non-zero.
+`run.mjs` decides on exit status alone.*
+
+**What was wrong.** `plib.mjs`'s `check()` only logged. Each suite ended with a
+bare `console.log(counters.fail === 0 ? 'PASS…' : 'FAIL: ' + counters.fail)`, and
+**no suite set `process.exitCode`** — `process.exit` appeared exactly once in the
+directory, at `run.mjs:46`. So a suite printing `FAIL: 12` exited **0**; `run.mjs`
+counted it as passed on `r.status !== 0`; and the run ended with **ALL RENDER
+SUITES PASS**.
+
+The consequence is not hypothetical: every "ALL SIX RENDER SUITES PASS" line in
+PROGRESS is weaker evidence than it reads. It proves that no uncaught exception
+fired — which is what `checkPageClean` legitimately catches — but proves
+**nothing** about whether the assertions held. The `OK`/`FAIL` lines on stdout
+were the only real signal, and they scroll.
+
+**Two counters, not one.** `modelsync` and `panels` did not import `plib.mjs` at
+all: they launched their own browser and defined their own local `let fail = 0`
+and `check`. A fix reading `counters.fail` would therefore have silently reported
+**0** for both. They now import the shared `check`, `page()` and `finish()` like
+the other four, which removes the class instead of the instance. (They were also
+broken when run alone, reading a `wv.html` that only the first suite had written.)
+
+**The fix.** One `finish(tag)` in `plib.mjs` prints the verdict, closes the
+browser, and sets `process.exitCode` from the shared counter. Every suite ends
+with it. A suite must not print the verdict or close the browser by hand, and must
+not define a local counter — that is how the two drifted apart.
+
+**One build per run.** `run.mjs` now calls `prepareHtml()` once and exports
+`PLATO_RENDER_PREPARED=1`, so each suite's `plib` import skips its own build; four
+suites rebuilt before, six after the consolidation. A suite run on its own still
+prepares for itself.
+
+**Proven falsifiable, twice.** A probe importing `finish` with one false assertion
+exits 1, and 0 with a true one. End to end, breaking a single real assertion in
+`history.mjs` made the suite print the offending value, `run.mjs` print **1 RENDER
+SUITE(S) FAILED**, and the command exit 1 — where the old code printed the same
+FAIL line and exited 0.
+
+**Truth baseline after the fix:** **160 assertions across six suites, 0 failures.**
+
+**D49b — the file-write contract: an empty file is writable, a full rewrite is
+explicit (M5.0, 0.25.0 — 2026-09-17).**
+
+**The rule.** *`write_file` creates a new file, always writes an existing EMPTY
+file, and refuses an existing non-empty file unless the call passes
+`overwrite: true`.*
+
+**What was wrong.** The declared schema said "Create or overwrite a file with full
+contents. Refused for existing non-empty files", but the code tested **existence**,
+not emptiness: `stat` succeeded on any existing path and the tool failed. So an
+existing empty file was **unreachable by every write tool** — `write_file` refused
+it, and `apply_diff` cannot seed one because it rejects an empty SEARCH
+(`diff.ts`). The model's only route was `shell`, which `plan` and `edit` deny. A
+`touch`ed placeholder, or a scaffolded empty `__init__.py`, was a dead end. The
+code and its own declared contract disagreed.
+
+**Why `overwrite: true` and not free overwrite.** Free overwrite would match the
+competitors, but it would also make the one destructive file operation in the
+tool surface un-approved in `auto` mode. An explicit flag keeps the guard, removes
+the dead end, and loses no capability.
+
+**The claim has to be true.** The safety argument for `overwrite: true` is that the
+user sees what is lost — so `buildApprovalPreview` now returns a real diff
+(`previewDiff(existing, content)`) when `write_file` targets a file that already
+holds content, instead of showing only the incoming text. Before this the argument
+was simply false: the preview could not show the loss.
+
+**D49c — `read_file` pages, and never truncates silently (M5.0, 0.25.0 —
+2026-09-17).**
+
+**The rule.** *`read_file` returns a small file whole and byte-for-byte. A large
+file is read in windows with `offset` (1-based line) and `limit`, and any cut
+output states which lines it covers and how to continue.*
+
+**What was wrong.** Output was `text.slice(0, 60_000)` — a silent cut, no marker,
+no way to ask for the rest. A file over 60,000 chars **could not be read at all**.
+
+**Two budgets, not one.** A line budget is not a size limit: one minified line can
+be megabytes. A window is therefore bounded by both `READ_MAX_CHARS` (60,000,
+unchanged) and `READ_MAX_LINES` (1,500). A single line longer than the whole char
+budget returns its head plus the marker, rather than an empty window.
+
+**The whole-file path stays byte-exact.** Re-joining a line window drops a trailing
+newline, and the model builds `apply_diff` SEARCH strings out of this text — a lost
+newline becomes a spurious "SEARCH not found". So when the whole file fits, the raw
+text is returned untouched. Line counting uses `wc -l` semantics (a trailing
+newline *terminates* the last line, it does not start an empty one), or every count
+is off by one.
+
+**D49d — one error shape for every provider failure (M5.0, 0.25.0 — 2026-09-17).**
+
+**The rule.** *A provider failure reaches the UI as a `ProviderError` carrying the
+HTTP status — or `null` for a transport failure — and the provider's own message.*
+
+**What was wrong.** The two adapters disagreed: the OpenAI-compatible path threw a
+formatted string, while `anthropic-native.ts` had **no error handling at all** and
+let the SDK's error escape raw. The shell then discarded whichever it received with
+a bare `catch {}` and showed one fixed sentence — *"Provider request failed. Check
+the API key and network."* — so a 401, a 429 and a dead socket were
+indistinguishable to the user, and the message the adapter had already built was
+thrown away at the last step.
+
+**Why typed rather than a string.** The status code is what the retry policy in
+phase 1 must branch on: 429 and 5xx are retryable, 401 is not, and a transport
+failure has no status at all. A plain message cannot carry it. `describeError()`
+additionally turns a 429 into a sentence that says what to do about it.
+
+**Left alone deliberately.** `discover.ts` keeps its own error text — model
+discovery is a separate surface with its own handler in Settings.
+
+**D49e — the dead M0 pair removed (M5.0, 0.25.0 — 2026-09-17).**
+
+`runtime/solo.ts` (the M0 single-prompt loop, whose own header said "the M1 tool
+loop will replace this") and `providers/anthropic.ts` (the legacy `AnthropicProvider`
+it used) referenced only each other, were reachable solely through one re-export in
+`core/src/index.ts`, and had **no caller** in `packages/vscode`. Removed, with the
+re-export, per D45d's no-legacy rule. Verified by grep across `packages/` and
+`scripts/` before deleting: the only remaining hits were the two files themselves
+and their build output in `dist/` (untracked).
+
+These two files were *not* worthless — `providers/anthropic.ts` held the only
+working streaming call in the repo (`messages.stream()` + `on('text')` +
+`finalMessage()`), which is the pattern phase 2 needs. It is preserved in git
+history at **`136564b`**.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

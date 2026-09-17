@@ -89,6 +89,22 @@ async function buildApprovalPreview(
   }
   if (tool === 'write_file' && typeof args['content'] === 'string') {
     const c = args['content'];
+    // D49b: when this replaces a file that already holds content, preview the
+    // DIFF. The whole safety argument for `overwrite: true` is that the user
+    // sees what is lost — showing only the incoming text hides exactly that.
+    const rel = typeof args['path'] === 'string' ? args['path'] : '';
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const before = await readFile(join(root, rel), 'utf8');
+      if (before.length > 0) {
+        const { previewDiff } = await import('../tools/diff.js');
+        const trimmed = previewDiff(before, c);
+        return trimmed.length > 4000 ? trimmed.slice(0, 4000) : trimmed;
+      }
+    } catch {
+      // No such file (the create path) or unreadable: show the content itself.
+    }
     return c.length > 1500 ? c.slice(0, 1500) : c;
   }
   return JSON.stringify(args).slice(0, 800);

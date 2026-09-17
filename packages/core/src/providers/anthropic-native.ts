@@ -4,7 +4,8 @@
  * extended thinking is enabled only when a reasoning config is supplied.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam, ContentBlockParam, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
+import type { Message, MessageParam, ContentBlockParam, ToolResultBlockParam } from '@anthropic-ai/sdk/resources/messages';
+import { toProviderError } from './errors.js';
 import type {
   CanonicalContent,
   ChatProvider,
@@ -57,22 +58,30 @@ export class AnthropicNativeProvider implements ChatProvider {
 
     // D40b: omit tools entirely for tool-less turns instead of sending
     // an empty array — consistent with the OpenAI-compat adapter.
-    const res = await this.client.messages.create({
-      model: stripPrefix(req.model),
-      max_tokens: maxTokens,
-      system: req.system,
-      ...(req.tools.length > 0
-        ? {
-            tools: req.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
-            })),
-          }
-        : {}),
-      messages,
-      ...extra,
-    });
+    let res: Message;
+    try {
+      res = await this.client.messages.create({
+        model: stripPrefix(req.model),
+        max_tokens: maxTokens,
+        system: req.system,
+        ...(req.tools.length > 0
+          ? {
+              tools: req.tools.map((t) => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.parameters as Anthropic.Messages.Tool.InputSchema,
+              })),
+            }
+          : {}),
+        messages,
+        ...extra,
+      });
+    } catch (e) {
+      // D49d: previously this file had NO error handling — the SDK's error
+      // escaped raw and the shell replaced it with a fixed sentence. The SDK
+      // puts the HTTP status on the error object; keep it.
+      throw toProviderError(e, 'anthropic');
+    }
 
     const content: CanonicalContent[] = [];
     for (const block of res.content as ContentBlockParam[]) {

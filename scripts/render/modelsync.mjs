@@ -1,7 +1,5 @@
-import { prepareHtml, resolvePlaywright, TMP_DIR, join, readFileSync } from './harness.mjs';
-const { chromium } = await import(resolvePlaywright());
+import { check, page, finish } from './plib.mjs';
 
-const html = readFileSync(join(TMP_DIR, 'wv.html'), 'utf8');
 const ITEMS = [
   { value: 'anthropic:claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
   { value: 'openai:gpt-5', label: 'GPT-5' },
@@ -23,21 +21,9 @@ const settings = (mode) => ({
   compaction: { mode: 'auto', threshold: 0.8 },
 });
 
-const b = await chromium.launch();
-let fail = 0;
-const check = (n, ok, x) => { if (ok) { console.log('OK  ', n); } else { fail++; console.log('FAIL', n, JSON.stringify(x)); } };
-
 for (const echo of ['legacy', 'authoritative']) {
   for (const mode of ['duo', 'academy']) {
-    const p = await b.newPage({ viewport: { width: 620, height: 1400 } });
-    await p.route('**/*', (r) => (r.request().url().endsWith('/plato.html')
-      ? r.fulfill({ contentType: 'text/html', body: html }) : r.abort()));
-    await p.addInitScript(() => {
-      window.__posted = [];
-      window.acquireVsCodeApi = () => ({ postMessage: (m) => { window.__posted.push(m); } });
-    });
-    await p.goto('http://localhost/plato.html');
-    await p.waitForFunction(() => !!document.getElementById('gear'));
+    const p = await page(620);
     const echoOf = (eff) => { const m = models(eff); if (echo === 'legacy') { delete m.effectiveModel; } return m; };
     await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), echoOf('anthropic:claude-sonnet-4-5'));
     await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), settings(mode));
@@ -72,5 +58,5 @@ for (const echo of ['legacy', 'authoritative']) {
     await p.close();
   }
 }
-console.log(fail === 0 ? '\nPASS: model sync' : '\nFAIL: ' + fail);
-await b.close();
+console.log('');
+await finish('model sync');

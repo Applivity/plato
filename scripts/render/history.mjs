@@ -1,4 +1,4 @@
-import { b, check, page, checkPageClean, counters } from './plib.mjs';
+import { check, page, checkPageClean, finish } from './plib.mjs';
 
 // The History page's empty Runs state answers the only question a user has when
 // they find no runs: where did they go? It used to answer with ".plato/runs/" —
@@ -26,5 +26,4 @@ import { b, check, page, checkPageClean, counters } from './plib.mjs';
   check('it names no repo-relative path', !/\.plato\/runs\//.test(stale), text);
   await p.close();
 }
-console.log(counters.fail === 0 ? 'PASS: history empty state' : 'FAIL: ' + counters.fail);
-await b.close();
+await finish('history empty state');
