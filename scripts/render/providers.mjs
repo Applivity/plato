@@ -235,5 +235,24 @@ for (const w of [420, 560, 720, 900]) {
   await p.close();
 }
 
+// 8. The mode picker describes the MODE, not the file behind it. "Academy" used
+// to read "(from .plato/ACADEMY.yaml)" — a path in a one-line description the
+// user never acts on, and the path is wrong at a glance (it lives in ~/.plato/).
+// Assert the requirement: no mode description names a file.
+{
+  const p = await page(720, ACAD);
+  await openAll(p);
+  const mods = await p.evaluate(() => [...document.querySelectorAll('.mcard')].map((c) => ({
+    title: (c.querySelector('.mtitle') || {}).textContent || '',
+    desc: (c.querySelector('.mdesc') || {}).textContent || '',
+  })));
+  const bad = mods.filter((m) => /\.ya?ml|plato\//i.test(m.desc));
+  check('no mode description names a config file', bad.length === 0, bad);
+  const acad = mods.find((m) => m.title === 'Academy') || {};
+  check('Academy description is the mode, not a path',
+    acad.desc === 'Plato + a council of philosophers.', acad);
+  await p.close();
+}
+
 console.log(counters.fail === 0 ? '\nPASS: providers row' : '\nFAIL: ' + counters.fail);
 await b.close();

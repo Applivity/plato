@@ -1147,6 +1147,42 @@ removed, and every Playwright harness now **fails on any uncaught page error**
 and asserts that all three sections are present; reintroducing the call fails the
 guard immediately with the exact message.
 
+**D47m — a mode description describes the mode, not the file behind it (M4.1,
+0.25.0 — this commit, 2026-09-17).**
+
+The Academy mode card read:
+
+```
+Plato + a council of philosophers (from .plato/ACADEMY.yaml)
+```
+
+Two separate defects sat in that one parenthetical:
+
+- **It named a file inside a description of a mode.** A mode card answers one
+  question — *what happens if I pick this?* The path answers a question the user
+  did not ask, in the single line of space the card has. Solo and Duo name no
+  file; Academy was the odd one out.
+- **The path was stale.** D46 moved every Plato-owned file into a flat
+  `~/.plato/`, so `.plato/ACADEMY.yaml` had not been the location for four
+  releases. A stale pointer is worse than no pointer: the user goes looking for
+  a file that is not there.
+
+The description is now `Plato + a council of philosophers.`
+
+**Contract:** *a mode description describes the mode; it never names a config
+file.* Where the file lives is the job of the Settings block that edits it, which
+already states the real path (`Editing ~/.plato/ACADEMY.yaml — every change saves
+it`). Copy that names a path belongs next to the control that opens that path,
+not on a card that selects a behaviour.
+
+**The rule is asserted, not merely applied.** `scripts/render/providers.mjs`
+gained a block 8: no `.mdesc` may match `.yaml` or `plato/`, and the Academy
+string is pinned exactly. It asserts the **requirement**, per rule 2 of
+`scripts/render/README.md` — "the description contains no path" would pass a card
+that named a *different* wrong path, which is precisely the failure mode being
+fixed. Restoring the old string fails both assertions and prints the offending
+description, which is the evidence that the check can actually fail.
+
 **D47l — the API key is entered in the panel (M4.1, 0.25.0 — committed a62d682,
 2026-09-11).**
 

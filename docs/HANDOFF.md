@@ -10,7 +10,7 @@ may not be available when you work; everything you need is in this repo.
 3. [ARCHITECTURE.md](ARCHITECTURE.md) — binding design contracts
 4. [PROGRESS.md](PROGRESS.md) — the running change log (newest first)
 
-## Current repository state (verified 2026-09-09)
+## Current repository state (verified 2026-09-17)
 
 - Location: `/Users/ai/Desktop/plato` (canonical remote is
   `https://github.com/applivity-com/plato`, private, default branch
@@ -18,11 +18,15 @@ may not be available when you work; everything you need is in this repo.
 - **Code exists and ships.** Monorepo (pnpm workspaces):
   `packages/core` (the engine, v0.1.0) and `packages/vscode` (the VS Code
   extension shell, v0.25.0).
-- HEAD (`main`) = **D47l** (committed a62d682, 0.25.0). Everything through D47l
-  is committed and pushed — the working tree is clean. The D47 series closed the
-  Academy Settings editor (D47b–g), unified the Settings page (D47i), and fixed
-  the Providers row (D47j–l: the collapse on action, a broken Delete, a missing
-  confirm, and a crash that silently truncated the render).
+- HEAD (`main`) = **D47m** (0.25.0). Everything through D47l (committed a62d682,
+  docs synced in 0660bd8) is committed and pushed; **D47m is committed locally and
+  not yet pushed — push stays with the founder.** The working tree is clean. The
+  D47 series closed the Academy Settings editor (D47b–g), unified the Settings
+  page (D47i), fixed the Providers row (D47j–l: the collapse on action, a broken
+  Delete, a missing confirm, and a crash that silently truncated the render), and
+  took the config path out of the Academy mode card (D47m: a mode description
+  describes the mode, never a file — and the path it named was stale anyway; a
+  render assertion now pins the rule).
   **Plato is a personal pair-programmer: it never pollutes the shared repo.**
   Everything Plato owns lives in a flat `~/.plato/` — `DUO.yaml` (the Duo
   philosopher), `ACADEMY.yaml` (council), `mcp.yaml`, `PLATO.md` (global
@@ -278,7 +282,8 @@ may not be available when you work; everything you need is in this repo.
 
 ## Queued next work (in priority order — pick up here)
 
-0. **Reload and sign off on D47c–l** (all committed and pushed). Founder visual
+0. **Reload and sign off on D47c–m** (D47c–l committed and pushed; D47m committed
+   locally, pending your push). Founder visual
    sign-off gates the *next* milestone — check Academy at a **narrow** panel
    width (that is where the D47g Role-box clip and the D47h overflow lived) and
    confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
@@ -287,7 +292,8 @@ may not be available when you work; everything you need is in this repo.
    is drawn on every card and disabled at 2; the Role counter reads `n / 1000`;
    the mode cards stack to ONE column when narrow; and in Providers the section
    stays OPEN across **Set key**, **Refresh models** and **Add connection**, with
-   the key entered inline on the card.
+   the key entered inline on the card. And **D47m**: the Academy mode card reads
+   `Plato + a council of philosophers.` — no file path in it.
    **Settle the `personas.ts` role prompts** (recorded in D47d as possibly too
    weak for real agentic flow).
 1. **Chat-log message rendering.** Markdown, code blocks, the

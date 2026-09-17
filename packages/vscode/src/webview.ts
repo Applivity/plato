@@ -2699,7 +2699,7 @@ export function chatHtml(): string {
     const MODES = [
       { id: 'solo', label: 'Solo', desc: 'Plato alone. No philosopher watching.' },
       { id: 'duo', label: 'Duo', desc: 'Plato + one philosopher steering the run.' },
-      { id: 'academy', label: 'Academy', desc: 'Plato + a council of philosophers (from .plato/ACADEMY.yaml).' },
+      { id: 'academy', label: 'Academy', desc: 'Plato + a council of philosophers.' },
     ];
     const modeRow = el('div', 'modes');
     for (const mode of MODES) {
