@@ -219,24 +219,13 @@ used to claim.
 
 ## Queued next work (in priority order — pick up here)
 
-**The active workstream is the M5 agent capability plan — the roadmap is in
-DECISIONS D49.** Phases 0 and 1 are **complete**: D49a–e (the evidence loop and
-the file-tool contracts), D49f (retry with backoff), D49g (prompt caching, priced
-honestly), D49h (a run budget), D49i (cancel aborts the call in flight).
-
-**Next is Phase 2, real streaming** — the largest user-visible change left in the
-plan. The shape is settled in D49: `TurnRequest.onDelta`, one optional field, so
-`ChatProvider` keeps a single method and compaction, the observer and every test
-fake are untouched; Anthropic via `messages.stream()` + `finalMessage()`; the
-OpenAI-compatible path via a hand-written SSE parser, since that path has no SDK
-by doctrine. **The working precedent for the Anthropic half was the M0 provider
-deleted in D49e — it is in git history at `136564b`,
-`packages/core/src/providers/anthropic.ts`.** Two things it must handle: a
-`data:` line split across reads, and `tool_calls` deltas fragmented across chunks
-and keyed by `tc.index`. Then Phase 3 the tool surface, Phase 4 image input,
-Phase 5 web access, Phase 6 todos. Phase 7 is recorded-not-built — **subagents are
-deliberately deferred and must not be added without amending the one-worker lock
-(D45a-3) in the open.**
+**The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
+the roadmap — do not restate it here.** Phases 0 and 1 are done (D49a–i). **Next
+is Phase 2, real streaming**, whose design is settled in D49; the one thing D49
+cannot tell you is that the working precedent for the Anthropic half was the M0
+provider deleted in D49e, which is in git history at `136564b`,
+`packages/core/src/providers/anthropic.ts`. **Subagents are deliberately deferred
+and must not be added without amending the one-worker lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:
 
