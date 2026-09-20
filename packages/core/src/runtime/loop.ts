@@ -17,6 +17,7 @@ import type {
 import { decide } from './modes.js';
 import type { Mode } from './modes.js';
 import { MAX_TURNS, secretRefusal } from './modes.js';
+import { containmentRefusal } from '../security/paths.js';
 import { AgentBus, RunController } from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
 import type { RetryOptions } from '../providers/retry.js';
@@ -589,10 +590,13 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
       const name = call.name;
       const args = (call.input ?? {}) as ToolArgs;
 
-      const refusal = secretRefusal(
-        name as Parameters<typeof secretRefusal>[0],
-        args,
-      );
+      // D49k: refuse a path outside the workspace BEFORE asking the user to
+      // approve an action that could never run. The executor enforces the same
+      // rule again — this one is for the user's benefit, that one is the
+      // guarantee.
+      const refusal =
+        containmentRefusal(opts.root, name, args) ??
+        secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
       if (refusal !== null) {
         results.push({
           type: 'tool_result',

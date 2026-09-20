@@ -1621,6 +1621,60 @@ usage, and both parity claims. A seventh render suite asserts the DOM contract
 making `streamHtml` append, which produced `"HelloHello worHello world"` and five
 failures.
 
+**D49k — a file tool may only touch the workspace (M5.0, 0.25.0 — 2026-09-20).**
+
+**The rule.** *Every path argument resolves inside the workspace root. A path
+that escapes is refused, before approval and again at execution.*
+
+**What was wrong, and how it was found.** This was not theorised. Starting
+phase 3, I checked how the new `list_dir` path argument and the multi-file
+`apply_patch` would handle paths, and found that **no tool enforced containment
+at all**: every path argument went straight to `join(root, raw)`. Reproduced
+through the tool surface itself — `read_file` read a file outside the root, and
+**`write_file` created one**:
+
+```
+write_file {path: '../../../../tmp/plato-traversal-probe.txt'} -> ok
+$ ls /tmp/plato-traversal-probe.txt     # it was there
+```
+
+The VS Code host already had this rule for attachments (`relWithinRoot`,
+`extension.ts`), so the gap was specifically in tool execution, in core.
+
+**Why it matters more than a read escaping.** In `auto` mode a write is allowed
+without approval, so a prompt-injected model could create or overwrite a file
+anywhere the VS Code process can write — outside the workspace the user opened
+and consented to. The secret deny-list does not help: it is a **name** list
+evaluated against the basename, and `../../../../tmp/x` has an innocuous one.
+
+**Enforced twice, on purpose.** `security/paths.ts` holds the rule
+(`resolveInRoot`, `pathArgsOf`, `containmentRefusal`), and the executor applies
+it at one choke point (`resolveTarget`), so **a tool added later cannot forget
+it**. The loop also refuses before asking for approval — that one is *courtesy,
+not the guarantee*: without it the user would be shown a card for a write that
+could never run. A test asserts the card does not appear; bypassing the
+executor's check while leaving the loop's is not a supported state, and bypassing
+the loop's check while leaving the executor's is safe by construction.
+
+**`pathArgsOf` is the single source of truth for "which argument is a path"**,
+because the two enforcement points must not disagree. It matters: `content` and
+`pattern` are strings but not paths, and a naive "check every string argument"
+rule (which is what `secretRefusal` does for the deny-list, harmlessly) would
+refuse every `write_file` whose content happened to contain `..`.
+
+**Scope and limits, stated so they are not mistaken for more than they are.**
+`shell` is *not* covered — a command can `cd ..` or read an absolute path by
+nature, which is exactly why it is the most gated tool kind (denied in plan and
+edit, asked in act). And the check is **lexical**: a symlink inside the root
+pointing outside it is not caught, matching the host's attachment check, so the
+workspace must not contain hostile symlinks. Both are asserted in
+`paths.test.ts` rather than left implicit.
+
+**Verification.** 16 unit tests for the rule plus 7 at the executor and the loop.
+Falsified in both directions: bypassing the executor's check fails **exactly the
+4 containment tests** with the other 13 still passing, and removing the loop's
+pre-flight makes the approval count go 0 → 1.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

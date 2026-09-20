@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executeTool } from '../src/tools/execute.js';
@@ -156,5 +156,89 @@ describe('apply_diff and the empty-file dead end (D49b)', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.output).toContain('empty SEARCH block');
+  });
+});
+
+/**
+ * D49k. The executor is the guarantee; the loop's pre-flight check is only for
+ * the user's benefit. These are the demonstrations that motivated the guard —
+ * before it, the write below landed on disk outside the workspace.
+ */
+describe('workspace containment (D49k)', () => {
+  it('refuses to read outside the workspace', async () => {
+    const root = tempRoot();
+    const outside = join(root, '..', 'plato-outside-probe.txt');
+    writeFileSync(outside, 'not yours');
+    try {
+      const r = await executeTool(root, 'read_file', {
+        path: '../plato-outside-probe.txt',
+      });
+      expect(r.ok).toBe(false);
+      expect(r.output).toContain('outside the workspace');
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it('refuses to CREATE outside the workspace', async () => {
+    const root = tempRoot();
+    const outside = join(root, '..', 'plato-escape-probe.txt');
+    try {
+      const r = await executeTool(root, 'write_file', {
+        path: '../plato-escape-probe.txt',
+        content: 'escaped',
+      });
+      expect(r.ok).toBe(false);
+      expect(r.output).toContain('outside the workspace');
+      // The point of the test: nothing was written.
+      expect(existsSync(outside)).toBe(false);
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it('refuses an absolute path outside the workspace', async () => {
+    const root = tempRoot();
+    const r = await executeTool(root, 'write_file', {
+      path: '/tmp/plato-absolute-probe.txt',
+      content: 'escaped',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('outside the workspace');
+  });
+
+  it('refuses apply_diff outside the workspace', async () => {
+    const root = tempRoot();
+    const outside = join(root, '..', 'plato-diff-probe.txt');
+    writeFileSync(outside, 'before');
+    try {
+      const r = await executeTool(root, 'apply_diff', {
+        path: '../plato-diff-probe.txt',
+        diffs: [{ search: 'before', replace: 'after' }],
+      });
+      expect(r.ok).toBe(false);
+      expect(r.output).toContain('outside the workspace');
+      expect(readFileSync(outside, 'utf8')).toBe('before');
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  // Containment must not break ordinary work — including a path that merely
+  // LOOKS suspicious but stays inside.
+  it('still allows a normal nested path and a dotted filename', async () => {
+    const root = tempRoot();
+    const r = await executeTool(root, 'write_file', {
+      path: 'a/b/c.ts',
+      content: 'ok',
+    });
+    expect(r.ok).toBe(false); // no parent directory yet — but refused for THAT
+    expect(r.output).not.toContain('outside the workspace');
+    const dot = await executeTool(root, 'write_file', {
+      path: './dot.ts',
+      content: 'ok',
+    });
+    expect(dot.ok).toBe(true);
+    expect(readFileSync(join(root, 'dot.ts'), 'utf8')).toBe('ok');
   });
 });

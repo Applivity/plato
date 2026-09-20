@@ -497,3 +497,92 @@ describe('runAgentLoop worker system prompt (D45a)', () => {
     );
   });
 });
+
+/**
+ * D49k. The executor is the guarantee; this is the courtesy. A path that leaves
+ * the workspace must be refused BEFORE the user is asked to approve an action
+ * that could never run — in `act` mode a write is `ask`, so without the
+ * pre-flight check the card would appear and then fail.
+ */
+describe('runAgentLoop workspace containment (D49k)', () => {
+  it('refuses an escaping path without asking the user to approve it', async () => {
+    let approvals = 0;
+    const refusals: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'w1',
+                name: 'write_file',
+                input: { path: '../../escape.ts', content: 'x' },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') refusals.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'understood' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(r.reason).toBe('complete');
+    // The card never appeared, and the model was told why.
+    expect(approvals).toBe(0);
+    expect(refusals.join(' ')).toContain('outside the workspace');
+  });
+
+  it('still asks before an ordinary in-workspace write', async () => {
+    let approvals = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'w1',
+                name: 'write_file',
+                input: { path: 'plato-containment-probe.tmp', content: 'x' },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(false); // decline: do not litter the repo
+      },
+    });
+    expect(approvals).toBe(1);
+  });
+});

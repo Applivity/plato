@@ -7,6 +7,7 @@
 import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { resolveInRoot } from '../security/paths.js';
 import { isSecretPath } from '../security/secrets.js';
 import { listWorkspaceFiles } from './files.js';
 import { applyBlocks } from './diff.js';
@@ -21,6 +22,22 @@ export type ToolArgs = Record<string, unknown>;
 
 function fail(output: string): ToolOutcome {
   return { ok: false, output };
+}
+
+/**
+ * D49k: the single choke point for a tool's path argument. Resolves it inside
+ * the workspace and applies the secret deny-list to the RESOLVED path, so
+ * neither check can be skipped by a tool that forgets one. Before this, every
+ * tool went straight to `join(root, raw)` — see security/paths.ts.
+ */
+function resolveTarget(
+  root: string,
+  raw: string,
+): { abs: string; rel: string } | { err: string } {
+  const rel = resolveInRoot(root, raw);
+  if (rel === null) return { err: `path is outside the workspace: ${raw}` };
+  if (isSecretPath(rel)) return { err: 'protected file' };
+  return { abs: join(root, rel), rel };
 }
 
 export async function executeTool(
@@ -66,12 +83,14 @@ function readInt(v: unknown): number | null {
 }
 
 async function readFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
-  const rel = argPath(args);
-  if (rel.length === 0) return fail('missing path');
-  if (isSecretPath(rel)) return fail('protected file');
+  const raw = argPath(args);
+  if (raw.length === 0) return fail('missing path');
+  const target = resolveTarget(root, raw);
+  if ('err' in target) return fail(target.err);
+  const { abs, rel } = target;
   let text: string;
   try {
-    text = await readFile(join(root, rel), 'utf8');
+    text = await readFile(abs, 'utf8');
   } catch {
     return fail(`cannot read: ${rel}`);
   }
@@ -134,13 +153,14 @@ async function readFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> 
 }
 
 async function writeFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
-  const rel = argPath(args);
+  const raw = argPath(args);
   const content = args['content'];
-  if (rel.length === 0 || typeof content !== 'string') {
+  if (raw.length === 0 || typeof content !== 'string') {
     return fail('missing path or content');
   }
-  if (isSecretPath(rel)) return fail('protected file');
-  const abs = join(root, rel);
+  const target = resolveTarget(root, raw);
+  if ('err' in target) return fail(target.err);
+  const { abs, rel } = target;
   const overwrite = args['overwrite'] === true;
 
   // D49b: an existing EMPTY file is always writable. No other tool could reach
@@ -168,9 +188,11 @@ async function writeFileTool(root: string, args: ToolArgs): Promise<ToolOutcome>
 }
 
 async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
-  const rel = argPath(args);
-  if (rel.length === 0) return fail('missing path');
-  if (isSecretPath(rel)) return fail('protected file');
+  const rawPath = argPath(args);
+  if (rawPath.length === 0) return fail('missing path');
+  const target = resolveTarget(root, rawPath);
+  if ('err' in target) return fail(target.err);
+  const { abs, rel } = target;
   const rawDiffs = args['diffs'];
   if (!Array.isArray(rawDiffs)) return fail('diffs must be an array');
   const blocks: DiffBlock[] = [];
@@ -192,14 +214,14 @@ async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome>
   }
   let before: string;
   try {
-    before = await readFile(join(root, rel), 'utf8');
+    before = await readFile(abs, 'utf8');
   } catch {
     return fail(`cannot read: ${rel}`);
   }
   try {
     const { content, applied, noop } = applyBlocks(before, blocks);
     if (applied > 0) {
-      await writeFile(join(root, rel), content, 'utf8');
+      await writeFile(abs, content, 'utf8');
     }
     return {
       ok: true,
