@@ -1867,6 +1867,47 @@ users.
 **The host half — attaching an image from the panel, and the CSP grant to render
 a thumbnail — is D49o.**
 
+**D49o — image input, host half: the name decides, the bytes decide, and the chip
+is a glyph (M5.0, 0.25.0 — 2026-09-20).**
+
+**Two checks, deliberately separate.** `looksLikeImage` (the **extension**) decides
+whether to *attempt* an image load; `sniffImageMime` (the **bytes**) decides
+whether it *is* one. Collapsing them into one check looks simpler and is worse:
+if a file merely failed the sniff and fell through to the text path, then a
+**corrupt PNG would be attached as mojibake text** instead of being refused. So
+anything offered as an image must actually be one, and the refusal names the real
+reason ("not a PNG, JPEG, WebP or GIF — checked the bytes, not the name").
+
+**Validation happens at attach time, the bytes are read at send time.** The user
+finds out while the picker is still in front of them, not after the run has
+failed; and the file is re-read when it is actually sent, which is what the text
+attachments already do.
+
+**Images ride their own channel.** `LoopOptions.images` feeds the opening user
+turn — **never** `modelTask`, which is emitted on `run-started` and written
+verbatim into the run's JSONL. A test reads that file off disk and asserts the
+base64 is not in it. The cap is `MAX_IMAGE_BYTES` on **raw** bytes, separate from
+the char-based text cap, because base64 inflates by ~33% and measuring the
+encoded length would refuse files comfortably inside the limit.
+
+**The chip is a glyph plus the size, not a thumbnail — and that is an engineering
+call, not an omission.** A thumbnail would mean posting the whole file to the
+webview as a `data:` URI: there is **no resize step anywhere in the pipeline**, so
+a 3 MB screenshot becomes a ~4 MB message to paint a 16px box. It would also
+require granting `img-src data:` in the CSP — and the CSP is currently
+`default-src 'none'` with no image source at all, so leaving it alone keeps the
+escape-first webview's policy as narrow as it is today. What the user actually
+checks before sending is the name and the size, and both are on the chip.
+**A thumbnail is therefore a deferred capability with a named prerequisite**: a
+resize step (or a narrower grant, plus the realisation that `img-src data:` lets
+any injected markup render an image). It is in the PROGRESS backlog.
+
+**Verification.** 3 allowlist tests and 8 render assertions in a new `attach`
+suite — the first render coverage the composer's chips have ever had. Falsified:
+reverting the webview to the old `addChip(path)` call shape renders two **empty**
+chips with no glyph, which is precisely the host/webview drift the suite exists
+to catch.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

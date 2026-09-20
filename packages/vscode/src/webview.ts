@@ -944,6 +944,8 @@ export function chatHtml(): string {
                  font-size:11px; color:var(--vscode-editor-foreground); }
   .attach-chip .ac-name { white-space:nowrap; overflow:hidden;
                           text-overflow:ellipsis; max-width:260px; }
+  /* D49o: the image marker. A glyph, not a thumbnail — see addChip. */
+  .attach-chip .ac-img { flex:none; font-size:10px; opacity:.75; }
   .attach-chip .ac-x { display:inline-flex; align-items:center;
                        justify-content:center; width:16px; height:16px;
                        margin:0; padding:0; border:none; border-radius:50%;
@@ -3486,10 +3488,28 @@ export function chatHtml(): string {
     q.focus();
     vsapi.postMessage({ type: 'slash-run', id: id });
   }
+  function fmtBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  }
   // Attachment chips (UI mirror only - the host stays authoritative).
-  function addChip(path) {
+  //
+  // D49o: an image chip is a GLYPH plus its size, not a thumbnail. A thumbnail
+  // would mean posting the whole file as a data: URI — there is no resize
+  // anywhere in the pipeline — so a 3 MB screenshot would become a 4 MB
+  // message to render a 16px box, and it would need img-src in the CSP. The
+  // name and the size are what the user actually checks before sending.
+  function addChip(a) {
+    const path = String(a.path || '');
     const chip = el('div', 'attach-chip');
-    const name = el('span', 'ac-name', path);
+    if (a.image) {
+      const glyph = el('span', 'ac-img', '▣');
+      glyph.title = 'image';
+      chip.appendChild(glyph);
+    }
+    const name = el('span', 'ac-name',
+      a.image && a.size ? path + '  ' + fmtBytes(Number(a.size)) : path);
     const x = document.createElement('button');
     x.className = 'ac-x';
     x.type = 'button';
@@ -3711,7 +3731,7 @@ export function chatHtml(): string {
         break;
       }
       case 'attach-result':
-        for (const a of m.accepted || []) { addChip(a.path); }
+        for (const a of m.accepted || []) { addChip(a); }
         for (const r of m.rejected || []) {
           addMsg('sys', 'Plato', 'Attachment refused: ' + r.path + ' — ' + r.error);
         }

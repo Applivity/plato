@@ -29,9 +29,19 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49m** — Phases 0–3 of the agent capability plan are
+- HEAD = **M5.0 / D49o** — Phases 0–4 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
+- **Images can be attached, and the rules around them are not obvious (D49n/o).**
+  A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
+  wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the
+  BYTES, never the extension**; the *name* only decides whether to try. **Never
+  put base64 on the bus or in a prompt** — the transcript writes every event
+  verbatim, and the token estimate for an image is a flat constant because
+  chars/4 over base64 would price a 1 MB screenshot at ~350k tokens and make the
+  compaction trigger fiction. **The OpenAI adapter drops an unknown block
+  silently** (it guards each block explicitly), so a new content member must be
+  checked there as well as in the Anthropic fallthrough.
 - **A file tool may only touch the workspace (D49k).** Before it, **no tool
   enforced this** — `write_file {path: '../../../../tmp/x'}` created a file
   outside the root, and in `auto` mode writes need no approval. The rule lives in
@@ -143,12 +153,12 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **371** passing
-  vitest cases across **29** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **393** passing
+  vitest cases across **31** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Seven suites, **170 assertions**; see
+  unit tests + render suites. Eight suites, **178 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -271,7 +281,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 371/371 vitest in packages/core (29 files)
+2. `pnpm -r test` — 393/393 vitest in packages/core (31 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.

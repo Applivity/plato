@@ -66,6 +66,29 @@ export function sniffImageMime(buf: Buffer): ImageMime | null {
   return null;
 }
 
+/** Extensions we will even attempt to load as an image. */
+export const IMAGE_EXTENSIONS: readonly string[] = [
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+];
+
+/**
+ * The NAME says "try as an image"; the bytes decide whether it is one.
+ *
+ * The two checks are deliberately separate. Without this one, a text file would
+ * be sniffed, fail, and fall back to the text path — and a *corrupt* PNG would
+ * then be attached as mojibake text instead of being refused. With it, anything
+ * offered as an image must actually be one.
+ */
+export function looksLikeImage(rel: string): boolean {
+  const dot = rel.lastIndexOf('.');
+  if (dot < 0) return false;
+  return IMAGE_EXTENSIONS.includes(rel.slice(dot + 1).toLowerCase());
+}
+
 /** What a supported image looks like once loaded. */
 export interface ImageAttachment {
   /** Workspace-relative path, for display and the transcript's metadata. */

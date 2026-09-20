@@ -31,6 +31,8 @@ import {
   emitDuoConfig,
   isSecretPath,
   loadProjectFile,
+  loadImageAttachment,
+  looksLikeImage,
   DEFAULT_PLATO_BODY,
   slashCommand,
   slashMenu,
@@ -45,7 +47,7 @@ import {
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
 import type { DuoPhilosopher } from '@applivity/plato-core';
-import type { ApprovalRequest, Mode } from '@applivity/plato-core';
+import type { ApprovalRequest, Mode, ImageMime } from '@applivity/plato-core';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -58,6 +60,12 @@ const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
 // cap follows loadProjectFile's char semantics — 200 KB measured in chars.
 const MAX_ATTACH_FILES = 20;
 const MAX_ATTACH_BYTES = 200 * 1024;
+/**
+ * D49o: images get their own cap, measured on RAW bytes. The text cap above is
+ * in chars and meaningless here — and measuring base64 instead would refuse
+ * files comfortably inside the limit, since encoding inflates by ~33%.
+ */
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 // D44d: cross-message memory fold cadence. A run's context is the running
 // conversation summary + the raw recent tail; when the tail grows past
@@ -319,6 +327,8 @@ type Entry =
 interface RunCtx {
   /** Root-relative pending attachment paths; content is read at run start. */
   attach?: string[];
+  /** D49o: root-relative image paths, read as BYTES at run start. */
+  images?: string[];
 }
 
 class ChatHost {
@@ -350,6 +360,8 @@ class ChatHost {
   private archivedUpTo = 0;
   /** D44a: root-relative paths awaiting send; host-authoritative. */
   private pendingAttachments: string[] = [];
+  /** D49o: attached images, kept apart from text so they never enter the task. */
+  private pendingImages: string[] = [];
   /** D44c: /history-imported conversation awaiting the next run. */
   private pendingHistory: { title: string; text: string } | null = null;
   /** D44d: a cross-message fold (summary call + log rewrite) is in flight. */
@@ -926,10 +938,12 @@ class ChatHost {
           this.pendingAttachments = this.pendingAttachments.filter(
             (p) => p !== m.path,
           );
+          this.pendingImages = this.pendingImages.filter((p) => p !== m.path);
           return;
         }
         if (m.type === 'attach-clear') {
           this.pendingAttachments = [];
+          this.pendingImages = [];
           return;
         }
         // D44c: real commands execute in the host — no text expansion.
@@ -938,9 +952,11 @@ class ChatHost {
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
-          const attach = this.pendingAttachments.splice(0); // consume now
+          // consume now
+          const attach = this.pendingAttachments.splice(0);
+          const images = this.pendingImages.splice(0);
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
-          void this.run(m.text, { attach });
+          void this.run(m.text, { attach, images });
           return;
         }
         // The webview asks for the log once its script is live; posting
@@ -1168,10 +1184,10 @@ class ChatHost {
     root: string,
     paths: string[],
   ): Promise<{
-    accepted: { path: string }[];
+    accepted: { path: string; image?: boolean; size?: number }[];
     rejected: { path: string; error: string }[];
   }> {
-    const accepted: { path: string }[] = [];
+    const accepted: { path: string; image?: boolean; size?: number }[] = [];
     const rejected: { path: string; error: string }[] = [];
     for (const raw of paths) {
       const rel = this.relWithinRoot(root, raw);
@@ -1184,6 +1200,34 @@ class ChatHost {
         continue;
       }
       if (this.pendingAttachments.includes(rel)) continue; // already attached
+      if (this.pendingImages.includes(rel)) continue;
+
+      // D49o: validated HERE, not at send time, so a bad image is refused while
+      // the user is still looking at the picker. The bytes are re-read at send,
+      // which is what the text attachments already do.
+      if (looksLikeImage(rel)) {
+        if (
+          this.pendingAttachments.length + this.pendingImages.length >=
+          MAX_ATTACH_FILES
+        ) {
+          rejected.push({
+            path: rel,
+            error: `over the ${MAX_ATTACH_FILES}-file cap`,
+          });
+          continue;
+        }
+        const img = await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
+        if (!img.ok) {
+          // Offered as an image, so it must BE one. No silent fall back to the
+          // text path — that would attach a corrupt PNG as mojibake.
+          rejected.push({ path: rel, error: img.reason });
+          continue;
+        }
+        this.pendingImages.push(rel);
+        accepted.push({ path: rel, image: true, size: img.image.bytes });
+        continue;
+      }
+
       const r = await loadProjectFile(rel, root, MAX_ATTACH_BYTES);
       if (!r.found) {
         const why =
@@ -1205,6 +1249,24 @@ class ChatHost {
       accepted.push({ path: rel });
     }
     return { accepted, rejected };
+  }
+
+  /**
+   * D49o: read the pending images fresh, as bytes. A file that has become
+   * unreadable or unsupported since it was attached is skipped rather than
+   * failing the run — the user asked for a reply, not for an error about a
+   * screenshot.
+   */
+  private async loadRunImages(
+    paths: string[],
+    root: string,
+  ): Promise<{ mime: ImageMime; data: string }[]> {
+    const out: { mime: ImageMime; data: string }[] = [];
+    for (const rel of paths) {
+      const r = await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
+      if (r.ok) out.push({ mime: r.image.mime, data: r.image.data });
+    }
+    return out;
   }
 
   private async openAttachmentPicker(): Promise<void> {
@@ -2720,9 +2782,17 @@ class ChatHost {
           this.pendingHistory.text;
         this.pendingHistory = null;
       }
+      // D49o: images ride the opening user turn as their own channel — never
+      // folded into `modelTask`, which is emitted on `run-started` and written
+      // verbatim to the transcript.
+      const runImages =
+        ctx.images && ctx.images.length > 0
+          ? await this.loadRunImages(ctx.images, root)
+          : [];
       const result = await runAgentLoop({
         root,
         task: modelTask,
+        ...(runImages.length > 0 ? { images: runImages } : {}),
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
         bus,

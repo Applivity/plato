@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   loadImageAttachment,
+  looksLikeImage,
   sniffImageMime,
 } from '../src/runtime/attachments.js';
 
@@ -139,5 +140,35 @@ describe('loadImageAttachment (D49n)', () => {
     } finally {
       rmSync(outside, { force: true });
     }
+  });
+});
+
+describe('looksLikeImage (D49o)', () => {
+  it('accepts the four supported extensions, plus jpg aliases', () => {
+    for (const n of ['a.png', 'a.PNG', 'a.jpg', 'a.jpeg', 'a.webp', 'a.gif']) {
+      expect(looksLikeImage(n)).toBe(true);
+    }
+    for (const n of ['shot.jpeg', 'dir.d/photo.png']) {
+      expect(looksLikeImage(n)).toBe(true);
+    }
+  });
+
+  it('rejects everything else, including a name with no extension', () => {
+    for (const n of ['a.ts', 'a.svg', 'a.pdf', 'README', 'a.png.txt', 'a.']) {
+      expect(looksLikeImage(n)).toBe(false);
+    }
+  });
+
+  /**
+   * The two checks are separate on purpose: the NAME decides whether to try as
+   * an image, the BYTES decide whether it is one. Collapsing them would let a
+   * corrupt PNG fall back to the text path and attach as mojibake.
+   */
+  it('is about the name only — the bytes are a separate check', async () => {
+    expect(looksLikeImage('lies.png')).toBe(true);
+    const r = root();
+    writeFileSync(join(r, 'lies.png'), NOT_AN_IMAGE);
+    const out = await loadImageAttachment('lies.png', r, 1_000_000);
+    expect(out.ok).toBe(false);
   });
 });
