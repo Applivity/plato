@@ -29,9 +29,30 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49j** — Phases 0, 1 and 2 of the agent capability plan are
+- HEAD = **M5.0 / D49m** — Phases 0–3 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
+- **A file tool may only touch the workspace (D49k).** Before it, **no tool
+  enforced this** — `write_file {path: '../../../../tmp/x'}` created a file
+  outside the root, and in `auto` mode writes need no approval. The rule lives in
+  `security/paths.ts`; the executor resolves every path argument through one
+  choke point, and the loop also refuses before asking for approval (the
+  executor is the guarantee, the loop is the courtesy). **`pathArgsOf` is the
+  single source of truth for which argument is a path** — do not add a
+  path-taking tool without adding it there. `shell` is deliberately NOT covered.
+- **The tool surface grew (D49l/m).** `grep` takes `regex`/`glob`/`mode`/`limit`
+  and is **literal unless `regex: true`**; new `glob` (find files by name — a
+  pattern with **no slash matches the basename**, so `*.ts` works at any depth);
+  `list_dir` takes a path; `apply_diff` takes a per-block `replace_all` (**it
+  needs split/join, not `String.replace` — `$&` in a replacement would be
+  substituted**); new `apply_patch` is atomic across files; and `shell` takes
+  `run_in_background` with `bash_output`/`kill_shell`. **`decide()` denies a tool
+  with no kind in every mode**, so a tool must be added to `TOOL_KIND` (tsc
+  enforces this) *and* declared in `schemas.ts` (a test enforces the other
+  direction).
+- **Background shells stop when the run ends (D49m).** There is no UI that lists
+  them, so an orphan would be invisible and unstoppable. `kill_shell` signals the
+  process **group** — killing only the shell orphans whatever it spawned.
 - **The reply now streams (D49j).** `TurnRequest.onDelta` is optional; absent, the
   adapters make the blocking call exactly as before, so every test fake and the
   compactor/observer are untouched. **The assembled `TurnResponse` is IDENTICAL
@@ -122,8 +143,8 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **288** passing
-  vitest cases across **26** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **371** passing
+  vitest cases across **29** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
@@ -250,7 +271,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 288/288 vitest in packages/core (26 files)
+2. `pnpm -r test` — 371/371 vitest in packages/core (29 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.

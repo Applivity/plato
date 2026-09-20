@@ -650,3 +650,74 @@ describe('runAgentLoop apply_patch preview (D49l)', () => {
     expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('alpha\n');
   });
 });
+
+/**
+ * D49m. A background shell must not outlive its run: there is no UI that lists
+ * them, so one left behind is invisible and unstoppable — the user would have
+ * to hunt the process list for whatever still holds a port.
+ */
+describe('runAgentLoop background shell teardown (D49m)', () => {
+  it('stops background shells at the end of the run, and records it', async () => {
+    const bus = new AgentBus();
+    const seen: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'shell-event') seen.push(`${e.phase}:${e.id}`);
+      if (e.type === 'notice' && e.text.includes('background shell')) {
+        seen.push('notice');
+      }
+    });
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 's1',
+                name: 'shell',
+                input: { command: 'sleep 20', run_in_background: true },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'started' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      getMode: () => 'auto' as const,
+    });
+    expect(r.reason).toBe('complete');
+    // Started, then killed with the run, then reported.
+    expect(seen).toEqual(['started:1', 'exited:1', 'notice']);
+  });
+
+  it('reports no notice when nothing was left running', async () => {
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'notice') notices.push(e.text);
+    });
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: 'nothing to do' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({ ...BASE, provider: p, bus, getMode: () => 'auto' as const });
+    expect(notices.filter((n) => n.includes('background shell'))).toEqual([]);
+  });
+});

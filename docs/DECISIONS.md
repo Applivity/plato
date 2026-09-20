@@ -1739,6 +1739,65 @@ in `schemas.ts` but missing from the kind table would be **denied in every mode*
 silently. `tsc` catches the other direction, where the `ToolName` union gains a
 member without a kind.
 
+**D49m — background shells, and why they do not outlive the run (M5.0, 0.25.0 —
+2026-09-20).**
+
+**What was missing.** `shell` runs the command and blocks for up to 120 s, then
+kills it. A dev server, a watch mode or a slow build therefore could not be run
+at all: the tool either timed out or returned nothing useful.
+
+**The shape.** `tools/background.ts` holds a `ShellManager`; `shell` gains
+`run_in_background`, and two tools join the surface — `bash_output` (read new
+output, optionally waiting) and `kill_shell`. The manager is created per run and
+torn down in a `finally`, so **every** exit path — completion, cap, cancel, or a
+thrown provider error — stops the shells.
+
+**Detached, and every signal goes to the process GROUP.** `npm run dev` spawns
+its own children; killing only the shell leaves the real process holding the
+port, which is a worse failure than not killing it (the port is taken and
+nothing points at why). `stdio` gives stdin `/dev/null`, because an interactive
+prompt would hang forever with nobody able to answer it.
+
+**Reads are incremental and the wait is bounded.** `bash_output` returns output
+produced *since the last read* and clears it, so polling a noisy process does not
+resend its whole history each time. `wait_ms` waits for new output or for exit —
+one waiting call is far cheaper than a poll loop, and a run has a 40-turn cap to
+spend. It is capped at 30 s and **honours the run's abort signal** (D49i): a
+cancel must not sit out a timeout, which is exactly the "hung" feeling
+cancellation exists to remove. Unread output is capped at 64 KB per shell, and a
+read that had to drop the oldest says so rather than silently showing a gap.
+
+**A shell does not outlive its run — the decision worth recording.** Leaving them
+running is the obvious alternative and it is worse *today*: there is no UI that
+lists background shells, so an orphan is invisible and unstoppable, and the user
+would have to hunt the process list for whatever still holds a port. Killing at
+run end is predictable, and the tool description tells the model so, so it cannot
+plan on a server being there afterwards. **If the founder wants a dev server to
+survive the run, the prerequisite is a surface that lists and stops shells — not
+a change to this line.** `killAll` awaits the exits rather than firing and
+returning: "stopped" is a claim about the machine, and returning while the
+process is still alive would make it false.
+
+**A deviation from the D49 sketch, recorded rather than taken silently.** The
+plan said "new bus events for output". Only LIFECYCLE goes on the bus
+(`shell-event`, started/exited), never output. `transcript.ts` writes every event
+verbatim, so a chunk per line of a dev server would bloat every transcript — the
+same reasoning that keeps streaming deltas off the bus (D49j). The model reads
+output by polling; the human gets the lifecycle in the log. The UI does not
+render `shell-event` yet; the transcript is its consumer, which is what makes a
+run's shells auditable after the fact.
+
+**Verification.** 15 manager tests, 5 through the tool surface, 2 for run-end
+teardown. The ones that carry weight: the **process group** test starts a
+background grandchild, records its pid, and asserts it is gone after `kill_shell`
+(so "kill" means kill, not "kill the shell and orphan the work"); the abort test
+proves a cancel returns in well under the timeout; and the teardown test asserts
+the event order `started → exited → notice`. Falsified: removing the run-end
+`killAll` leaves the shell alive past the run and the event list degrades to
+`['started:1']`. Two defects were found by these tests rather than by review —
+`killAll` originally reported before the processes had actually died, and a
+`waitFor` that resolved on output also resolved the caller's promise early.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

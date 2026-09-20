@@ -115,11 +115,46 @@ export function toolDeclarations(): CanonicalTool[] {
     },
     {
       name: 'shell',
-      description: 'Run a shell command inside the workspace root.',
+      description:
+        'Run a shell command inside the workspace root. Blocks for up to 120s, then the command is killed. For a long-running command (a dev server, a watch mode, a slow build) pass run_in_background and read it with bash_output.',
       parameters: {
         type: 'object',
-        properties: { command: { type: 'string' } },
+        properties: {
+          command: { type: 'string' },
+          run_in_background: {
+            type: 'boolean',
+            description:
+              'Start the command in the background and return at once with an id. The shell keeps running while this run continues, and is stopped when the run ends.',
+          },
+        },
         required: ['command'],
+      },
+    },
+    {
+      name: 'bash_output',
+      description:
+        'Read output produced by a background shell since the last read. Returns the new output and whether the shell is still running.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The id returned by shell.' },
+          wait_ms: {
+            type: 'number',
+            description:
+              'Wait up to this many milliseconds for new output or for the shell to exit, then return. Use it to wait for a build instead of polling repeatedly. Capped at 30000.',
+          },
+        },
+        required: ['id'],
+      },
+    },
+    {
+      name: 'kill_shell',
+      description:
+        'Stop a background shell and everything it started. Use it when a dev server or watch mode is no longer needed.',
+      parameters: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
       },
     },
     {

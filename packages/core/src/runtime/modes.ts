@@ -14,6 +14,8 @@ export type ToolName =
   | 'apply_diff'
   | 'apply_patch'
   | 'shell'
+  | 'bash_output'
+  | 'kill_shell'
   | 'list_dir'
   | 'grep'
   | 'glob'
@@ -33,6 +35,11 @@ const TOOL_KIND: Record<ToolName, Kind> = {
   // apply_diff — one approval covering several files, never less scrutiny.
   apply_patch: 'write',
   shell: 'shell',
+  // D49m: reading a background shell's output is a read — in plan mode there is
+  // no way to have started one. Stopping a process is not: it changes state
+  // outside the workspace, so it gets shell-class gating.
+  bash_output: 'read',
+  kill_shell: 'shell',
 };
 
 export type Decision = 'allow' | 'ask' | 'deny';

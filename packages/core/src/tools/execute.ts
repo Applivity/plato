@@ -13,6 +13,7 @@ import { isSecretPath } from '../security/secrets.js';
 import { listWorkspaceFiles } from './files.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
 import { matchGlob } from './glob.js';
+import type { ShellManager } from './background.js';
 import type { DiffBlock } from './diff.js';
 
 export interface ToolOutcome {
@@ -22,8 +23,28 @@ export interface ToolOutcome {
 
 export type ToolArgs = Record<string, unknown>;
 
+/**
+ * D49m: per-run state a tool may need. Optional, so the many tools that are
+ * pure functions of (root, args) stay callable without it — and so a test can
+ * exercise a background shell without a whole run.
+ */
+export interface ToolContext {
+  /** Background shells. Absent, the background tools refuse rather than lie. */
+  shells?: ShellManager;
+  /** D49i/D49m: lets a waiting `bash_output` stop at once when the run cancels. */
+  signal?: AbortSignal;
+}
+
 function fail(output: string): ToolOutcome {
   return { ok: false, output };
+}
+
+/** A shell id as the model sent it — a string, or a number it quoted loosely. */
+function argId(args: ToolArgs): string | null {
+  const v = args['id'];
+  if (typeof v === 'string' && v.length > 0) return v;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  return null;
 }
 
 /**
@@ -46,6 +67,7 @@ export async function executeTool(
   root: string,
   name: string,
   args: ToolArgs,
+  ctx: ToolContext = {},
 ): Promise<ToolOutcome> {
   switch (name) {
     case 'read_file':
@@ -57,7 +79,11 @@ export async function executeTool(
     case 'apply_patch':
       return applyPatchTool(root, args);
     case 'shell':
-      return shellTool(root, args);
+      return shellTool(root, args, ctx);
+    case 'bash_output':
+      return bashOutputTool(args, ctx);
+    case 'kill_shell':
+      return killShellTool(args, ctx);
     case 'list_dir':
       return listDirTool(root, args);
     case 'grep':
@@ -331,7 +357,11 @@ async function applyPatchTool(root: string, args: ToolArgs): Promise<ToolOutcome
   };
 }
 
-async function shellTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function shellTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const cmd = args['command'];
   if (typeof cmd !== 'string' || cmd.trim().length === 0) {
     return fail('missing command');
@@ -339,6 +369,22 @@ async function shellTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
   if (isSecretPath(cmd)) {
     return fail('command references a protected file');
   }
+
+  if (args['run_in_background'] === true) {
+    if (!ctx.shells) {
+      return fail('background shells are unavailable here');
+    }
+    const s = ctx.shells.start(root, cmd);
+    return {
+      ok: true,
+      // Say plainly that it does not outlive the run: a model that plans on
+      // the server still being there afterwards plans on something false.
+      output:
+        `started shell ${s.id} (pid ${s.pid ?? '?'}). It runs while this run continues and is stopped when the run ends. ` +
+        `Read new output with bash_output { "id": "${s.id}" }, stop it with kill_shell { "id": "${s.id}" }.`,
+    };
+  }
+
   return new Promise((resolve) => {
     execFile(
       '/bin/bash',
@@ -357,6 +403,29 @@ async function shellTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
       },
     );
   });
+}
+
+async function bashOutputTool(
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
+  const id = argId(args);
+  if (id === null) return fail('missing id');
+  if (!ctx.shells) return fail('background shells are unavailable here');
+  const waitMs = Math.max(0, readInt(args['wait_ms']) ?? 0);
+  const r = await ctx.shells.read(id, waitMs, ctx.signal);
+  return r.ok ? { ok: true, output: r.output } : fail(r.output);
+}
+
+async function killShellTool(
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
+  const id = argId(args);
+  if (id === null) return fail('missing id');
+  if (!ctx.shells) return fail('background shells are unavailable here');
+  const r = await ctx.shells.kill(id);
+  return r.ok ? { ok: true, output: r.output } : fail(r.output);
 }
 
 async function listDirTool(root: string, args: ToolArgs): Promise<ToolOutcome> {

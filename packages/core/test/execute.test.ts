@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executeTool } from '../src/tools/execute.js';
+import { ShellManager } from '../src/tools/background.js';
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'plato-exec-'));
@@ -539,5 +540,70 @@ describe('apply_patch atomicity (D49l)', () => {
     });
     expect(r.ok).toBe(true);
     expect(r.output).toContain('no changes');
+  });
+});
+
+describe('background shells through the tool surface (D49m)', () => {
+  it('refuses run_in_background when no manager is available', async () => {
+    const r = await executeTool(tempRoot(), 'shell', {
+      command: 'echo hi',
+      run_in_background: true,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('unavailable');
+  });
+
+  it('starts a background shell and tells the model what it got', async () => {
+    const m = new ShellManager();
+    const r = await executeTool(
+      tempRoot(),
+      'shell',
+      { command: 'sleep 20', run_in_background: true },
+      { shells: m },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('started shell 1');
+    // The model must not plan on the server outliving the run.
+    expect(r.output).toContain('stopped when the run ends');
+    await m.killAll();
+  });
+
+  it('reads new output through bash_output, waiting when asked', async () => {
+    const m = new ShellManager();
+    const ctx = { shells: m };
+    const root = tempRoot();
+    const started = await executeTool(
+      root,
+      'shell',
+      { command: 'sleep 0.3; echo built', run_in_background: true },
+      ctx,
+    );
+    expect(started.ok).toBe(true);
+    const out = await executeTool(root, 'bash_output', { id: '1', wait_ms: 5000 }, ctx);
+    expect(out.ok).toBe(true);
+    expect(out.output).toContain('built');
+    await m.killAll();
+  });
+
+  it('stops a shell with kill_shell, accepting a numeric id', async () => {
+    const m = new ShellManager();
+    const ctx = { shells: m };
+    const root = tempRoot();
+    await executeTool(root, 'shell', { command: 'sleep 20', run_in_background: true }, ctx);
+    const k = await executeTool(root, 'kill_shell', { id: 1 }, ctx);
+    expect(k.ok).toBe(true);
+    expect(k.output).toContain('killed');
+  });
+
+  it('reports a missing or unknown id rather than pretending', async () => {
+    const m = new ShellManager();
+    const ctx = { shells: m };
+    const root = tempRoot();
+    expect((await executeTool(root, 'bash_output', {}, ctx)).output).toContain('missing id');
+    expect((await executeTool(root, 'bash_output', { id: '7' }, ctx)).ok).toBe(false);
+    expect((await executeTool(root, 'kill_shell', { id: '7' }, ctx)).ok).toBe(false);
+    expect(
+      (await executeTool(root, 'bash_output', { id: '1' }, {})).output,
+    ).toContain('unavailable');
   });
 });

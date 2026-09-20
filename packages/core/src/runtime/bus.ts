@@ -85,6 +85,24 @@ export type AgentEvent =
       truncated?: boolean;
     }
   | { type: 'run-failed'; runId: string; error: string }
+  /**
+   * D49m: a background shell started or exited. LIFECYCLE ONLY — deliberately
+   * not the shell's output.
+   *
+   * `transcript.ts` writes every event verbatim, so a chunk per line of a dev
+   * server would bloat every transcript; that is the same reason streaming
+   * deltas stay off the bus (D49j). The model reads output by polling
+   * `bash_output`, and the human sees the lifecycle in the log.
+   */
+  | {
+      type: 'shell-event';
+      runId: string;
+      id: string;
+      phase: 'started' | 'exited';
+      command: string;
+      /** Exit code, present on 'exited' only. Null when killed by a signal. */
+      code?: number | null;
+    }
   /** Human-readable in-flight notice. Not a run state. */
   | { type: 'notice'; runId: string; text: string };
 

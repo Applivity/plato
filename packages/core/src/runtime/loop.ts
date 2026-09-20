@@ -4,6 +4,7 @@
  */
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
+import { ShellManager } from '../tools/background.js';
 import type { ToolArgs } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
 import type {
@@ -242,10 +243,45 @@ export interface LoopResult {
 
 export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
   const bus = opts.bus ?? new AgentBus();
-  const ctrl = opts.controller ?? new RunController();
   const runId = `${Date.now().toString(36)}${Math.random()
     .toString(36)
     .slice(2, 6)}`;
+  // D49m: background shells belong to the RUN. The manager is torn down in the
+  // `finally`, so every exit path — completion, cap, cancel, or a thrown
+  // provider error — stops them. A shell that outlives its run is invisible:
+  // there is no UI that lists them, so the user would have to hunt the process
+  // list for whatever is still holding a port.
+  const shells = new ShellManager((phase, status) => {
+    bus.emit({
+      type: 'shell-event',
+      runId,
+      id: status.id,
+      phase,
+      command: status.command,
+      ...(phase === 'exited' ? { code: status.exitCode } : {}),
+    });
+  });
+  try {
+    return await runLoop(opts, bus, runId, shells);
+  } finally {
+    const stopped = await shells.killAll();
+    if (stopped > 0) {
+      bus.emit({
+        type: 'notice',
+        runId,
+        text: `[plato] stopped ${stopped} background shell(s) — they do not outlive the run.`,
+      });
+    }
+  }
+}
+
+async function runLoop(
+  opts: LoopOptions,
+  bus: AgentBus,
+  runId: string,
+  shells: ShellManager,
+): Promise<LoopResult> {
+  const ctrl = opts.controller ?? new RunController();
 
   // Legacy shell callbacks ride the bus (D24a): one emission path.
   if (opts.onText) {
@@ -722,7 +758,10 @@ export async function runAgentLoop(opts: LoopOptions): Promise<LoopResult> {
             };
           }
         }
-        return executeTool(opts.root, name, args);
+        return executeTool(opts.root, name, args, {
+          shells,
+          signal: ctrl.signal,
+        });
       })();
       bus.emit({
         type: 'tool-event',
