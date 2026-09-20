@@ -1221,14 +1221,40 @@ of "verified" in this project runs through them (D49a).
 own PROGRESS row. This entry is the roadmap's home: an agent resuming the work
 reads it here, not in a plan file outside the repo.
 
-0. **Trust and correctness** (D49a–D49d) — the render suites fail the process; the
+> **Status (2026-09-20): phases 0–4 are BUILT; phase 5 is next.** Each phase has
+> its own entry below, and where a build **deviated from the plan sketched here,
+> that phase's entry is authoritative and says so** — this list is the approved
+> plan, not a changelog.
+>
+> | Phase | Built as | State |
+> |---|---|---|
+> | 0 Trust and correctness | D49a–e | done |
+> | 1 Provider resilience | D49f, D49g, D49i (+**D49h built and removed**) | done |
+> | 2 Real streaming | D49j | done |
+> | 3 Agent tool surface | **D49k–m** — opened with a security repair | done |
+> | 4 Image input | **D49n–o** — thumbnail deferred, prerequisite named | done |
+> | 5 Web access | — | **next** |
+> | 6 Task coherence | — | not started |
+> | 7 Recorded, not built | — | needs its own decision each |
+>
+> **Phase 3 opened by fixing a fault the plan did not anticipate:** *no tool
+> enforced workspace containment*, so `write_file` could create files outside the
+> workspace and in `auto` mode did so without approval (D49k). It landed first
+> because phase 3's own `list_dir` path argument and multi-file `apply_patch`
+> would have widened it.
+>
+> **Phase 4's one deferral:** the attachment chip is a glyph plus the file size,
+> not a thumbnail, because there is no resize step in the pipeline and a
+> thumbnail would need `img-src data:` in a CSP that currently allows no images
+> (D49o). The prerequisite is named in the PROGRESS backlog.
+
+0. **Trust and correctness** (D49a–e) — the render suites fail the process; the
    file-tool contracts; one provider error shape; the dead M0 pair removed.
-1. **Provider resilience** — retry with backoff honouring `retry-after`; prompt
-   caching, which needs `TurnRequest.system` to become a block array to carry
-   `cache_control`; an `AbortSignal` so a hung turn can be cancelled at all.
-   Retry and caching need their own entries when they land. *(A budget cap was
-   also listed here and was **built and then removed the same day** — see D49h.
-   It was a capability, not a repair, and nobody had asked for it.)*
+1. **Provider resilience** — retry with backoff honouring `retry-after` (D49f);
+   prompt caching, which needed cache-aware pricing in the same breath (D49g);
+   an `AbortSignal` so a hung turn can be cancelled at all (D49i). *(A budget cap
+   was also listed here and was **built and then removed the same day** — see
+   D49h. It was a capability, not a repair, and nobody had asked for it.)*
 2. **Real streaming** — `TurnRequest.onDelta`, one optional field, so
    `ChatProvider` keeps a single method and every test fake and
    compaction/observer call site is untouched. Anthropic uses

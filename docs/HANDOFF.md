@@ -301,14 +301,16 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** Phases 0, 1 and 2 are done (D49a–g,
-D49i, D49j — **D49h was built and then removed the same day**; do not re-add a
-run budget without reading why it went). **Next is Phase 3, the agent tool
-surface** — regex `grep` with output modes, a `glob` tool, `list_dir` with a
-path, `replace_all` as an explicit per-block opt-in, an atomic multi-file
-`apply_patch`, and a background `shell` with output polling and kill. **Subagents
-are deliberately deferred and must not be added without amending the one-worker
-lock (D45a-3) in the open.**
+the roadmap — do not restate it here.** Phases 0–4 are done (D49a–g, D49i–o —
+**D49h was built and then removed the same day**; do not re-add a run budget
+without reading why it went). Phase 3 opened by repairing a fault the plan did
+not anticipate — **no tool enforced workspace containment** (D49k). **Next is
+Phase 5, web access** — a `net` tool-kind that always asks, including in `auto`,
+because a request cannot be un-sent. **One decision is open before it can be
+built:** there is no search backend, so `web_search` needs a choice between a
+dedicated API with a key in SecretStorage and the provider's own server-side
+search. **Subagents are deliberately deferred and must not be added without
+amending the one-worker lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:
 
