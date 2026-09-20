@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-17)
+## Current state (verified 2026-09-20)
 
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
@@ -29,9 +29,22 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49o** — Phases 0–4 of the agent capability plan are
+- HEAD = **M5.0 / D49p** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
+- **`web_fetch` sends nothing without consent, and that is enforced by a KIND
+  (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
+  `auto` included — egress cannot be un-sent. **Redirects are followed manually
+  and re-validated on every hop:** with automatic following, the URL the user
+  approved is not the URL fetched. **Private/loopback/link-local addresses are
+  refused on every hop** (the check is literal, so a hostname that *resolves*
+  privately is not caught, and fetching a local dev server is not supported).
+  **Script and style bodies are removed WITH their contents** — tags alone would
+  leave a page's JavaScript in the prompt as prose. **`web_search` does not
+  exist and must not be added without reading D49p**: Anthropic's server-side
+  search needs no key, but it runs inside the API call, so **no approval card can
+  fire** — it would break the always-ask rule. The `plato.net.allow`/`net.deny`
+  lists are enforced but have **no panel UI yet** (D49q).
 - **Images can be attached, and the rules around them are not obvious (D49n/o).**
   A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
   wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the
@@ -153,8 +166,8 @@ used to claim.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **393** passing
-  vitest cases across **31** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **422** passing
+  vitest cases across **32** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
@@ -281,7 +294,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 393/393 vitest in packages/core (31 files)
+2. `pnpm -r test` — 422/422 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -305,11 +318,11 @@ the roadmap — do not restate it here.** Phases 0–4 are done (D49a–g, D49i�
 **D49h was built and then removed the same day**; do not re-add a run budget
 without reading why it went). Phase 3 opened by repairing a fault the plan did
 not anticipate — **no tool enforced workspace containment** (D49k). **Next is
-Phase 5, web access** — a `net` tool-kind that always asks, including in `auto`,
-because a request cannot be un-sent. **One decision is open before it can be
-built:** there is no search backend, so `web_search` needs a choice between a
-dedicated API with a key in SecretStorage and the provider's own server-side
-search. **Subagents are deliberately deferred and must not be added without
+Phase 6, task coherence** — a `todo_write` tool and a panel. **`web_search` was
+deliberately deferred (D49p)**: it needs a backend decision, and the convenient
+option — Anthropic's server-side search — bypasses the approval card entirely.
+**D49q is the outstanding piece of phase 5:** `plato.net.allow` and `plato.net.deny`
+are enforced but have no panel UI, which does not yet meet D45c's UI-first rule. **Subagents are deliberately deferred and must not be added without
 amending the one-worker lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:

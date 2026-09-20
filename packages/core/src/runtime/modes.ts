@@ -19,9 +19,10 @@ export type ToolName =
   | 'list_dir'
   | 'grep'
   | 'glob'
+  | 'web_fetch'
   | 'git';
 
-type Kind = 'read' | 'write' | 'shell';
+type Kind = 'read' | 'write' | 'shell' | 'net';
 
 const TOOL_KIND: Record<ToolName, Kind> = {
   read_file: 'read',
@@ -40,6 +41,7 @@ const TOOL_KIND: Record<ToolName, Kind> = {
   // outside the workspace, so it gets shell-class gating.
   bash_output: 'read',
   kill_shell: 'shell',
+  web_fetch: 'net',
 };
 
 export type Decision = 'allow' | 'ask' | 'deny';
@@ -58,6 +60,16 @@ export function decide(tool: string, mode: Mode): Decision {
   const kind = TOOL_KIND[tool as ToolName] ?? (tool.startsWith('mcp_') ? 'shell' : undefined);
   if (kind === undefined) {
     return 'deny';
+  }
+  // D49p: egress ASKS IN EVERY MODE, including `auto` — the only kind that does.
+  // Egress is irreversible: a request cannot be un-sent, and a crafted URL can
+  // exfiltrate, so `auto`'s blanket allow is wrong for it. This needs no new UI —
+  // the approval card already offers Allow once and Approve-all-for-this-session,
+  // which is exactly the per-call and per-session consent the founder asked for.
+  // It is also why `web_fetch` is `ask` in `plan`, where every other tool is
+  // either allowed or denied outright.
+  if (kind === 'net') {
+    return 'ask';
   }
   if (mode === 'plan') {
     return kind === 'read' ? 'allow' : 'deny';

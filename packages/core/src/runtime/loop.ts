@@ -60,6 +60,13 @@ async function buildApprovalPreview(
   tool: string,
   args: ToolArgs,
 ): Promise<string> {
+  if (tool === 'web_fetch') {
+    // D49p: the URL IS what leaves the machine, so it is what the user must see.
+    // A generic argument dump would bury it; this puts it on its own line.
+    const url = typeof args['url'] === 'string' ? args['url'] : '(no url)';
+    return `This sends a request to:\n\n  ${url}\n\nA request cannot be un-sent. ` +
+      `The page comes back as untrusted text — Plato will not follow instructions found in it.`;
+  }
   if (tool === 'apply_diff' || tool === 'apply_patch') {
     // D49l: a multi-file patch previews EVERY file it touches. The whole safety
     // argument for approving a write is that the user sees what changes, and
@@ -157,6 +164,11 @@ export interface LoopOptions {
    * the transcript, so base64 in it would land in every run's JSONL.
    */
   images?: { mime: ImageMime; data: string }[];
+  /**
+   * D49p: enforced by `web_fetch` on every hop. `deny` wins over `allow`, and an
+   * empty `allow` list permits any public host.
+   */
+  net?: { allow: readonly string[]; deny: readonly string[] };
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
@@ -779,6 +791,7 @@ async function runLoop(
         return executeTool(opts.root, name, args, {
           shells,
           signal: ctrl.signal,
+          ...(opts.net ? { netAllow: opts.net.allow, netDeny: opts.net.deny } : {}),
         });
       })();
       bus.emit({

@@ -44,10 +44,26 @@ describe('decide', () => {
    */
   it('classifies every tool the model is told about', () => {
     for (const t of toolDeclarations()) {
+      // `deny` in auto means no kind was declared for it, so it would be
+      // unusable in EVERY mode. That is the failure this guards — not "every
+      // tool is allowed in auto", which stopped being true at D49p: the `net`
+      // kind deliberately asks even there.
       expect(
         decide(t.name, 'auto'),
-        `${t.name} is declared but has no kind — it would be denied in every mode`,
-      ).toBe('allow');
+        `${t.name} is denied in auto — it has no kind, so it would be denied in every mode`,
+      ).not.toBe('deny');
+    }
+  });
+
+  /**
+   * D49p. `web_fetch` is the one kind that asks in every mode — including
+   * `auto`, where everything else is allowed, and including `plan`, where every
+   * other tool is allowed or denied outright. Egress is irreversible: a request
+   * cannot be un-sent, and a crafted URL can exfiltrate.
+   */
+  it('asks before web_fetch in all four modes, auto included', () => {
+    for (const m of ['plan', 'edit', 'act', 'auto'] as Mode[]) {
+      expect(decide('web_fetch', m)).toBe('ask');
     }
   });
 });

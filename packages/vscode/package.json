@@ -80,6 +80,18 @@
           "minimum": 0.5,
           "maximum": 0.95,
           "description": "D44d: fraction of the model's context window at which auto-compaction triggers (0.5–0.95, default 0.8). Compaction is always auto at this threshold; /compact (or the ring's Compact-now) forces it on demand."
+        },
+        "plato.net.allow": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "D49p: hosts web_fetch may reach. Empty means any public host. A host matches itself and its subdomains, so example.com also allows docs.example.com. Private, loopback and link-local addresses are always refused."
+        },
+        "plato.net.deny": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "D49p: hosts web_fetch will never reach. Wins over the allow list. A host matches itself and its subdomains. NOTE: there is no panel UI for these two lists yet (D49q) — edit them in Settings JSON."
         }
       }
     },

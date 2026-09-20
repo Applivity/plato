@@ -1934,6 +1934,70 @@ reverting the webview to the old `addChip(path)` call shape renders two **empty*
 chips with no glyph, which is precisely the host/webview drift the suite exists
 to catch.
 
+**D49p — web_fetch: egress asks in every mode, and every hop is re-checked
+(M5.0, 0.25.0 — 2026-09-20).**
+
+**The founder's posture, and it is the whole design.** `web_fetch` is a new tool
+**kind** — `net` — and the only kind that returns `ask` in **every** mode,
+including `auto`, where everything else is allowed. Egress is irreversible: a
+request cannot be un-sent, and a crafted URL can exfiltrate. It is also `ask` in
+`plan`, where every other tool is allowed or denied outright. **No new UI was
+needed** — the approval card already offers *Allow once* and *Approve all {tool}
+for this session*, which is exactly the per-call and per-session consent asked
+for. The preview shows **the URL on its own line**, because the URL is what leaves
+the machine; a generic argument dump would bury it.
+
+**`web_search` is deferred, by the founder's decision in this session.** The plan
+left it open because there is no search backend. Three options were put to him,
+and one fact changed the shape of the question: **Anthropic ships a server-side
+`web_search` tool** with its own domain allow/deny list and no extra key — but a
+*server-side* tool runs **inside the API call**, so Plato never sees a tool
+request and **no approval card can fire**. That quietly breaks the always-ask rule
+this very entry establishes, and it works only on Anthropic. He chose to ship
+`web_fetch` alone and decide on search later, if it is missed. **Do not add search
+without deciding this deliberately** — the convenient option is the one that
+weakens the posture.
+
+**Redirects are followed MANUALLY and re-validated on every hop.** This is the
+load-bearing security decision, not a detail. With automatic following, the URL
+the user approved is **not** the URL that gets fetched: a public page can redirect
+into a private address and the approval card would have named only the first hop.
+So the request is issued with `redirect: 'manual'`, and each hop re-checks scheme,
+the domain lists, and the address block. **Falsified:** validating only the first
+hop lets the code follow a redirect into `169.254.169.254` (the cloud metadata
+endpoint) — the test asserts the second request is never sent at all.
+
+**Private, loopback and link-local addresses are refused**, on every hop, with a
+clear reason. The threat is not the URL the user sees but where it can lead. **The
+check is literal** — a hostname that *resolves* to a private address is not
+caught, because that needs a DNS lookup; the same class of limitation as the
+lexical symlink check in D49k, and asserted rather than implied. **A consequence
+worth stating: fetching a local dev server is therefore not supported.**
+
+**HTML is reduced to text by hand, and script/style bodies are removed WITH their
+contents.** Stripping only the tags would leave a page's JavaScript in the prompt
+**as prose**, which is worse than useless — it reads like content. Falsified: with
+content-removal disabled, `bad()` from a `<script>` reaches the model. A comment
+becomes a space, not nothing, so `foo<!-- -->bar` stays two words. The response is
+wrapped in an explicit **untrusted** label, because a fetched page is input from a
+stranger and the model must not read instructions in it as though they came from
+the user. No JavaScript executes: this is text extraction, not a browser.
+
+**The domain lists are enforced but have no panel UI yet (D49q).** `plato.net.allow`
+and `plato.net.deny` exist as settings and are enforced on every hop, `deny`
+winning over `allow`, with a host matching itself and its subdomains. **D45c says
+UI first, and this does not meet that** — it is config-only today, and both the
+setting description and the code say so rather than implying otherwise.
+
+**Verification.** 28 tests: `htmlToText`, the content-type allowlist, the address
+block, the domain lists, and the tool end to end against an **injected** fetch (no
+test touches the network). Plus a modes test pinning `web_fetch` to `ask` in all
+four modes. Falsified twice: first-hop-only validation follows a redirect to the
+metadata endpoint, and disabling script-content removal leaks page JavaScript into
+the prompt. The Phase 3 guard that asserts every declared tool has a permission
+kind **caught this change** — it had assumed declared ⇒ allowed in `auto`, which
+D49p makes false; it was tightened to the property it actually guards.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 
