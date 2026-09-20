@@ -5,9 +5,30 @@
  * endpoints share one supervision pipeline.
  */
 
+/** The image types both wire formats accept. Narrow on purpose. */
+export type ImageMime = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+
 export type CanonicalContent =
   | { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> };
+  | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  | {
+      /**
+       * D49n: an attached image. **User turns only** — a model never sends one
+       * back, and an image in an assistant turn is invalid on both wires.
+       *
+       * `data` is base64 WITHOUT a `data:` URL prefix: the prefix is a wire
+       * detail, and each adapter spells it differently. `mime` is the sniffed
+       * type, never the file extension.
+       *
+       * The loop only ever puts these in the OPENING user turn, which keeps them
+       * out of `run-started` and therefore out of the transcript. Nothing here
+       * may be put on the bus — base64 in an event would write megabytes into
+       * the JSONL for every run.
+       */
+      type: 'image';
+      mime: ImageMime;
+      data: string;
+    };
 
 /** A tool result flowing back to the model inside a user turn. */
 export interface ToolResultBlock {

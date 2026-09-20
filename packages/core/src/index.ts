@@ -12,6 +12,7 @@ export * from './providers/discover.js';
 export * from './runtime/modes.js';
 export * from './runtime/loop.js';
 export * from './runtime/workerRole.js';
+export * from './runtime/attachments.js';
 export * from './runtime/commands.js';
 export * from './runtime/bus.js';
 export * from './runtime/cost.js';

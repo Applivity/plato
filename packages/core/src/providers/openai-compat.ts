@@ -252,6 +252,35 @@ export class OpenAICompatProvider implements ChatProvider {
         });
         continue;
       }
+      // D49n: an image forces the PARTS ARRAY form for this message, and text
+      // and image must share one message — so this branch is checked first.
+      // Text-only turns keep the bare-string form below, deliberately: older
+      // self-hosted servers reject the array, and nothing here should change
+      // for them just because images became possible.
+      if (m.content.some((b) => b.type === 'image')) {
+        const parts: Record<string, unknown>[] = [];
+        for (const b of m.content) {
+          if (b.type === 'tool_result') {
+            // Images ride the opening user turn, which carries no tool results.
+            // Kept so the adapter stays honest if that ever changes, rather
+            // than dropping one silently.
+            messages.push({
+              role: 'tool',
+              tool_call_id: b.toolUseId,
+              content: b.content,
+            });
+          } else if (b.type === 'text') {
+            parts.push({ type: 'text', text: b.text });
+          } else if (b.type === 'image') {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: `data:${b.mime};base64,${b.data}` },
+            });
+          }
+        }
+        if (parts.length > 0) messages.push({ role: 'user', content: parts });
+        continue;
+      }
       // user turn: tool results and optional guidance text
       for (const b of m.content) {
         if (b.type === 'tool_result') {

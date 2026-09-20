@@ -104,9 +104,24 @@ function blockToText(b: CanonicalContent): string {
   if (b.type === 'text') {
     return b.text;
   }
+  if (b.type === 'image') {
+    // D49n: never the base64. The estimator measures what we send, and this
+    // string is only a label — see IMAGE_TOKENS for the count that is used.
+    return `[image ${b.mime}]`;
+  }
   const inputStr = JSON.stringify(b.input ?? {});
   return `[tool_use ${b.name} ${inputStr}]`;
 }
+
+/**
+ * D49n: a flat per-image token estimate, deliberately conservative.
+ *
+ * NEVER `estimateTokens` (chars/4) over base64: a 1 MB screenshot would "cost"
+ * ~350,000 tokens and the context ring — which decides when to compact — would
+ * be a fiction. Providers bill an image by its pixel dimensions, not its byte
+ * size, so a constant is both closer to the truth and stable across formats.
+ */
+const IMAGE_TOKENS = 1_600;
 
 function toolResultToText(b: {
   type: 'tool_result';
@@ -155,6 +170,11 @@ export function promptBreakdown(
         }
       } else if (b.type === 'tool_use') {
         assistant += estimateTokens(blockToText(b));
+      } else if (b.type === 'image') {
+        // An image rides a USER turn. Without this branch it fell into the
+        // tool_result path and was counted as a tool result — and, worse, was
+        // rendered as `[tool_result undefined undefined]` (D49n).
+        user += IMAGE_TOKENS;
       } else {
         toolTok += estimateTokens(toolResultToText(b));
       }
@@ -205,6 +225,11 @@ export function buildCompactPrompt(
         }
         if (b.type === 'tool_use') {
           return `[tool_use ${b.name} ${JSON.stringify(b.input ?? {})}]`;
+        }
+        if (b.type === 'image') {
+          // The summariser must never receive base64: it is a prompt, not a
+          // payload, and the bytes would dwarf everything else in it (D49n).
+          return `[image ${b.mime} — omitted from this summary]`;
         }
         return `[tool_result${b.isError ? ' (error)' : ''} ${b.content}]`;
       })

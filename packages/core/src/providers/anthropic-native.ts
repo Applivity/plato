@@ -86,6 +86,16 @@ export class AnthropicNativeProvider implements ChatProvider {
         if (b.type === 'tool_use') {
           return { type: 'tool_use', id: b.id, name: b.name, input: b.input };
         }
+        if (b.type === 'image') {
+          // D49n: `mime` is the SNIFFED type and `ImageMime` is exactly the
+          // union the wire format accepts, so this needs no cast — if the two
+          // ever drift, this line stops compiling rather than sending a
+          // media_type the API will reject.
+          return {
+            type: 'image',
+            source: { type: 'base64', media_type: b.mime, data: b.data },
+          };
+        }
         return { type: 'text', text: b.text };
       }),
     }));

@@ -1798,6 +1798,75 @@ the event order `started → exited → notice`. Falsified: removing the run-end
 `killAll` originally reported before the processes had actually died, and a
 `waitFor` that resolved on output also resolved the caller's promise early.
 
+**D49n — image input, core half: one canonical block, and two asymmetric traps
+(M5.0, 0.25.0 — 2026-09-20).**
+
+**The rule.** *Adding the `image` member is what finds the work. It finds it on
+one adapter and hides it on the other.*
+
+**The shape.** `CanonicalContent` gains `{ type: 'image'; mime: ImageMime; data }`,
+where `ImageMime` is exactly the four types both wires accept
+(`png`/`jpeg`/`webp`/`gif`). `data` is base64 **without** the `data:` prefix —
+the prefix is a wire detail and each adapter spells it differently. **User turns
+only**: a model never sends an image back, and an image in an assistant turn is
+invalid on both wires. That is a documented convention, not a type-level
+guarantee, because `CanonicalContent` is shared by both roles; the loop is the
+only producer and it only ever puts images in the opening turn.
+
+**Trap one — the compiler does half the work, and it is the half you would
+notice.** Adding the member makes the Anthropic adapter's untyped
+`return { type: 'text', text: b.text }` fallthrough a **compile error** until a
+real branch exists, and the same for the four places in `context.ts` that route
+a non-text block into the tool bucket. Six errors, all meaningful — one of them
+being that an image would have been counted as a **tool result** and rendered as
+`[tool_result undefined undefined]`.
+
+**Trap two — the OpenAI adapter fails SILENTLY, and this is the one worth
+remembering.** That adapter guards each block with an explicit
+`b.type === 'text'`, so an image does not hit a fallthrough: it hits nothing. It
+is **dropped without an error**, and the model simply never mentions the
+screenshot. The compiler cannot see it. Falsified directly: bypassing the new
+branch sends a text-only message and the test reports
+`['text','tool_result']` with no `image_url`. **Any future member added to
+`CanonicalContent` has this shape of risk** — check the explicit-guard adapters,
+not only the fallthrough ones.
+
+**The MIME comes from the bytes, never the extension.** A file named `.png` whose
+content is not a PNG is refused: the provider rejects a `media_type` that
+disagrees with the content, and a mislabelled extension is the easiest possible
+way to send one. The reverse is accepted deliberately — real PNG bytes behind a
+`.dat` name are fine, because the bytes are what the API sees.
+
+**The cost estimate is a flat constant, and that is load-bearing.** `chars/4`
+over base64 would price a 1 MB screenshot at roughly **350,000 tokens**, which is
+not a rounding error — it is what decides when to compact, so the ring and the
+auto-compaction trigger would both be fiction. `IMAGE_TOKENS = 1_600`,
+deliberately conservative: providers bill an image by pixel dimensions, not byte
+size, so a constant is closer to the truth than a byte-derived number.
+
+**Base64 never reaches a prompt.** `buildCompactPrompt` emits
+`[image image/png — omitted from this summary]`. The image block also carries a
+rule in its own doc comment: it must never be emitted on the bus, because
+`transcript.ts` writes every event verbatim and a run would then write megabytes
+of base64 into its JSONL. A test asserts the file on disk contains none of it,
+rather than trusting the convention.
+
+**The cap is on RAW bytes.** A text-sized char cap is meaningless for an image,
+and measuring the base64 instead would refuse files comfortably inside the limit
+— base64 inflates by ~33%. A test pins the raw boundary specifically so the
+measurement cannot drift to the encoded length. `loadImageAttachment` also
+re-runs containment and the deny-list where the bytes are actually touched (D49k).
+
+**Verification.** 9 attachment tests and 10 image tests. Falsified three ways:
+bypassing the OpenAI branch drops the image silently; removing the
+`promptBreakdown` branch mis-buckets it as a tool result (`user: 4`, `tool: 126`);
+and emitting base64 into the compaction prompt fails the leak test. Text-only
+turns are asserted byte-identical on both wires, so nothing changed for existing
+users.
+
+**The host half — attaching an image from the panel, and the CSP grant to render
+a thumbnail — is D49o.**
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

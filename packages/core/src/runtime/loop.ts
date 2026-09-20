@@ -5,6 +5,7 @@
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import { ShellManager } from '../tools/background.js';
+import type { ImageMime } from '../providers/types.js';
 import type { ToolArgs } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
 import type {
@@ -150,6 +151,12 @@ export interface LoopOptions {
    * Absent, the loop makes blocking calls exactly as it did before.
    */
   onTextDelta?: (textSoFar: string) => void;
+  /**
+   * D49n: images to send with the opening user turn. They must NOT be folded
+   * into `task` — the task is emitted on `run-started` and written verbatim to
+   * the transcript, so base64 in it would land in every run's JSONL.
+   */
+  images?: { mime: ImageMime; data: string }[];
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
@@ -324,7 +331,18 @@ async function runLoop(
   }
   messages.push({
     role: 'user',
-    content: [{ type: 'text', text: opts.task }],
+    // D49n: images ride the OPENING user turn, and never the task string. The
+    // task goes into the `run-started` event, which the transcript writes
+    // verbatim — megabytes of base64 in the task would land in every JSONL.
+    // Images first, so the model sees what the instruction is about.
+    content: [
+      ...(opts.images ?? []).map((i) => ({
+        type: 'image' as const,
+        mime: i.mime,
+        data: i.data,
+      })),
+      { type: 'text' as const, text: opts.task },
+    ],
   });
   let finalText = '';
   let inputTokens = 0;
