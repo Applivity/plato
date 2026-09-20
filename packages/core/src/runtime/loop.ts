@@ -5,7 +5,6 @@
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import type { ToolArgs } from '../tools/execute.js';
-import type { DiffBlock } from '../tools/diff.js';
 import type { McpServer } from '../mcp/client.js';
 import type {
   CanonicalContent,
@@ -59,33 +58,50 @@ async function buildApprovalPreview(
   tool: string,
   args: ToolArgs,
 ): Promise<string> {
-  if (tool === 'apply_diff') {
-    const rel = typeof args['path'] === 'string' ? args['path'] : '';
-    const rawDiffs = Array.isArray(args['diffs']) ? args['diffs'] : [];
-    const blocks: DiffBlock[] = [];
-    for (const d of rawDiffs as unknown[]) {
-      const rec = d as unknown as Record<string, unknown>;
-      if (
-        typeof d === 'object' &&
-        d !== null &&
-        typeof rec['search'] === 'string' &&
-        typeof rec['replace'] === 'string'
-      ) {
-        blocks.push({
-          search: rec['search'] as string,
-          replace: rec['replace'] as string,
-        });
-      }
-    }
+  if (tool === 'apply_diff' || tool === 'apply_patch') {
+    // D49l: a multi-file patch previews EVERY file it touches. The whole safety
+    // argument for approving a write is that the user sees what changes, and
+    // approving several files blind would be worse than approving one.
+    const entries: { rel: string; diffs: unknown }[] =
+      tool === 'apply_patch'
+        ? (Array.isArray(args['patches']) ? args['patches'] : []).map((p) => {
+            const rec = (
+              typeof p === 'object' && p !== null ? p : {}
+            ) as Record<string, unknown>;
+            return {
+              rel: typeof rec['path'] === 'string' ? rec['path'] : '',
+              diffs: rec['diffs'],
+            };
+          })
+        : [
+            {
+              rel: typeof args['path'] === 'string' ? args['path'] : '',
+              diffs: args['diffs'],
+            },
+          ];
     try {
       const { readFile } = await import('node:fs/promises');
       const { join } = await import('node:path');
-      const before = await readFile(join(root, rel), 'utf8');
-      const { applyBlocks } = await import('../tools/diff.js');
-      const { previewDiff } = await import('../tools/diff.js');
-      const after = applyBlocks(before, blocks).content;
-      const trimmed = previewDiff(before, after);
-      return trimmed.length > 4000 ? trimmed.slice(0, 4000) : trimmed;
+      const { applyBlocks, parseDiffBlocks, previewDiff } = await import(
+        '../tools/diff.js'
+      );
+      const { resolveInRoot } = await import('../security/paths.js');
+      const parts: string[] = [];
+      for (const e of entries) {
+        const safe = resolveInRoot(root, e.rel);
+        if (safe === null) {
+          // Refused later anyway; say why instead of showing a misleading diff.
+          parts.push(`--- ${e.rel} (outside the workspace — refused)`);
+          continue;
+        }
+        const before = await readFile(join(root, safe), 'utf8');
+        const after = applyBlocks(before, parseDiffBlocks(e.diffs)).content;
+        parts.push(`--- ${safe}\n${previewDiff(before, after)}`);
+      }
+      const joined = parts.join('\n\n');
+      return joined.length > 6000
+        ? `${joined.slice(0, 6000)}\n…[preview truncated]`
+        : joined;
     } catch (e) {
       return `(preview unavailable: ${e instanceof Error ? e.message : 'error'})`;
     }

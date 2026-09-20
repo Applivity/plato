@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { decide, secretRefusal } from '../src/runtime/modes.js';
+import { toolDeclarations } from '../src/tools/schemas.js';
 import type { Mode } from '../src/runtime/modes.js';
 import type { ToolName } from '../src/runtime/modes.js';
 
 describe('decide', () => {
-  const read: ToolName[] = ['read_file', 'list_dir', 'grep', 'git'];
-  const write: ToolName[] = ['write_file', 'apply_diff'];
+  const read: ToolName[] = ['read_file', 'list_dir', 'grep', 'glob', 'git'];
+  const write: ToolName[] = ['write_file', 'apply_diff', 'apply_patch'];
 
   it('plan: reads only', () => {
     for (const t of read) expect(decide(t, 'plan')).toBe('allow');
@@ -28,6 +29,26 @@ describe('decide', () => {
   it('auto: everything allowed', () => {
     for (const t of [...read, ...write]) expect(decide(t, 'auto')).toBe('allow');
     expect(decide('shell', 'auto')).toBe('allow');
+  });
+
+  /**
+   * D49l. `decide` returns 'deny' for a tool it has no kind for, so a tool
+   * declared to the model but missing from the kind table is silently unusable
+   * in EVERY mode — the model would call it and always be refused.
+   *
+   * Two nets cover this, and they catch different mistakes. `tsc` requires
+   * TOOL_KIND to be exhaustive over the `ToolName` union, so it catches a name
+   * added to the union without a kind. This test catches the other direction:
+   * a tool added to `toolDeclarations()` — whose name is only a `string` — and
+   * never added to `ToolName` at all.
+   */
+  it('classifies every tool the model is told about', () => {
+    for (const t of toolDeclarations()) {
+      expect(
+        decide(t.name, 'auto'),
+        `${t.name} is declared but has no kind — it would be denied in every mode`,
+      ).toBe('allow');
+    }
   });
 });
 

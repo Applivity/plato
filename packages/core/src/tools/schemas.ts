@@ -54,7 +54,7 @@ export function toolDeclarations(): CanonicalTool[] {
     {
       name: 'apply_diff',
       description:
-        'Edit a file with exact SEARCH/REPLACE blocks. Each SEARCH must match exactly once. Re-applying an identical change succeeds as a no-op.',
+        'Edit one file with exact SEARCH/REPLACE blocks. Each SEARCH must match exactly once — unless replace_all is set on that block, which replaces every occurrence. Re-applying an identical change succeeds as a no-op. For edits spanning several files use apply_patch instead, so they land together or not at all.',
       parameters: {
         type: 'object',
         properties: {
@@ -66,12 +66,51 @@ export function toolDeclarations(): CanonicalTool[] {
               properties: {
                 search: { type: 'string' },
                 replace: { type: 'string' },
+                replace_all: {
+                  type: 'boolean',
+                  description:
+                    'Replace EVERY occurrence of search, instead of requiring exactly one. Use for renaming a symbol that appears many times.',
+                },
               },
               required: ['search', 'replace'],
             },
           },
         },
         required: ['path', 'diffs'],
+      },
+    },
+    {
+      name: 'apply_patch',
+      description:
+        'Apply SEARCH/REPLACE edits to SEVERAL files in one call, all-or-nothing: if any block fails, NO file is changed. Use this instead of several apply_diff calls when a change must land as a whole. The user approves it once.',
+      parameters: {
+        type: 'object',
+        properties: {
+          patches: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              properties: {
+                path: { type: 'string' },
+                diffs: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      search: { type: 'string' },
+                      replace: { type: 'string' },
+                      replace_all: { type: 'boolean' },
+                    },
+                    required: ['search', 'replace'],
+                  },
+                },
+              },
+              required: ['path', 'diffs'],
+            },
+          },
+        },
+        required: ['patches'],
       },
     },
     {
@@ -85,16 +124,67 @@ export function toolDeclarations(): CanonicalTool[] {
     },
     {
       name: 'list_dir',
-      description: 'List workspace files as relative paths.',
-      parameters: { type: 'object', properties: {} },
+      description:
+        'List workspace files as relative paths. Pass path to list only that directory.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description:
+              'Optional directory to list, relative to the workspace root. Omit to list the whole workspace.',
+          },
+        },
+      },
     },
     {
       name: 'grep',
       description:
-        'Search file contents for a fixed string; returns path:line:text hits.',
+        'Search file contents. Returns path:line:text by default; mode changes that to matching file names or per-file counts. The pattern is a literal string unless regex is true.',
       parameters: {
         type: 'object',
-        properties: { pattern: { type: 'string' } },
+        properties: {
+          pattern: {
+            type: 'string',
+            description:
+              'Text to find. Literal by default — regex metacharacters are not special unless regex is true.',
+          },
+          regex: {
+            type: 'boolean',
+            description: 'Treat pattern as a JavaScript regular expression.',
+          },
+          glob: {
+            type: 'string',
+            description:
+              'Only search files whose path matches this pattern, e.g. "*.ts" or "src/**/*.ts". A pattern with no slash matches the file NAME, so "*.ts" finds TypeScript files at any depth.',
+          },
+          mode: {
+            type: 'string',
+            enum: ['content', 'files_with_matches', 'count'],
+            description:
+              'content (default) returns matching lines; files_with_matches returns only the file names; count returns a per-file match count.',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum result lines to return. Default 100.',
+          },
+        },
+        required: ['pattern'],
+      },
+    },
+    {
+      name: 'glob',
+      description:
+        'Find files by NAME pattern, e.g. "**/*.test.ts" or "*.json". A pattern with no slash matches the file name at any depth. Use this to discover files when you do not know the path.',
+      parameters: {
+        type: 'object',
+        properties: {
+          pattern: {
+            type: 'string',
+            description:
+              'Glob pattern. "*" matches within one directory, "**" crosses directories, "?" matches one character.',
+          },
+        },
         required: ['pattern'],
       },
     },

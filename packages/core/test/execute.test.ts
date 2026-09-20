@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executeTool } from '../src/tools/execute.js';
@@ -240,5 +240,304 @@ describe('workspace containment (D49k)', () => {
     });
     expect(dot.ok).toBe(true);
     expect(readFileSync(join(root, 'dot.ts'), 'utf8')).toBe('ok');
+  });
+});
+
+/** Seeds a small tree so the search tools have something real to walk. */
+function seedTree(): string {
+  const root = tempRoot();
+  mkdirSync(join(root, 'src', 'deep'), { recursive: true });
+  writeFileSync(join(root, 'src', 'a.ts'), 'const x = 1;\nfunction foo() {}\nconst y = 2;\n');
+  writeFileSync(join(root, 'src', 'deep', 'b.ts'), 'const x = 1;\n');
+  writeFileSync(join(root, 'notes.md'), 'const x = 1 is written as x\n');
+  return root;
+}
+
+describe('grep (D49l)', () => {
+  it('matches a literal pattern by default, across files', async () => {
+    const r = await executeTool(seedTree(), 'grep', { pattern: 'const x = 1' });
+    expect(r.ok).toBe(true);
+    expect(r.output.split('\n')).toHaveLength(3);
+    expect(r.output).toContain('notes.md:1:');
+  });
+
+  // The point of "literal by default", using ONE pattern whose meaning differs
+  // between the two modes: `.` is a full stop, not "any character".
+  it('treats the pattern as a literal unless regex is set', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.txt'), 'version 1.2.3\nversion 1x2\n');
+    const literal = await executeTool(root, 'grep', { pattern: '1.2' });
+    expect(literal.output.split('\n')).toHaveLength(1);
+    expect(literal.output).toContain('1.2.3');
+    const asRegex = await executeTool(root, 'grep', { pattern: '1.2', regex: true });
+    expect(asRegex.output.split('\n')).toHaveLength(2);
+  });
+
+  // A literal pattern full of regex syntax must be found as written.
+  it('finds a literal pattern containing regex syntax', async () => {
+    const r = await executeTool(seedTree(), 'grep', { pattern: 'foo() {}' });
+    expect(r.output).toContain('a.ts:2:');
+  });
+
+  it('matches a JavaScript regex when asked', async () => {
+    const r = await executeTool(seedTree(), 'grep', {
+      pattern: 'const [xy] = \\d',
+      regex: true,
+    });
+    // a.ts holds both `const x = 1` and `const y = 2`; b.ts and notes.md one each.
+    expect(r.output.split('\n')).toHaveLength(4);
+  });
+
+  it('reports an unusable regex instead of searching for it', async () => {
+    const r = await executeTool(seedTree(), 'grep', { pattern: 'a(', regex: true });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('invalid regex');
+  });
+
+  it('filters files with a glob', async () => {
+    const r = await executeTool(seedTree(), 'grep', {
+      pattern: 'const x = 1',
+      glob: '*.ts',
+    });
+    expect(r.output.split('\n')).toHaveLength(2);
+    expect(r.output).not.toContain('notes.md');
+  });
+
+  it('returns only file names in files_with_matches mode', async () => {
+    const r = await executeTool(seedTree(), 'grep', {
+      pattern: 'const x = 1',
+      mode: 'files_with_matches',
+    });
+    expect(r.output.split('\n').sort()).toEqual([
+      'notes.md',
+      'src/a.ts',
+      'src/deep/b.ts',
+    ]);
+  });
+
+  it('counts per file in count mode', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'twice.ts'), 'hit\nhit\nnot\n');
+    writeFileSync(join(root, 'once.ts'), 'hit\n');
+    const r = await executeTool(root, 'grep', { pattern: 'hit', mode: 'count' });
+    expect(r.output).toContain('twice.ts:2');
+    expect(r.output).toContain('once.ts:1');
+    expect(r.output).toContain('[total 3 matches in 2 files]');
+  });
+
+  it('caps the output at limit and says it did', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'many.txt'), Array.from({ length: 20 }, (_, i) => `hit ${i}`).join('\n'));
+    const r = await executeTool(root, 'grep', { pattern: 'hit', limit: 5 });
+    expect(r.output.split('\n')).toHaveLength(6); // 5 hits + the note
+    expect(r.output).toContain('stopped at 5 hits');
+  });
+
+  it('says no matches rather than returning nothing', async () => {
+    const r = await executeTool(seedTree(), 'grep', { pattern: 'zzz-not-there' });
+    expect(r.output).toBe('no matches');
+  });
+});
+
+describe('glob tool (D49l)', () => {
+  it('finds files by name pattern at any depth', async () => {
+    const r = await executeTool(seedTree(), 'glob', { pattern: '*.ts' });
+    expect(r.output.split('\n').sort()).toEqual(['src/a.ts', 'src/deep/b.ts']);
+  });
+
+  it('finds by an explicit path pattern', async () => {
+    const r = await executeTool(seedTree(), 'glob', { pattern: 'src/deep/*.ts' });
+    expect(r.output).toBe('src/deep/b.ts');
+  });
+
+  it('says so when nothing matches', async () => {
+    const r = await executeTool(seedTree(), 'glob', { pattern: '*.rs' });
+    expect(r.output).toBe('no files match');
+  });
+});
+
+describe('list_dir with a path (D49l)', () => {
+  it('lists the whole workspace when no path is given', async () => {
+    const root = seedTree();
+    const r = await executeTool(root, 'list_dir', {});
+    expect(r.output).toContain('src/a.ts');
+    expect(r.output).toContain('notes.md');
+  });
+
+  it('lists only the subtree, still rooted-relative', async () => {
+    const r = await executeTool(seedTree(), 'list_dir', { path: 'src' });
+    expect(r.output.split('\n').sort()).toEqual(['src/a.ts', 'src/deep/b.ts']);
+  });
+
+  // "no files" and "no such directory" are different answers.
+  it('distinguishes a missing directory from an empty one', async () => {
+    const root = seedTree();
+    const missing = await executeTool(root, 'list_dir', { path: 'nope' });
+    expect(missing.ok).toBe(false);
+    expect(missing.output).toContain('no such directory');
+    mkdirSync(join(root, 'empty'));
+    const empty = await executeTool(root, 'list_dir', { path: 'empty' });
+    expect(empty.ok).toBe(true);
+    expect(empty.output).toContain('no files under empty');
+  });
+
+  it('refuses a path that is a file, and one that escapes', async () => {
+    const root = seedTree();
+    const file = await executeTool(root, 'list_dir', { path: 'notes.md' });
+    expect(file.ok).toBe(false);
+    expect(file.output).toContain('not a directory');
+    const escape = await executeTool(root, 'list_dir', { path: '../..' });
+    expect(escape.ok).toBe(false);
+    expect(escape.output).toContain('outside the workspace');
+  });
+});
+
+describe('apply_diff replace_all (D49l)', () => {
+  // Renaming a symbol used many times was impossible in one call: the engine
+  // errors on multiple matches, which is the right default.
+  it('still refuses an ambiguous SEARCH without replace_all', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'old\nold\n');
+    const r = await executeTool(root, 'apply_diff', {
+      path: 'a.ts',
+      diffs: [{ search: 'old', replace: 'new' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('more than one location');
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('old\nold\n');
+  });
+
+  it('replaces every occurrence when replace_all is set', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'old\nkeep\nold\n');
+    const r = await executeTool(root, 'apply_diff', {
+      path: 'a.ts',
+      diffs: [{ search: 'old', replace: 'new', replace_all: true }],
+    });
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('new\nkeep\nnew\n');
+  });
+
+  /**
+   * The reason the engine uses split/join rather than String.replace: in a
+   * replacement string `$&`, `$1` and `$$` are substitution patterns, so
+   * `.replace()` would turn the replacement below into `XY`. Code that touches
+   * shell variables or regexes contains these constantly.
+   */
+  it('inserts a replacement containing $& literally', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'X\nX\n');
+    const r = await executeTool(root, 'apply_diff', {
+      path: 'a.ts',
+      diffs: [{ search: 'X', replace: '$&Y', replace_all: true }],
+    });
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('$&Y\n$&Y\n');
+  });
+
+  it('counts an already-applied replace_all block as a no-op', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'new\nnew\n');
+    const r = await executeTool(root, 'apply_diff', {
+      path: 'a.ts',
+      diffs: [{ search: 'old', replace: 'new', replace_all: true }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('no-op 1');
+  });
+});
+
+describe('apply_patch atomicity (D49l)', () => {
+  function twoFiles(): string {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'alpha\n');
+    writeFileSync(join(root, 'b.ts'), 'beta\n');
+    return root;
+  }
+
+  it('applies edits to several files in one call', async () => {
+    const root = twoFiles();
+    const r = await executeTool(root, 'apply_patch', {
+      patches: [
+        { path: 'a.ts', diffs: [{ search: 'alpha', replace: 'ALPHA' }] },
+        { path: 'b.ts', diffs: [{ search: 'beta', replace: 'BETA' }] },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('patched 2 file(s)');
+    expect(r.output).toContain('a.ts: 1 block(s)');
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('ALPHA\n');
+    expect(readFileSync(join(root, 'b.ts'), 'utf8')).toBe('BETA\n');
+  });
+
+  /**
+   * THE point of the tool. The third file fails, so the first two must be
+   * untouched — a half-applied multi-file change is the outcome apply_patch
+   * exists to prevent, and it is what several apply_diff calls would produce.
+   */
+  it('changes NOTHING when any one patch fails', async () => {
+    const root = twoFiles();
+    const r = await executeTool(root, 'apply_patch', {
+      patches: [
+        { path: 'a.ts', diffs: [{ search: 'alpha', replace: 'ALPHA' }] },
+        { path: 'b.ts', diffs: [{ search: 'not-there', replace: 'x' }] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('b.ts');
+    expect(r.output).toContain('SEARCH not found');
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('alpha\n');
+    expect(readFileSync(join(root, 'b.ts'), 'utf8')).toBe('beta\n');
+  });
+
+  // With several files in flight, "SEARCH not found" alone does not say which.
+  it('names the file a failure came from', async () => {
+    const root = twoFiles();
+    const r = await executeTool(root, 'apply_patch', {
+      patches: [{ path: 'b.ts', diffs: [{ search: 'nope', replace: 'x' }] }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output.startsWith('b.ts:')).toBe(true);
+  });
+
+  it('refuses the same file twice, a missing path, and an empty list', async () => {
+    const root = twoFiles();
+    const dup = await executeTool(root, 'apply_patch', {
+      patches: [
+        { path: 'a.ts', diffs: [{ search: 'alpha', replace: 'A' }] },
+        { path: './a.ts', diffs: [{ search: 'A', replace: 'B' }] },
+      ],
+    });
+    expect(dup.ok).toBe(false);
+    expect(dup.output).toContain('appears twice');
+
+    const noPath = await executeTool(root, 'apply_patch', {
+      patches: [{ diffs: [] }],
+    });
+    expect(noPath.ok).toBe(false);
+    expect(noPath.output).toContain('needs a path');
+
+    const empty = await executeTool(root, 'apply_patch', { patches: [] });
+    expect(empty.ok).toBe(false);
+    expect(empty.output).toContain('non-empty array');
+  });
+
+  it('refuses a patch that reaches outside the workspace', async () => {
+    const root = twoFiles();
+    const r = await executeTool(root, 'apply_patch', {
+      patches: [{ path: '../escape.ts', diffs: [{ search: 'a', replace: 'b' }] }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('outside the workspace');
+  });
+
+  it('reports no changes when every block is already applied', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'a.ts'), 'ALPHA\n');
+    const r = await executeTool(root, 'apply_patch', {
+      patches: [{ path: 'a.ts', diffs: [{ search: 'alpha', replace: 'ALPHA' }] }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('no changes');
   });
 });

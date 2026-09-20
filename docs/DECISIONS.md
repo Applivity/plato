@@ -1675,6 +1675,70 @@ Falsified in both directions: bypassing the executor's check fails **exactly the
 4 containment tests** with the other 13 still passing, and removing the loop's
 pre-flight makes the approval count go 0 → 1.
 
+**D49l — the navigation and edit surface competitors assume (M5.0, 0.25.0 —
+2026-09-20).**
+
+**What was missing.** `grep` matched a literal substring only and capped at 100
+hits; there was **no way to find a file by name** (`list_dir` returned the whole
+tree — up to 2,000 paths — and `grep` needs content); `list_dir` always walked
+everything; `apply_diff` errored on a SEARCH that matched twice, so renaming a
+symbol used five times was impossible in one call; and a change spanning several
+files had to be several `apply_diff` calls, each separately approved, each able to
+land on its own.
+
+**One glob matcher, shared.** `tools/glob.ts` is used by the new `glob` tool AND
+by `grep`'s file filter, so the two cannot disagree about what a pattern means.
+The semantic that matters: **a pattern with no slash matches the BASENAME**, so
+`*.ts` finds TypeScript at any depth. Matching the whole relative path instead
+would make `*.ts` match nothing outside the root, which is not what anyone means
+by it; a pattern WITH a slash stays anchored to the full path. This is ripgrep's
+`-g` behaviour. `*` and `?` stop at `/`; `**` crosses it; and `**/` matches **zero**
+directories, or `**/*.ts` would miss a file at the root. Everything else is
+escaped and literal, so `a.ts` matches `a.ts` and not `axts`.
+
+**`grep` keeps its old behaviour as the default.** The pattern is matched with
+`includes()` unless `regex: true`, because a literal full of regex syntax — a
+path, `foo(`, `a+b` — should mean exactly what it says and need no escaping.
+`mode` adds `files_with_matches` and `count`; `glob` narrows the file set. The
+regex is compiled with **no flags on purpose**: a `/g` regex carries `lastIndex`
+between `.test()` calls, so which lines matched would depend on iteration order.
+
+**`replace_all` is an explicit per-block opt-in.** The ambiguity error stays the
+default — it is the safety feature — and the multi-match case has to be asked for.
+It is implemented with **split/join, not `String.replace`**: in a replacement
+string `$&`, `$1` and `$$` are substitution patterns, so `.replace()` would
+silently rewrite any replacement legitimately containing them, which is routine
+in code that touches shell variables or regexes. Falsified: the naive version
+turns a `$&Y` replacement into `XY`.
+
+**`apply_patch` is genuinely all-or-nothing.** Every patch is validated and
+applied **in memory** before the first write, so a bad SEARCH in the third file
+cannot leave the first two changed — which is the entire point, and what several
+`apply_diff` calls cannot give. A disk failure mid-write rolls back what the call
+already wrote, so the promise holds against something other than a bad SEARCH. It
+also refuses the same file twice in one call, because two patches for one file
+would apply in an order the caller cannot see, and it names the offending file on
+failure — with several in flight, a bare "SEARCH not found" does not say which.
+**It previews every file it will touch**: the safety argument for approving a
+write is seeing what changes, and a multi-file patch approved blind would be worse
+than a single-file one.
+
+**`list_dir` with a path** reports a missing directory as an error rather than an
+empty list — "no files" and "no such directory" are different answers and the
+model cannot tell them apart otherwise. It is contained by D49k like every other
+path argument.
+
+**Verification.** 9 matcher tests, 19 executor tests for the new surface, and 1
+for the multi-file preview. Falsified four ways: removing the glob escaping fails
+2 matcher tests (`a.ts` starts matching `ats`); writing each patch eagerly instead
+of planning first fails the atomicity test with `a.ts` already modified; using
+`String.replace` for `replace_all` fails the `$&` test; and dropping `apply_patch`
+from the preview builder fails the preview test. A guard in `modes.test.ts` also
+asserts every tool the model is told about has a permission kind — a tool declared
+in `schemas.ts` but missing from the kind table would be **denied in every mode**,
+silently. `tsc` catches the other direction, where the `ToolName` union gains a
+member without a kind.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

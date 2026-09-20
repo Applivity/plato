@@ -5,12 +5,14 @@
  * final isSecretPath check here (defense in depth).
  */
 import { execFile } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveInRoot } from '../security/paths.js';
 import { isSecretPath } from '../security/secrets.js';
 import { listWorkspaceFiles } from './files.js';
-import { applyBlocks } from './diff.js';
+import { applyBlocks, parseDiffBlocks } from './diff.js';
+import { matchGlob } from './glob.js';
 import type { DiffBlock } from './diff.js';
 
 export interface ToolOutcome {
@@ -52,12 +54,16 @@ export async function executeTool(
       return writeFileTool(root, args);
     case 'apply_diff':
       return applyDiffTool(root, args);
+    case 'apply_patch':
+      return applyPatchTool(root, args);
     case 'shell':
       return shellTool(root, args);
     case 'list_dir':
-      return listDirTool(root);
+      return listDirTool(root, args);
     case 'grep':
       return grepTool(root, args);
+    case 'glob':
+      return globTool(root, args);
     case 'git':
       return gitTool(root, args);
     default:
@@ -193,24 +199,11 @@ async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome>
   const target = resolveTarget(root, rawPath);
   if ('err' in target) return fail(target.err);
   const { abs, rel } = target;
-  const rawDiffs = args['diffs'];
-  if (!Array.isArray(rawDiffs)) return fail('diffs must be an array');
-  const blocks: DiffBlock[] = [];
-  for (const d of rawDiffs) {
-    const rec = d as unknown as Record<string, unknown>;
-    if (
-      typeof d === 'object' &&
-      d !== null &&
-      typeof rec['search'] === 'string' &&
-      typeof rec['replace'] === 'string'
-    ) {
-      blocks.push({
-        search: rec['search'] as string,
-        replace: rec['replace'] as string,
-      });
-    } else {
-      return fail('each diff needs string search and replace');
-    }
+  let blocks: DiffBlock[];
+  try {
+    blocks = parseDiffBlocks(args['diffs']);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'bad diffs');
   }
   let before: string;
   try {
@@ -230,6 +223,112 @@ async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome>
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'apply_diff failed');
   }
+}
+
+interface PlannedPatch {
+  abs: string;
+  rel: string;
+  before: string;
+  after: string;
+  applied: number;
+  noop: number;
+}
+
+/**
+ * D49l: several files in one call, ALL-OR-NOTHING.
+ *
+ * Every patch is validated and applied IN MEMORY before the first write, so a
+ * bad SEARCH in the third file cannot leave the first two changed — which is the
+ * entire point: one approval covers a coherent multi-file change, and a
+ * half-applied change never exists. A disk failure mid-write rolls back what
+ * this call already wrote, so the promise holds against something other than a
+ * bad SEARCH.
+ */
+async function applyPatchTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+  const rawPatches = args['patches'];
+  if (!Array.isArray(rawPatches) || rawPatches.length === 0) {
+    return fail('patches must be a non-empty array');
+  }
+
+  const planned: PlannedPatch[] = [];
+  const seen = new Set<string>();
+
+  for (const p of rawPatches) {
+    const rec = (
+      typeof p === 'object' && p !== null ? p : {}
+    ) as Record<string, unknown>;
+    const rawPath = typeof rec['path'] === 'string' ? rec['path'] : '';
+    if (rawPath.length === 0) return fail('each patch needs a path');
+    const target = resolveTarget(root, rawPath);
+    if ('err' in target) return fail(target.err);
+    const { abs, rel } = target;
+
+    // Two patches for one file would apply in an order the caller cannot see.
+    if (seen.has(abs)) return fail(`${rel} appears twice in one patch`);
+    seen.add(abs);
+
+    let blocks: DiffBlock[];
+    try {
+      blocks = parseDiffBlocks(rec['diffs']);
+    } catch (e) {
+      return fail(`${rel}: ${e instanceof Error ? e.message : 'bad diffs'}`);
+    }
+
+    let before: string;
+    try {
+      before = await readFile(abs, 'utf8');
+    } catch {
+      return fail(`cannot read: ${rel}`);
+    }
+
+    try {
+      const { content, applied, noop } = applyBlocks(before, blocks);
+      planned.push({ abs, rel, before, after: content, applied, noop });
+    } catch (e) {
+      // Name the file. With several in flight, a bare "SEARCH not found" does
+      // not tell the model which one it got wrong.
+      return fail(`${rel}: ${e instanceof Error ? e.message : 'apply failed'}`);
+    }
+  }
+
+  const changed = planned.filter((p) => p.applied > 0);
+  if (changed.length === 0) {
+    return {
+      ok: true,
+      output: `no changes (${planned.length} file(s) already applied)`,
+    };
+  }
+
+  const written: PlannedPatch[] = [];
+  for (const c of changed) {
+    try {
+      await writeFile(c.abs, c.after, 'utf8');
+      written.push(c);
+    } catch (e) {
+      for (const w of written) {
+        try {
+          await writeFile(w.abs, w.before, 'utf8');
+        } catch {
+          // Best effort. The message reports what was actually restored, so a
+          // failed rollback is never described as a clean one.
+        }
+      }
+      return fail(
+        `write failed on ${c.rel}; rolled back ${written.length} of ${changed.length} file(s): ${
+          e instanceof Error ? e.message : 'error'
+        }`,
+      );
+    }
+  }
+
+  return {
+    ok: true,
+    output:
+      `patched ${changed.length} file(s)\n` +
+      changed
+        .map((c) => `${c.rel}: ${c.applied} block(s), no-op ${c.noop}`)
+        .join('\n'),
+  };
 }
 
 async function shellTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
@@ -260,33 +359,160 @@ async function shellTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
   });
 }
 
-async function listDirTool(root: string): Promise<ToolOutcome> {
-  return { ok: true, output: listWorkspaceFiles(root).join('\n') };
+async function listDirTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+  const raw = typeof args['path'] === 'string' ? args['path'].trim() : '';
+  // No path: the whole workspace, as before.
+  if (raw.length === 0) {
+    return { ok: true, output: listWorkspaceFiles(root).join('\n') };
+  }
+  const target = resolveTarget(root, raw);
+  if ('err' in target) return fail(target.err);
+  const { abs, rel } = target;
+  // Say so when the directory is missing rather than returning an empty list:
+  // "no files" and "no such directory" are different answers, and the model
+  // cannot tell them apart otherwise.
+  let isDir = false;
+  try {
+    isDir = statSync(abs).isDirectory();
+  } catch {
+    return fail(`no such directory: ${rel}`);
+  }
+  if (!isDir) return fail(`not a directory: ${rel}`);
+  const files = listWorkspaceFiles(root, rel);
+  return {
+    ok: true,
+    output: files.length > 0 ? files.join('\n') : `(no files under ${rel})`,
+  };
 }
+
+/** Files whose names match `pattern`, for the `glob` tool and `grep`'s filter. */
+const GLOB_MAX_PATHS = 500;
+
+async function globTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+  const pattern = args['pattern'];
+  if (typeof pattern !== 'string' || pattern.length === 0) {
+    return fail('missing pattern');
+  }
+  const matches = listWorkspaceFiles(root).filter((p) => matchGlob(pattern, p));
+  if (matches.length === 0) return { ok: true, output: 'no files match' };
+  const shown = matches.slice(0, GLOB_MAX_PATHS);
+  const note =
+    matches.length > shown.length
+      ? `\n[${matches.length} files match; showing the first ${shown.length}]`
+      : '';
+  return { ok: true, output: shown.join('\n') + note };
+}
+
+const GREP_DEFAULT_LIMIT = 100;
+const GREP_MAX_LIMIT = 1_000;
+
+type GrepMode = 'content' | 'files_with_matches' | 'count';
 
 async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
   const pattern = args['pattern'];
   if (typeof pattern !== 'string' || pattern.length === 0) {
     return fail('missing pattern');
   }
-  const hits: string[] = [];
-  for (const rel of listWorkspaceFiles(root)) {
-    if (hits.length >= 100) break;
+
+  // D49l: `regex: true` opts into a pattern language; without it the pattern is
+  // matched with includes() and means exactly what it says — a literal full of
+  // regex metacharacters (a path, a `->`, a `foo(`) needs no escaping.
+  let re: RegExp | null = null;
+  if (args['regex'] === true) {
+    try {
+      // No flags on purpose: a `/g` regex carries lastIndex between .test()
+      // calls, so which lines matched would depend on iteration order.
+      re = new RegExp(pattern);
+    } catch (e) {
+      return fail(
+        `invalid regex: ${e instanceof Error ? e.message : 'parse error'}`,
+      );
+    }
+  }
+  const hit = (line: string): boolean =>
+    re === null ? line.includes(pattern) : re.test(line);
+
+  const globArg = args['glob'];
+  const filter =
+    typeof globArg === 'string' && globArg.length > 0 ? globArg : null;
+  const rawMode = args['mode'];
+  const mode: GrepMode =
+    rawMode === 'files_with_matches' || rawMode === 'count'
+      ? rawMode
+      : 'content';
+  const limit = Math.min(
+    GREP_MAX_LIMIT,
+    Math.max(1, readInt(args['limit']) ?? GREP_DEFAULT_LIMIT),
+  );
+
+  const files = listWorkspaceFiles(root).filter(
+    (p) => filter === null || matchGlob(filter, p),
+  );
+
+  const content: string[] = [];
+  const matchedFiles: string[] = [];
+  const counts: string[] = [];
+  let total = 0;
+  let truncated = false;
+
+  for (const rel of files) {
     let text: string;
     try {
       text = await readFile(join(root, rel), 'utf8');
     } catch {
       continue; // binary or unreadable
     }
+    let fileHits = 0;
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i]?.includes(pattern)) {
-        hits.push(`${rel}:${i + 1}:${lines[i]?.trim().slice(0, 200)}`);
-        if (hits.length >= 100) break;
+      const line = lines[i] ?? '';
+      if (!hit(line)) continue;
+      fileHits += 1;
+      total += 1;
+      if (mode === 'content') {
+        if (content.length < limit) {
+          content.push(`${rel}:${i + 1}:${line.trim().slice(0, 200)}`);
+        } else {
+          truncated = true;
+        }
       }
+      // Once a file is known to match, the other modes need nothing more from it.
+      if (mode === 'files_with_matches') break;
+    }
+    if (fileHits > 0) {
+      matchedFiles.push(rel);
+      counts.push(`${rel}:${fileHits}`);
     }
   }
-  return { ok: true, output: hits.length > 0 ? hits.join('\n') : 'no matches' };
+
+  if (mode === 'files_with_matches') {
+    if (matchedFiles.length === 0) return { ok: true, output: 'no matches' };
+    const shown = matchedFiles.slice(0, limit);
+    const note =
+      matchedFiles.length > shown.length
+        ? `\n[${matchedFiles.length} files matched; showing ${shown.length} — raise limit or narrow with glob]`
+        : '';
+    return { ok: true, output: shown.join('\n') + note };
+  }
+
+  if (mode === 'count') {
+    if (counts.length === 0) return { ok: true, output: 'no matches' };
+    const shown = counts.slice(0, limit);
+    const note =
+      counts.length > shown.length
+        ? `\n[${counts.length} files matched; showing ${shown.length}]`
+        : '';
+    return {
+      ok: true,
+      output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}`,
+    };
+  }
+
+  if (content.length === 0) return { ok: true, output: 'no matches' };
+  const note = truncated
+    ? `\n[stopped at ${limit} hits — raise limit, or narrow with glob]`
+    : '';
+  return { ok: true, output: content.join('\n') + note };
 }
 
 async function gitTool(root: string, args: ToolArgs): Promise<ToolOutcome> {

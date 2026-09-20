@@ -12,9 +12,11 @@ export type ToolName =
   | 'read_file'
   | 'write_file'
   | 'apply_diff'
+  | 'apply_patch'
   | 'shell'
   | 'list_dir'
   | 'grep'
+  | 'glob'
   | 'git';
 
 type Kind = 'read' | 'write' | 'shell';
@@ -23,9 +25,13 @@ const TOOL_KIND: Record<ToolName, Kind> = {
   read_file: 'read',
   list_dir: 'read',
   grep: 'read',
+  glob: 'read',
   git: 'read',
   write_file: 'write',
   apply_diff: 'write',
+  // D49l: a multi-file write is still a write, so it gets the same gating as
+  // apply_diff — one approval covering several files, never less scrutiny.
+  apply_patch: 'write',
   shell: 'shell',
 };
 

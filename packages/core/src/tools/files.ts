@@ -28,11 +28,16 @@ const MAX_FILES = 2000;
  * Lists workspace files under `root` as repo-relative POSIX-style paths,
  * depth-first within each directory. Silently returns [] when the root is
  * unreadable (missing or permission-denied); callers render a fallback.
+ *
+ * `subpath` (D49l) starts the walk inside that directory while still returning
+ * paths relative to `root`, so `list_dir { path: 'src' }` yields `src/a.ts` —
+ * the same form every other tool takes as input. The caller is responsible for
+ * resolving and containing `subpath` before passing it.
  */
-export function listWorkspaceFiles(root: string): string[] {
+export function listWorkspaceFiles(root: string, subpath = ''): string[] {
   const out: string[] = [];
   try {
-    walk(root, '', out);
+    walk(subpath.length > 0 ? join(root, subpath) : root, subpath, out);
   } catch {
     return [];
   }

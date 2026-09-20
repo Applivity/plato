@@ -5,12 +5,48 @@
 export interface DiffBlock {
   search: string;
   replace: string;
+  /**
+   * D49l: replace EVERY occurrence rather than requiring exactly one. Off by
+   * default, because the ambiguity error is the safety feature — renaming a
+   * symbol used five times is the case this exists for, and it has to be asked
+   * for explicitly.
+   */
+  replaceAll?: boolean;
 }
 
 export interface ApplyOutcome {
   content: string;
   applied: number;
   noop: number;
+}
+
+/**
+ * Parses the model's `diffs` array into blocks. Throws with a plain reason so
+ * both `apply_diff` and `apply_patch` reject malformed input identically.
+ */
+export function parseDiffBlocks(raw: unknown): DiffBlock[] {
+  if (!Array.isArray(raw)) {
+    throw new Error('diffs must be an array');
+  }
+  const blocks: DiffBlock[] = [];
+  for (const d of raw) {
+    const rec = d as unknown as Record<string, unknown>;
+    if (
+      typeof d === 'object' &&
+      d !== null &&
+      typeof rec['search'] === 'string' &&
+      typeof rec['replace'] === 'string'
+    ) {
+      blocks.push({
+        search: rec['search'],
+        replace: rec['replace'],
+        ...(rec['replace_all'] === true ? { replaceAll: true } : {}),
+      });
+    } else {
+      throw new Error('each diff needs string search and replace');
+    }
+  }
+  return blocks;
 }
 
 /**
@@ -36,6 +72,16 @@ export function applyBlocks(
         continue;
       }
       throw new Error('SEARCH not found');
+    }
+    if (b.replaceAll) {
+      // split/join, NOT String.replace: in a replacement string `$&`, `$1` and
+      // `$$` are substitution patterns, so `.replace()` would silently mangle
+      // any replacement that legitimately contains them — a real hazard for
+      // code that touches shell variables or regexes.
+      next = next.split(b.search).join(b.replace);
+
+      applied += 1;
+      continue;
     }
     const second = next.indexOf(b.search, first + b.search.length);
     if (second !== -1) {

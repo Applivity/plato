@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runAgentLoop } from '../src/runtime/loop.js';
 import { AgentBus, RunController } from '../src/runtime/bus.js';
 import type {
@@ -584,5 +587,66 @@ describe('runAgentLoop workspace containment (D49k)', () => {
       },
     });
     expect(approvals).toBe(1);
+  });
+});
+
+/**
+ * D49l. Approving an apply_patch must show every file it will change — the
+ * safety argument for approving a write is seeing what changes, and a
+ * multi-file patch approved blind would be worse than a single-file one.
+ */
+describe('runAgentLoop apply_patch preview (D49l)', () => {
+  it('previews every file in the patch', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'plato-patch-preview-'));
+    writeFileSync(join(root, 'a.ts'), 'alpha\n');
+    writeFileSync(join(root, 'b.ts'), 'beta\n');
+    let preview = '';
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'p1',
+                name: 'apply_patch',
+                input: {
+                  patches: [
+                    { path: 'a.ts', diffs: [{ search: 'alpha', replace: 'ALPHA' }] },
+                    { path: 'b.ts', diffs: [{ search: 'beta', replace: 'BETA' }] },
+                  ],
+                },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      // Decline: the preview is the assertion, and nothing must be written.
+      approve: (req) => {
+        preview = req.preview ?? '';
+        return Promise.resolve(false);
+      },
+    });
+    expect(preview).toContain('a.ts');
+    expect(preview).toContain('b.ts');
+    expect(preview).toContain('- alpha');
+    expect(preview).toContain('+ ALPHA');
+    expect(preview).toContain('- beta');
+    expect(preview).toContain('+ BETA');
+    // Declined, so the files are untouched.
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('alpha\n');
   });
 });
