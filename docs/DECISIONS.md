@@ -1958,49 +1958,51 @@ this very entry establishes, and it works only on Anthropic. He chose to ship
 without deciding this deliberately** — the convenient option is the one that
 weakens the posture.
 
-**Redirects are followed ONE HOP AT A TIME, by the LOOP, asking per host.** This
-is the load-bearing security decision, not a detail. With automatic following, the
-URL the user approved is **not** the URL that gets fetched: a public page can
-redirect into a private address and the approval card would have named only the
-first hop. The request is therefore issued with `redirect: 'manual'`, the tool
-**fetches exactly one hop and returns the next one**, and the walk happens in
-`runWebFetch` (loop.ts) — the only layer that can ask the user. The policy is one
-sentence: **an approval covers one host, and a new host needs a new approval.**
-Putting the walk in the loop also removed the tool's own hop loop, so the code got
-smaller, not larger. **Falsified:** removing the refusal guard on a declined hop
-sends the second request anyway; the test asserts it is never sent.
+**Redirects are followed, and every hop is validated (founder's decision,
+2026-09-21, superseding the per-hop ask built earlier the same day).** The walk is
+**ours**: the request is issued with `redirect: 'manual'` so the HTTP layer cannot
+follow anything itself — if it did, no hop would be checked at all. The tool then
+loops, bounded at **5 hops**, and **refuses a hop onto a private, loopback or
+link-local address**. **Falsified:** removing that check lets a redirect into
+`169.254.169.254` (the cloud metadata endpoint) be fetched; the test asserts the
+second request is never sent.
 
-**The address block is now a LABEL, not a gate (founder's decision, 2026-09-21).**
-Private, loopback and link-local addresses are **no longer refused**. The founder's
-reasoning, and he was right: refusing them is a restriction the user cannot
-override — `plato.net.allow: ["localhost"]` did not work, because the address check
-ran first — and a user may genuinely have a resource on a local dev server. He
-also saw that the check was **inconsistent**: it caught `192.168.1.1` written as a
-literal but not a public hostname whose DNS record points there, so it *looked*
-like stronger coverage than it was. `isPrivateHostname` survives and is used to
-**print what the user cannot read off a URL** — that `169.254.169.254` is not a
-website but the cloud credentials address, that `192.168.1.1` is their own router.
-The user decides. **Warning only: the founder explicitly declined a second
-confirmation step for the metadata address** — a second gate is the restriction he
-asked to remove.
+**The asymmetry is the whole decision, and it is deliberate.** A URL the user was
+**shown and approved** is never refused on its address. A **redirect hop** is
+refused on the same address, because a hop is chosen by a *page*, not by the user:
+consent covers what the user saw. That is what makes both of the founder's calls
+consistent — *"don't block local addresses, the user may have resources on a local
+dev server"* and *"refuse private destinations on a redirect, silently"*. The same
+address is legitimate when asked for and refused when arrived at sideways.
 
-**Why this does not reopen the redirect hole.** It would, if the block were simply
-deleted while redirects still followed silently: a session-approved `web_fetch`
-would become a quiet path into the user's own machine. The per-host rule is what
-replaces it, and the two changes are therefore one change. **It also closes a hole
-that already existed** — a session approval was keyed on the tool, so "approve all
-web_fetch" covered every later host. It is now keyed on `tool:host`, and the
-FIRST approval carries a host too (only keying the redirect hops would have left
-the original approval tool-wide — found by the test, not by reading).
+**A limit worth stating:** the model can route around this. If a hop to
+`169.254.169.254` is refused, the model may simply call `web_fetch` on that URL
+directly — which is a URL the user did not choose, so it raises a card carrying the
+metadata warning, and the user can refuse it. The automatic pivot is blocked; the
+deliberate one requires a conscious click through a warning. That is defence in
+depth, not a wall, and it is recorded rather than implied.
 
-**A same-site hop does not ask.** `sameSite` treats a bare `www.` and an
-`http → https` upgrade as the site already approved, so ordinary navigation is not
-clicky. A **subdomain is a different host and does ask**: it may be a different
-server, and user-content subdomains are common enough that treating one as the
-approved site would hand a stranger the consent given to someone else. A downgrade
-to `http` asks too, so an approved https hop cannot be answered in clear text.
-**Falsified:** making subdomains count as the same site stops the cross-host
-approval from firing at all.
+**Session approval is keyed `tool:host`, not on the tool.** An approval covers one
+HOST: "approve all requests to `docs.example.com` this session" cannot widen to
+every later host. **This closed a hole that already existed** — keyed on the tool,
+"approve all web_fetch" covered every later host. The FIRST approval carries a host
+too; only keying redirect hops would have left the original approval tool-wide
+(found by the test, not by reading). **This is the "don't ask again for this
+domain" pattern other agents use** — an approval that is remembered per domain,
+rather than a policy configured up front.
+
+**The address block on a FIRST url is a LABEL, not a gate.** Private, loopback and
+link-local addresses are **not refused** when the user asked for them. The
+founder's reasoning, and he was right: refusing them is a restriction the user
+cannot override — `plato.net.allow: ["localhost"]` did not work, because the
+address check ran first — and a user may genuinely have a resource on a local dev
+server. He also saw the check was **inconsistent**: it caught `192.168.1.1` written
+as a literal but not a public hostname whose DNS record points there, so it
+*looked* like stronger coverage than it was. `isPrivateHostname` survives and does
+two jobs: it **prints what the user cannot read off a URL** (that `169.254.169.254`
+is not a website but the cloud credentials address), and it decides the redirect
+refusal above. **Warning only: the founder explicitly declined a second
+confirmation step** — a second gate is the restriction he asked to remove.
 
 **HTML is reduced to text by hand, and script/style bodies are removed WITH their
 contents.** Stripping only the tags would leave a page's JavaScript in the prompt
@@ -2011,44 +2013,60 @@ wrapped in an explicit **untrusted** label, because a fetched page is input from
 stranger and the model must not read instructions in it as though they came from
 the user. No JavaScript executes: this is text extraction, not a browser.
 
-**The domain lists are enforced BEFORE the approval card, and have no panel UI yet
-(D49q).** `plato.net.allow` and `plato.net.deny` exist as settings and are applied
-on every hop, `deny` winning over `allow`, with a host matching itself and its
-subdomains. **The check runs before the user is asked, on the first URL and on
-every redirect hop** *(added 2026-09-21)*. It used to run only in the executor,
-which is **after** the prompt — so a denied URL produced a card, the user decided,
-and the request was then refused anyway. **A card that cannot be acted on is worse
-than no card**: it teaches that clicking through approval cards has no consequence,
-which is precisely the habit that devalues every other one. The loop's refusal is
-worded identically to the executor's so the two are indistinguishable. **The
-executor remains the guarantee** — it applies the same lists itself, so a URL that
-slipped past the pre-check still cannot be fetched; the same courtesy/guarantee
-split as the containment check in D49k. **UI:** **D45c says UI first, and this does
-not meet that** — it is config-only today, and both the setting description and the
-code say so rather than implying otherwise. Recorded for later discussion at the top
-of the PROGRESS backlog with the open questions (one control or two; whether a host
-is typed or **promoted from a card just approved**; and that an empty allow list
-means *any host*, the opposite of what an empty list usually implies).
+**The domain allow/deny lists were DELETED (founder's decision, 2026-09-21) —
+D49q is closed as "not wanted" rather than outstanding.** They shipped as
+`plato.net.allow` / `plato.net.deny`: enforced on every hop, with **no panel UI**,
+recorded as the one outstanding piece of Phase 5. The founder asked the question
+that should have been asked when they were built: *are we over-engineering this?*
+They were, and the shape of the mistake is worth keeping:
+
+**An allow list could only ever SUBTRACT.** `web_fetch` asks for approval in
+**every** mode, `auto` included — by the founder's own posture. So egress never
+happens unattended, and a list that permits a host grants nothing the user was not
+already free to approve. It removed choices without adding any. **That is the same
+shape as the address block he had removed hours earlier** — a restriction with no
+compensating convenience. It was deleted for being paternalistic while this
+survived, which is the real argument against it.
+
+**What other agents do, checked before cutting:** Claude Code asks per call with a
+*"don't ask again for this domain"* option and **no domain lists in its UI**; Cline
+and Roo expose **per-tool auto-approve toggles**, not domain lists. The pattern is
+approve-as-you-go with a remembered decision — which is exactly the `tool:host`
+session approval above. The lists were the part nothing else had, and nothing
+needed.
+
+**Also deleted with them:** the loop's pre-flight list check (added earlier the same
+day, to stop a card firing for a URL the config forbade), `checkHost`, `sameSite`,
+the `LoopOptions.net` option and field, the host's `netState()`, and the two
+settings. **The loop now knows nothing about the web** — `web_fetch` is an ordinary
+tool call again, and its redirect handling is entirely the executor's. That
+layering concession (the loop walking redirects because only the loop can ask) went
+with the per-hop ask that required it.
 
 **Verification.** `htmlToText`, the content-type allowlist, the address
-classification, the domain lists, and the tool end to end against an **injected**
-fetch (no test touches the network). Plus a modes test pinning `web_fetch` to
-`ask` in all four modes, six new loop tests covering the walk (per-host ask,
-same-site silence, the metadata warning, a local dev server reached, the hop cap,
-the deny list on a hop), and a new **`approval` render suite** (13 assertions) —
-the first render coverage the approval card has ever had. Falsified four times:
-removing the declined-hop guard sends the second request; dropping the metadata
-warning branch silences the card; making subdomains same-site stops the ask
-entirely; and reverting the webview to name the tool instead of the host fails the
-render suite. The Phase 3 guard that asserts every declared tool has a permission
-kind **caught the original change** — it had assumed declared ⇒ allowed in `auto`,
-which D49p makes false; it was tightened to the property it actually guards.
+classification, and the tool end to end against an **injected** fetch (no test
+touches the network). Plus a modes test pinning `web_fetch` to `ask` in all four
+modes, loop tests pinning that an approval carries its HOST (and that a tool
+contacting nobody carries none), and a new **`approval` render suite** (13
+assertions) — the first render coverage the approval card has ever had. Falsified
+five times, each reverted: removing the redirect-hop address check fetches the
+metadata endpoint; removing the declined-hop guard sent the second request;
+dropping the metadata warning branch silences the card; making subdomains
+same-site stopped the cross-host ask; and reverting the webview to name the tool
+instead of the host fails the render suite. The Phase 3 guard that asserts every
+declared tool has a permission kind **caught the original change** — it had assumed
+declared ⇒ allowed in `auto`, which D49p makes false; it was tightened to the
+property it actually guards.
 
-**Known limit, unchanged and now more visible.** The classification is **literal**
+**Known limit, unchanged and now load-bearing.** The classification is **literal**
 — a hostname that *resolves* to a private address is not identified, because that
 needs a DNS lookup; the same class of limitation as the lexical symlink check in
-D49k. Under the old gate this was a partially-false guarantee; as a label it is
-simply an incomplete one, which is the honest reading.
+D49k. That matters more now than it did as a label, because a **redirect** to
+`evil.example.com` (a public-looking name pointing at `192.168.1.1`) is followed:
+the check reads the name in the URL, not the address the name becomes. Catching it
+needs a DNS lookup per hop **and** the connection pinned to the resolved address,
+or the attacker simply answers differently the second time. Not built, and
+recorded rather than implied.
 
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**

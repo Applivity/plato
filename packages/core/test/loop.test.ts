@@ -723,215 +723,86 @@ describe('runAgentLoop background shell teardown (D49m)', () => {
 });
 
 /**
- * D49p: `web_fetch` fetches ONE hop; the LOOP walks the redirects, because the
- * loop is the only layer that can ask the user. The policy is one sentence — an
- * approval covers one host, and a new host needs a new approval.
+ * D49p: `web_fetch` follows its own redirects (execute.ts). The loop's only
+ * web_fetch-specific job is to tell the shell WHICH HOST an approval covers, so
+ * a session approval cannot silently widen from a host to the whole tool.
  */
-describe('web_fetch redirect walk (D49p)', () => {
-  /** Records every URL asked for, and replies from a table. */
-  function net(replies: (url: string) => Response) {
-    const seen: string[] = [];
-    return {
-      seen,
-      fetchImpl: async (url: string): Promise<Response> => {
-        seen.push(url);
-        return replies(url);
-      },
-    };
-  }
-
-  type Reply = { status?: number; headers?: Record<string, string> };
-  const page = (body: string, init: Reply = {}): Response =>
-    new Response(body, {
-      status: init.status ?? 200,
-      headers: init.headers ?? { 'content-type': 'text/plain' },
-    });
-  const redirect = (to: string): Response =>
-    page('', { status: 302, headers: { location: to } });
-
-  /** First turn calls web_fetch(url), second turn ends the run. */
-  function fetchOnce(url: string): { p: ChatProvider; lastReq: () => TurnRequest } {
+describe('web_fetch approvals carry a host (D49p)', () => {
+  it('reports the host of the URL being approved', async () => {
     let calls = 0;
-    let last: TurnRequest | undefined;
-    return {
-      lastReq: () => last!,
-      p: {
-        id: 'anthropic',
-        async completeTurn(req: TurnRequest): Promise<TurnResponse> {
-          last = req;
-          calls += 1;
-          if (calls === 1) {
-            return {
-              content: [{ type: 'tool_use', id: 'w1', name: 'web_fetch', input: { url } }],
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        return calls === 1
+          ? {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'w1',
+                  name: 'web_fetch',
+                  input: { url: 'https://docs.example.com/x' },
+                },
+              ],
               usage: { inputTokens: 5, outputTokens: 5 },
               stopReason: 'tool_use',
+            }
+          : {
+              content: [{ type: 'text', text: 'done' }],
+              usage: { inputTokens: 5, outputTokens: 5 },
+              stopReason: 'stop',
             };
-          }
-          return {
-            content: [{ type: 'text', text: 'done' }],
-            usage: { inputTokens: 5, outputTokens: 5 },
-            stopReason: 'stop',
-          };
-        },
       },
     };
-  }
-
-  /** What the model was told, after the tool ran. */
-  const toolResultText = (req: TurnRequest): string =>
-    JSON.stringify(req.messages);
-
-  it('asks again for a new host, and a refusal sends no second request', async () => {
-    const f = net(() => redirect('https://evil.example.com/b'));
-    const asks: string[] = [];
-    const { p, lastReq } = fetchOnce('https://example.com/a');
+    const seen: (string | undefined)[] = [];
     await runAgentLoop({
       ...BASE,
       provider: p,
-      net: { allow: [], deny: [], fetchImpl: f.fetchImpl },
       approve: (req) => {
-        asks.push(req.host ?? '(none)');
-        // Allow the URL the user chose; refuse the hop it was sent to.
-        return Promise.resolve(req.host !== 'evil.example.com');
+        seen.push(req.host);
+        return Promise.resolve(false);
       },
     });
-    expect(asks).toEqual(['example.com', 'evil.example.com']);
-    // THE property: the second request was never sent.
-    expect(f.seen).toEqual(['https://example.com/a']);
-    expect(toolResultText(lastReq())).toContain('user declined the redirect');
+    expect(seen).toEqual(['docs.example.com']);
   });
 
-  it('does not ask again for the same site under its www name', async () => {
-    const f = net((url) =>
-      url === 'https://example.com/a' ? redirect('https://www.example.com/b') : page('arrived'),
-    );
-    let asks = 0;
-    const { p } = fetchOnce('https://example.com/a');
+  // A tool that contacts nobody must not acquire a host, or its session
+  // approval would be keyed on an empty string and stop matching.
+  it('gives no host to a tool that contacts nobody', async () => {
+    let calls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        return calls === 1
+          ? {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 's1',
+                  name: 'shell',
+                  input: { command: 'echo hi' },
+                },
+              ],
+              usage: { inputTokens: 5, outputTokens: 5 },
+              stopReason: 'tool_use',
+            }
+          : {
+              content: [{ type: 'text', text: 'done' }],
+              usage: { inputTokens: 5, outputTokens: 5 },
+              stopReason: 'stop',
+            };
+      },
+    };
+    const seen: (string | undefined)[] = [];
     await runAgentLoop({
       ...BASE,
       provider: p,
-      net: { allow: [], deny: [], fetchImpl: f.fetchImpl },
-      approve: () => {
-        asks += 1;
-        return Promise.resolve(true);
-      },
-    });
-    // One card for the URL the user chose — the www hop is the same site.
-    expect(asks).toBe(1);
-    expect(f.seen).toEqual(['https://example.com/a', 'https://www.example.com/b']);
-  });
-
-  it('warns on the card when a redirect lands on the cloud metadata address', async () => {
-    const f = net(() => redirect('http://169.254.169.254/latest/meta-data/'));
-    const seenPreviews: string[] = [];
-    const { p } = fetchOnce('https://example.com/innocent');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: [], deny: [], fetchImpl: f.fetchImpl },
       approve: (req) => {
-        seenPreviews.push(req.preview ?? '');
-        // Allow the innocent URL; the user reads the hop card and refuses it.
-        return Promise.resolve(req.host === 'example.com');
+        seen.push(req.host);
+        return Promise.resolve(false);
       },
     });
-    expect(seenPreviews).toHaveLength(2);
-    const card = seenPreviews[1]!;
-    // The user must be told what the address IS — they cannot read that off the URL.
-    expect(card).toContain('169.254.169.254');
-    expect(card).toContain('cloud metadata');
-    expect(card).toContain('WARNING');
-    expect(card).toContain('redirected here');
-    // THE property: refusing the hop means the metadata request is never sent.
-    expect(f.seen).toHaveLength(1);
-  });
-
-  it('fetches a local dev server: the user decides, nothing refuses it', async () => {
-    const f = net(() => page('{"ok":true}'));
-    const hosts: string[] = [];
-    const { p, lastReq } = fetchOnce('http://localhost:3000/api');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: [], deny: [], fetchImpl: f.fetchImpl },
-      approve: (req) => {
-        hosts.push(req.host ?? '');
-        return Promise.resolve(true);
-      },
-    });
-    // Reached, not refused — and the card said what localhost means.
-    expect(f.seen).toEqual(['http://localhost:3000/api']);
-    expect(hosts).toContain('localhost');
-    expect(toolResultText(lastReq())).toContain('ok');
-  });
-
-  it('gives up on a redirect chain instead of walking it forever', async () => {
-    let n = 0;
-    const f = net(() => redirect(`https://h${n++}.example.com/x`));
-    const { p, lastReq } = fetchOnce('https://example.com/loop');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: [], deny: [], fetchImpl: f.fetchImpl },
-      approve: () => Promise.resolve(true),
-    });
-    // 1 initial request + 5 followed hops, then it stops.
-    expect(f.seen).toHaveLength(6);
-    expect(toolResultText(lastReq())).toContain('too many redirects');
-  });
-
-  it('applies the deny list to a redirect hop, not just the first URL', async () => {
-    const f = net(() => redirect('https://blocked.example.com/x'));
-    let asks = 0;
-    const { p, lastReq } = fetchOnce('https://example.com/a');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: [], deny: ['blocked.example.com'], fetchImpl: f.fetchImpl },
-      approve: () => {
-        asks += 1;
-        return Promise.resolve(true);
-      },
-    });
-    expect(f.seen).toEqual(['https://example.com/a']);
-    expect(toolResultText(lastReq())).toContain('blocked-domain');
-    // One card — for the URL the user chose. The blocked hop is refused by the
-    // config, so it must not raise a card the user could not act on.
-    expect(asks).toBe(1);
-  });
-
-  /**
-   * A card for a request the config forbids is worse than no card: it teaches
-   * the user that clicking through has no consequence, which devalues every
-   * other card. The refusal happens BEFORE the ask.
-   */
-  it('never asks about a URL the deny list forbids', async () => {
-    const f = net(() => page('should not be reached'));
-    const { p, lastReq } = fetchOnce('https://evil.example.com/x');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: [], deny: ['evil.example.com'], fetchImpl: f.fetchImpl },
-      approve: () => {
-        throw new Error('the user must not be asked about a denied URL');
-      },
-    });
-    expect(f.seen).toEqual([]);
-    expect(toolResultText(lastReq())).toContain('blocked-domain');
-  });
-
-  it('never asks about a host outside a non-empty allow list', async () => {
-    const f = net(() => page('should not be reached'));
-    const { p, lastReq } = fetchOnce('https://other.com/x');
-    await runAgentLoop({
-      ...BASE,
-      provider: p,
-      net: { allow: ['example.com'], deny: [], fetchImpl: f.fetchImpl },
-      approve: () => {
-        throw new Error('the user must not be asked about a non-allowed URL');
-      },
-    });
-    expect(f.seen).toEqual([]);
-    expect(toolResultText(lastReq())).toContain('allowed-domain');
+    expect(seen).toEqual([undefined]);
   });
 });

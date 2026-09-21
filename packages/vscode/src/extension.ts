@@ -1833,24 +1833,6 @@ class ChatHost {
    * `mode` defaults to auto so first-time users get the safe default;
    * `threshold` is clamped to [0.5, 0.95] in the loop itself.
    */
-  /**
-   * D49p: the domain lists `web_fetch` enforces. `deny` wins over `allow`, and an
-   * empty `allow` list permits any public host. Read from settings so the lists
-   * can change without a rebuild — **the panel UI for editing them does not exist
-   * yet** (D49q), so today they are config-only, which is a deliberate interim
-   * state rather than the D45c "UI first" rule being met.
-   */
-  private netState(): { allow: string[]; deny: string[] } {
-    const cfg = vscode.workspace.getConfiguration('plato');
-    const list = (key: string): string[] => {
-      const v = cfg.get<unknown>(key, []);
-      return Array.isArray(v)
-        ? v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-        : [];
-    };
-    return { allow: list('net.allow'), deny: list('net.deny') };
-  }
-
   /** D44d: compaction is always auto at the threshold (Manual is gone). */
   private compactionState(): { mode: 'auto' | 'manual'; threshold: number } {
     const cfg = vscode.workspace.getConfiguration('plato');
@@ -2853,7 +2835,6 @@ class ChatHost {
         // (the header pill toggles mode; the slider sets threshold).
         compact: this.compactionState(),
         // D49p: web_fetch's domain lists. Enforced on every hop.
-        net: this.netState(),
         // D49j: the reply appears as it is written. The loop hands us the text
         // SO FAR for this turn, so the preview is replaced rather than appended
         // and a retried turn cannot concatenate onto the text it abandoned.

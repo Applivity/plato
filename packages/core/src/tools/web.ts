@@ -102,40 +102,14 @@ export function hostOf(url: string): string {
 }
 
 /**
- * True when a redirect stays on the same site, so it needs no fresh approval.
- *
- * A leading `www.` is the same site under its canonical name, and `http` →
- * `https` is an upgrade, so both pass without a card. Everything else asks. In
- * particular a **subdomain is a different host** and therefore asks: it may be a
- * different server, and user-content subdomains are common enough that treating
- * them as the approved site would hand a stranger the consent given to someone
- * else. A downgrade to `http` also asks, so an approved https hop cannot be
- * answered in clear text.
- */
-export function sameSite(a: string, b: string): boolean {
-  let ua: URL;
-  let ub: URL;
-  try {
-    ua = new URL(a);
-    ub = new URL(b);
-  } catch {
-    return false; // unparseable: ask rather than assume
-  }
-  const strip = (h: string): string =>
-    h.toLowerCase().replace(/^www\./, '').replace(/^\[|\]$/g, '');
-  if (strip(ua.hostname) !== strip(ub.hostname)) return false;
-  if (ua.port !== ub.port) return false;
-  return ub.protocol === 'https:' || ua.protocol === ub.protocol;
-}
-
-/**
  * Classifies the addresses a user cannot judge from the URL alone.
  *
- * **This is a LABEL, not a gate.** The founder's decision (D49p) is that the
- * user decides where Plato may go, so nothing here refuses anything — the
- * approval card prints what the address means and the user chooses. What the
- * user cannot see is that `169.254.169.254` is not a website, or that
- * `192.168.1.1` is their own router, so that is what this adds.
+ * **Two jobs, and neither is a blanket gate.** The founder's decision (D49p) is
+ * that the user decides where Plato may go — a local dev server included — so a
+ * URL the user was shown and approved is never refused on its address; the card
+ * merely PRINTS what the address means. What this DOES refuse is a **redirect**
+ * hop onto such an address, because a hop was chosen by a page rather than by
+ * the user. That work lives in `execute.ts`; see the redirect loop.
  *
  * **Literal only.** A hostname that RESOLVES to a private address is not caught,
  * because that needs a DNS lookup; the same class of limitation as the lexical
@@ -168,30 +142,4 @@ export function isPrivateHostname(host: string): boolean {
   if (a === 192 && b === 168) return true;
   if (a === 169 && b === 254) return true; // link-local, incl. cloud metadata
   return false;
-}
-
-/**
- * The allow/deny lists, applied to every hop.
- *
- * Deny wins over allow: a user who wrote both meant to exclude that host, and
- * silently including it because it also matched the allow list would be the
- * worse reading. Both match the host itself or a dot-suffix of it, so `*.x.com`
- * is expressible as `x.com` without a wildcard syntax to get wrong.
- */
-export function checkHost(
-  host: string,
-  allow: readonly string[],
-  deny: readonly string[],
-): string | null {
-  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
-  const matches = (list: readonly string[]): boolean =>
-    list.some((raw) => {
-      const e = raw.trim().toLowerCase().replace(/^\*?\.?/, '');
-      return e.length > 0 && (h === e || h.endsWith(`.${e}`));
-    });
-  if (matches(deny)) return `${host} is on the blocked-domain list`;
-  if (allow.length > 0 && !matches(allow)) {
-    return `${host} is not on the allowed-domain list`;
-  }
-  return null;
 }

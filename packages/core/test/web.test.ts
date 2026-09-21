@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  checkHost,
   hostOf,
   htmlToText,
   isPrivateHostname,
   isTextualContentType,
-  sameSite,
 } from '../src/tools/web.js';
 import { executeTool } from '../src/tools/execute.js';
 
@@ -14,36 +12,6 @@ import { executeTool } from '../src/tools/execute.js';
  * about what it refuses as much as what it returns. Nothing here touches the
  * network: the HTTP client is injected.
  */
-
-describe('sameSite (D49p)', () => {
-  // The point of the rule is to keep the approval card for a CHANGE OF HOST,
-  // not to make ordinary navigation clicky. These are the hops that must not
-  // cost a card.
-  it('treats a bare www and an https upgrade as the same site', () => {
-    expect(sameSite('https://example.com/a', 'https://www.example.com/b')).toBe(true);
-    expect(sameSite('https://www.example.com/a', 'https://example.com/b')).toBe(true);
-    expect(sameSite('http://example.com/a', 'https://example.com/b')).toBe(true);
-  });
-
-  it('asks for a different host, a different port, or a downgrade', () => {
-    expect(sameSite('https://example.com/a', 'https://other.com/b')).toBe(false);
-    expect(sameSite('https://example.com/a', 'https://example.com:8443/b')).toBe(false);
-    // An https hop must not be answerable in clear text.
-    expect(sameSite('https://example.com/a', 'http://example.com/b')).toBe(false);
-  });
-
-  // A subdomain may be a different server, and user-content subdomains are
-  // common — treating one as the approved site hands a stranger someone else's
-  // consent. It asks.
-  it('asks for a subdomain, and is not fooled by a suffix that is not one', () => {
-    expect(sameSite('https://example.com/a', 'https://docs.example.com/b')).toBe(false);
-    expect(sameSite('https://example.com/a', 'https://notexample.com/b')).toBe(false);
-  });
-
-  it('asks rather than guessing when a URL does not parse', () => {
-    expect(sameSite('https://example.com/a', 'nonsense')).toBe(false);
-  });
-});
 
 describe('hostOf (D49p)', () => {
   it('reads the hostname, and returns empty for junk', () => {
@@ -169,26 +137,6 @@ describe('isPrivateHostname (D49p)', () => {
   });
 });
 
-describe('checkHost (D49p)', () => {
-  it('allows everything when neither list is set', () => {
-    expect(checkHost('example.com', [], [])).toBeNull();
-  });
-
-  it('restricts to the allow list when one is set, matching subdomains', () => {
-    expect(checkHost('docs.example.com', ['example.com'], [])).toBeNull();
-    expect(checkHost('example.com', ['example.com'], [])).toBeNull();
-    expect(checkHost('example.com.evil.net', ['example.com'], [])).not.toBeNull();
-    expect(checkHost('other.com', ['example.com'], [])).not.toBeNull();
-  });
-
-  // Deny wins: a user who wrote both meant to exclude that host, and including
-  // it because it also matched the allow list would be the worse reading.
-  it('lets deny beat allow', () => {
-    const reason = checkHost('evil.example.com', ['example.com'], ['evil.example.com']);
-    expect(reason).toContain('blocked-domain');
-  });
-});
-
 // ---------------------------------------------------------------------------
 
 const res = (
@@ -247,27 +195,30 @@ describe('web_fetch (D49p)', () => {
     expect(seen[0]!.init.redirect).toBe('manual');
   });
 
-  // D49p: the tool fetches ONE hop and hands the next one back. Following it
-  // here would mean the URL the user approved is not the URL fetched; the loop
-  // owns the walk because only the loop can ask. See the loop tests.
-  it('returns a redirect as the next hop instead of following it', async () => {
-    const { fn, seen } = fakeFetch(() =>
-      res('', { status: 302, headers: { location: 'https://other.example.com/new' } }),
+  // D49p: redirects ARE followed, but by this loop rather than by the HTTP
+  // layer — the walk has to be ours, or no hop gets validated at all.
+  it('follows a redirect to another public host', async () => {
+    const { fn, seen } = fakeFetch((url) =>
+      url.includes('/old')
+        ? res('', { status: 302, headers: { location: 'https://other.example.com/new' } })
+        : res('arrived', { headers: { 'content-type': 'text/plain' } }),
     );
     const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/old');
     expect(r.ok).toBe(true);
-    expect(r.redirect).toBe('https://other.example.com/new');
-    // Exactly one request: the hop is the caller's decision.
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.url).toBe('https://example.com/old');
+    expect(r.output).toContain('arrived');
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.url).toBe('https://other.example.com/new');
   });
 
   it('resolves a relative Location against the URL it came from', async () => {
-    const { fn } = fakeFetch(() =>
-      res('', { status: 301, headers: { location: '/moved' } }),
+    const { fn, seen } = fakeFetch((url) =>
+      url.endsWith('/moved')
+        ? res('moved ok', { headers: { 'content-type': 'text/plain' } })
+        : res('', { status: 301, headers: { location: '/moved' } }),
     );
     const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/a/b');
-    expect(r.redirect).toBe('https://example.com/moved');
+    expect(r.ok).toBe(true);
+    expect(seen[1]!.url).toBe('https://example.com/moved');
   });
 
   it('reports a redirect with no Location header as a failure', async () => {
@@ -278,13 +229,47 @@ describe('web_fetch (D49p)', () => {
   });
 
   /**
-   * The founder's decision (D49p): the user decides where Plato may go. A local
-   * dev server is a resource a user may genuinely want read, so nothing here
-   * refuses it — the card reports what the address is instead. The refusal of a
-   * dangerous hop belongs to the walk, and it is a REFUSAL BY THE USER, not by
-   * the code.
+   * THE hole the redirect rule closes. A hop is chosen by a PAGE, not by the
+   * user — so a hop onto a machine of their own is refused outright, while a URL
+   * they were SHOWN and approved is never refused on its address. That asymmetry
+   * is the whole decision: consent covers what the user saw.
    */
-  it('fetches a loopback or private address: the user decides, not the code', async () => {
+  it('refuses a redirect into a private address, and never sends that request', async () => {
+    const { fn, seen } = fakeFetch(() =>
+      res('', { status: 302, headers: { location: 'http://169.254.169.254/latest/meta-data/' } }),
+    );
+    const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/innocent');
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('169.254.169.254');
+    // The point: the second request was never sent.
+    expect(seen).toHaveLength(1);
+  });
+
+  it('refuses a redirect to a loopback address too', async () => {
+    for (const to of ['http://localhost:8080/x', 'http://127.0.0.1/x', 'http://192.168.1.1/x']) {
+      const { fn, seen } = fakeFetch(() => res('', { status: 302, headers: { location: to } }));
+      const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/a');
+      expect(r.ok, to).toBe(false);
+      expect(seen, to).toHaveLength(1);
+    }
+  });
+
+  it('gives up on a redirect chain instead of walking it forever', async () => {
+    let n = 0;
+    const { fn, seen } = fakeFetch(() => res('', { status: 302, headers: { location: `https://h${n++}.example.com/x` } }));
+    const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/loop');
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('too many redirects');
+    expect(seen.length).toBeLessThanOrEqual(6);
+  });
+
+  /**
+   * The founder's decision (D49p): the user decides where Plato may go. A local
+   * dev server is a resource a user may genuinely want read, so a URL they were
+   * shown and approved is never refused on its address — the card reports what
+   * the address is instead. Only a REDIRECT hop is refused.
+   */
+  it('fetches a loopback or private address when the user asked for it', async () => {
     for (const url of ['http://localhost:8080/admin', 'http://127.0.0.1/', 'http://10.0.0.5/']) {
       const { fn, seen } = fakeFetch(() => res('local', { headers: { 'content-type': 'text/plain' } }));
       const r = await fetchWeb(fn as unknown as typeof fetch, url);
@@ -292,22 +277,6 @@ describe('web_fetch (D49p)', () => {
       expect(r.output, url).toContain('local');
       expect(seen, url).toHaveLength(1);
     }
-  });
-
-  it('applies the domain lists to the FIRST hop too', async () => {
-    const { fn, seen } = fakeFetch(() => res('ok', { headers: { 'content-type': 'text/plain' } }));
-    const blocked = await fetchWeb(fn as unknown as typeof fetch, 'https://evil.com/x', {
-      netDeny: ['evil.com'],
-    });
-    expect(blocked.ok).toBe(false);
-    expect(blocked.output).toContain('blocked-domain');
-    expect(seen).toHaveLength(0);
-
-    const notAllowed = await fetchWeb(fn as unknown as typeof fetch, 'https://other.com/x', {
-      netAllow: ['example.com'],
-    });
-    expect(notAllowed.ok).toBe(false);
-    expect(notAllowed.output).toContain('allowed-domain');
   });
 
   it('refuses a non-http scheme and a non-absolute URL', async () => {
@@ -331,17 +300,6 @@ describe('web_fetch (D49p)', () => {
     const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/missing');
     expect(r.ok).toBe(false);
     expect(r.output).toContain('404');
-  });
-
-  it('gives up on a redirect loop instead of following it forever', async () => {
-    const { fn, seen } = fakeFetch((url) =>
-      res('', { status: 302, headers: { location: url } }),
-    );
-    const r = await fetchWeb(fn as unknown as typeof fetch, 'https://example.com/loop');
-    // The tool no longer loops at all — it cannot. The hop cap is the walk's,
-    // and the loop tests pin it.
-    expect(r.redirect).toBe('https://example.com/loop');
-    expect(seen).toHaveLength(1);
   });
 
   it('caps a very large page', async () => {

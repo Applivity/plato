@@ -5,9 +5,9 @@
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import { ShellManager } from '../tools/background.js';
-import { checkHost, hostOf, isPrivateHostname, sameSite } from '../tools/web.js';
+import { hostOf, isPrivateHostname } from '../tools/web.js';
 import type { ImageMime } from '../providers/types.js';
-import type { ToolArgs, ToolContext, ToolOutcome } from '../tools/execute.js';
+import type { ToolArgs } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
 import type {
   CanonicalContent,
@@ -58,12 +58,6 @@ export interface ApprovalRequest {
 }
 
 /**
- * D49p: how many redirects one `web_fetch` call may walk before giving up. The
- * walk is the loop's, so the cap lives here with it.
- */
-const MAX_REDIRECT_HOPS = 5;
-
-/**
  * D49p: the host an approval covers, when the tool contacts one.
  *
  * Every web_fetch approval carries a host — the first one as much as a redirect
@@ -75,37 +69,6 @@ function approvalHost(tool: string, args: ToolArgs): string | undefined {
   if (tool !== 'web_fetch') return undefined;
   const url = args['url'];
   return typeof url === 'string' ? hostOf(url) : undefined;
-}
-
-/**
- * D49p: refuses a URL the domain lists forbid BEFORE the user is asked to
- * approve it.
- *
- * Asking first showed a card for a request that could never be sent — the
- * executor applied the same lists and refused it immediately afterwards. A card
- * that cannot be acted on is worse than no card: it teaches the user that
- * clicking through approval cards has no consequence, which is precisely the
- * habit that makes every OTHER card worthless.
- *
- * **The courtesy, not the guarantee** — `web_fetch` applies the same lists
- * itself, so a URL that slipped past this check still cannot be fetched. Same
- * split as the containment check (D49k): the executor is the guarantee, the loop
- * is what saves the user a pointless decision.
- */
-function netRefusal(
-  opts: LoopOptions,
-  tool: string,
-  args: ToolArgs,
-): string | null {
-  if (tool !== 'web_fetch' || opts.net === undefined) return null;
-  const url = args['url'];
-  if (typeof url !== 'string') return null;
-  const host = hostOf(url);
-  if (host === '') return null;
-  const reason = checkHost(host, opts.net.allow, opts.net.deny);
-  // Worded exactly as the executor words it, so the two are indistinguishable
-  // to the model and to a test.
-  return reason === null ? null : `refused: ${reason}`;
 }
 
 /**
@@ -227,83 +190,6 @@ async function buildApprovalPreview(
   return JSON.stringify(args).slice(0, 800);
 }
 
-/**
- * D49p: fetches a URL, following redirects ONE AT A TIME, and asking the user
- * again whenever a hop lands on a different host.
- *
- * The walk lives HERE rather than in the tool because this is the only layer
- * that can ask: the executor cannot reach the user, and an approval that arrives
- * after the request has gone is not consent. One sentence is the whole policy —
- * **an approval covers one host, and a new host needs a new approval** — and
- * that closes the redirect hole as a side effect, since a redirect is the one
- * place the ordinary per-call card would not have fired.
- *
- * A same-site hop does not ask (`sameSite`): a bare `www.` and an http → https
- * upgrade are the site the user already approved, and asking for those would
- * make ordinary navigation clicky for no gain.
- */
-async function runWebFetch(
-  opts: LoopOptions,
-  args: ToolArgs,
-  ctx: ToolContext,
-  bus: AgentBus,
-  runId: string,
-): Promise<ToolOutcome> {
-  let current = args;
-  for (let hop = 0; ; hop++) {
-    const out = await executeTool(opts.root, 'web_fetch', current, ctx);
-    if (out.redirect === undefined) {
-      return out;
-    }
-    if (hop >= MAX_REDIRECT_HOPS) {
-      return {
-        ok: false,
-        output: `too many redirects (more than ${MAX_REDIRECT_HOPS})`,
-      };
-    }
-    const from = typeof current['url'] === 'string' ? current['url'] : '';
-    const next = out.redirect;
-    const nextArgs: ToolArgs = { url: next };
-    // Before the card, on a hop as much as on the first URL: a host the domain
-    // lists forbid must not produce an approval the user cannot act on.
-    const hopRefusal = netRefusal(opts, 'web_fetch', nextArgs);
-    if (hopRefusal !== null) {
-      return { ok: false, output: hopRefusal };
-    }
-    if (sameSite(from, next)) {
-      bus.emit({
-        type: 'notice',
-        runId,
-        text: `[plato] followed a redirect to ${next}`,
-      });
-    } else {
-      const preview = await buildApprovalPreview(
-        opts.root,
-        'web_fetch',
-        nextArgs,
-        from,
-      );
-      bus.emit({ type: 'approval-requested', runId, tool: 'web_fetch', preview });
-      const allowed = await opts.approve({
-        tool: 'web_fetch',
-        args: nextArgs,
-        preview,
-        host: approvalHost('web_fetch', nextArgs),
-      });
-      bus.emit({
-        type: 'approval-decided',
-        runId,
-        tool: 'web_fetch',
-        allowed,
-      });
-      if (!allowed) {
-        return { ok: false, output: `user declined the redirect to ${next}` };
-      }
-    }
-    current = nextArgs;
-  }
-}
-
 export interface LoopOptions {
   root: string;
   task: string;
@@ -329,21 +215,6 @@ export interface LoopOptions {
    * the transcript, so base64 in it would land in every run's JSONL.
    */
   images?: { mime: ImageMime; data: string }[];
-  /**
-   * D49p: enforced by `web_fetch` on every hop of the redirect walk. `deny` wins
-   * over `allow`, and an empty `allow` list permits any host — private and
-   * loopback addresses included, since the user decides where Plato may go. The
-   * address is reported on the approval card instead of being refused.
-   * `fetchImpl` is injected so a test can drive the whole walk offline.
-   */
-  net?: {
-    allow: readonly string[];
-    deny: readonly string[];
-    fetchImpl?: (
-      url: string,
-      init: RequestInit,
-    ) => Promise<Response>;
-  };
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
@@ -853,7 +724,6 @@ async function runLoop(
       // guarantee.
       const refusal =
         containmentRefusal(opts.root, name, args) ??
-        netRefusal(opts, name, args) ??
         secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
       if (refusal !== null) {
         results.push({
@@ -970,23 +840,10 @@ async function runLoop(
             };
           }
         }
-        const ctx: ToolContext = {
+        return executeTool(opts.root, name, args, {
           shells,
           signal: ctrl.signal,
-          ...(opts.net
-            ? {
-                netAllow: opts.net.allow,
-                netDeny: opts.net.deny,
-                ...(opts.net.fetchImpl ? { fetchImpl: opts.net.fetchImpl } : {}),
-              }
-            : {}),
-        };
-        // D49p: web_fetch walks its own redirects, because the walk needs the
-        // approval callback this function has and the executor does not.
-        if (name === 'web_fetch') {
-          return runWebFetch(opts, args, ctx, bus, runId);
-        }
-        return executeTool(opts.root, name, args, ctx);
+        });
       })();
       bus.emit({
         type: 'tool-event',

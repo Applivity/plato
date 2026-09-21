@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-20)
+## Current state (verified 2026-09-21)
 
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
@@ -29,30 +29,31 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49p (amended 2026-09-21)** — Phases 0–5 of the agent
+- HEAD = **M5.0 / D49p (amended twice on 2026-09-21)** — Phases 0–5 of the agent
   capability plan are **complete** (roadmap in DECISIONS **D49**). Push stays
   with the founder. Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
-  `auto` included — egress cannot be un-sent. **An approval covers ONE HOST.**
-  `web_fetch` fetches exactly **one hop** and returns the next; the **loop** walks
-  the redirects and asks again whenever the host changes (`runWebFetch`), because
-  the loop is the only layer that can ask. A same-site hop (bare `www.`,
-  `http → https`) does not ask; a **subdomain does**. Session approval is keyed
-  **`tool:host`**, not on the tool — keying it on the tool let "approve all
-  web_fetch" cover every later host. **No address is refused on its own:** a
-  private, loopback or link-local address is **labelled on the card** (including
-  the cloud-metadata address) and **the user decides** — a local dev server is
-  therefore reachable. The classification is literal, so a hostname that
-  *resolves* privately is not identified. **Script and style bodies are removed
-  WITH their contents** — tags alone would leave a page's JavaScript in the
-  prompt as prose. **`web_search` does not exist and must not be added without
-  reading D49p**: Anthropic's server-side search needs no key, but it runs inside
-  the API call, so **no approval card can fire** — it would break the always-ask
-  rule. The `plato.net.allow`/`net.deny` lists are enforced **before the card**,
-  on the first URL and on every hop — a card the user could not act on would teach
-  them that approval clicks do not matter. They still have **no panel UI** (D49q,
-  at the top of the PROGRESS backlog).
+  `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
+  session approval is keyed **`tool:host`**, not on the tool, so "approve all
+  requests to `docs.example.com` this session" cannot widen to every later host
+  (keyed on the tool it could — a hole that already existed). **Redirects are
+  followed, and every hop is validated.** The request is issued with
+  `redirect: 'manual'` so the HTTP layer cannot follow anything itself — the walk
+  is ours, bounded at 5 hops, or no hop gets checked. **A hop onto a private,
+  loopback or link-local address is REFUSED**, while **a URL the user was shown
+  and approved is never refused on its address** — the card prints what the
+  address means instead. That asymmetry is the decision: a hop is chosen by a
+  *page*, so consent does not cover it; consent covers what the user saw. **The
+  check is literal**, so a *name* that resolves to a private address is followed —
+  recorded, not implied. **The domain allow/deny lists were DELETED** (2026-09-21):
+  they could only ever subtract, because `web_fetch` always asks, and other agents
+  ship no such UI. Do not re-add them without reading D49p. **Script and style
+  bodies are removed WITH their contents** — tags alone would leave a page's
+  JavaScript in the prompt as prose. **`web_search` does not exist and must not be
+  added without reading D49p**: Anthropic's server-side search needs no key, but
+  it runs inside the API call, so **no approval card can fire** — it would break
+  the always-ask rule.
 - **Images can be attached, and the rules around them are not obvious (D49n/o).**
   A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
   wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the
@@ -302,7 +303,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 434/434 vitest in packages/core (32 files)
+2. `pnpm -r test` — 424/424 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
@@ -322,15 +323,23 @@ used to claim.
 ## Queued next work (in priority order — pick up here)
 
 **The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** Phases 0–5 are done (D49a–g, D49i–p —
-**D49h was built and then removed the same day**; do not re-add a run budget
-without reading why it went). Phase 3 opened by repairing a fault the plan did
-not anticipate — **no tool enforced workspace containment** (D49k). **Next is
-Phase 6, task coherence** — a `todo_write` tool and a panel. **`web_search` was
-deliberately deferred (D49p)**: it needs a backend decision, and the convenient
-option — Anthropic's server-side search — bypasses the approval card entirely.
-**D49q is the outstanding piece of phase 5:** `plato.net.allow` and `plato.net.deny`
-are enforced but have no panel UI, which does not yet meet D45c's UI-first rule. **Subagents are deliberately deferred and must not be added without
+the roadmap — do not restate it here.** **Phases 0–5 are DONE.** Phase 3 opened by
+repairing a fault the plan did not anticipate — **no tool enforced workspace
+containment** (D49k). **Next is Phase 6, task coherence** — a `todo_write` tool and
+a panel. **`web_search` was deliberately deferred (D49p)**: it needs a backend
+decision, and the convenient option — Anthropic's server-side search — bypasses
+the approval card entirely. **D49q is closed as *not wanted***: `plato.net.allow`
+and `plato.net.deny` were deleted on 2026-09-21 rather than given a UI, because
+`web_fetch` always asks and an allow list could therefore only ever subtract.
+
+**Two items in this plan were built and then removed on a founder challenge —
+read before rebuilding either.** **D49h**, a run budget, and **the domain
+allow/deny lists**. Both were plan items nobody had asked for and neither repaired
+a demonstrated fault. The pattern is recorded in DECISIONS D49: a plan's items are
+not all the same kind, so separate what *repairs a demonstrated fault* from what
+*adds a capability*, and say which is which.
+
+**Subagents are deliberately deferred and must not be added without
 amending the one-worker lock (D45a-3) in the open.**
 
 The items below predate that plan and remain open:
