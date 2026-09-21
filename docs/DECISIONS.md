@@ -2022,7 +2022,7 @@ classification, the domain lists, and the tool end to end against an **injected*
 fetch (no test touches the network). Plus a modes test pinning `web_fetch` to
 `ask` in all four modes, six new loop tests covering the walk (per-host ask,
 same-site silence, the metadata warning, a local dev server reached, the hop cap,
-the deny list on a hop), and a new **`approval` render suite** (11 assertions) —
+the deny list on a hop), and a new **`approval` render suite** (13 assertions) —
 the first render coverage the approval card has ever had. Falsified four times:
 removing the declined-hop guard sends the second request; dropping the metadata
 warning branch silences the card; making subdomains same-site stops the ask

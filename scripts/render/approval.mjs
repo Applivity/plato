@@ -21,10 +21,14 @@ import { check, page, S, finish, checkPageClean } from './plib.mjs';
   await p.waitForTimeout(250);
 
   const r = await p.evaluate(() => {
-    const card = document.querySelector('.card:last-of-type') || document.body;
-    const buttons = [...card.querySelectorAll('button')].map((b) => b.textContent);
-    return { buttons, text: card.textContent };
+    const card = document.querySelector('.card:last-of-type');
+    const buttons = [...(card ? card.querySelectorAll('button') : [])]
+      .map((b) => b.textContent);
+    return { found: !!card, buttons, text: card ? card.textContent : '' };
   });
+  // No body fallback: falling back to document.body would let every assertion
+  // below pass on the composer's own chrome if the card never rendered.
+  check('the approval card rendered', r.found, r);
   check('the card offers three choices', r.buttons.length === 3, r.buttons);
   check('the session button names the HOST', /\bexample\.com\b/.test(r.buttons.join('|')), r.buttons);
   check('the session button does not offer the whole tool',
@@ -97,9 +101,12 @@ import { check, page, S, finish, checkPageClean } from './plib.mjs';
       + ' A request here can read this machine\'s cloud credentials.',
   });
   await p.waitForTimeout(250);
-  const text = await p.evaluate(() =>
-    (document.querySelector('.card:last-of-type') || document.body).textContent);
-  check('the metadata warning reaches the user', /cloud metadata address/.test(text), text);
+  const r = await p.evaluate(() => {
+    const card = document.querySelector('.card:last-of-type');
+    return { found: !!card, text: card ? card.textContent : '' };
+  });
+  check('the warning card rendered', r.found, r);
+  check('the metadata warning reaches the user', /cloud metadata address/.test(r.text), r.text);
   checkPageClean(p, 'warning card');
   await p.close();
 }
