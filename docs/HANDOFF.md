@@ -54,6 +54,16 @@ are now only in PROGRESS.
   added without reading D49p**: Anthropic's server-side search needs no key, but
   it runs inside the API call, so **no approval card can fire** — it would break
   the always-ask rule.
+- **A tool result must answer a tool call, so compaction may not cut inside an
+  exchange (D49r).** `compactionSplit` sliced by COUNT alone, so a cut landing inside
+  a tool exchange stranded the results with no `tool_calls` above them — and a strict
+  server rejects that outright rather than guessing. **This killed the first real run**
+  (`openai HTTP 400: Messages with role 'tool' must be a response to a preceding
+  message with 'tool_calls'`). The cut now walks back until the kept tail can stand
+  alone, keeping fewer messages than asked. **Anthropic enforces the same rule**, so
+  this was never OpenAI-specific. **Related, open, and NOT fixed:** a model name
+  outside the catalog is assumed to hold only **8,192 tokens**, so compaction fires
+  very early for any LiteLLM group or custom model — see the PROGRESS backlog.
 - **Images can be attached, and the rules around them are not obvious (D49n/o).**
   A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
   wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the
@@ -303,7 +313,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 424/424 vitest in packages/core (32 files)
+2. `pnpm -r test` — 427/427 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.

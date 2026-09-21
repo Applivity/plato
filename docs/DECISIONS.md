@@ -2068,6 +2068,52 @@ needs a DNS lookup per hop **and** the connection pinned to the resolved address
 or the attacker simply answers differently the second time. Not built, and
 recorded rather than implied.
 
+**D49r — a tool result must answer a tool call, so compaction may not cut inside an
+exchange (M5.0, 0.25.0 — 2026-09-22).**
+
+**Found by the first real run, not by review.** Plato's first run on a real project
+(Solo, `edit`, the HCAD Android repo) died on its third request:
+
+```
+openai HTTP 400: Messages with role 'tool' must be a response to a preceding
+message with 'tool_calls'
+```
+
+**`compactionSplit` sliced the conversation by COUNT and nothing else.** When the cut
+landed inside a tool exchange, the kept tail began with tool RESULTS whose assistant
+message — the one carrying the `tool_calls` — had been folded into the summary. The
+request then contained a `tool` message with nothing above it to answer, and a strict
+server rejects that rather than guessing. **This is not an OpenAI-only fault:**
+Anthropic enforces the same rule for `tool_result` blocks, so the same cut would have
+broken there too. The invariant is a property of the message list, not of a wire
+format.
+
+**The fix walks the cut back** until the kept tail can stand alone, so compaction
+keeps FEWER messages than asked when structure demands it. A valid request matters
+more than hitting a target count — and the count was only ever a heuristic for *how
+much context to keep*, which a broken request keeps none of.
+
+**Reproduced before it was fixed.** The test was written against the unfixed split,
+sweeps EVERY keep count, and failed at exactly the counts that land inside an exchange
+— then passed once the cut walked back. That is the difference between fixing this and
+guessing at it.
+
+**What this exposes, and does NOT fix:** the run hit compaction on turn 3 because the
+model ref is a **LiteLLM group name** (`Auto-Act`), unknown to the catalog, so
+`shouldAutoCompact` fell back to `UNKNOWN_CONTEXT_FLOOR` = **8,192 tokens** and tripped
+at ~6,553. A DeepSeek-class model holds far more. So two faults compounded: compaction
+fired far too early, and until this entry every compaction produced an INVALID request
+rather than a shorter one. **The context-window gap is recorded in the PROGRESS backlog
+as an open decision** — trusting a `/models` payload was deliberately rejected because
+OpenRouter and LiteLLM routes report stale windows, so the answer is a product choice
+(a per-connection window field, a larger floor, or opt-in endpoint discovery), not a
+patch.
+
+**Lesson worth keeping:** three of the four traps in this adapter family were found by
+falsification, and this one was found by *running the thing*. A test suite proves what
+its author thought to assert; the first real run exercises the paths nobody wrote a
+test for. That is an argument for running Plato on real work far earlier than this.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

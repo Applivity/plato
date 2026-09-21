@@ -255,9 +255,25 @@ export function compactionSplit(
     return { older: [], keep: [] };
   }
   const k = Math.max(1, Math.min(keepRecent, messages.length - 1));
+  let start = messages.length - k;
+  // A message carrying tool results MUST be preceded by the assistant message
+  // that requested them. Slicing by count alone can cut inside a tool exchange
+  // and strand the results on their own — which a strict provider rejects
+  // outright. The first real run died on exactly this:
+  //   openai HTTP 400: Messages with role 'tool' must be a response to a
+  //   preceding message with 'tool_calls'
+  // So walk the cut back until the kept tail begins on something that can stand
+  // alone. Keeping FEWER messages than asked is the correct trade: a valid
+  // request matters more than hitting a target count.
+  while (
+    start > 0 &&
+    messages[start]!.content.some((b) => b.type === 'tool_result')
+  ) {
+    start -= 1;
+  }
   return {
-    older: messages.slice(0, messages.length - k),
-    keep: messages.slice(messages.length - k),
+    older: messages.slice(0, start),
+    keep: messages.slice(start),
   };
 }
 

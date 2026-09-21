@@ -291,3 +291,81 @@ describe('shouldAutoCompact (D37a trip guard)', () => {
     expect(shouldAutoCompact(800, 1000, 0.8)).toBe(true);
   });
 });
+
+/**
+ * Reproduces the first real-run crash (2026-09-22, DeepSeek via LiteLLM):
+ *
+ *   openai HTTP 400: Messages with role 'tool' must be a response to a
+ *   preceding message with 'tool_calls'
+ *
+ * `compactionSplit` is a blind slice by count. When the cut lands inside a tool
+ * exchange, the kept tail begins with tool RESULTS whose assistant message
+ * (carrying the `tool_calls`) was summarised away — so the request has a
+ * `role:'tool'` message with nothing to answer. Anthropic has the same rule for
+ * `tool_result` blocks, so this is not an OpenAI-only fault.
+ */
+describe('compactionSplit keeps tool exchanges whole', () => {
+  const toolUse = (id: string, text = ''): CanonicalMessage => ({
+    role: 'assistant',
+    content: [
+      ...(text ? [{ type: 'text' as const, text }] : []),
+      { type: 'tool_use' as const, id, name: 'read_file', input: { path: 'x' } },
+    ],
+  });
+  const toolResults = (...ids: string[]): CanonicalMessage => ({
+    role: 'user',
+    content: ids.map((id) => ({
+      type: 'tool_result' as const,
+      toolUseId: id,
+      content: 'ok',
+      isError: false,
+    })),
+  });
+
+  /** The wire invariant: a run of tool results must answer a preceding tool_use. */
+  function orphanedToolResults(msgs: readonly CanonicalMessage[]): number {
+    let prevToolUse = false;
+    let prevResults = false;
+    let orphans = 0;
+    for (const m of msgs) {
+      const hasResults = m.content.some((b) => b.type === 'tool_result');
+      const hasToolUse = m.content.some((b) => b.type === 'tool_use');
+      if (hasResults && !prevToolUse && !prevResults) orphans += 1;
+      prevResults = hasResults;
+      prevToolUse = hasToolUse;
+    }
+    return orphans;
+  }
+
+  /** The shape the failing run had: two completed exchanges, then a third. */
+  const conversation = (): CanonicalMessage[] => [
+    user('review these three files'),
+    toolUse('a1', 'I will start by reading them'),
+    toolResults('a1'),
+    toolUse('b1'),
+    toolResults('b1'),
+  ];
+
+  it('never leaves an orphaned tool result, at ANY keep count', () => {
+    const msgs = conversation();
+    for (let keep = 1; keep < msgs.length; keep++) {
+      const { keep: tail } = compactionSplit(msgs, keep);
+      expect(orphanedToolResults(tail), `keepRecent=${keep}`).toBe(0);
+    }
+  });
+
+  it('pulls the owning assistant message back in rather than dropping it', () => {
+    // keepRecent=1 would otherwise strand the last tool results on their own.
+    const { keep } = compactionSplit(conversation(), 1);
+    expect(keep[0]!.role).toBe('assistant');
+    expect(orphanedToolResults(keep)).toBe(0);
+  });
+
+  it('still splits somewhere sensible when the list has no tool traffic', () => {
+    const plain = [user('one'), asst('two'), user('three'), asst('four')];
+    const { older, keep } = compactionSplit(plain, 2);
+    expect(older).toHaveLength(2);
+    expect(keep).toHaveLength(2);
+    expect(keep[0]!.role).toBe('user');
+  });
+});
