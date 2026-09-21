@@ -85,7 +85,7 @@
           "type": "array",
           "items": { "type": "string" },
           "default": [],
-          "description": "D49p: hosts web_fetch may reach. Empty means any public host. A host matches itself and its subdomains, so example.com also allows docs.example.com. Private, loopback and link-local addresses are always refused."
+          "description": "D49p: hosts web_fetch may reach. Empty means any host, a local dev server included — the user decides, and no address is refused on its own. A host matches itself and its subdomains, so example.com also allows docs.example.com. Every request asks for approval, and the card warns when an address is loopback, private or link-local."
         },
         "plato.net.deny": {
           "type": "array",

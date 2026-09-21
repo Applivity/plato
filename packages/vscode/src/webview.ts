@@ -3977,10 +3977,14 @@ export function chatHtml(): string {
 
     const actions = document.createElement('div');
     actions.className = 'actions';
+    // D49p: an approval covers one host, so the card says which. "Approve all
+    // web_fetch" would read as covering every future host, which is exactly
+    // what it must not do.
+    const what = typeof m.host === 'string' && m.host ? m.host : m.tool;
     const yes = document.createElement('button');
     yes.textContent = 'Allow once';
     const all = document.createElement('button');
-    all.textContent = 'Approve all ' + m.tool + ' for this session';
+    all.textContent = 'Approve all requests to ' + what + ' this session';
     all.className = 'all';
     const no = document.createElement('button');
     no.className = 'no';
@@ -3995,10 +3999,14 @@ export function chatHtml(): string {
       addMsg('you', 'You', v ? '[allowed]' : '[denied]');
     }
     function decideAll() {
-      vsapi.postMessage({ type: 'approve-all', tool: m.tool });
+      vsapi.postMessage({
+        type: 'approve-all',
+        tool: m.tool,
+        sessionKey: m.sessionKey,
+      });
       actions.remove();
       h.textContent = h.textContent.replace('?', ' — approved for session');
-      addMsg('you', 'You', '[approved all ' + m.tool + ' for this session]');
+      addMsg('you', 'You', '[approved all requests to ' + what + ' this session]');
     }
     actions.appendChild(yes);
     actions.appendChild(all);

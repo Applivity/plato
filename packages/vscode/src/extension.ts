@@ -424,12 +424,19 @@ class ChatHost {
           return;
         }
         if (m.type === 'approve-all' && typeof m.tool === 'string') {
-          this.sessionApprovals.add(m.tool);
+          // D49p: the webview echoes back the key the card was opened with, so a
+          // host-scoped approval is remembered against that host and not the
+          // tool as a whole.
+          const key =
+            typeof m.sessionKey === 'string' && m.sessionKey.length > 0
+              ? m.sessionKey
+              : m.tool;
+          this.sessionApprovals.add(key);
           // The waiting card must resolve too — the loop is blocked on it.
           const resolve = this.pendingApproval;
           this.pendingApproval = null;
           resolve?.(true);
-          this.send('notice', `${m.tool} approved for this session`);
+          this.send('notice', `${key} approved for this session`);
           return;
         }
         if (m.type === 'newChat') {
@@ -2960,13 +2967,26 @@ class ChatHost {
     return this.promptCard(req);
   }
 
+  /**
+   * D49p: what a session approval is remembered against. For a tool that
+   * contacts a host, that is the tool AND the host — an approval covers one
+   * host, so "approve all" must not silently cover a different one reached
+   * later by a redirect.
+   */
+  private approvalKey(req: ApprovalRequest): string {
+    return req.host !== undefined && req.host.length > 0
+      ? `${req.tool}:${req.host}`
+      : req.tool;
+  }
+
   private promptCard(req: ApprovalRequest): Promise<boolean> {
-    // Check if this tool is already approved for this session
-    if (this.sessionApprovals.has(req.tool)) {
-      this.send('notice', `${req.tool} auto-approved (session approval)`);
+    const key = this.approvalKey(req);
+    // Check if this tool (and host) is already approved for this session
+    if (this.sessionApprovals.has(key)) {
+      this.send('notice', `${key} auto-approved (session approval)`);
       return Promise.resolve(true);
     }
-    
+
     this.push({
       k: 'card-open',
       tool: req.tool,
@@ -2977,6 +2997,8 @@ class ChatHost {
       void this.panel.webview.postMessage({
         type: 'approval',
         tool: req.tool,
+        sessionKey: key,
+        ...(req.host !== undefined ? { host: req.host } : {}),
         preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
       });
     });

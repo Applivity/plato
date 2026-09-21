@@ -92,13 +92,50 @@ export function htmlToText(html: string): string {
   return s.trim();
 }
 
+/** The hostname of a URL, or '' when it does not parse. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+}
+
 /**
- * Refuses the addresses that make an approved URL a lever.
+ * True when a redirect stays on the same site, so it needs no fresh approval.
  *
- * The threat is not the URL the user sees — it is where that URL can go. A page
- * can instruct the model to fetch a local service or a cloud metadata endpoint,
- * and an approval card naming `http://example.com` says nothing about a redirect
- * to `169.254.169.254`.
+ * A leading `www.` is the same site under its canonical name, and `http` →
+ * `https` is an upgrade, so both pass without a card. Everything else asks. In
+ * particular a **subdomain is a different host** and therefore asks: it may be a
+ * different server, and user-content subdomains are common enough that treating
+ * them as the approved site would hand a stranger the consent given to someone
+ * else. A downgrade to `http` also asks, so an approved https hop cannot be
+ * answered in clear text.
+ */
+export function sameSite(a: string, b: string): boolean {
+  let ua: URL;
+  let ub: URL;
+  try {
+    ua = new URL(a);
+    ub = new URL(b);
+  } catch {
+    return false; // unparseable: ask rather than assume
+  }
+  const strip = (h: string): string =>
+    h.toLowerCase().replace(/^www\./, '').replace(/^\[|\]$/g, '');
+  if (strip(ua.hostname) !== strip(ub.hostname)) return false;
+  if (ua.port !== ub.port) return false;
+  return ub.protocol === 'https:' || ua.protocol === ub.protocol;
+}
+
+/**
+ * Classifies the addresses a user cannot judge from the URL alone.
+ *
+ * **This is a LABEL, not a gate.** The founder's decision (D49p) is that the
+ * user decides where Plato may go, so nothing here refuses anything — the
+ * approval card prints what the address means and the user chooses. What the
+ * user cannot see is that `169.254.169.254` is not a website, or that
+ * `192.168.1.1` is their own router, so that is what this adds.
  *
  * **Literal only.** A hostname that RESOLVES to a private address is not caught,
  * because that needs a DNS lookup; the same class of limitation as the lexical

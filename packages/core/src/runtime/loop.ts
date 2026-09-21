@@ -5,8 +5,9 @@
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import { ShellManager } from '../tools/background.js';
+import { hostOf, isPrivateHostname, sameSite } from '../tools/web.js';
 import type { ImageMime } from '../providers/types.js';
-import type { ToolArgs } from '../tools/execute.js';
+import type { ToolArgs, ToolContext, ToolOutcome } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
 import type {
   CanonicalContent,
@@ -48,6 +49,53 @@ export interface ApprovalRequest {
   args: ToolArgs;
   /** Human-readable preview for the approval card (diff for edits). */
   preview?: string;
+  /**
+   * D49p: the host this approval covers, when the tool contacts one. An
+   * approval covers ONE host — the shell keys its session approval on this, so
+   * "approve all" cannot silently cover a different host reached later.
+   */
+  host?: string;
+}
+
+/**
+ * D49p: how many redirects one `web_fetch` call may walk before giving up. The
+ * walk is the loop's, so the cap lives here with it.
+ */
+const MAX_REDIRECT_HOPS = 5;
+
+/**
+ * D49p: the host an approval covers, when the tool contacts one.
+ *
+ * Every web_fetch approval carries a host — the first one as much as a redirect
+ * hop. Keying only the redirect hops would leave the FIRST approval tool-wide,
+ * so "approve all" on the original URL would cover every later host, which is
+ * the hole this whole rule exists to close.
+ */
+function approvalHost(tool: string, args: ToolArgs): string | undefined {
+  if (tool !== 'web_fetch') return undefined;
+  const url = args['url'];
+  return typeof url === 'string' ? hostOf(url) : undefined;
+}
+
+/**
+ * D49p: what the user cannot see from a URL, printed on the approval card.
+ *
+ * A LABEL, never a gate — the founder's decision is that the user decides where
+ * Plato may go, so this adds the one fact the URL does not carry: whether the
+ * address reaches a machine of their own rather than the public internet.
+ */
+function addressWarning(host: string): string {
+  if (host === '169.254.169.254') {
+    return (
+      `\n\nWARNING: 169.254.169.254 is the cloud metadata address, not a ` +
+      `website. A request here can read this machine's cloud credentials.`
+    );
+  }
+  if (!isPrivateHostname(host)) return '';
+  return (
+    `\n\nWARNING: ${host} is a loopback, private or link-local address. It ` +
+    `reaches this computer or your local network, not the public internet.`
+  );
 }
 
 /**
@@ -59,13 +107,23 @@ async function buildApprovalPreview(
   root: string,
   tool: string,
   args: ToolArgs,
+  /** D49p: the URL this one is a redirect FROM, when it is a redirect hop. */
+  via?: string,
 ): Promise<string> {
   if (tool === 'web_fetch') {
     // D49p: the URL IS what leaves the machine, so it is what the user must see.
     // A generic argument dump would bury it; this puts it on its own line.
     const url = typeof args['url'] === 'string' ? args['url'] : '(no url)';
-    return `This sends a request to:\n\n  ${url}\n\nA request cannot be un-sent. ` +
-      `The page comes back as untrusted text — Plato will not follow instructions found in it.`;
+    const redirectNote =
+      via === undefined
+        ? ''
+        : `\n\n${via}\nredirected here. Approving sends a second request — to a ` +
+          `different host than the one you already approved.`;
+    return (
+      `This sends a request to:\n\n  ${url}${addressWarning(hostOf(url))}` +
+      `${redirectNote}\n\nA request cannot be un-sent. ` +
+      `The page comes back as untrusted text — Plato will not follow instructions found in it.`
+    );
   }
   if (tool === 'apply_diff' || tool === 'apply_patch') {
     // D49l: a multi-file patch previews EVERY file it touches. The whole safety
@@ -138,6 +196,76 @@ async function buildApprovalPreview(
   return JSON.stringify(args).slice(0, 800);
 }
 
+/**
+ * D49p: fetches a URL, following redirects ONE AT A TIME, and asking the user
+ * again whenever a hop lands on a different host.
+ *
+ * The walk lives HERE rather than in the tool because this is the only layer
+ * that can ask: the executor cannot reach the user, and an approval that arrives
+ * after the request has gone is not consent. One sentence is the whole policy —
+ * **an approval covers one host, and a new host needs a new approval** — and
+ * that closes the redirect hole as a side effect, since a redirect is the one
+ * place the ordinary per-call card would not have fired.
+ *
+ * A same-site hop does not ask (`sameSite`): a bare `www.` and an http → https
+ * upgrade are the site the user already approved, and asking for those would
+ * make ordinary navigation clicky for no gain.
+ */
+async function runWebFetch(
+  opts: LoopOptions,
+  args: ToolArgs,
+  ctx: ToolContext,
+  bus: AgentBus,
+  runId: string,
+): Promise<ToolOutcome> {
+  let current = args;
+  for (let hop = 0; ; hop++) {
+    const out = await executeTool(opts.root, 'web_fetch', current, ctx);
+    if (out.redirect === undefined) {
+      return out;
+    }
+    if (hop >= MAX_REDIRECT_HOPS) {
+      return {
+        ok: false,
+        output: `too many redirects (more than ${MAX_REDIRECT_HOPS})`,
+      };
+    }
+    const from = typeof current['url'] === 'string' ? current['url'] : '';
+    const next = out.redirect;
+    const nextArgs: ToolArgs = { url: next };
+    if (sameSite(from, next)) {
+      bus.emit({
+        type: 'notice',
+        runId,
+        text: `[plato] followed a redirect to ${next}`,
+      });
+    } else {
+      const preview = await buildApprovalPreview(
+        opts.root,
+        'web_fetch',
+        nextArgs,
+        from,
+      );
+      bus.emit({ type: 'approval-requested', runId, tool: 'web_fetch', preview });
+      const allowed = await opts.approve({
+        tool: 'web_fetch',
+        args: nextArgs,
+        preview,
+        host: approvalHost('web_fetch', nextArgs),
+      });
+      bus.emit({
+        type: 'approval-decided',
+        runId,
+        tool: 'web_fetch',
+        allowed,
+      });
+      if (!allowed) {
+        return { ok: false, output: `user declined the redirect to ${next}` };
+      }
+    }
+    current = nextArgs;
+  }
+}
 
 export interface LoopOptions {
   root: string;
@@ -165,10 +293,20 @@ export interface LoopOptions {
    */
   images?: { mime: ImageMime; data: string }[];
   /**
-   * D49p: enforced by `web_fetch` on every hop. `deny` wins over `allow`, and an
-   * empty `allow` list permits any public host.
+   * D49p: enforced by `web_fetch` on every hop of the redirect walk. `deny` wins
+   * over `allow`, and an empty `allow` list permits any host — private and
+   * loopback addresses included, since the user decides where Plato may go. The
+   * address is reported on the approval card instead of being refused.
+   * `fetchImpl` is injected so a test can drive the whole walk offline.
    */
-  net?: { allow: readonly string[]; deny: readonly string[] };
+  net?: {
+    allow: readonly string[];
+    deny: readonly string[];
+    fetchImpl?: (
+      url: string,
+      init: RequestInit,
+    ) => Promise<Response>;
+  };
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
@@ -710,7 +848,13 @@ async function runLoop(
         bus.emit({ type: 'tool-event', runId, tool: name, phase: 'requested', args });
         const preview = await buildApprovalPreview(opts.root, name, args);
         bus.emit({ type: 'approval-requested', runId, tool: name, preview });
-        allowed = await opts.approve({ tool: name, args, preview });
+        const host = approvalHost(name, args);
+        allowed = await opts.approve({
+          tool: name,
+          args,
+          preview,
+          ...(host !== undefined ? { host } : {}),
+        });
         bus.emit({ type: 'approval-decided', runId, tool: name, allowed });
         if (!allowed) {
           results.push({
@@ -788,11 +932,23 @@ async function runLoop(
             };
           }
         }
-        return executeTool(opts.root, name, args, {
+        const ctx: ToolContext = {
           shells,
           signal: ctrl.signal,
-          ...(opts.net ? { netAllow: opts.net.allow, netDeny: opts.net.deny } : {}),
-        });
+          ...(opts.net
+            ? {
+                netAllow: opts.net.allow,
+                netDeny: opts.net.deny,
+                ...(opts.net.fetchImpl ? { fetchImpl: opts.net.fetchImpl } : {}),
+              }
+            : {}),
+        };
+        // D49p: web_fetch walks its own redirects, because the walk needs the
+        // approval callback this function has and the executor does not.
+        if (name === 'web_fetch') {
+          return runWebFetch(opts, args, ctx, bus, runId);
+        }
+        return executeTool(opts.root, name, args, ctx);
       })();
       bus.emit({
         type: 'tool-event',
