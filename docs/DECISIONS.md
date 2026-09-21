@@ -2011,11 +2011,24 @@ wrapped in an explicit **untrusted** label, because a fetched page is input from
 stranger and the model must not read instructions in it as though they came from
 the user. No JavaScript executes: this is text extraction, not a browser.
 
-**The domain lists are enforced but have no panel UI yet (D49q).** `plato.net.allow`
-and `plato.net.deny` exist as settings and are enforced on every hop, `deny`
-winning over `allow`, with a host matching itself and its subdomains. **D45c says
-UI first, and this does not meet that** — it is config-only today, and both the
-setting description and the code say so rather than implying otherwise.
+**The domain lists are enforced BEFORE the approval card, and have no panel UI yet
+(D49q).** `plato.net.allow` and `plato.net.deny` exist as settings and are applied
+on every hop, `deny` winning over `allow`, with a host matching itself and its
+subdomains. **The check runs before the user is asked, on the first URL and on
+every redirect hop** *(added 2026-09-21)*. It used to run only in the executor,
+which is **after** the prompt — so a denied URL produced a card, the user decided,
+and the request was then refused anyway. **A card that cannot be acted on is worse
+than no card**: it teaches that clicking through approval cards has no consequence,
+which is precisely the habit that devalues every other one. The loop's refusal is
+worded identically to the executor's so the two are indistinguishable. **The
+executor remains the guarantee** — it applies the same lists itself, so a URL that
+slipped past the pre-check still cannot be fetched; the same courtesy/guarantee
+split as the containment check in D49k. **UI:** **D45c says UI first, and this does
+not meet that** — it is config-only today, and both the setting description and the
+code say so rather than implying otherwise. Recorded for later discussion at the top
+of the PROGRESS backlog with the open questions (one control or two; whether a host
+is typed or **promoted from a card just approved**; and that an empty allow list
+means *any host*, the opposite of what an empty list usually implies).
 
 **Verification.** `htmlToText`, the content-type allowlist, the address
 classification, the domain lists, and the tool end to end against an **injected**

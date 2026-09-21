@@ -49,8 +49,10 @@ are now only in PROGRESS.
   prompt as prose. **`web_search` does not exist and must not be added without
   reading D49p**: Anthropic's server-side search needs no key, but it runs inside
   the API call, so **no approval card can fire** — it would break the always-ask
-  rule. The `plato.net.allow`/`net.deny` lists are enforced but have **no panel
-  UI yet** (D49q).
+  rule. The `plato.net.allow`/`net.deny` lists are enforced **before the card**,
+  on the first URL and on every hop — a card the user could not act on would teach
+  them that approval clicks do not matter. They still have **no panel UI** (D49q,
+  at the top of the PROGRESS backlog).
 - **Images can be attached, and the rules around them are not obvious (D49n/o).**
   A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
   wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the

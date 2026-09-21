@@ -882,14 +882,56 @@ describe('web_fetch redirect walk (D49p)', () => {
 
   it('applies the deny list to a redirect hop, not just the first URL', async () => {
     const f = net(() => redirect('https://blocked.example.com/x'));
+    let asks = 0;
     const { p, lastReq } = fetchOnce('https://example.com/a');
     await runAgentLoop({
       ...BASE,
       provider: p,
       net: { allow: [], deny: ['blocked.example.com'], fetchImpl: f.fetchImpl },
-      approve: () => Promise.resolve(true),
+      approve: () => {
+        asks += 1;
+        return Promise.resolve(true);
+      },
     });
     expect(f.seen).toEqual(['https://example.com/a']);
     expect(toolResultText(lastReq())).toContain('blocked-domain');
+    // One card — for the URL the user chose. The blocked hop is refused by the
+    // config, so it must not raise a card the user could not act on.
+    expect(asks).toBe(1);
+  });
+
+  /**
+   * A card for a request the config forbids is worse than no card: it teaches
+   * the user that clicking through has no consequence, which devalues every
+   * other card. The refusal happens BEFORE the ask.
+   */
+  it('never asks about a URL the deny list forbids', async () => {
+    const f = net(() => page('should not be reached'));
+    const { p, lastReq } = fetchOnce('https://evil.example.com/x');
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      net: { allow: [], deny: ['evil.example.com'], fetchImpl: f.fetchImpl },
+      approve: () => {
+        throw new Error('the user must not be asked about a denied URL');
+      },
+    });
+    expect(f.seen).toEqual([]);
+    expect(toolResultText(lastReq())).toContain('blocked-domain');
+  });
+
+  it('never asks about a host outside a non-empty allow list', async () => {
+    const f = net(() => page('should not be reached'));
+    const { p, lastReq } = fetchOnce('https://other.com/x');
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      net: { allow: ['example.com'], deny: [], fetchImpl: f.fetchImpl },
+      approve: () => {
+        throw new Error('the user must not be asked about a non-allowed URL');
+      },
+    });
+    expect(f.seen).toEqual([]);
+    expect(toolResultText(lastReq())).toContain('allowed-domain');
   });
 });

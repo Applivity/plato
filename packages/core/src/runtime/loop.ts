@@ -5,7 +5,7 @@
 import { toolDeclarations } from '../tools/schemas.js';
 import { executeTool } from '../tools/execute.js';
 import { ShellManager } from '../tools/background.js';
-import { hostOf, isPrivateHostname, sameSite } from '../tools/web.js';
+import { checkHost, hostOf, isPrivateHostname, sameSite } from '../tools/web.js';
 import type { ImageMime } from '../providers/types.js';
 import type { ToolArgs, ToolContext, ToolOutcome } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
@@ -75,6 +75,37 @@ function approvalHost(tool: string, args: ToolArgs): string | undefined {
   if (tool !== 'web_fetch') return undefined;
   const url = args['url'];
   return typeof url === 'string' ? hostOf(url) : undefined;
+}
+
+/**
+ * D49p: refuses a URL the domain lists forbid BEFORE the user is asked to
+ * approve it.
+ *
+ * Asking first showed a card for a request that could never be sent — the
+ * executor applied the same lists and refused it immediately afterwards. A card
+ * that cannot be acted on is worse than no card: it teaches the user that
+ * clicking through approval cards has no consequence, which is precisely the
+ * habit that makes every OTHER card worthless.
+ *
+ * **The courtesy, not the guarantee** — `web_fetch` applies the same lists
+ * itself, so a URL that slipped past this check still cannot be fetched. Same
+ * split as the containment check (D49k): the executor is the guarantee, the loop
+ * is what saves the user a pointless decision.
+ */
+function netRefusal(
+  opts: LoopOptions,
+  tool: string,
+  args: ToolArgs,
+): string | null {
+  if (tool !== 'web_fetch' || opts.net === undefined) return null;
+  const url = args['url'];
+  if (typeof url !== 'string') return null;
+  const host = hostOf(url);
+  if (host === '') return null;
+  const reason = checkHost(host, opts.net.allow, opts.net.deny);
+  // Worded exactly as the executor words it, so the two are indistinguishable
+  // to the model and to a test.
+  return reason === null ? null : `refused: ${reason}`;
 }
 
 /**
@@ -233,6 +264,12 @@ async function runWebFetch(
     const from = typeof current['url'] === 'string' ? current['url'] : '';
     const next = out.redirect;
     const nextArgs: ToolArgs = { url: next };
+    // Before the card, on a hop as much as on the first URL: a host the domain
+    // lists forbid must not produce an approval the user cannot act on.
+    const hopRefusal = netRefusal(opts, 'web_fetch', nextArgs);
+    if (hopRefusal !== null) {
+      return { ok: false, output: hopRefusal };
+    }
     if (sameSite(from, next)) {
       bus.emit({
         type: 'notice',
@@ -816,6 +853,7 @@ async function runLoop(
       // guarantee.
       const refusal =
         containmentRefusal(opts.root, name, args) ??
+        netRefusal(opts, name, args) ??
         secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
       if (refusal !== null) {
         results.push({
