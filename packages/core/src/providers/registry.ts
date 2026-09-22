@@ -131,7 +131,9 @@ export function createProvider(
   opts: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch },
 ): ChatProvider {
   if (kind === 'anthropic') {
-    return new AnthropicNativeProvider(opts.apiKey);
+    // D49u: the base URL is passed through, not dropped. Dropping it was how
+    // the SDK's own ANTHROPIC_BASE_URL fallback took over.
+    return new AnthropicNativeProvider(opts.apiKey, opts.baseUrl);
   }
   return new OpenAICompatProvider(
     opts.apiKey,

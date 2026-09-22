@@ -1470,10 +1470,7 @@ class ChatHost {
     }
     const provider = createProvider(conn.kind, {
       apiKey,
-      baseUrl:
-        conn.kind === 'openai'
-          ? conn.baseUrl ?? 'https://api.openai.com/v1'
-          : undefined,
+      baseUrl: conn.baseUrl,
     });
     const res = await provider.completeTurn({
       model: ref,
@@ -2274,10 +2271,7 @@ class ChatHost {
     try {
       const provider = createProvider(conn.kind, {
         apiKey,
-        baseUrl:
-          conn.kind === 'openai'
-            ? conn.baseUrl ?? 'https://api.openai.com/v1'
-            : undefined,
+        baseUrl: conn.baseUrl,
       });
       const parts = splitModelRef(ref);
       const res = await provider.completeTurn({
@@ -2732,7 +2726,7 @@ class ChatHost {
       const agent = new ObserverAgent(
         createProvider(oConn.kind, {
           apiKey: oKey,
-          baseUrl: oConn.kind === 'openai' ? oConn.baseUrl : undefined,
+          baseUrl: oConn.baseUrl,
         }),
         {
           model: spec.ref,
@@ -2920,10 +2914,7 @@ class ChatHost {
         },
         provider: createProvider(conn.kind, {
           apiKey,
-          baseUrl:
-            conn.kind === 'openai'
-              ? conn.baseUrl ?? 'https://api.openai.com/v1'
-              : undefined,
+          baseUrl: conn.baseUrl,
         }),
         model: ref,
         // D49t: what the connection reported about this model. Without it the

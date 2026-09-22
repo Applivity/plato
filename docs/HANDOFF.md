@@ -54,6 +54,16 @@ are now only in PROGRESS.
   added without reading D49p**: Anthropic's server-side search needs no key, but
   it runs inside the API call, so **no approval card can fire** — it would break
   the always-ask rule.
+- **The environment must never choose Plato's endpoint or lend it a credential (D49u).**
+  The Anthropic SDK defaults `baseURL` to `ANTHROPIC_BASE_URL` and `authToken` to
+  `ANTHROPIC_AUTH_TOKEN`. Plato passed **only `apiKey`**, so a machine with those set
+  had every Anthropic connection redirected to whatever the variable named — the founder's
+  LiteLLM proxy — while an ambient token rode along on every request. **Both are now
+  passed explicitly** (`baseURL: baseUrl ?? public Anthropic`, `authToken: null`).
+  **A connection's own base URL still wins** — that is user-visible configuration. **When
+  adding any SDK: set every credential and endpoint option deliberately**, or the library
+  will prefer the environment over the app's own settings and the call site will read as
+  if it had passed what it needed. `createProvider` must not drop `baseUrl` per kind.
 - **A model's context window comes from the CONNECTION, not the catalog alone (D49t).**
   `LoopOptions.advertised` carries what the connection reported; the ring and the RUN
   resolve through one rule, `resolveMaxContext` / `resolveMaxOutput`, which **takes the
@@ -324,7 +334,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 445/445 vitest in packages/core (32 files)
+2. `pnpm -r test` — 448/448 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.

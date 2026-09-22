@@ -2207,6 +2207,46 @@ inventing precision (D26c). **Steps 4 (a user-declared window per connection) an
 (Ollama's `num_ctx` / llama.cpp's `n_ctx` runtime values) are NOT built** — both are the
 founder's call, and neither is needed until discovery fails for a setup that matters.
 
+**D49u — the environment may not choose Plato's endpoint or lend it a credential
+(M5.0, 0.25.0 — 2026-09-23).**
+
+**Found from one line of an error message: `anthropic HTTP 403` carrying a LiteLLM
+body** — the Anthropic adapter, replying as LiteLLM. The cause is in the SDK's own
+constructor:
+
+```js
+constructor({ baseURL = readEnv('ANTHROPIC_BASE_URL'),
+              apiKey  = readEnv('ANTHROPIC_API_KEY')     ?? null,
+              authToken = readEnv('ANTHROPIC_AUTH_TOKEN') ?? null, ...opts } = {})
+```
+
+**Plato passed only `apiKey`.** So the other two defaults were filled from the ambient
+environment — and on this machine `ANTHROPIC_BASE_URL` points at a LiteLLM proxy. Every
+Anthropic connection went there regardless of its settings. **Worse, `authToken`
+defaulted the same way**, so `ANTHROPIC_AUTH_TOKEN` — also set here — was attached to
+every Anthropic request as an extra `Authorization` header, alongside the key Plato had
+taken from SecretStorage. **Plato was lending its requests a credential it never chose
+and sending them somewhere it never chose.**
+
+**The rule, stated generally: implicit configuration beats nothing, but explicit
+configuration must beat implicit.** A connection's own base URL is visible in the UI and
+must be the one used; the API key comes from SecretStorage and must be the only one sent.
+Anything else means the panel can describe one server while the run talks to another —
+which is exactly what happened, and what made the bug so hard to see: **the model list
+was fetched CORRECTLY**, because discovery always passed a base URL. Real Anthropic
+models with real windows, displayed beside runs that were going elsewhere.
+
+**The fix:** both options are passed explicitly — `baseURL: baseUrl ?? the public
+Anthropic endpoint` and `authToken: null`. `createProvider` no longer drops the base URL
+for the Anthropic kind, and the three host call sites pass each connection's own URL
+instead of an OpenAI-shaped default that only applied to one kind.
+
+**Generalises beyond this adapter, and is worth checking when any SDK is added:** a client
+library that reads credentials or endpoints from the environment will silently prefer them
+over the application's own configuration unless every one of those options is set
+deliberately. The failure is invisible at the call site — the code reads as if it passed
+what it needed.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

@@ -67,8 +67,30 @@ export class AnthropicNativeProvider implements ChatProvider {
   readonly id = 'anthropic' as const;
   private readonly client: Anthropic;
 
-  constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
+  /**
+   * D49u: both options are passed EXPLICITLY, and that is the whole point.
+   *
+   * The SDK defaults `baseURL` to `process.env.ANTHROPIC_BASE_URL` and
+   * `authToken` to `process.env.ANTHROPIC_AUTH_TOKEN`. Passing only `apiKey`
+   * therefore let the ambient environment overrule Plato's own configuration:
+   * a connection whose settings said `https://api.anthropic.com` was actually
+   * sent to whatever that variable named, and an unrelated environment token
+   * rode along on every request as an extra Authorization header.
+   *
+   * The founder hit the first half — every "Anthropic" connection was going to
+   * his LiteLLM proxy, which refused the model, while the model LIST beside it
+   * was fetched correctly (discovery always passed a base URL). Two surfaces
+   * disagreeing about which server they were talking to.
+   *
+   * A connection may still name its own base URL; that is configuration the user
+   * can see. What is gone is the invisible third source.
+   */
+  constructor(apiKey: string, baseUrl?: string) {
+    this.client = new Anthropic({
+      apiKey,
+      baseURL: baseUrl ?? 'https://api.anthropic.com',
+      authToken: null,
+    });
   }
 
   async completeTurn(req: TurnRequest): Promise<TurnResponse> {

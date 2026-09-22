@@ -6,11 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * body can be inspected, which is the only way to prove where the cache
  * breakpoints actually land.
  */
-const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
+const { mockCreate, ctorCalls } = vi.hoisted(() => ({
+  mockCreate: vi.fn(),
+  // D49u: what Plato hands the SDK, which is the only thing it controls.
+  ctorCalls: [] as Record<string, unknown>[],
+}));
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = { create: mockCreate };
+    constructor(opts: Record<string, unknown>) {
+      ctorCalls.push(opts);
+    }
   },
 }));
 
@@ -158,5 +165,50 @@ describe('OpenAI-compatible cache reporting (D49g)', () => {
     );
     expect(res.usage.inputTokens).toBe(1000);
     expect(res.usage.cacheReadTokens).toBe(0);
+  });
+});
+
+/**
+ * D49u. The Anthropic SDK defaults `baseURL` to `process.env.ANTHROPIC_BASE_URL`
+ * and `authToken` to `process.env.ANTHROPIC_AUTH_TOKEN`. Plato passed neither,
+ * so the ambient environment overruled its own configuration: a connection whose
+ * settings said api.anthropic.com was sent to whatever that variable named, and
+ * an unrelated environment token rode along on every request.
+ *
+ * The founder hit it exactly — every "Anthropic" connection was going to his
+ * LiteLLM proxy, which refused the model, while the model LIST shown beside it
+ * had been fetched correctly (discovery always passed a base URL). Two surfaces
+ * disagreeing about which server they were talking to.
+ *
+ * The assertion is on what Plato PASSES. That is the whole defect: with the
+ * environment left in charge there is nothing to assert, because the SDK decides.
+ */
+describe('the Anthropic client never inherits from the environment (D49u)', () => {
+  it('passes an explicit endpoint and refuses an ambient token', () => {
+    ctorCalls.length = 0;
+    new AnthropicNativeProvider('sk-plato');
+    expect(ctorCalls[0]).toEqual({
+      apiKey: 'sk-plato',
+      baseURL: 'https://api.anthropic.com',
+      authToken: null,
+    });
+  });
+
+  it('uses the connection\'s own base URL when it has one', () => {
+    ctorCalls.length = 0;
+    new AnthropicNativeProvider('sk-plato', 'https://gateway.internal/v1');
+    expect(ctorCalls[0]!['baseURL']).toBe('https://gateway.internal/v1');
+    expect(ctorCalls[0]!['authToken']).toBeNull();
+  });
+
+  // The route from connection config to the client, which is where the base URL
+  // used to be dropped on the floor.
+  it('carries the base URL through createProvider', () => {
+    ctorCalls.length = 0;
+    createProvider('anthropic', {
+      apiKey: 'sk-plato',
+      baseUrl: 'https://gateway.internal/v1',
+    });
+    expect(ctorCalls[0]!['baseURL']).toBe('https://gateway.internal/v1');
   });
 });
