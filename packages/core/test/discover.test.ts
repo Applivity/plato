@@ -173,3 +173,144 @@ describe('fetchModelPool (D37)', () => {
     expect(pool).toEqual([{ id: 'dup', maxContext: 100, maxOutput: 10 }]);
   });
 });
+
+/**
+ * D49t: the numbers a connection reports are what the RUN uses, so the parsing
+ * rules stopped being cosmetic. Three things are pinned here, each because it
+ * would cause silence rather than an error if it regressed.
+ */
+describe('fetchModelPool context parsing (D49t)', () => {
+  const pool = async (row: Record<string, unknown>) =>
+    fetchModelPool({
+      kind: 'openai',
+      apiKey: 'k',
+      baseUrl: 'https://router.example/v1',
+      fetchImpl: (async (url: string) =>
+        url.endsWith('/models')
+          ? new Response(JSON.stringify({ data: [row] }), { status: 200 })
+          : new Response('nope', { status: 404 })) as unknown as typeof fetch,
+    });
+
+  /**
+   * THE trap. `max_tokens` is the OUTPUT cap, not a window. Accepting it meant a
+   * proxy echoing `max_tokens: 4096` had Plato record 4096 as the model's whole
+   * memory — harmless while it only decorated a label, but a direct fault once
+   * the number drives compaction.
+   */
+  it('never reads max_tokens as a context window', async () => {
+    const [e] = await pool({ id: 'm', max_tokens: 4096 });
+    expect(e!.maxContext).toBeUndefined();
+  });
+
+  it('reads vLLM\'s max_model_len, which is the window actually being served', async () => {
+    const [e] = await pool({ id: 'm', max_model_len: 32768 });
+    expect(e!.maxContext).toBe(32768);
+  });
+
+  /**
+   * OpenRouter reports a ceiling across every endpoint serving the model, and
+   * the route actually in use separately. When they disagree, the smaller is the
+   * safe reading — see minNum.
+   */
+  it('takes the smaller of the ceiling and the route', async () => {
+    const [e] = await pool({
+      id: 'm',
+      context_length: 131072,
+      top_provider: { context_length: 12288 },
+    });
+    expect(e!.maxContext).toBe(12288);
+  });
+
+  it('keeps reading the fields it always did', async () => {
+    const [e] = await pool({ id: 'm', context_length: 200000 });
+    expect(e!.maxContext).toBe(200000);
+    const [f] = await pool({ id: 'm', max_input_tokens: 128000, max_output_tokens: 8192 });
+    expect(f!.maxContext).toBe(128000);
+    expect(f!.maxOutput).toBe(8192);
+  });
+});
+
+/**
+ * LiteLLM reports window sizes on /model/info, NOT on /models — which is why a
+ * LiteLLM connection looked like an unknown model and ran on the 8192 fallback.
+ * This path is **unverified against a live LiteLLM**; what is pinned here is the
+ * shape handling and, more importantly, that a refusal is harmless.
+ */
+describe('LiteLLM /model/info enrichment (D49t)', () => {
+  const withInfo = (info: unknown, status = 200) =>
+    (async (url: string) => {
+      if (url.endsWith('/models')) {
+        return new Response(JSON.stringify({ data: [{ id: 'my-group' }] }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify(info), { status });
+    }) as unknown as typeof fetch;
+
+  it('fills in what /models did not report', async () => {
+    const [e] = await fetchModelPool({
+      kind: 'openai',
+      apiKey: 'k',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl: withInfo({
+        data: [
+          {
+            model_name: 'my-group',
+            model_info: { max_input_tokens: 163840, max_output_tokens: 8192 },
+          },
+        ],
+      }),
+    });
+    expect(e!.maxContext).toBe(163840);
+    expect(e!.maxOutput).toBe(8192);
+  });
+
+  it('still takes the smaller when both endpoints speak', async () => {
+    const fn = (async (url: string) => {
+      if (url.endsWith('/models')) {
+        return new Response(
+          JSON.stringify({ data: [{ id: 'g', context_length: 200000 }] }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          data: [{ model_name: 'g', model_info: { max_input_tokens: 32768 } }],
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+    const [e] = await fetchModelPool({
+      kind: 'openai',
+      apiKey: 'k',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl: fn,
+    });
+    expect(e!.maxContext).toBe(32768);
+  });
+
+  // It sits on LiteLLM's management routes, so a restricted key can be refused.
+  // A refusal must degrade to "no extra detail", never to a failed discovery.
+  it('is silent when the endpoint refuses or 404s', async () => {
+    for (const status of [401, 403, 404, 500]) {
+      const [e] = await fetchModelPool({
+        kind: 'openai',
+        apiKey: 'k',
+        baseUrl: 'https://llm.example/v1',
+        fetchImpl: withInfo({ error: 'denied' }, status),
+      });
+      expect(e!.id).toBe('my-group');
+      expect(e!.maxContext).toBeUndefined();
+    }
+  });
+
+  it('ignores a shape it does not recognise', async () => {
+    const [e] = await fetchModelPool({
+      kind: 'openai',
+      apiKey: 'k',
+      baseUrl: 'https://llm.example/v1',
+      fetchImpl: withInfo({ data: [{ unexpected: true }] }),
+    });
+    expect(e!.maxContext).toBeUndefined();
+  });
+});

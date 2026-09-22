@@ -1030,6 +1030,18 @@ export function chatHtml(): string {
                           font-variant-numeric:tabular-nums; }
   .popover-row .pr-check { color:var(--vscode-focusBorder, #4a9eff);
                            font-size:11px; width:10px; flex:none; }
+  /* D49t: model rows are one model per line — the name, with its context window
+     as a subtitle. Inline meta read as a second column and cramped as the list
+     grew; stacked, the list scrolls without anything being cut short. */
+  .popover-row.model-row { align-items:flex-start; padding:6px 8px; }
+  .popover-row.model-row .pr-check { line-height:16px; }
+  .popover-row .pr-text { flex:1; min-width:0; display:flex;
+                          flex-direction:column; gap:1px; }
+  .popover-row .pr-text .pr-name { flex:none; }
+  .popover-row .pr-sub { color:var(--pl-muted); font-size:10.5px;
+                         white-space:nowrap; overflow:hidden;
+                         text-overflow:ellipsis;
+                         font-variant-numeric:tabular-nums; }
   /* D44c: command-menu rows are two-line — label + usage on the first
      line, the command's one-line description beneath. */
   .popover-row.slash-row { flex-wrap:wrap; gap:0 8px; padding:6px 8px; }
@@ -1244,6 +1256,9 @@ export function chatHtml(): string {
   const RING_CIRC = 2 * Math.PI * 11; // matches the SVG r=11
   function fmtTok(n) {
     if (typeof n !== 'number' || !Number.isFinite(n)) return '--';
+    // D49t: a million is 1M, not 1000k. Beyond 999,999 the industry reading
+    // switches unit, and "1000k" makes the reader do the arithmetic.
+    if (n >= 1000000) return (+(n / 1000000).toFixed(1)) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
     return String(n);
   }
@@ -1560,6 +1575,8 @@ export function chatHtml(): string {
   let lastModelItems = [];
   const fmtCtx = (n) => {
     if (typeof n === 'number' && n > 0) {
+      // D49t: switch unit past 999,999 — 1M, never 1000k.
+      if (n >= 1000000) { return Math.round(n / 1000000) + 'M'; }
       if (n >= 1000) { return Math.round(n / 1000) + 'k'; }
       return String(n);
     }
@@ -1650,16 +1667,24 @@ export function chatHtml(): string {
       const value = String(it.value || '');
       const label = String(it.label || value);
       const max = it.maxContext;
-      const row = el('div', 'popover-row');
+      // D49t: one model per row, name over its context window. The window used
+      // to sit inline beside the name, which reads as a second column and gets
+      // cramped as the list grows; as a subtitle it stays legible and the list
+      // scrolls. The row is a MODIFIER on the shared popover row so the mode and
+      // slash pickers keep their own layout.
+      const row = el('div', 'popover-row model-row');
       row.dataset.value = value;
       row.setAttribute('role', 'option');
+      const text = el('span', 'pr-text');
       const name = el('span', 'pr-name', label);
-      const meta = el('span', 'pr-meta',
-        fmtCtx(max) ? '\u00b7 ' + fmtCtx(max) : '\u00b7 ctx unknown');
+      const ctx = fmtCtx(max);
+      const sub = el('span', 'pr-sub',
+        ctx ? ctx + ' context' : 'context unknown');
       const check = el('span', 'pr-check', value === currentModel ? '\u2713' : '');
+      text.appendChild(name);
+      text.appendChild(sub);
       row.appendChild(check);
-      row.appendChild(name);
-      row.appendChild(meta);
+      row.appendChild(text);
       if (value === currentModel) {
         row.classList.add('active');
         row.setAttribute('aria-selected', 'true');
@@ -1681,14 +1706,16 @@ export function chatHtml(): string {
     // can see what's selected.
     if (currentModel &&
         !items.some((it) => String(it.value || '') === currentModel)) {
-      const row = el('div', 'popover-row');
+      const row = el('div', 'popover-row model-row');
       row.dataset.value = currentModel;
+      const text = el('span', 'pr-text');
       const name = el('span', 'pr-name', currentModelLabel || currentModel);
-      const meta = el('span', 'pr-meta', '\u00b7 offline');
+      const sub = el('span', 'pr-sub', 'not in the fetched list');
       const check = el('span', 'pr-check', '\u2713');
+      text.appendChild(name);
+      text.appendChild(sub);
       row.appendChild(check);
-      row.appendChild(name);
-      row.appendChild(meta);
+      row.appendChild(text);
       row.classList.add('active');
       row.setAttribute('aria-selected', 'true');
       row.style.opacity = '.7';
@@ -1845,6 +1872,7 @@ export function chatHtml(): string {
   });
 
   function kfmt(n) {
+    if (n >= 1000000) return (+(n / 1000000).toFixed(1)) + 'M';
     return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   }
 

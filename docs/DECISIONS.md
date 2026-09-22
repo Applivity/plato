@@ -2147,6 +2147,66 @@ that passes for the wrong reason is worse than no test, because it stops you loo
 tool.** 429 unit tests never found either. Recorded as the strongest argument yet for
 running Plato on real work early and often.
 
+**D49t — use the window the connection reports; never raise the guess (M5.0, 0.25.0 —
+2026-09-22).**
+
+**The founder's challenge:** *"we can't be shipping Plato with only 8k context window.
+Models report their context sizes and we can be guessing it. Make every effort to get
+what the model reports, and only guess as a last resort."* **The first half was exactly
+right and the audit proved it better than the challenge assumed:** Plato was ALREADY
+fetching the numbers. The header resolved `maxContextFor(model) ?? poolEntry?.maxContext`,
+the run resolved `maxContextFor(model)` alone — so a LiteLLM group or a self-hosted model
+got 8192 while the panel displayed the real figure beside it. **A wire that was never
+connected.** The fix is small; the diagnosis was the work.
+
+**One missing wire, two symptoms.** `maxOutputFor` had the identical disconnect and the
+same 8192 fallback — and 8192 output tokens is easily spent on reasoning alone, which
+produces the empty turn that D49s exists to defend against. So the premature summarising
+and the crashed run were the same fault arriving twice.
+
+**The half that was wrong: "guess 128k or 256k as the last resort."** Research settled
+this against the proposal. **Ollama routinely advertises its TRAINING maximum (often
+128k) while serving 4k**, because the served window is set by available memory — 4k
+under 24 GiB, 32k at 24–48 GiB. llama.cpp serves whatever `--ctx-size` it was launched
+with, commonly 4096. So a large guess does not fail loudly on the servers most likely to
+be unknown to the catalog: **Ollama truncates silently**, which is precisely the failure
+a context window exists to prevent. Raising the floor trades a visible, recoverable
+problem for an invisible one. **The floor therefore stays small and is made almost
+unreachable instead** — which is what the founder actually wanted: stop guessing, not
+guess higher.
+
+**The conservative rule, and why it is not a coin flip.** When the catalog and the
+connection disagree, or when a provider reports a ceiling and a per-route value, **take
+the smaller** (`minNum`, `resolveMaxContext`). The two errors are asymmetric: too small
+summarises early and still works; too large overflows, and on the servers above it
+overflows *quietly*. OpenRouter is the concrete case — `context_length` is a ceiling
+across every endpoint, `top_provider.context_length` is the route in use.
+
+**A trap removed before wiring anything through.** The OpenAI-compatible parser accepted
+**`max_tokens`** as a context-window candidate. It is the OUTPUT cap. A proxy echoing
+`max_tokens: 4096` therefore had Plato record 4096 as the model's entire memory —
+harmless while the number merely decorated a label, and a direct fault the instant it
+drives compaction. Removed, not reordered.
+
+**Fields added:** vLLM's `max_model_len` (on the endpoint Plato already calls; it is the
+window actually being served, already lowered to fit VRAM) and **LiteLLM's
+`/model/info`**, which is the only place LiteLLM reports sizes — `/v1/models` does not
+carry them (upstream issue #25293). **That endpoint is UNVERIFIED against a live
+LiteLLM.** It sits on management routes, so a restricted key can be refused; it is
+best-effort, soft-fails on every error and unrecognised shape, and can never fail the
+discovery it decorates. Recorded as unverified rather than presented as working.
+
+**Discovery now runs on its own.** It required pressing "Fetch models", so a connection
+never refreshed had no numbers to wire up. It runs before a run, bounded at 5 s, and
+refreshes anything older than 24 h — a rotated key or a withdrawn model must not leave a
+stale figure in place.
+
+**Unchanged and deliberate:** the shipped catalog still wins when the connection says
+nothing, and `null` is still reported as unknown so the UI says "ctx unknown" rather than
+inventing precision (D26c). **Steps 4 (a user-declared window per connection) and 5
+(Ollama's `num_ctx` / llama.cpp's `n_ctx` runtime values) are NOT built** — both are the
+founder's call, and neither is needed until discovery fails for a setup that matters.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

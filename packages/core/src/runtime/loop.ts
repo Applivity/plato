@@ -24,7 +24,11 @@ import { AgentBus, RunController } from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
 import type { RetryOptions } from '../providers/retry.js';
 import { estimateCost } from './cost.js';
-import { maxContextFor, maxOutputFor, splitModelRef } from '../providers/registry.js';
+import {
+  resolveMaxContext,
+  resolveMaxOutput,
+  splitModelRef,
+} from '../providers/registry.js';
 import {
   compactMessages,
   promptBreakdown,
@@ -230,6 +234,14 @@ export interface LoopOptions {
   controller?: RunController;
   /** Bound provider adapter (D25b). Replaces the old apiKey field. */
   provider: ChatProvider;
+  /**
+   * D49t: the context window and output cap the CONNECTION advertised, when it
+   * advertised them (see discover.ts). The loop cannot work these out: the
+   * shipped catalog holds a handful of well-known names, and a LiteLLM group or
+   * a self-hosted model is never on it. Before this the run silently assumed
+   * 8192 and summarised the conversation after a few files.
+   */
+  advertised?: { context?: number; maxOutput?: number };
   /** Composite model ref, e.g. 'anthropic:claude-sonnet-4-5'. */
   model: string;
   /** Extra system text appended for this run (D31: team coder role). */
@@ -456,7 +468,13 @@ async function runLoop(
   // Generous default, clamped to the model's hard provider cap: asking
   // above it is a 400 error (e.g. Haiku 3.5 tops out at 8192).
   const bareModel = splitModelRef(opts.model)?.model ?? opts.model;
-  const maxTokens = Math.min(16384, maxOutputFor(bareModel));
+  // D49t: the output cap the connection reported beats the 8192 fallback an
+  // unknown model would otherwise get — which a reasoning model exhausts on
+  // thinking alone, producing the empty turn that D49s had to defend against.
+  const maxTokens = Math.min(
+    16384,
+    resolveMaxOutput(bareModel, opts.advertised?.maxOutput),
+  );
 
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
@@ -472,7 +490,10 @@ async function runLoop(
 
     // D37: emit the live context estimate before this turn goes out so
     // the UI's ring is always one step ahead of the model call.
-    const maxCtx = maxContextFor(bareModel);
+    // D49t: the connection's own report, when it made one. Before this the
+    // discovered number reached the header ring and nothing else, so compaction
+    // fell back to UNKNOWN_CONTEXT_FLOOR (8192) and tripped after a few files.
+    const maxCtx = resolveMaxContext(bareModel, opts.advertised?.context);
     const breakDown = promptBreakdown(currentSystem, messages, allTools);
     bus.emit({
       type: 'context',

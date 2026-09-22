@@ -13,7 +13,7 @@ import {
   modelSupportsReasoning,
   PROVIDER_PRESETS,
   fetchModelPool,
-  maxContextFor,
+  resolveMaxContext,
   renderMarkdown,
   McpServer,
   loadMcpConfig,
@@ -76,6 +76,9 @@ const KEEP_AFTER_FOLD = 12;
 const AUTO_FOLD_AT = 26;
 const MAX_TAIL_PAIRS = 60;
 
+/** D49t: how long a connection's discovered model metadata stays trusted. */
+const POOL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 interface ConnectionPoolEntry {
   id: string;
   /** Provider-advertised context window, if the /models payload had it. */
@@ -93,6 +96,8 @@ interface ConnectionConfig {
   allModels?: string[];
   /** D37: per-model metadata (maxContext etc.) from the fetched pool. */
   pool?: ConnectionPoolEntry[];
+  /** D49t: when `pool` was fetched (ms epoch), so a stale one can refresh. */
+  pooledAt?: number;
 }
 
 /** Parses ONLY user-defined entries from plato.connections (no seeds). */
@@ -2367,10 +2372,12 @@ class ChatHost {
       );
       for (const m of c.models ?? []) {
         const poolEntry = poolByName.get(m);
-        // Catalog wins (D26c stability) when the bare name is known.
-        // Otherwise fall back to what the /models payload advertised.
-        const maxContext =
-          maxContextFor(m) ?? poolEntry?.maxContext ?? null;
+        // D26c/D49t: ONE resolution rule, shared with the run. The catalog and
+        // the connection can both claim a window; the smaller wins, so the ring
+        // the user reads is the number compaction actually uses. When only one
+        // of them speaks, that one is used; when neither does, `null` and the UI
+        // says "ctx unknown" rather than inventing precision.
+        const maxContext = resolveMaxContext(m, poolEntry?.maxContext);
         items.push({
           value: `${c.id}:${m}`,
           label: m,
@@ -2380,6 +2387,82 @@ class ChatHost {
       }
     }
     return items;
+  }
+
+  /**
+   * D49t: ensures a connection's model metadata is present and reasonably
+   * fresh, fetching it if not.
+   *
+   * Discovery used to be an explicit "Fetch models" button, so a connection the
+   * user never refreshed had NO advertised limits and the run fell back to 8192
+   * — the fault that made the first real runs summarise after three files. This
+   * runs before a run starts, bounded by a short timeout so a slow endpoint
+   * cannot hold up the work, and swallows every failure: the fallback is still
+   * correct, just less informed.
+   *
+   * A **stale** pool is refreshed too (see POOL_MAX_AGE_MS). A key can be rotated
+   * or a model withdrawn on the provider's side, and a cached number that
+   * outlives its key is exactly the kind of quiet wrongness this feature exists
+   * to remove.
+   */
+  private async ensureModelPool(
+    conn: ConnectionConfig,
+    apiKey: string,
+  ): Promise<void> {
+    const fresh =
+      conn.pool !== undefined &&
+      conn.pool.length > 0 &&
+      conn.pooledAt !== undefined &&
+      Date.now() - conn.pooledAt < POOL_MAX_AGE_MS;
+    if (fresh) return;
+    try {
+      const pool = await fetchModelPool({
+        kind: conn.kind,
+        apiKey,
+        baseUrl:
+          conn.kind === 'openai'
+            ? conn.baseUrl ?? 'https://api.openai.com/v1'
+            : conn.baseUrl ?? undefined,
+        // A discovery refresh is a nicety, never a reason to stall a run.
+        fetchImpl: (url, init) =>
+          fetch(url, { ...init, signal: AbortSignal.timeout(5000) }),
+      });
+      if (pool.length === 0) return;
+      const user = rawUserConnections();
+      const entry = user.find((u) => u.id === conn.id);
+      if (!entry) return;
+      entry.pool = pool.map((p) => {
+        const e: ConnectionPoolEntry = { id: p.id };
+        if (p.maxContext !== undefined) e.maxContext = p.maxContext;
+        if (p.maxOutput !== undefined) e.maxOutput = p.maxOutput;
+        return e;
+      });
+      entry.pooledAt = Date.now();
+      await vscode.workspace
+        .getConfiguration('plato')
+        .update('connections', user, vscode.ConfigurationTarget.Global);
+      void this.sendSettings();
+    } catch {
+      // Offline, refused, or an endpoint that does not answer /models. The
+      // capped-and-conservative fallback is what runs next, which is fine.
+    }
+  }
+
+  /**
+   * D49t: the limits the connection advertised for `model`, in the shape the run
+   * wants. Undefined when it advertised nothing, so the loop's own resolution
+   * takes over rather than receiving zeros.
+   */
+  private advertisedLimits(
+    conn: ConnectionConfig,
+    model: string,
+  ): { context?: number; maxOutput?: number } | undefined {
+    const e = (conn.pool ?? []).find((p) => p.id === model);
+    if (!e) return undefined;
+    const out: { context?: number; maxOutput?: number } = {};
+    if (e.maxContext !== undefined) out.context = e.maxContext;
+    if (e.maxOutput !== undefined) out.maxOutput = e.maxOutput;
+    return Object.keys(out).length > 0 ? out : undefined;
   }
 
   private reasoningFor():
@@ -2489,6 +2572,17 @@ class ChatHost {
       }
       return;
     }
+    // D49t: make sure the connection's model metadata exists BEFORE the run
+    // resolves its limits. The window and output cap used to be discovered only
+    // when the user pressed "Fetch models" — so a connection that was never
+    // manually refreshed ran on the 8192 fallback and summarised the
+    // conversation after a few files. Best-effort and short: a slow or offline
+    // endpoint must not hold up a run, so failures are swallowed and the
+    // fallback stands.
+    await this.ensureModelPool(conn, apiKey);
+    const advertised = parts
+      ? this.advertisedLimits(conn, parts.model)
+      : undefined;
     this.replyBuffer = '';
     // D49j: drop anything the previous run left in the streaming preview, and
     // the pending repaint with it — a timer firing into a fresh run would post
@@ -2816,6 +2910,9 @@ class ChatHost {
               : undefined,
         }),
         model: ref,
+        // D49t: what the connection reported about this model. Without it the
+        // run assumes 8192 and summarises far too early.
+        ...(advertised ? { advertised } : {}),
         // D45a-3: project files (PLATO.md + AGENTS.md/CLAUDE.md) always join
         // the worker prompt when present — the includeProjectRules opt-out was
         // removed. D46: globalConfigDir feeds the ~/.plato/PLATO.md fallback.

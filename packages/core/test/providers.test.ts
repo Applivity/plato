@@ -7,6 +7,8 @@ import {
   maxOutputFor,
   modelSupportsReasoning,
   parseModelRef,
+  resolveMaxContext,
+  resolveMaxOutput,
 } from '../src/providers/registry.js';
 
 describe('parseModelRef', () => {
@@ -254,5 +256,45 @@ describe('OpenAICompatProvider.completeTurn', () => {
         maxTokens: 10,
       }),
     ).rejects.toThrow(/401/);
+  });
+});
+
+/**
+ * D49t: the catalog and the user's connection can both claim a context window,
+ * and the run has to pick. The rule is "the smaller wins" — see resolveMaxContext.
+ */
+describe('resolveMaxContext / resolveMaxOutput (D49t)', () => {
+  it('uses the catalog when the connection says nothing', () => {
+    expect(resolveMaxContext('claude-sonnet-4-5')).toBe(200000);
+    expect(resolveMaxOutput('claude-sonnet-4-5')).toBe(64000);
+  });
+
+  it('uses the connection when the model is unknown to the catalog', () => {
+    expect(resolveMaxContext('my-litellm-group', 163840)).toBe(163840);
+    expect(resolveMaxOutput('my-litellm-group', 64000)).toBe(64000);
+  });
+
+  /**
+   * A connection can serve a SMALLER window than the model is capable of — a
+   * LiteLLM route capped to fit a GPU, say. Believing the catalog there means
+   * sending more than the route accepts.
+   */
+  it('takes the smaller when both speak', () => {
+    expect(resolveMaxContext('claude-sonnet-4-5', 32768)).toBe(32768);
+    expect(resolveMaxContext('claude-sonnet-4-5', 500000)).toBe(200000);
+    expect(resolveMaxOutput('claude-sonnet-4-5', 4096)).toBe(4096);
+  });
+
+  it('still reports unknown when neither speaks', () => {
+    expect(resolveMaxContext('my-litellm-group')).toBeNull();
+  });
+
+  /**
+   * The output cap's fallback must NOT be treated as knowledge: taking a minimum
+   * against 8192 would pin every unknown model to 8192 and defeat the wiring.
+   */
+  it('lets an advertised output cap beat the 8192 fallback', () => {
+    expect(resolveMaxOutput('my-litellm-group')).toBe(8192);
+    expect(resolveMaxOutput('my-litellm-group', 100000)).toBe(100000);
   });
 });

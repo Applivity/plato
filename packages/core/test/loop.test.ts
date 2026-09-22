@@ -882,3 +882,92 @@ describe('a turn that produced nothing is never sent (D49s)', () => {
     }
   });
 });
+
+/**
+ * D49t: the loop used to resolve the context window from the shipped catalog
+ * only — so a LiteLLM group or a self-hosted model was unknown and got the
+ * 8192 floor. Compaction then tripped after three files, and the output cap it
+ * sent was 8192, which a reasoning model exhausts on thinking alone.
+ *
+ * These pin the wire, not the parsing (discover.test.ts covers that).
+ */
+describe('advertised model limits reach the run (D49t)', () => {
+  const textTurn = (): TurnResponse => ({
+    content: [{ type: 'text', text: 'ok' }],
+    usage: { inputTokens: 5, outputTokens: 5 },
+    stopReason: 'stop',
+  });
+
+  /** Runs one turn and reports what the loop decided. */
+  async function observe(advertised?: {
+    context?: number;
+    maxOutput?: number;
+  }): Promise<{ maxContext: number | null; maxTokens: number }> {
+    const bus = new AgentBus();
+    let seenCtx: number | null = null;
+    bus.on((e) => {
+      if (e.type === 'context') seenCtx = e.maxContext;
+    });
+    let maxTokens = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        maxTokens = req.maxTokens;
+        return textTurn();
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      // A name the catalog has never heard of — the LiteLLM case.
+      model: 'litellm:Auto-Act',
+      getMode: () => 'auto' as const,
+      ...(advertised ? { advertised } : {}),
+    });
+    return { maxContext: seenCtx, maxTokens };
+  }
+
+  // Nothing known stays REPORTED as unknown — `null` is what makes the header
+  // say "ctx unknown" rather than inventing a number. The conservative floor is
+  // applied deeper, inside shouldAutoCompact, where it decides timing only.
+  it('reports unknown, and runs on the floor, when nothing was advertised', async () => {
+    const r = await observe();
+    expect(r.maxContext).toBeNull();
+    expect(r.maxTokens).toBe(8192);
+  });
+
+  it('uses the window the connection reported', async () => {
+    const r = await observe({ context: 163840, maxOutput: 64000 });
+    expect(r.maxContext).toBe(163840);
+    // 64000 beats the 8192 fallback; the loop's own 16384 ceiling still applies.
+    expect(r.maxTokens).toBe(16384);
+  });
+
+  /**
+   * The conservative direction: a connection may serve LESS than the model can
+   * hold. Believing the larger number means sending more than it accepts.
+   */
+  it('takes the smaller when the catalog and the connection disagree', async () => {
+    const bus = new AgentBus();
+    let seenCtx: number | null = null;
+    bus.on((e) => {
+      if (e.type === 'context') seenCtx = e.maxContext;
+    });
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return textTurn();
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      model: 'anthropic:claude-sonnet-4-5', // catalog says 200000
+      getMode: () => 'auto' as const,
+      advertised: { context: 32768 },
+    });
+    expect(seenCtx).toBe(32768);
+  });
+});

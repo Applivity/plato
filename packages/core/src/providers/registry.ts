@@ -87,6 +87,45 @@ export function maxContextFor(bareName: string): number | null {
   return findModel(bareName)?.maxContext ?? null;
 }
 
+/**
+ * D49t: the window to actually run with, from the two places that claim one.
+ *
+ * The catalog is a shipped table for well-known names; the **advertised** number
+ * is what the user's own connection reported (see discover.ts). When both speak,
+ * take the SMALLER — the two ways to be wrong are not symmetric. Too small means
+ * summarising earlier than needed, which works. Too large means sending more than
+ * the model can hold, and on the common local servers that does not raise an
+ * error, it truncates silently. So the conservative reading is the only safe one.
+ *
+ * A connection that reports nothing leaves the catalog value in place; a model in
+ * neither leaves `null`, and the caller decides what to do about not knowing.
+ */
+export function resolveMaxContext(
+  bareName: string,
+  advertised?: number,
+): number | null {
+  const known = maxContextFor(bareName);
+  if (known === null) return advertised ?? null;
+  if (advertised === undefined) return known;
+  return Math.min(known, advertised);
+}
+
+/**
+ * D49t: the same resolution for the output cap, which `maxOutputFor` cannot do
+ * because it always returns a number (8192 for an unknown model). Taking a
+ * minimum against that fallback would pin every unknown model to 8192 and defeat
+ * the point — so the fallback is applied only when NEITHER source has a value.
+ */
+export function resolveMaxOutput(
+  bareName: string,
+  advertised?: number,
+): number {
+  const known = findModel(bareName)?.maxOutput;
+  if (known === undefined) return advertised ?? 8192;
+  if (advertised === undefined) return known;
+  return Math.min(known, advertised);
+}
+
 export function createProvider(
   kind: 'anthropic' | 'openai',
   opts: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch },

@@ -54,6 +54,17 @@ are now only in PROGRESS.
   added without reading D49p**: Anthropic's server-side search needs no key, but
   it runs inside the API call, so **no approval card can fire** — it would break
   the always-ask rule.
+- **A model's context window comes from the CONNECTION, not the catalog alone (D49t).**
+  `LoopOptions.advertised` carries what the connection reported; the ring and the RUN
+  resolve through one rule, `resolveMaxContext` / `resolveMaxOutput`, which **takes the
+  smaller when two sources disagree** — too small summarises early and works, too large
+  overflows, and on local servers it overflows *silently*. The catalog still covers
+  well-known names; `null` still means unknown, and the UI says so. Discovery runs
+  automatically before a run (5 s bound, 24 h staleness) instead of waiting for "Fetch
+  models". **`max_tokens` is NOT a window** — it is the output cap; it used to be read as
+  one. **LiteLLM reports sizes only on `/model/info`**, which is implemented but
+  **unverified against a live LiteLLM**. Ollama and llama.cpp runtime windows are not read
+  at all.
 - **A tool result must answer a tool call, so compaction may not cut inside an
   exchange (D49r).** `compactionSplit` sliced by COUNT alone, so a cut landing inside
   a tool exchange stranded the results with no `tool_calls` above them — and a strict
@@ -190,7 +201,7 @@ used to claim.
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Nine suites, **191 assertions**; see
+  unit tests + render suites. Ten suites, **207 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -221,7 +232,7 @@ used to claim.
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Nine
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Ten
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
@@ -313,7 +324,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 429/429 vitest in packages/core (32 files)
+2. `pnpm -r test` — 445/445 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.
