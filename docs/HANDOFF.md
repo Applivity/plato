@@ -313,7 +313,7 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 427/427 vitest in packages/core (32 files)
+2. `pnpm -r test` — 429/429 vitest in packages/core (32 files)
 3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
    bundle). Add an assertion here for any UI defect you fix, and prove it
    falsifiable.

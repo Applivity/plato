@@ -806,3 +806,79 @@ describe('web_fetch approvals carry a host (D49p)', () => {
     expect(seen).toEqual([undefined]);
   });
 });
+
+/**
+ * Reproduces the SECOND real-run crash (2026-09-22, DeepSeek via LiteLLM):
+ *
+ *   openai HTTP 400: Invalid assistant message: content or tool_calls must be set
+ *
+ * A turn cut by the output cap that produced NO visible content (a reasoning
+ * model can spend the whole budget on tokens Plato does not read) was still
+ * recorded as an assistant message. The loop then pushed its "continue exactly
+ * where you left off" instruction and sent the pair — and the assistant turn
+ * carried neither text nor a tool call, which the wire contract forbids.
+ *
+ * It also exposed a semantic fault underneath: there was nothing to continue
+ * from. Asking a model to resume where it left off, when it left off nowhere,
+ * is a request that cannot succeed.
+ */
+describe('a turn that produced nothing is never sent (D49s)', () => {
+  const emptyTurn = (): TurnResponse => ({
+    content: [],
+    usage: { inputTokens: 10, outputTokens: 16384 },
+    stopReason: 'max_tokens',
+  });
+
+  it('ends as a cap instead of continuing from an empty turn', async () => {
+    let calls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        return calls === 1
+          ? emptyTurn()
+          : {
+              content: [{ type: 'text', text: 'resumed' }],
+              usage: { inputTokens: 10, outputTokens: 5 },
+              stopReason: 'stop',
+            };
+      },
+    };
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    expect(r.reason).toBe('cap');
+    // The point: no second request was made, so no invalid turn was sent.
+    expect(calls).toBe(1);
+    expect(r.finalText).toContain('token cap');
+  });
+
+  it('never sends an assistant turn with neither text nor a tool call', async () => {
+    let calls = 0;
+    const requests: { role: string; content: { type: string }[] }[][] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        // SNAPSHOT, not the live array: the loop keeps mutating `messages`
+        // after this call returns, so holding the reference would assert
+        // against post-run state rather than against what was actually sent.
+        requests.push(JSON.parse(JSON.stringify(req.messages)) as never);
+        calls += 1;
+        if (calls === 1) return emptyTurn();
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({ ...BASE, provider: p });
+    for (const msgs of requests) {
+      for (const m of msgs) {
+        if (m.role !== 'assistant') continue;
+        expect(
+          m.content.some((b) => b.type === 'text' || b.type === 'tool_use'),
+          'an assistant turn carried nothing',
+        ).toBe(true);
+      }
+    }
+  });
+});

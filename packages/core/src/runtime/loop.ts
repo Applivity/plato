@@ -681,7 +681,17 @@ async function runLoop(
       // truncated reply, NOT a completion. Ask the model to resume exactly
       // where it stopped, then judge the continuation as a fresh turn.
       // Bounded: one continuation per run, never more.
-      if (truncated && !autoContinued && turn < MAX_TURNS) {
+      //
+      // D49s: there must also be something to continue FROM. A reasoning model
+      // can spend the whole output budget on tokens this adapter never reads
+      // (`reasoning_content`), leaving the turn with no content at all — and
+      // "continue exactly where you left off" is then a request that cannot
+      // succeed. Worse, it sent an assistant turn carrying neither text nor a
+      // tool call, which the wire contract forbids; the second real run died on
+      // precisely that (DeepSeek via LiteLLM: "Invalid assistant message:
+      // content or tool_calls must be set"). An empty capped turn now ends the
+      // run with the cap note, which is what actually happened.
+      if (truncated && res.content.length > 0 && !autoContinued && turn < MAX_TURNS) {
         autoContinued = true;
         messages.push({
           role: 'user',

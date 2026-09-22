@@ -2114,6 +2114,39 @@ falsification, and this one was found by *running the thing*. A test suite prove
 its author thought to assert; the first real run exercises the paths nobody wrote a
 test for. That is an argument for running Plato on real work far earlier than this.
 
+**D49s — do not continue a turn that produced nothing (M5.0, 0.25.0 — 2026-09-22).**
+
+**Found by the second real run**, which got nine turns in before dying with
+`openai HTTP 400: Invalid assistant message: content or tool_calls must be set`
+(DeepSeek via LiteLLM). **The failure moving is itself the evidence that D49r
+worked** — the run was no longer dying at the first compaction.
+
+**Two faults, one visible and one underneath.** The visible one: a turn cut by the
+output cap with no content was still recorded as an assistant message, so the wire
+carried `{role:'assistant', content:null}` with no `tool_calls` — a shape the contract
+forbids. The underlying one: **there was nothing to continue from.** The loop's
+auto-continue (D25f) asks the model to *resume exactly where it left off*, which is
+meaningless when the turn left off nowhere, and the request that carries it cannot
+succeed. Auto-continue now requires content to exist; an empty capped turn ends the
+run with the cap note, which is the honest description of what happened.
+
+**The enabling condition is worth recording:** a reasoning model can spend the entire
+output budget on `reasoning_content`, a field **this adapter never reads**. So an
+all-reasoning turn arrives as an empty turn. The empty-turn guard is correct regardless
+— but Plato is blind to thinking tokens, and that has other consequences (a reasoning
+model's work is invisible, and its cost is billed as output). Noted in the PROGRESS
+backlog rather than fixed here.
+
+**Reproduced before it was fixed, and the reproduction caught a defect in the test
+itself:** the first version held the LIVE `messages` array, which the loop keeps
+mutating after `completeTurn` returns, so it asserted against post-run state instead of
+against what was sent. Snapshotting the array made it measure the real thing. A test
+that passes for the wrong reason is worse than no test, because it stops you looking.
+
+**Two real runs, two structural crashes, both in the message list rather than in a
+tool.** 429 unit tests never found either. Recorded as the strongest argument yet for
+running Plato on real work early and often.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 
