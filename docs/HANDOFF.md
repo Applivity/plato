@@ -201,7 +201,7 @@ used to claim.
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Ten suites, **207 assertions**; see
+  unit tests + render suites. Eleven suites, **230 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -232,7 +232,7 @@ used to claim.
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Ten
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Eleven
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.

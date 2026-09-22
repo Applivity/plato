@@ -255,4 +255,67 @@ for (const w of [420, 560, 720, 900]) {
 }
 
 console.log('');
+// D49t: the Settings model list is ONE model per line — name over its context
+// window — not two columns of bare, truncated names. This is the list the
+// founder was looking at when he reported it unchanged; the composer's picker is
+// a different surface and was fixed separately.
+{
+  const CONN = {
+    id: 'litellm', kind: 'openai', baseUrl: 'https://llm.example/v1',
+    keyStatus: 'set', builtin: false,
+    models: ['Auto-Act'],
+    all: [
+      'Auto-Act',
+      'openrouter-dots-studio/dots-3-note-preview-free',
+      'claude-sonnet-5',
+      'mystery-model',
+    ],
+    // Resolved server-side through the same rule the run uses.
+    ctx: { 'Auto-Act': 163840, 'openrouter-dots-studio/dots-3-note-preview-free': 1000000, 'claude-sonnet-5': 200000 },
+  };
+  const p = await page(720, S({ connections: [CONN] }));
+  await openAll(p);
+  await p.evaluate(() => {
+    const d = document.querySelector('.conn .picker');
+    if (d) d.open = true;
+  });
+  await p.waitForTimeout(200);
+
+  const r = await p.evaluate(() => {
+    const box = document.querySelector('.conn .modellist');
+    const rows = [...document.querySelectorAll('.conn .mopt')];
+    const cs = box ? getComputedStyle(box) : null;
+    return {
+      rows: rows.length,
+      columns: cs ? cs.gridTemplateColumns : '(not a grid)',
+      display: cs ? cs.display : null,
+      items: rows.map((row) => {
+        const n = row.querySelector('.mopt-name');
+        const s = row.querySelector('.mopt-sub');
+        return {
+          name: n ? n.textContent : null,
+          sub: s ? s.textContent : null,
+          stacked: !!(n && s) &&
+            s.getBoundingClientRect().top >= n.getBoundingClientRect().bottom - 1,
+        };
+      }),
+    };
+  });
+
+  check('the list is one column, not a two-column grid', r.display === 'block', r);
+  check('every model still gets a row', r.rows === 4, r.rows);
+  check('each row shows a name and a context subtitle',
+    r.items.every((x) => x.name && x.sub), r.items);
+  check('the name sits above the subtitle',
+    r.items.every((x) => x.stacked), r.items);
+  check('a million reads 1M here too',
+    r.items.some((x) => x.sub === '1M context'), r.items);
+  check('a long id gets the full width of the row',
+    r.items.some((x) => x.name === 'openrouter-dots-studio/dots-3-note-preview-free'), r.items);
+  check('an unreported window says so rather than guessing',
+    r.items.some((x) => x.sub === 'context unknown'), r.items);
+  checkPageClean(p, 'settings model list');
+  await p.close();
+}
+
 await finish('providers row');

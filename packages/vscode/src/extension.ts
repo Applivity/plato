@@ -1622,6 +1622,21 @@ class ChatHost {
         undefined
           ? 'set'
           : 'missing';
+      // D49t: the per-model context windows, so the Settings list can show them
+      // as a subtitle. Resolved through the SAME rule as the run and the
+      // composer picker, so no two surfaces can quote different numbers. Only
+      // models with a known window appear; absence is what makes the UI say
+      // "context unknown" instead of inventing a figure.
+      const poolByName = new Map(
+        (c.pool ?? []).map((p) => [p.id, p] as const),
+      );
+      const ctx: Record<string, number> = {};
+      for (const mid of c.allModels && c.allModels.length > 0
+        ? c.allModels
+        : (c.models ?? [])) {
+        const n = resolveMaxContext(mid, poolByName.get(mid)?.maxContext);
+        if (n !== null) ctx[mid] = n;
+      }
       connections.push({
         id: c.id,
         kind: c.kind,
@@ -1629,6 +1644,7 @@ class ChatHost {
         models: c.models ?? [],
         // Picker pool: fetched list when present, else the selection.
         all: c.allModels && c.allModels.length > 0 ? c.allModels : (c.models ?? []),
+        ctx,
         keyStatus,
         builtin: !userRaw.has(c.id),
       });

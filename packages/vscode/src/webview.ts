@@ -238,14 +238,6 @@ export function chatHtml(): string {
                         color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border);
                         border-radius:3px; outline:none; }
   .q-custom-row input:focus { border-color:var(--vscode-focusBorder); }
-  #st { display:none; align-items:center; gap:5px;
-        font-size:11px; color:var(--pl-muted); white-space:nowrap; }
-  #st.on { display:flex; }
-  #st.done { color:var(--vscode-testing-iconPassed, #73c991); }
-  #st .dot { width:7px; height:7px; border-radius:50%;
-             background:var(--pl-accent); animation:pulse 1.2s infinite; }
-  #st.done .dot { animation:none;
-                  background:var(--vscode-testing-iconPassed, #73c991); }
   @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
@@ -550,16 +542,26 @@ export function chatHtml(): string {
   .conn .picker > summary::before { content:'\u25B8'; font-size:9px; }
   .conn .picker[open] > summary::before { content:'\u25BE'; }
   .conn .picker > summary:hover { color:var(--vscode-editor-foreground); }
-  .conn .modellist { display:grid; grid-template-columns:1fr 1fr;
-                     gap:1px 10px; padding:8px 11px;
-                     max-height:220px; overflow-y:auto;
+  /* D49t: ONE model per line, name over its context window. Two columns of bare
+     names truncated long ids to "openrouter-dots-studio/dots-3-no…" and said
+     nothing about size; stacked, the name gets the full width and the window
+     rides underneath. The list scrolls, because a provider can return hundreds. */
+  .conn .modellist { display:block; padding:8px 11px;
+                     max-height:280px; overflow-y:auto;
                      background:var(--vscode-input-background); }
-  .conn .mopt { display:flex; align-items:center; gap:7px;
-                padding:3px 4px; cursor:pointer; font-size:12px;
-                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .conn .mopt { display:flex; align-items:flex-start; gap:7px;
+                padding:4px; cursor:pointer; font-size:12px; }
   .conn .mopt:hover { background:var(--vscode-list-hoverBackground,
                                        rgba(128,128,128,.12)); }
-  .conn .mopt input { margin:0; flex:none; }
+  .conn .mopt input { margin:0; flex:none; margin-top:2px; }
+  .conn .mopt .mopt-text { flex:1; min-width:0; display:flex;
+                           flex-direction:column; gap:1px; }
+  .conn .mopt .mopt-name { white-space:nowrap; overflow:hidden;
+                           text-overflow:ellipsis; }
+  .conn .mopt .mopt-sub { color:var(--pl-muted); font-size:10.5px;
+                          font-variant-numeric:tabular-nums;
+                          white-space:nowrap; overflow:hidden;
+                          text-overflow:ellipsis; }
   .conn .mopt span { overflow:hidden; text-overflow:ellipsis; }
   .conn .mbtns { grid-column:1 / -1; display:flex; gap:8px; margin-top:8px;
                  padding-top:8px; border-top:1px solid var(--pl-border); }
@@ -773,6 +775,14 @@ export function chatHtml(): string {
                           50% { opacity:1; transform:scale(1.15); } }
   #statusbar .dots::after { content:''; animation:platoDots 1.5s steps(4,end) infinite; }
   @keyframes platoDots { 0%{content:''} 25%{content:'.'} 50%{content:'..'} 75%{content:'...'} }
+  /* D49t: the run's elapsed time lives HERE, in the status the user is already
+     reading, instead of a second chip up in the header. One place to look while
+     Plato works. */
+  #statusbar .selapsed { font-style:normal; font-size:11px; margin-left:auto;
+               font-variant-numeric:tabular-nums; }
+  #statusbar.done { color:var(--vscode-testing-iconPassed, #73c991); }
+  #statusbar.done .pdot { animation:none;
+               background:var(--vscode-testing-iconPassed, #73c991); }
   #statusbar .sbtn { margin-left:auto; font-style:normal; font-size:11px;
                padding:2px 10px; border-radius:4px; cursor:pointer; border:none;
                background:var(--vscode-button-secondaryBackground,#3a3d41);
@@ -1111,7 +1121,6 @@ export function chatHtml(): string {
     <span class="hstatus-spacer"></span>
     <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
     <button id="new" title="Start a new chat (clears this conversation)">＋ new</button>
-    <span id="st"></span>
   </div>
 </header>
 <div id="log"></div>
@@ -1240,7 +1249,6 @@ export function chatHtml(): string {
   let busy = false;
   let streaming = false;
   let runT0 = 0;
-  let lastAct = '';
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -1335,52 +1343,76 @@ export function chatHtml(): string {
   }
   // -----------------------------------------------------------------------
 
-  function chipOn(txt, doneKind) {
-    const st = document.getElementById('st');
-    st.className = doneKind ? 'on done' : 'on';
-    st.innerHTML = '<span class="dot"></span>' + esc(txt);
-  }
-  function chipOff() {
-    const st = document.getElementById('st');
-    st.className = '';
-    st.textContent = '';
-  }
-  function refreshChip() {
-    if (!busy || !runT0) { return; }
-    const s = Math.floor((Date.now() - runT0) / 1000);
-    chipOn('working ' + s + 's' + (lastAct ? ' \u00b7 ' + lastAct : ''), false);
-  }
-  setInterval(refreshChip, 1000);
-
   // Pinned run-status bar (Claude-code style). Lives in #statusbar between
   // #log and the footer, so it is ALWAYS visible during a run — future tool
   // summaries and streamed text scroll in #log below, never bury it.
-  let statusEl = null, statusTextEl = null;
-  function setStatus(text) {
+  //
+  // D49t: the run's elapsed time lives HERE too. It used to be a second chip up
+  // in the header beside Solo / new, which meant reading two places to answer
+  // one question ("what is Plato doing, and how long has it been?"). The bar
+  // now carries both: the status text, and the seconds ticking on the right.
+  let statusEl = null, statusTextEl = null, statusElapsedEl = null;
+  function ensureStatusBar() {
     const bar = document.getElementById('statusbar');
-    if (!bar) return;
+    if (!bar) return null;
     if (!statusEl) {
       bar.hidden = false;
       const d = document.createElement('span');
       d.className = 'pdot';
       const t = document.createElement('span');
       t.className = 'stext';
+      const e = document.createElement('span');
+      e.className = 'selapsed';
       bar.appendChild(d);
       bar.appendChild(t);
+      bar.appendChild(e);
       statusEl = bar;
       statusTextEl = t;
+      statusElapsedEl = e;
     }
-    if (statusTextEl) statusTextEl.textContent = text;
+    return statusEl;
+  }
+  function setStatus(text) {
+    const bar = ensureStatusBar();
+    if (!bar || !statusTextEl) return;
+    bar.classList.remove('done');
+    statusTextEl.textContent = text;
   }
   function clearStatus() {
     const bar = document.getElementById('statusbar');
     if (bar) {
       bar.hidden = true;
       bar.textContent = '';
+      bar.classList.remove('done');
     }
     statusEl = null;
     statusTextEl = null;
+    statusElapsedEl = null;
   }
+
+  /** Sets the status line and dismisses the elapsed slot together. */
+  function chipOn(txt, doneKind) {
+    const bar = ensureStatusBar();
+    if (!bar || !statusTextEl) return;
+    if (statusElapsedEl) statusElapsedEl.textContent = '';
+    bar.classList.toggle('done', Boolean(doneKind));
+    statusTextEl.textContent = txt;
+  }
+  function chipOff() {
+    clearStatus();
+  }
+  function refreshChip() {
+    if (!busy || !runT0) { return; }
+    // The bar must be up even before any setStatus has fired, or the timer
+    // would tick into a hidden element.
+    const bar = ensureStatusBar();
+    if (!bar) return;
+    if (statusElapsedEl) {
+      statusElapsedEl.textContent =
+        Math.floor((Date.now() - runT0) / 1000) + 's';
+    }
+  }
+  setInterval(refreshChip, 1000);
 
   // D43: swap the composer for the friendly empty state while no
   // provider is connected. Driven by the hasConnections signal that
@@ -2484,14 +2516,23 @@ export function chatHtml(): string {
         det.appendChild(el('summary', null,
           'Models \u2014 ' + selected.size + ' of ' + pool.length + ' active'));
         const box = el('div', 'modellist');
+        const ctxMap = c.ctx || {};
         for (const mid of pool) {
+          const key = String(mid);
           const lbl = el('label', 'mopt', null);
           const cb = document.createElement('input');
           cb.type = 'checkbox';
-          cb.value = String(mid);
-          cb.checked = selected.has(String(mid));
+          cb.value = key;
+          cb.checked = selected.has(key);
+          // D49t: the name gets the whole line and the window sits beneath it,
+          // the same shape the composer's picker uses.
+          const text = el('span', 'mopt-text');
+          text.appendChild(el('span', 'mopt-name', key));
+          const ctxN = fmtCtx(ctxMap[key]);
+          text.appendChild(el('span', 'mopt-sub',
+            ctxN ? ctxN + ' context' : 'context unknown'));
           lbl.appendChild(cb);
-          lbl.appendChild(el('span', null, String(mid)));
+          lbl.appendChild(text);
           box.appendChild(lbl);
         }
         const okB = sbtn('OK', () => {
@@ -3378,14 +3419,12 @@ export function chatHtml(): string {
     paused = !paused;
     vsapi.postMessage({ type: paused ? 'pause' : 'resume' });
     pp.textContent = paused ? 'Resume' : 'Pause';
-    lastAct = paused ? 'paused' : 'resuming';
     refreshChip();
   });
   cx.addEventListener('click', () => {
     if (!busy || cx.disabled) { return; }
     cx.disabled = true;
     pp.disabled = true;
-    lastAct = 'cancelling';
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
@@ -3623,7 +3662,6 @@ export function chatHtml(): string {
     q.value = '';
     busy = true;
     runT0 = Date.now();
-    lastAct = 'thinking';
     refreshChip();
     setRunUi(true);
     setStatus('Plato is thinking');
@@ -3789,7 +3827,7 @@ export function chatHtml(): string {
         applyEmptyState(typeof m.hasConnections === 'boolean'
           ? m.hasConnections : true);
         break;
-      case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); lastAct = 'writing'; refreshChip(); setStatus('writing'); break;
+      case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); refreshChip(); setStatus('writing'); break;
       case 'turn': {
         // Turn boundary: commit the ongoing stream into a finished block so
         // the next turn and any intervening notices/logos land in order.
@@ -3818,20 +3856,17 @@ export function chatHtml(): string {
           toolBuffer.push({ tool: m.tool, phase: m.phase });
           scheduleToolFlush();
         }
-        lastAct = String(m.tool);
         refreshChip();
         setStatus('using ' + m.tool);
         break;
       case 'approval':
         flushToolBuffer();
         showCard(m);
-        lastAct = 'waiting for you';
         refreshChip();
         setStatus('waiting for your approval');
         break;
       case 'user-question':
         flushToolBuffer();
-        lastAct = 'awaiting your answer';
         refreshChip();
         setStatus('awaiting your answer');
         showUserQuestion(m);
