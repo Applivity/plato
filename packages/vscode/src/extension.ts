@@ -3030,7 +3030,18 @@ class ChatHost {
       // for a 401, a 429 and a dead socket alike, while the provider's own
       // message — built by the adapter and carried on the error — was discarded
       // here by a bare `catch {}`.
-      const text = describeError(e);
+      // D49u: say WHERE the request went and WHICH model it named. A provider
+      // error alone cannot distinguish "the key is wrong" from "Plato sent your
+      // Anthropic selection to LiteLLM" — and that second case looks identical
+      // from the outside. One line makes the mismatch self-evident instead of a
+      // mystery.
+      const wentTo =
+        conn.kind === 'openai'
+          ? `${conn.id} (${conn.baseUrl ?? 'https://api.openai.com/v1'})`
+          : `${conn.id} (api.anthropic.com)`;
+      const text =
+        `Sent to ${wentTo} for model "${parts?.model ?? ref}".\n` +
+        describeError(e);
       this.send('error', text);
       this.push({ k: 'msg', cls: 'bot', who: 'Error', text });
     } finally {

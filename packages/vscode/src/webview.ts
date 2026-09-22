@@ -3783,7 +3783,17 @@ export function chatHtml(): string {
         });
         break;
       }
-      case 'settings': showSettings(m); break;
+      case 'settings':
+        // D49u: keep the chat-side connection flag in step with the provider
+        // list. It used to be set ONLY by the models/restore payloads, so adding
+        // a provider left it stale at false — and the model button routes to
+        // Settings when it believes there are none, which bounced the user
+        // straight back out of the chat they had just returned to.
+        if (Array.isArray(m.connections)) {
+          applyEmptyState(m.connections.length > 0);
+        }
+        showSettings(m);
+        break;
       case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
       case 'run': showRun(m); break;
       case 'title': setTitle(String(m.text || '')); break;

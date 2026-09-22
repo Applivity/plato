@@ -318,4 +318,43 @@ console.log('');
   await p.close();
 }
 
+
+// D49u: the sequence the founder hit — install with NO providers, add one in
+// Settings, return to the chat, click the model dropdown. It used to bounce
+// straight back to Settings, because the chat-side "are there any providers"
+// flag was only ever set by the models/restore payloads and adding a provider
+// sends a `settings` payload instead.
+{
+  const p = await page(720, S({ connections: [] }));
+  // 1. A chat with no providers: the flag is false.
+  await p.evaluate((x) =>
+    window.dispatchEvent(new MessageEvent('message', { data: x })),
+  { type: 'models', hasConnections: false, items: [], orchestration: 'solo', compaction: { mode: 'auto', threshold: 0.8 } });
+  await p.waitForTimeout(160);
+  // 2. The user adds a provider in Settings. Only a `settings` payload arrives.
+  await p.evaluate((x) =>
+    window.dispatchEvent(new MessageEvent('message', { data: x })),
+  S({ connections: [{ id: 'anthropic', kind: 'anthropic', baseUrl: 'https://api.anthropic.com', models: ['claude-opus-5'], all: ['claude-opus-5'], ctx: { 'claude-opus-5': 1000000 }, keyStatus: 'set', builtin: false }] }));
+  await p.waitForTimeout(200);
+  // 3. Back to the chat, then open the model dropdown.
+  await p.evaluate(() => {
+    const b = document.getElementById('sback');
+    if (b) b.click();
+  });
+  await p.waitForTimeout(140);
+  await p.evaluate(() => { window.__posted = []; });
+  await p.evaluate(() => document.getElementById('modelBtn').click());
+  await p.waitForTimeout(200);
+
+  const r = await p.evaluate(() => ({
+    posted: window.__posted.map((x) => x.type),
+    settingsOpen: document.body.classList.contains('show-settings'),
+  }));
+  check('selecting a model does not bounce the user back to Settings',
+    !r.posted.includes('openSettings'), r);
+  check('and the chat stays on screen', r.settingsOpen === false, r);
+  checkPageClean(p, 'provider added');
+  await p.close();
+}
+
 await finish('providers row');
