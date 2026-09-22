@@ -468,13 +468,21 @@ async function runLoop(
   // Generous default, clamped to the model's hard provider cap: asking
   // above it is a 400 error (e.g. Haiku 3.5 tops out at 8192).
   const bareModel = splitModelRef(opts.model)?.model ?? opts.model;
-  // D49t: the output cap the connection reported beats the 8192 fallback an
-  // unknown model would otherwise get — which a reasoning model exhausts on
-  // thinking alone, producing the empty turn that D49s had to defend against.
-  const maxTokens = Math.min(
-    16384,
-    resolveMaxOutput(bareModel, opts.advertised?.maxOutput),
-  );
+  // D49t/D49w: the model's OWN output limit, not one Plato invented.
+  //
+  // This was `Math.min(16384, ...)` — a 16,384 ceiling applied even when the
+  // model's real cap was known and larger. It has been there since 0.7.6, where
+  // it was a RAISE (from 4,096) that fixed runs ending with no answer. It is now
+  // the thing causing them: the founder's last run ramped 2,559 -> 4,783 ->
+  // 8,201 -> **16,384 exactly**, spent the whole budget thinking, and produced no
+  // visible text at all.
+  //
+  // Nothing replaces it as a hanger: `MAX_TURNS` bounds the run, and
+  // `resolveMaxOutput` still falls back to a conservative 8,192 when NOTHING
+  // knows the model. What changes is that a known limit is now used rather than
+  // overridden. A single turn can therefore cost more — that is the model's own
+  // ceiling, which is what the user picked.
+  const maxTokens = resolveMaxOutput(bareModel, opts.advertised?.maxOutput);
 
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 

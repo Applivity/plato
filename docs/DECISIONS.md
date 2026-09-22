@@ -2247,6 +2247,63 @@ over the application's own configuration unless every one of those options is se
 deliberately. The failure is invisible at the call site — the code reads as if it passed
 what it needed.
 
+**D49w — the model's output limit, not one Plato invented (M5.0, 0.25.0 — 2026-09-23).**
+
+`maxTokens` was `Math.min(16384, resolveMaxOutput(...))`. The 16,384 was applied even
+when the model's own limit was known and larger, and it is the reason the founder's last
+run produced nothing: output tokens per turn ran **2,559 → 4,783 → 8,201 → 16,384** —
+the last number exactly the cap — with **721 characters of visible text in the entire
+run**. The model was thinking, invisibly, until the budget ended.
+
+**The number's history matters, because it was not arbitrary when it was chosen.** It
+arrived in 0.7.6 as a **raise** from a hard-coded 4,096, fixing runs that ended with no
+answer. It stayed reasonable while the model answered quickly; it became destructive
+when the backend started being a reasoning model, whose thinking is billed from the same
+budget and is invisible to Plato. **A limit can be right when written and wrong later
+for a reason nobody recorded next to it.**
+
+**Removed rather than raised.** Raising it would have left the same mistake one order of
+magnitude out. What replaces it is the number the provider already gave us. Nothing is
+left unbounded: `MAX_TURNS` caps the run, and `resolveMaxOutput` still falls back to a
+conservative 8,192 when **nothing** knows the model — so an unknown model behaves exactly
+as before, and only a KNOWN limit is now honoured rather than overridden.
+
+**Accepted cost:** a single turn can be far larger, and the user pays for it. That is the
+model's own ceiling and the model the user selected. The counter-argument — a runaway
+turn — is bounded by the turn cap, and a run that produces nothing has already cost three
+attempts.
+
+**A test asserted the wrong thing and its name said so.** One existing case was called
+*"allows the full default for models with a higher cap"* while asserting 16384 — the
+ceiling, contradicting its own description. It now asserts 64000, the model's real limit.
+Worth noting as a general smell: a test whose name and assertion disagree has stopped
+testing the behaviour and started recording an implementation detail.
+
+---
+
+**D49v — only a reply to a request may move the view (M5.0, 0.25.0 — 2026-09-23).**
+
+Selecting a model from the dropdown right after adding a provider moved the user into
+Settings. **My first fix addressed the wrong half:** it corrected the stale
+`hasConnections` flag (D49u) — a real bug, and a different one — while the actual cause
+was that **every `settings` payload called `showSettings`.**
+
+The host sends one after any connection change, and one of those paths,
+`fetchAndStoreModels`, completes a **network round trip** first. So a payload could land
+after the user had already returned to the chat and clicked the model button, and the
+view would move under their cursor. Adding a provider is precisely that sequence, which
+is why it looked tied to the first model pick.
+
+**The rule now: a settings payload is CONTENT, and the view moves only for a payload the
+host marks as answering a request.** Every other one renders in place — which also means
+an open Settings page still refreshes live, and a background one costs nothing.
+
+**The lesson is the one this week keeps teaching:** when a symptom persists after a fix,
+the fix was for a different defect. The stale flag was real and worth fixing, but it was
+found by reading rather than by reproducing, and it happened to be adjacent to the real
+cause. **Reproduce first, then fix** — the D49v reproduction (an unprompted payload while
+in the chat) took ten minutes and would have found it immediately.
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

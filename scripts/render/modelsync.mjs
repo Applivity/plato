@@ -14,7 +14,7 @@ const models = (eff) => ({
   compaction: { mode: 'auto', threshold: 0.8 },
 });
 const settings = (mode) => ({
-  type: 'settings', modelItems: ITEMS, defaultModel: 'anthropic:claude-sonnet-4-5',
+  type: 'settings', open: true, modelItems: ITEMS, defaultModel: 'anthropic:claude-sonnet-4-5',
   connections: [], presets: [],
   workers: { noRoot: false, plato: 'global', agentsFile: null },
   orchestration: { mode, personas: P, colors: [{ id: 'violet', hex: '#b48ad4' }], roleMaxChars: 1000, duo: D, academy: { available: true, name: 'Lyceum', error: '', members: M } },

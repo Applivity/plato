@@ -54,6 +54,16 @@ are now only in PROGRESS.
   added without reading D49p**: Anthropic's server-side search needs no key, but
   it runs inside the API call, so **no approval card can fire** — it would break
   the always-ask rule.
+- **Plato does not cap a model's output below its own limit (D49w).** `maxTokens` comes
+  from `resolveMaxOutput` — the provider's advertised limit, the catalog, or a conservative
+  8,192 when nothing knows the model. **There is no Plato-invented ceiling.** One used to
+  exist (16,384) and truncated a real run at exactly that number after it had spent the
+  budget thinking. A single turn can now cost more; that is the model the user chose.
+- **A `settings` payload must not move the view (D49v).** The host sends one after any
+  connection change, some after a network round trip — so moving the view for one yanks
+  the user out of the chat mid-click. Only a payload marked `open: true`, which answers a
+  request, may open Settings. **Test fixtures that stand in for that reply set
+  `open: true`** (`S()` in `scripts/render/plib.mjs` already does).
 - **The environment must never choose Plato's endpoint or lend it a credential (D49u).**
   The Anthropic SDK defaults `baseURL` to `ANTHROPIC_BASE_URL` and `authToken` to
   `ANTHROPIC_AUTH_TOKEN`. Plato passed **only `apiKey`**, so a machine with those set
@@ -211,7 +221,7 @@ used to claim.
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Eleven suites, **233 assertions**; see
+  unit tests + render suites. Eleven suites, **236 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the

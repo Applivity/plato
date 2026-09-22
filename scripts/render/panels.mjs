@@ -2,7 +2,7 @@ import { check, page, openAll, finish } from './plib.mjs';
 
 const CONNS = [{ id: 'openrouter', kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1', models: ['a/b'], all: ['a/b'], keyStatus: 'missing', builtin: false }];
 const S = {
-  type: 'settings', modelItems: [], presets: [], connections: CONNS,
+  type: 'settings', open: true, modelItems: [], presets: [], connections: CONNS,
   defaultModel: '', workers: { noRoot: false, plato: 'global', agentsFile: null },
   orchestration: { mode: 'duo', personas: [{ id: 'aristotle', name: 'Aristotle', epithet: 'e', role: 'R' }], colors: [{ id: 'violet', hex: '#b48ad4' }], roleMaxChars: 1000, duo: {}, academy: { available: false, name: '', members: [], error: '' } },
   compaction: { mode: 'auto', threshold: 0.8 },

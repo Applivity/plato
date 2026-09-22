@@ -357,4 +357,35 @@ console.log('');
   await p.close();
 }
 
+
+// D49v: a `settings` payload must not drag the user out of the chat. The host
+// sends one after ANY connection change — including a model fetch that
+// completes a network round trip after the user has already moved on — and
+// every such payload used to call showSettings unconditionally.
+{
+  const C = { id: 'litellm', kind: 'openai', baseUrl: 'https://llm.example/v1',
+              models: ['m'], all: ['m'], keyStatus: 'set', builtin: false };
+  const p = await page(720, S({ connections: [C] }));
+  await p.evaluate((x) =>
+    window.dispatchEvent(new MessageEvent('message', { data: x })),
+  { type: 'models', hasConnections: true, items: [], orchestration: 'solo', compaction: { mode: 'auto', threshold: 0.8 } });
+  await p.waitForTimeout(160);
+  await p.evaluate(() => { const b = document.getElementById('sback'); if (b) b.click(); });
+  await p.waitForTimeout(140);
+  const inChat = await p.evaluate(() => document.body.classList.contains('show-settings'));
+  check('the user is in the chat to begin with', inChat === false, inChat);
+
+  // The unprompted payload — a model fetch finishing, a key re-read, anything.
+  // Explicitly NOT the reply to a request, which is the whole distinction.
+  await p.evaluate((x) =>
+    window.dispatchEvent(new MessageEvent('message', { data: x })),
+  { ...S({ connections: [C] }), open: false });
+  await p.waitForTimeout(200);
+  const after = await p.evaluate(() => document.body.classList.contains('show-settings'));
+  check('an unprompted settings payload does NOT move the user to Settings',
+    after === false, after);
+  checkPageClean(p, 'unprompted settings');
+  await p.close();
+}
+
 await finish('providers row');

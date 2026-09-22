@@ -217,7 +217,11 @@ describe('runAgentLoop truncation handling', () => {
     expect(p.seenMaxTokens[0]).toBe(8192);
   });
 
-  it('allows the full default for models with a higher cap (sonnet)', async () => {
+  // D49w: a known model gets its OWN limit. This asserted 16384, which was
+  // Plato's invented ceiling — the test's name said "the full default" while
+  // it pinned the cap that contradicted it. That ceiling truncated the
+  // founder's run at exactly 16,384 output tokens.
+  it('gives a higher-cap model its own limit, not Plato\'s ceiling (sonnet)', async () => {
     const p = provider([
       { content: [{ type: 'text', text: 'ok' }], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'stop' },
     ]);
@@ -226,7 +230,7 @@ describe('runAgentLoop truncation handling', () => {
       model: 'anthropic:claude-sonnet-4-5',
       provider: p,
     });
-    expect(p.seenMaxTokens[0]).toBe(16384);
+    expect(p.seenMaxTokens[0]).toBe(64000);
   });
 });
 
@@ -940,8 +944,10 @@ describe('advertised model limits reach the run (D49t)', () => {
   it('uses the window the connection reported', async () => {
     const r = await observe({ context: 163840, maxOutput: 64000 });
     expect(r.maxContext).toBe(163840);
-    // 64000 beats the 8192 fallback; the loop's own 16384 ceiling still applies.
-    expect(r.maxTokens).toBe(16384);
+    // D49w: the model's own limit, used as given. This used to be clamped to
+    // Plato's 16,384 — the ceiling that truncated the founder's run at exactly
+    // 16,384 output tokens after it had spent the budget thinking.
+    expect(r.maxTokens).toBe(64000);
   });
 
   /**

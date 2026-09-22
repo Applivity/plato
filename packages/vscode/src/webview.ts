@@ -1773,7 +1773,7 @@ export function chatHtml(): string {
     if (!hasConnections) {
       // D43: no models exist yet — take the user to onboarding instead
       // of an empty picker.
-      vsapi.postMessage({ type: 'openSettings' });
+      requestSettings();
       return;
     }
     if (modelPop.classList.contains('open')) {
@@ -1798,7 +1798,7 @@ export function chatHtml(): string {
   // D43: the empty state's CTA opens Settings → Providers (which
   // auto-opens the section when zero providers exist, D38b).
   document.getElementById('emptyCta').addEventListener('click', () => {
-    vsapi.postMessage({ type: 'openSettings' });
+    requestSettings();
   });
   // D45a-2: the secondary card's CTA materializes PLATO.md from the bundled
   // default. Hide the card optimistically; the host opens the new file.
@@ -1859,9 +1859,17 @@ export function chatHtml(): string {
   ctitleInput.addEventListener('blur', () => endTitleEdit(true));
 
   // Settings page (D27).
+  //
+  // D49v: asking for Settings is a REQUEST, and only a reply to one may move
+  // the view — the host marks that payload. It sends a settings payload after
+  // any connection change too, and every one of those used to call showSettings,
+  // so the chat could be yanked away mid-click.
+  function requestSettings() {
+    vsapi.postMessage({ type: 'openSettings' });
+  }
   const gear = document.getElementById('gear');
   gear.addEventListener('click', () => {
-    vsapi.postMessage({ type: 'openSettings' });
+    requestSettings();
   });
   document.getElementById('sback').addEventListener('click', () => {
     document.body.classList.remove('show-settings');
@@ -1872,7 +1880,7 @@ export function chatHtml(): string {
   // Settings → Orchestration.
   const orchChip = document.getElementById('orchChip');
   orchChip.addEventListener('click', () => {
-    vsapi.postMessage({ type: 'openSettings' });
+    requestSettings();
   });
   function syncOrchChip(o) {
     const mode = o.mode || 'solo';
@@ -3646,7 +3654,7 @@ export function chatHtml(): string {
   function ask() {
     if (!hasConnections) {
       // D43: nothing to send to yet — route to provider onboarding.
-      vsapi.postMessage({ type: 'openSettings' });
+      requestSettings();
       return;
     }
     const raw = q.value;
@@ -3792,7 +3800,14 @@ export function chatHtml(): string {
         if (Array.isArray(m.connections)) {
           applyEmptyState(m.connections.length > 0);
         }
-        showSettings(m);
+        // D49v: render it if the page is already open (a refresh), or if the
+        // host says this payload ANSWERS a request to see it. Any other settings
+        // payload is a background refresh, and moving the view for one is how
+        // the chat used to get yanked away mid-click right after a provider was
+        // added — a model fetch finishing late is enough to do it.
+        if (m.open === true || document.body.classList.contains('show-settings')) {
+          showSettings(m);
+        }
         break;
       case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
       case 'run': showRun(m); break;

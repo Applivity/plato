@@ -12,7 +12,7 @@ export function html() { return readFileSync(HTML_PATH, 'utf8'); }
 
 const CONNS = [{ id: 'litellm', kind: 'openai', baseUrl: 'https://ai.applivity.com/llm/v1', models: new Array(9).fill('m'), all: new Array(9).fill('m'), keyStatus: 'set', builtin: false }];
 const BASE = {
-  type: 'settings', modelItems: [], presets: [], connections: CONNS,
+  type: 'settings', open: true, modelItems: [], presets: [], connections: CONNS,
   defaultModel: '', workers: { noRoot: false, plato: 'global', agentsFile: null },
   orchestration: { mode: 'solo', personas: [], colors: [], roleMaxChars: 1000, duo: {}, academy: { available: false, name: '', members: [], error: '' } },
   compaction: { mode: 'auto', threshold: 0.8 },

@@ -479,7 +479,7 @@ class ChatHost {
         }
         if (m.type === 'openSettings') {
           this.ensureHomeWatch();
-          void this.sendSettings();
+          void this.sendSettings(undefined, true);
           return;
         }
         if (m.type === 'openHistory') {
@@ -1610,7 +1610,14 @@ class ChatHost {
       });
     });
   }
-  private async sendSettings(flash?: string): Promise<void> {
+  /**
+   * D49v: `open` marks the payload sent IN REPLY TO a request to see Settings.
+   * Every other settings payload is a background refresh, and the webview must
+   * not move the view for one — the host sends them after any connection
+   * change, including a model fetch that lands a network round trip after the
+   * user has already gone back to the chat.
+   */
+  private async sendSettings(flash?: string, open = false): Promise<void> {
     const userRaw = new Set(rawUserConnections().map((u) => u.id));
     const connections = [];
     for (const c of readConnections()) {
@@ -1648,6 +1655,7 @@ class ChatHost {
     }
     void this.panel.webview.postMessage({
       type: 'settings',
+      open,
       connections,
       defaultModel: this.effectiveModel(),
       modelItems: this.modelItems(),
