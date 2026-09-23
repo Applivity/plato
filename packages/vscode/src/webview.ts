@@ -649,14 +649,25 @@ export function chatHtml(): string {
                 color:#fff; }
   .note { font-size:11.5px; color:var(--pl-muted); margin-top:4px;
           line-height:1.45; }
-  .msg.bot p { margin:.35em 0; }
-  .msg.bot .md-h { font-weight:600; margin:.7em 0 .25em; line-height:1.3; }
-  .msg.bot .md-h1 { font-size:15px; }
-  .msg.bot .md-h2 { font-size:14px; }
-  .msg.bot .md-h3 { font-size:13px; }
-  .msg.bot .md-h4 { font-size:12.5px; }
-  .msg.bot ul, .msg.bot ol { margin:.35em 0; padding-left:1.4em; }
-  .msg.bot li { margin:.15em 0; }
+  /* D49ac: a reply is the part the user READS, so its structure has to be
+     visible without effort. It was not: body text is 13px and the headings were
+     15/14/13/12.5px, so an h3 was the SAME size as the paragraph beneath it and
+     an h4 was smaller than it — and every heading carried only .25em of space
+     below, which set it on top of the text it introduced. The ladder now climbs
+     clear of the body text and the space above a heading dominates the space
+     below it, which is what makes a section read as a section. */
+  .msg.bot { line-height:1.5; }
+  .msg.bot p { margin:.5em 0; }
+  .msg.bot .md-h { font-weight:600; line-height:1.25; }
+  .msg.bot .md-h1 { font-size:17px; margin:1em 0 .45em; }
+  .msg.bot .md-h2 { font-size:15.5px; margin:1.1em 0 .45em; }
+  .msg.bot .md-h3 { font-size:14px; margin:1em 0 .4em; }
+  .msg.bot .md-h4 { font-size:13.5px; margin:.9em 0 .35em; }
+  /* The first heading needs no space above it: the reply's own name line is
+     already the separation, and a gap there just pushes the text down. */
+  .msg.bot .md-h:first-child { margin-top:0; }
+  .msg.bot ul, .msg.bot ol { margin:.5em 0; padding-left:1.5em; }
+  .msg.bot li { margin:.3em 0; }
   .msg.bot blockquote { margin:.4em 0; padding:.1em .8em;
                         border-left:2px solid var(--pl-border);
                         color:var(--pl-muted); }

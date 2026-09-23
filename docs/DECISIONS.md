@@ -2354,6 +2354,41 @@ still there.
 
 ---
 
+**D49ac — a reply has to be readable, and it was not (M5.0, 0.25.0 — 2026-09-24).**
+
+The founder, reading the first long report Plato produced: *"the headings and important stuff
+is all too jammed up and headings are too small… since this is the part the user will read."*
+The arithmetic backs him up exactly.
+
+**The heading ladder was broken, not merely small.** Body text is 13px and the headings were
+**15 / 14 / 13 / 12.5px** — so an `h3` was **the same size as the paragraph beneath it**, and
+an `h4` was *smaller than the text it introduced*. A ladder whose lower rungs sit at or below
+the prose is not a ladder. It now climbs clear: **17 / 15.5 / 14 / 13.5px**.
+
+**"Jammed" was the space BELOW, which was .25em.** Every heading carried `.7em 0 .25em` — so
+section titles sat on top of the text they introduced, and the gap above them was fine. The
+asymmetry is the point: space above a heading must dominate space below it, or the heading
+binds to the text above instead of to what follows. Below is now `.35–.45em`, above `.9–1.1em`.
+Paragraphs went `.35em → .5em`, list items `.15em → .3em`, and the reply as a whole gained a
+**1.5 line-height** — for a long report, spacing between lines does more than any of it.
+
+**Also: the first heading gets no space above it.** A reply that opens with `Summary` would
+otherwise start with an empty gap under its own name line.
+
+**A rule that looked right and was a no-op.** The first version gave `strong` a brighter colour
+so identifiers would stand out in the prose — and the render suite caught it being **exactly the
+body colour**, because the body already uses `--vscode-editor-foreground`. It was deleted rather
+than fixed: there is nothing to change, and a rule that does nothing is worse than no rule,
+because the next reader assumes it does something.
+
+**Verified by measurement, not by looking.** The new `summary` render suite reads computed
+styles and asserts the properties **relative to the body size**, because the body size is the
+thing that was broken — "headings are big enough" passes against 13px headings; "no heading is
+the same size as body text" does not. Falsified, reverted: the old ladder fails four assertions
+and reports `h3.size === 13 === body`, which is the founder's complaint as an assertion.
+
+---
+
 **D49ab — there is no turn cap (M5.0, 0.25.0 — 2026-09-24).**
 
 `MAX_TURNS = 40` is deleted. The founder's question was not "raise it" but *"why is there
