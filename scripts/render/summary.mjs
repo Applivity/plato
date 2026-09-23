@@ -23,6 +23,7 @@ const BODY = [
   '<li><strong>FormatterUtility.formatFloat</strong> — negative values truncated.</li>',
   '<li><strong>ApiSecurityUtility</strong> — platform default charset in HMAC.</li>',
   '</ol>',
+  '<hr>',
   '<div class="md-h md-h3">Left alone</div>',
   '<ul><li>Local time zone, not UTC.</li></ul>',
 ].join('');
@@ -60,7 +61,11 @@ const measure = (p) => p.evaluate(() => {
   const para = document.querySelector('.msg.bot p');
   const li = document.querySelector('.msg.bot li');
   const head = document.querySelector('.msg.bot .md-h1');
+  const hr = document.querySelector('.msg.bot hr');
+  const hrCs = hr ? getComputedStyle(hr) : null;
   return {
+    text: bot ? bot.textContent : '',
+    dashes: bot ? /---/.test(bot.textContent) : true,
     body: bot ? px(getComputedStyle(bot).fontSize) : 0,
     botLine: bot ? px(getComputedStyle(bot).lineHeight) : 0,
     h1: read('.msg.bot .md-h1'),
@@ -69,6 +74,17 @@ const measure = (p) => p.evaluate(() => {
     headMt: head ? px(getComputedStyle(head).marginTop) : -1,
     paraLine: para ? px(getComputedStyle(para).lineHeight) : 0,
     liMb: li ? px(getComputedStyle(li).marginBottom) : 0,
+    hr: hrCs && {
+      present: true,
+      topWidth: px(hrCs.borderTopWidth),
+      // The default UA rule is an inset groove; a document break is a flat line.
+      style: hrCs.borderTopStyle,
+      // The PAINTED thickness. The stylesheet is border-box, so this is the
+      // border and nothing else — asserting the computed content height instead
+      // asserts an implementation detail that a border-box element cannot vary.
+      painted: hr.getBoundingClientRect().height,
+      mt: px(hrCs.marginTop),
+    },
   };
 });
 
@@ -107,6 +123,15 @@ const measure = (p) => p.evaluate(() => {
   }
   check('paragraphs are spaced apart', r.paraLine >= 18, r.paraLine);
   check('list items are spaced apart', r.liMb >= 3, r.liMb);
+
+  // D49ad: the section rule is a flat 1px line with room around it, not the
+  // browser's inset groove, and not a stray run of dashes in the prose.
+  check('a thematic break renders as a rule', !!r.hr && r.hr.present, r.hr);
+  check('the rule is a flat hairline, not the default groove',
+    !!r.hr && r.hr.style === 'solid' && r.hr.topWidth === 1 && r.hr.painted <= 2,
+    r.hr);
+  check('the rule is not jammed against the text', !!r.hr && r.hr.mt >= 12, r.hr);
+  check('no literal dashes are left in the reply', !r.dashes, r.text);
   checkPageClean(p, 'summary readability');
   await p.close();
 }

@@ -2354,6 +2354,67 @@ still there.
 
 ---
 
+**D49ae — say how you know (M5.0, 0.25.0 — 2026-09-24).**
+
+The founder read a report that fixed five things across four files and asked the question that
+matters: *what do you suggest about this?* — the one finding that was wrong.
+
+**What actually went wrong is not the obvious candidate.** The report cited `file:line`
+everywhere; citations were never the gap. It read the code and drew a **wrong conclusion about
+what a library does** — what `SimpleDateFormat` emits from a `SSSSSSS` pattern — and stated it
+as fact. And it was not dishonest: its verification section was excellent (*"I could not compile
+or run anything… reasoning from the SimpleDateFormat specification"*), and it flagged the ICU
+uncertainty by name.
+
+**The hole is that the caveat was REPORT-level while the claims were PER-CLAIM.** One flagged
+uncertainty sat beside an unflagged wrong one, and the reader has no way to tell which is which.
+
+**The rule, and the founder's constraint that shaped it.** Every factual claim is **observed**
+(you ran it), **read** (you read the code — name the file and line), or **inferred** (you
+reasoned from a library, a spec, a convention). Inference is allowed; **presenting it as
+observation is not**, and a third-party library's edge-case behaviour is the high-risk case
+because that is exactly where confident recall is wrong.
+
+**He rejected the shape I first proposed, and he was right.** I had suggested using `act` mode
+rather than `edit` when verification matters — making accuracy a function of which mode you
+happen to be in. His answer: *"let's make verification etc not dependent on mode. accuracy is
+uncompromisable under any mode."* So the rule is written the other way round: **a tool you do
+not have limits what you may CLAIM; it never licenses a guess.** `edit` denies the shell — under
+my version, `edit` would have been the mode whose findings were least trustworthy, which is
+backwards. The prompt now says so in those words, and a test asserts that sentence.
+
+**Two smaller rules ride with it.** A fix must **name the assumption it rests on** — this fix was
+correct only if the strings came from a producer meaning fractional seconds, and nothing in the
+report said so. And for a task that asks for **findings and then fixes**, the findings are written
+out **before the first edit**: a wrong premise is cheap while it is a sentence and expensive once
+it is a change.
+
+**D49ad — a report's own separators were rendering as junk (M5.0, 0.25.0 — 2026-09-24).**
+
+Found while measuring the headings, and reported rather than bundled — the founder asked for
+headings, and adding markdown syntax is a different thing. He said do it.
+
+Reports separate their sections with `---`, and the renderer emitted **three literal dashes in the
+middle of the prose**: `renderMarkdown('a\n\n---\n\nb')` gave `<p>---</p>`. Claude Code draws a
+rule there, which is part of why its reports read better.
+
+A standalone `---`, `***` or `___` line is now `<hr>`. **The one thing that must not change is
+the setext case** — `Title` then `---` is an *underline*, not a rule — so the rule only fires when
+no paragraph is open. That matters because this renderer has never supported setext: that line
+already folded into a paragraph, and turning a title's underline into a horizontal rule would be
+worse than the bug. Tables are unaffected (`|---|` starts with a pipe), and a rule inside a fenced
+block is untouched because fences are swapped for sentinels first.
+
+**A wrong reason of my own, caught by measuring.** I wrote `height:0` on the rule and a comment
+explaining that Chrome otherwise paints it two pixels thick. Both were wrong: the stylesheet is
+`box-sizing: border-box`, so the 1px border *is* the whole 1px and the `height:0` did nothing. I
+removed the declaration and corrected the comment — the same failure this entry is about, one
+screen after describing it, and caught by reading the computed style instead of the reasoning.
+The assertion was fixed too: it now measures the **painted** thickness, because a border-box
+element's content height is not something a rule can vary.
+
+---
+
 **D49ac — a reply has to be readable, and it was not (M5.0, 0.25.0 — 2026-09-24).**
 
 The founder, reading the first long report Plato produced: *"the headings and important stuff

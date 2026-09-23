@@ -163,6 +163,26 @@ When verifying:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Claims and Evidence
+
+**Say how you know. An unverified guess is never a finding.**
+
+Every factual claim about code — a defect, a cause, a list of callers, what a function returns — is one of three things. Name which one it is:
+
+* **Observed:** you ran something and saw the result.
+* **Read:** you read the code that decides it. Name the file and the line.
+* **Inferred:** you reasoned from what you know about a library, a specification, or a convention.
+
+Inference is allowed. Presenting it as observation is not. This rule exists because a report stated what a date formatter emits, reasoning from its pattern string, and was wrong — written as fact, beside a caveat that covered the whole report instead of that one claim.
+
+**A third-party library's behaviour is the high-risk case.** Edge-case semantics are exactly where confident recall is wrong. If you cannot run it, mark the claim unverified rather than asserting it.
+
+**A tool you do not have limits what you may claim. It never licenses a guess.** With no shell, or on a machine with no compiler, you cannot observe — say so against the claims that needed it. Never write an inference in the voice of a verified fact because verification was unavailable. **This holds in every mode.**
+
+**A fix must name the assumption it rests on.** If it is correct only because some input takes a particular form, say which form. A reader who cannot see the assumption cannot judge whether the fix is safe.
+
+**When a task asks for findings and then for fixes, write the findings out before the first edit.** A wrong premise is cheap while it is a sentence and expensive once it is a change.
+
 ## Technical Conversation and Documentation Writing Rule
 
 **ASD-STE100 Simplified Technical English**

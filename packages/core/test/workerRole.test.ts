@@ -187,3 +187,46 @@ describe('buildWorkerRole', () => {
   });
 });
 
+
+/**
+ * D49ae. The bundled prompt told the model to report what it could not verify —
+ * but only once, for the whole report. A real run then wrote one correct caveat
+ * ("I could not compile anything") beside a wrong CONFIRMED claim about what
+ * SimpleDateFormat emits, and the fix rested on that claim.
+ *
+ * The missing rule was per-claim, and mode-independent: an unavailable tool
+ * limits what you may claim, it does not license a guess. `edit` mode denies the
+ * shell — so if accuracy depended on the mode, `edit` would be the mode where
+ * findings are least trustworthy, which is backwards.
+ */
+describe('the worker prompt requires per-claim evidence (D49ae)', () => {
+  it('names the three kinds of claim', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('Observed:');
+    expect(DEFAULT_PLATO_BODY).toContain('Read:');
+    expect(DEFAULT_PLATO_BODY).toContain('Inferred:');
+  });
+
+  it('calls third-party library behaviour the high-risk case', () => {
+    expect(DEFAULT_PLATO_BODY).toContain(
+      "A third-party library's behaviour is the high-risk case",
+    );
+  });
+
+  // The founder's constraint, in the words that make it hold in every mode.
+  it('makes a missing tool a limit on claims, never a licence to guess', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('It never licenses a guess');
+    expect(DEFAULT_PLATO_BODY).toContain('This holds in every mode');
+  });
+
+  it('requires a fix to name the assumption it rests on', () => {
+    expect(DEFAULT_PLATO_BODY).toContain(
+      'A fix must name the assumption it rests on',
+    );
+  });
+
+  it('asks for findings before the first edit', () => {
+    expect(DEFAULT_PLATO_BODY).toContain(
+      'write the findings out before the first edit',
+    );
+  });
+});

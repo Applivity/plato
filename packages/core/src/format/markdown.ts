@@ -5,8 +5,8 @@
  * added, so model output can never inject markup. Raw HTML never passes
  * through. Supported subset: fenced code blocks, `inline code`, **bold**,
  * *italic*, #-headings (up to ####), -/* and 1. lists, > blockquotes,
- * GFM pipe tables (with :-- alignment), paragraphs with soft breaks, and
- * http(s)-only links. No dependencies.
+ * GFM pipe tables (with :-- alignment), thematic breaks (---, ***, ___),
+ * paragraphs with soft breaks, and http(s)-only links. No dependencies.
  */
 
 export function escapeHtml(s: string): string {
@@ -195,6 +195,18 @@ export function renderMarkdown(src: string): string {
       flushPara();
       flushList();
       out.push(`<blockquote><p>${q[1]}</p></blockquote>`);
+      continue;
+    }
+
+    // D49ad: a thematic break. Reports use `---` between sections constantly,
+    // and it was rendering as three literal dashes in the middle of the prose.
+    // Only a STANDALONE rule qualifies: when a paragraph is already open the
+    // line is a setext underline (`Title` + `---`), which this renderer has
+    // never supported, and folding it into that paragraph keeps it unchanged
+    // rather than turning a title's underline into a horizontal rule.
+    if (para.length === 0 && /^(-{3,}|\*{3,}|_{3,})$/.test(line)) {
+      flushList();
+      out.push('<hr>');
       continue;
     }
 

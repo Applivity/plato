@@ -674,6 +674,11 @@ export function chatHtml(): string {
   .msg.bot .md-h:first-child { margin-top:0; }
   .msg.bot ul, .msg.bot ol { margin:.5em 0; padding-left:1.5em; }
   .msg.bot li { margin:.3em 0; }
+  /* D49ad: a section rule. The browser default is an inset grey groove, which
+     reads as a UI divider rather than a document break. No height is needed: the
+     stylesheet is border-box throughout, so the 1px border is the whole 1px. */
+  .msg.bot hr { border:0; border-top:1px solid var(--pl-border);
+                margin:1.2em 0; }
   .msg.bot blockquote { margin:.4em 0; padding:.1em .8em;
                         border-left:2px solid var(--pl-border);
                         color:var(--pl-muted); }

@@ -119,3 +119,51 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('<td>3</td>');
   });
 });
+
+/**
+ * D49ad. A long report separates its sections with `---`, and it was rendering as
+ * three literal dashes in the middle of the prose. The founder was comparing the
+ * result against Claude Code, which draws a rule there.
+ *
+ * The one thing that must NOT change is the setext case: `Title` followed by
+ * `---` is an underline, not a rule. This renderer has never supported setext,
+ * so that line already folded into a paragraph — and it must keep doing so,
+ * because turning a title's underline into a horizontal rule would be worse than
+ * the bug being fixed.
+ */
+describe('thematic breaks (D49ad)', () => {
+  it('renders a standalone rule', () => {
+    expect(renderMarkdown('a\n\n---\n\nb')).toBe('<p>a</p><hr><p>b</p>');
+  });
+
+  it('accepts stars and underscores too', () => {
+    expect(renderMarkdown('a\n\n***\n\nb')).toContain('<hr>');
+    expect(renderMarkdown('a\n\n___\n\nb')).toContain('<hr>');
+  });
+
+  it('ends an open list before the rule', () => {
+    const out = renderMarkdown('1. a\n2. b\n\n---\n\nc');
+    expect(out).toBe('<ol><li>a</li><li>b</li></ol><hr><p>c</p>');
+  });
+
+  // A setext underline is NOT a rule, and this renderer keeps its old behaviour.
+  it('leaves a title underline inside its paragraph', () => {
+    const out = renderMarkdown('Fixed (4)\n---\nmore');
+    expect(out).not.toContain('<hr>');
+  });
+
+  // Two dashes are not a break; the fence must not accept any short run.
+  it('does not treat a short dash run as a rule', () => {
+    expect(renderMarkdown('a\n\n--\n\nb')).not.toContain('<hr>');
+  });
+
+  it('never rewrites a rule inside a fenced code block', () => {
+    const out = renderMarkdown('```\n---\n```');
+    expect(out).toContain('---');
+    expect(out).not.toContain('<hr>');
+  });
+
+  it('still reads a table delimiter row as a table', () => {
+    expect(renderMarkdown('| a |\n|---|\n| 1 |')).toContain('md-table');
+  });
+});

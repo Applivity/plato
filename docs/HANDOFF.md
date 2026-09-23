@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ab** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49ae** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
@@ -64,6 +64,17 @@ are now only in PROGRESS.
   composer and the Duo/Academy doer selects are the only model controls in the product,
   and they used to write memory only, so every reload reverted to a setting with **no UI**
   — which is how a hand-set model kept reappearing.
+- **The worker prompt demands per-claim evidence, and it is MODE-INDEPENDENT (D49ae).** Every
+  factual claim about code must be **observed** (you ran it), **read** (name the file and line),
+  or **inferred** — and inference must never be written in the voice of observation. A **third-party
+  library's edge-case behaviour** is named as the high-risk case, because that is where confident
+  recall is wrong; a real report was wrong about `SimpleDateFormat` while its report-level caveat
+  covered a different thing. **A tool you do not have limits what you may CLAIM; it never licenses
+  a guess — the prompt says so in those words and a test asserts them.** The founder rejected the
+  alternative ("use `act` when verification matters") because it made accuracy a function of the
+  mode. **Do not reintroduce mode-dependent accuracy claims.** Two riders: a fix must name the
+  assumption it rests on, and a findings-then-fixes task gets its findings written out **before the
+  first edit**.
 - **There is NO turn cap (D49ab).** `MAX_TURNS = 40` is deleted, and `reason: 'cap'` now
   means exactly one thing — a **truncated answer**. **The run ends when the model stops
   calling tools**; that is the whole termination rule. The bound arrived under D22's
