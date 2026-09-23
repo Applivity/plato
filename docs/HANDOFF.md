@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ae** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49af** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
@@ -64,6 +64,15 @@ are now only in PROGRESS.
   composer and the Duo/Academy doer selects are the only model controls in the product,
   and they used to write memory only, so every reload reverted to a setting with **no UI**
   — which is how a hand-set model kept reappearing.
+- **A model writes a two-level document, so style the rungs it uses (D49af).** A real report was
+  a single second-level heading for the title and a **third-level heading for every section** —
+  so the third rung carried the whole visible structure while the first and second were dead
+  weight. The reply heading ladder is **21 / 19 / 17 / 15px** against 13px body, deliberately
+  compressed: **prominence for the levels in use beats hierarchy across levels that never
+  appear.** **The lesson is about tests, not sizes:** the suite pinned `h1` and `h2` and the
+  document used `h2` once and `h3` three times, so the assertion that mattered did not exist and
+  a fix passed while the page still read flat — **assert the rungs the document uses, not the
+  rungs the stylesheet has.** Same failure as a cap no test described.
 - **The worker prompt demands per-claim evidence, and it is MODE-INDEPENDENT (D49ae).** Every
   factual claim about code must be **observed** (you ran it), **read** (name the file and line),
   or **inferred** — and inference must never be written in the voice of observation. A **third-party
@@ -322,6 +331,13 @@ used to claim.
 1. **webview.ts is one giant template string.** A stray backtick inside a
    JS comment or string literal closes the template and breaks the
    build. `tsc -b` usually catches it; always run it after editing.
+   **It is hit far more often than it looks, and it is almost always a COMMENT**
+   — four times in one session (D49ac/D49ad), every time while writing *about*
+   code or markdown, which is exactly when quoting is natural. The fix is never to
+   quote in that file: write the words, not the syntax. Symptom is
+   `error TS1005: ';' expected` or `TS1127: Invalid character` at the comment's
+   line and column — **go straight to the nearest backtick rather than reading the
+   error as a real syntax fault in the surrounding code.**
    **Backslashes are eaten too:** `\s` written on one line here compiles
    to `/s+/` — which matches the letter *s* and silently does nothing.
    Write `\\s`. `tsc` does NOT catch this one, because `/s+/` is valid

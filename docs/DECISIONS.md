@@ -2354,6 +2354,43 @@ still there.
 
 ---
 
+**D49af — size the rungs the model actually writes (M5.0, 0.25.0 — 2026-09-24).**
+
+Corrects D49ac. Two passes were needed, and the second one is the interesting one.
+
+**Pass one — "pronounced".** D49ac's ladder cleared the body but the founder's second read was
+that the headings were still not **pronounced**, with Claude Code as the reference. A section
+title at 1.19× the prose is a label, not a heading. So 17/15.5 became **20 / 17.5 / 15.5 / 14px**
+and the top two rungs went to weight 700. **The suite's assertion was the problem here:** "bigger
+than the body" was satisfied by the ladder he had just rejected, so the test now pins
+**dominance** — top rung ≥1.45×, second ≥1.3×.
+
+**Pass two — and why the first pass still looked flat.** He reloaded, looked at the same report,
+and said he was *"not sure"* the change had landed. **It had landed** — the installed CSS was
+verified — and the reason he could not tell is the finding.
+
+**A model does not write a four-level document.** That report was a single second-level heading
+for the title and a **third-level heading for every section**. So all three section headings — the
+whole visible structure of the page — landed on `h3`, and the strong first and second rungs were
+**dead weight for the only document shape that exists**. `h3` had gone from 13px (exactly the body
+size) to 15.5px: a difference of two and a half pixels, which is precisely the uncertainty he
+reported.
+
+**So the rungs were sized for the table, not for the page.** The ladder is compressed to
+**21 / 19 / 17 / 15px** — ratios 1.62 / 1.46 / 1.31 / 1.15 — so every rung a model actually writes
+is pronounced, at the cost of a shallower gap between them. **That trade is the decision:
+prominence for the levels in use beats hierarchy across levels that never appear.**
+
+**The suite had the same blind spot, which is the generalisable part.** It pinned `h1` and `h2`,
+and the document used `h2` once and `h3` three times — so **the assertion that mattered did not
+exist**, and the fix passed its tests while the page still read flat. That is the same failure as
+the turn cap that no test had ever described: **a suite that measures the ladder instead of the
+document.** `h3` now carries its own assertion at ≥1.25×, and the falsification is exact — with
+the ladder he was looking at, it fails reporting `h3 15.5` against `body 13`. **His uncertainty,
+as a number.**
+
+---
+
 **D49ae — say how you know (M5.0, 0.25.0 — 2026-09-24).**
 
 The founder read a report that fixed five things across four files and asked the question that
@@ -2425,6 +2462,12 @@ The arithmetic backs him up exactly.
 **15 / 14 / 13 / 12.5px** — so an `h3` was **the same size as the paragraph beneath it**, and
 an `h4` was *smaller than the text it introduced*. A ladder whose lower rungs sit at or below
 the prose is not a ladder. It now climbs clear: **17 / 15.5 / 14 / 13.5px**.
+
+> **Superseded twice, the same day — see D49af.** The sizes above were the first correction
+> (a ladder that climbs), then **17/15.5** became **20/17.5** when the founder judged them still
+> not pronounced, and then the whole ladder was **compressed to 21/19/17/15** once a real report
+> showed which rungs a model actually writes. **The spacing, the line-height and the first-heading
+> rule below are unchanged and still current.**
 
 **"Jammed" was the space BELOW, which was .25em.** Every heading carried `.7em 0 .25em` — so
 section titles sat on top of the text they introduced, and the gap above them was fine. The
