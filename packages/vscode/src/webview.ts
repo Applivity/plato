@@ -3929,22 +3929,52 @@ export function chatHtml(): string {
         break;
       case 'card-open': showCard(t, false); break;
       case 'card-done': cardDone(t); break;
-      case 'compact': addCompactBanner(t.text); break;
+      case 'compact': addCompactBanner(); break;
+      case 'trim': addTrimNote(t); break;
     }
   }
 
-  // D44d: a fold replaced older turns with a summary; show it as a banner.
-  function addCompactBanner(text) {
+  /**
+   * D49aa: the summary is the MODEL's memory, not a document for the user — so
+   * the transcript shows where that memory starts and nothing else. The rows it
+   * accounts for are all still above, which is the point: printing the summary
+   * here would show a terse machine note instead of the conversation that is
+   * already there.
+   */
+  function addCompactBanner() {
     const div = document.createElement('div');
     div.className = 'msg compact';
     const head = document.createElement('div');
     head.className = 'cc-head';
-    head.textContent = 'Earlier conversation compacted';
-    const body = document.createElement('div');
-    body.className = 'cc-body';
-    body.textContent = text;
+    head.textContent = 'Plato now carries a summary of the work above';
     div.appendChild(head);
-    div.appendChild(body);
+    log.appendChild(div);
+    scroll();
+  }
+
+  /**
+   * D49aa: rows left the transcript because the display cap was reached. Saying
+   * so is the difference between a bounded transcript and one that quietly
+   * rewrites itself — and if the cap took the summary, that is Plato's memory
+   * going, not just the view, so it is said differently.
+   */
+  function addTrimNote(t) {
+    const n = Number(t.dropped) || 0;
+    const div = document.createElement('div');
+    div.className = 'msg compact trim';
+    const head = document.createElement('div');
+    head.className = 'cc-head';
+    head.textContent = n === 1
+      ? '1 older entry is no longer shown'
+      : n + ' older entries are no longer shown';
+    div.appendChild(head);
+    if (t.lostSummary) {
+      const body = document.createElement('div');
+      body.className = 'cc-body';
+      body.textContent = 'This included Plato’s summary of the earlier work, '
+        + 'so it no longer remembers that part of the conversation.';
+      div.appendChild(body);
+    }
     log.appendChild(div);
     scroll();
   }

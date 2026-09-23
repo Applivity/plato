@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49z** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49aa** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
@@ -64,6 +64,18 @@ are now only in PROGRESS.
   composer and the Duo/Academy doer selects are the only model controls in the product,
   and they used to write memory only, so every reload reverted to a setting with **no UI**
   — which is how a hand-set model kept reappearing.
+- **The chat log is append-only; compaction is a REQUEST, not a deletion (D49aa).** The log
+  is the user's transcript and the request is what the model sees — they used to be the
+  same array, so a fold that rebuilt the request from a summary also deleted the
+  transcript. **A fold now writes one `compact` row at the cut and removes nothing**, and
+  `historyFor` already treated the newest such row as the boundary of the model's memory.
+  **Never reintroduce a log rewrite here** — `applyFold` is the only write, it is in core,
+  and a shell-side test asserts it does not shrink the log. The rules live in
+  `packages/core/src/runtime/chatlog.ts` (`planFold` / `applyFold` / `requestFromLog`)
+  **because the shell has no unit tests and this is a data-loss path**. The summary is
+  **not printed** — it is the model's memory, not a document for the reader. The display
+  cap leaves a `trim` row, and says so differently if it took the summary.
+  **`LOG_MAX` is 400 ENTRIES, not messages** — every completed tool call is one row.
 - **There is one model list per connection, and nothing can be ticked out of it (D49z).**
   Every model a provider returns is eligible and appears in the chat picker, in the order
   stored. `resolveOfferedModels` (core) is the one read rule and it prefers the **wider**

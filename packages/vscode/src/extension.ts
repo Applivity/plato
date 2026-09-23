@@ -19,6 +19,11 @@ import {
   renderMarkdown,
   McpServer,
   loadMcpConfig,
+  applyFold,
+  lastSummaryIndex,
+  planFold,
+  requestFromLog,
+  tailPairs,
   ObserverAgent,
   loadTeamConfig,
   parseTeamConfig,
@@ -327,8 +332,14 @@ type Entry =
   | { k: 'tool'; tool: string; phase: string }
   | { k: 'card-open'; tool: string; preview: string }
   | { k: 'card-done'; title: string; preview: string }
-  /** D44d: a folded conversation summary, standing in for trimmed turns. */
-  | { k: 'compact'; text: string };
+  /** D44d: the model's memory boundary — a fold replaced older turns with this. */
+  | { k: 'compact'; text: string }
+  /**
+   * D49aa: the display cap dropped rows. The transcript may be bounded; it may
+   * not lose a row without saying so. `lostSummary` is true when the cap took
+   * the summary itself, which is the model's memory and not just the display.
+   */
+  | { k: 'trim'; dropped: number; lostSummary: boolean };
 
 /** D44a: per-run context attachments add to a run. */
 interface RunCtx {
@@ -356,7 +367,9 @@ class ChatHost {
   private streamTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private modelOverride: string | null = null;
-  private readonly log: Entry[];
+  // D49aa: not readonly — a fold REPLACES the array with one that keeps every
+  // row plus the summary, which is clearer than splicing a new list into the old.
+  private log: Entry[];
   /** D40: model-generated (or user-renamed) conversation title. */
   private chatTitle: string;
   /** D40: once the user renames, the generator never overwrites. */
@@ -1399,25 +1412,39 @@ class ChatHost {
 
   /** Index of the last compact entry in the log, or -1. */
   private lastCompactIndex(): number {
-    for (let i = this.log.length - 1; i >= 0; i -= 1) {
-      if (this.log[i]!.k === 'compact') return i;
+    return lastSummaryIndex(this.log);
+  }
+
+  /**
+   * D49aa: apply the display cap, and leave a row saying what it cost. The cap
+   * used to splice the front off in silence, which was survivable only while a
+   * fold cleared the log often enough to keep it under the limit — with the fold
+   * no longer deleting anything, this is the one place rows can still leave.
+   */
+  private recordTrim(max: number): void {
+    const drop = this.log.length - max;
+    if (drop <= 0) return;
+    const gone = this.log.splice(0, drop);
+    const lostSummary = gone.some((e) => e.k === 'compact');
+    const head = this.log[0];
+    if (head !== undefined && head.k === 'trim') {
+      head.dropped += drop;
+      head.lostSummary = head.lostSummary || lostSummary;
+      return;
     }
-    return -1;
+    this.log.unshift({ k: 'trim', dropped: drop, lostSummary });
   }
 
   /** Number of raw you/bot pairs sitting after the last summary. */
   private tailPairCount(): number {
-    const c = this.lastCompactIndex();
-    const tail = c < 0 ? this.log : this.log.slice(c + 1);
-    return tail.filter(
-      (e) => e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'),
-    ).length;
+    return tailPairs(this.log);
   }
 
   /**
-   * Fold the raw tail down to KEEP_AFTER_FOLD pairs: summarise everything
-   * older (plus any prior summary) into a single compact entry and trim the
-   * trimmed turns from the log. Returns true when a fold happened.
+   * Fold the raw tail down to KEEP_AFTER_FOLD pairs: summarise everything older
+   * (plus any prior summary) into a single compact entry, WRITTEN into the log.
+   * The rows it accounts for stay where they are (D49aa) — a fold changes what
+   * the model is sent, never what the user can read. Returns true on a fold.
    */
   private async foldTail(
     conn: ConnectionConfig,
@@ -1425,20 +1452,12 @@ class ChatHost {
     ref: string,
   ): Promise<boolean> {
     const c = this.lastCompactIndex();
-    const tailEntries = c < 0 ? this.log : this.log.slice(c + 1);
     const prior =
       c >= 0 && this.log[c]!.k === 'compact' ? this.log[c]!.text : null;
-    // Indexes of you/bot pairs within tailEntries, oldest first.
-    const pairs: number[] = [];
-    for (let i = 0; i < tailEntries.length; i += 1) {
-      const e = tailEntries[i]!;
-      if (e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot')) pairs.push(i);
-    }
-    if (pairs.length <= KEEP_AFTER_FOLD) return false;
-    const foldCount = pairs.length - KEEP_AFTER_FOLD;
-    const boundary = pairs[foldCount]!;
-    const older = pairs.slice(0, foldCount).map((i) => tailEntries[i]!);
-    const keepEntries = tailEntries.slice(boundary);
+    const plan = planFold(this.log, KEEP_AFTER_FOLD);
+    if (plan === null) return false;
+    const foldCount = plan.covered.length;
+    const older = plan.covered;
 
     const blocks: string[] = [];
     if (prior !== null) {
@@ -1479,14 +1498,22 @@ class ChatHost {
       .trim();
     if (text.length === 0) return false;
 
-    this.log.length = 0;
-    this.log.push({ k: 'compact', text } as Entry, ...keepEntries);
+    // D49aa: the summary is WRITTEN, never swapped in. The rows it accounts for
+    // stay in the log, so the transcript the user scrolls is unaffected by a
+    // fold — and `historyFor` already treats the newest summary row as the
+    // boundary of the model's memory. Clearing the log here is what deleted the
+    // founder's conversation the moment a run ended.
+    this.log = applyFold(
+      this.log,
+      plan,
+      { k: 'compact', text } as Entry,
+    );
     if (this.log.length > LOG_MAX) {
-      this.log.splice(0, this.log.length - LOG_MAX);
+      this.recordTrim(LOG_MAX);
     }
     await this.ctx.workspaceState.update(LOG_KEY, this.log);
-    // A fold rewrote (and shrank) the log: let the next archive snapshot the
-    // folded conversation instead of being skipped by the growth guard.
+    // A fold grew the log: let the next archive snapshot it instead of being
+    // skipped by the growth guard.
     this.archivedUpTo = 0;
     const decorated = this.log.map((e) =>
       e.k === 'msg' && e.cls === 'bot'
@@ -1990,35 +2017,8 @@ class ChatHost {
    * cadence keeps that tail bounded. MAX_TAIL_PAIRS is only a safety cap.
    */
   private historyFor(): { role: 'user' | 'assistant'; text: string }[] {
-    const base = this.log.slice(0, -1); // exclude the entry for the task being sent now
-    let c = -1;
-    for (let i = base.length - 1; i >= 0; i -= 1) {
-      if (base[i]!.k === 'compact') {
-        c = i;
-        break;
-      }
-    }
-    const out: { role: 'user' | 'assistant'; text: string }[] = [];
-    const compactEntry =
-      c >= 0 && base[c]!.k === 'compact' ? base[c] : undefined;
-    if (compactEntry !== undefined && compactEntry.k === 'compact') {
-      out.push({
-        role: 'user',
-        text: '[Summary of the earlier conversation]\n' + compactEntry.text,
-      });
-    }
-    const tail = c < 0 ? base : base.slice(c + 1);
-    const pairs = tail
-      .filter((e): e is Extract<Entry, { k: 'msg' }> =>
-        e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'))
-      .slice(-MAX_TAIL_PAIRS);
-    for (const e of pairs) {
-      out.push({
-        role: e.cls === 'you' ? ('user' as const) : ('assistant' as const),
-        text: e.text,
-      });
-    }
-    return out;
+    // Exclude the entry for the task being sent now.
+    return requestFromLog(this.log.slice(0, -1), MAX_TAIL_PAIRS);
   }
 
   // ---- Transcript replay (M3) -------------------------------------------
@@ -2158,7 +2158,7 @@ class ChatHost {
   private push(entry: Entry): void {
     this.log.push(entry);
     if (this.log.length > LOG_MAX) {
-      this.log.splice(0, this.log.length - LOG_MAX);
+      this.recordTrim(LOG_MAX);
     }
     void this.ctx.workspaceState.update(LOG_KEY, this.log);
   }

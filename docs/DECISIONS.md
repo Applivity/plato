@@ -2352,6 +2352,58 @@ still there.
 
 ---
 
+---
+
+**D49aa — the transcript is append-only; compaction is a request, not a deletion
+(M5.0, 0.25.0 — 2026-09-23).**
+
+The founder cancelled a run and watched his conversation disappear, replaced by a
+summary he had not asked for. **The fold was scheduled in the run's `finally`**, so it ran
+on every way a run can end — success, error, or cancel — and the trigger is a message
+COUNT (26 pairs), which his ~30-turn run passed the moment it stopped.
+
+**The damage was two lines.** `foldTail` did `this.log.length = 0` and then pushed the
+summary plus the kept tail. **The reader was never wrong:** `historyFor` already found the
+newest summary row and built the request as *[summary] + everything after it*. Only the
+writer destroyed anything. **So the fix is the deletion of a step, not a redesign** — the
+fold now WRITES a row at the cut, and both readers handle that correctly with no change.
+
+**Why this happened, and what to learn from it.** The log is the user's transcript; the
+request is what the model sees. They are two different things that were the same array, so
+a reasonable thing to do to a request — rebuild it from a summary — was a catastrophic
+thing to do to a transcript. **The industry separates them, and Plato is not the first to
+get this wrong:** Codex shipped the same defect, and its fix proposal describes Plato's
+bug exactly — *"rewrites the live transcript… the user can no longer scroll up."* In
+Codex's case the original text was still on disk and only the RENDER failed to backfill
+it. **Nothing here needed to be lost.**
+
+**The summary is no longer printed.** It is the model's memory, written to be terse and
+fact-only; putting it in the transcript showed a machine note in place of the conversation
+that is already there. The marker says where the model's memory now starts, and the rows
+it accounts for are all still above it. **This is the same conclusion the founder reached
+independently** — Claude Code does not print its summary either, and he preferred that.
+
+**The display cap is now honest too.** With the fold no longer deleting, `LOG_MAX` (400
+ENTRIES — not 400 messages; every completed tool call is one row, so a tool-heavy run
+spends ~70) became the only thing that could still drop rows, and it did so silently. It
+now leaves a `trim` row saying how many went, and says separately when the cap took the
+summary — because that is the model's memory going, not just the view.
+
+**Verified by testing the code, not the shell.** The rules moved to core
+(`runtime/chatlog.ts`) — `planFold`, `applyFold`, `requestFromLog` — because the shell has
+no unit tests and a data-loss bug must be reproducible. **The falsification is the
+decisive evidence:** implementing `applyFold` as the discarded rewrite fails
+*"writes a row without removing any row"* with a log that shrank from 33 rows to 25.
+
+**Not done, and next:** the summariser still sees only message text, never tool calls or
+results — which is why a tool-heavy run summarises to nothing, and why the founder's own
+summary admitted it saw no work. Then the threshold (an absolute window, not a percentage
+of a window that can never fill), then a cheap first layer that trims old tool OUTPUT
+before any summary. **A summary is currently the only tool we have for a 26-pair tail that
+is 92% tool results.** That is the next thing to fix.
+
+---
+
 **D49z — every fetched model is eligible; the tick boxes are gone (M5.0, 0.25.0 —
 2026-09-23).**
 

@@ -18,6 +18,7 @@ export * from './runtime/bus.js';
 export * from './runtime/cost.js';
 export * from './runtime/transcript.js';
 export * from './runtime/context.js';
+export * from './runtime/chatlog.js';
 export * from './format/markdown.js';
 export * from './mcp/client.js';
 export * from './mcp/config.js';
