@@ -14,6 +14,7 @@ import {
   PROVIDER_PRESETS,
   fetchModelPool,
   resolveMaxContext,
+  pickEffectiveModel,
   renderMarkdown,
   McpServer,
   loadMcpConfig,
@@ -402,8 +403,19 @@ class ChatHost {
           return;
         }
         if (m.type === 'model' && typeof m.value === 'string') {
-          if (this.resolveConnection(m.value)) {
+          // D49x: an ENABLED model, not merely a known connection. The composer
+          // and the Duo/Academy doer selects are the only model controls in the
+          // product, and both offer this exact list, so a value outside it did
+          // not come from a click.
+          if (this.isSelectable(m.value)) {
             this.modelOverride = m.value;
+            // D49x: the picker is the only in-product way to choose a model, so
+            // its choice is a preference and must outlive the panel. It used to
+            // live in memory alone, and every reload reverted to `plato.model` —
+            // a setting with no UI — which is how a deselected model reappeared.
+            await vscode.workspace
+              .getConfiguration('plato')
+              .update('model', m.value, vscode.ConfigurationTarget.Global);
             void this.panel.webview.postMessage({
               type: 'notice',
               text: `Model set to ${m.value}`,
@@ -411,7 +423,7 @@ class ChatHost {
             // Capability may have changed with the model (D28 phase 2).
             this.postModelState();
           } else {
-            this.send('error', `Unknown connection in "${m.value}"`);
+            this.send('error', `Model "${m.value}" is not enabled for any connection`);
           }
           return;
         }
@@ -2225,30 +2237,34 @@ class ChatHost {
     });
   }
 
-  /** Session override, else the plato.model workspace setting. */
-  private effectiveModel(): string {
-    const configured =
+  /** The picker's live choice, else the plato.model setting. */
+  private preferredModel(): string {
+    return (
       this.modelOverride ??
       vscode.workspace
         .getConfiguration('plato')
-        .get<string>('model', 'anthropic:claude-sonnet-4-5');
-    // D43: the built-in seeds are gone — if the configured ref's
-    // connection no longer exists, fall back to the first selectable
-    // model so the header dropdown and academy example stay coherent.
-    if (this.resolveConnection(configured)) {
-      return configured;
-    }
-    return this.modelItems()[0]?.value ?? configured;
+        .get<string>('model', 'anthropic:claude-sonnet-4-5')
+    );
   }
 
-  private resolveConnection(ref: string): ConnectionConfig | null {
-    const parts = splitModelRef(ref);
-    if (!parts) {
-      return null;
-    }
-    return (
-      readConnections().find((c) => c.id === parts.connectionId) ?? null
+  /**
+   * D49x: the model a run uses, which must be one the pickers can offer.
+   *
+   * The old rule asked only whether the ref's CONNECTION existed, and a model the
+   * user had just unchecked satisfied that: the connection was still there. The
+   * run then sent a model the key did not allow and got a 403, while the composer
+   * showed that model as the current one — the founder's screenshot.
+   */
+  private effectiveModel(): string {
+    return pickEffectiveModel(
+      this.modelItems().map((it) => it.value),
+      this.preferredModel(),
     );
+  }
+
+  /** True when the pickers can offer this ref, i.e. it is an enabled model. */
+  private isSelectable(ref: string): boolean {
+    return this.modelItems().some((it) => it.value === ref);
   }
 
   /**

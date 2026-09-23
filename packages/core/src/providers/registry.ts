@@ -126,6 +126,42 @@ export function resolveMaxOutput(
   return Math.min(known, advertised);
 }
 
+/**
+ * D49x: the model a session actually runs with, from a preference and what the
+ * connections can currently offer.
+ *
+ * The two disagree when the user unchecks a model in Settings while it is still
+ * the selected one — `plato.model` keeps naming it, because nothing rewrites
+ * that setting when the active set shrinks. Running it anyway is the worst
+ * answer: a key scoped to a model list answers 403 rather than ignoring the
+ * name, so a deselected model turns into a failed run.
+ *
+ * A sibling on the SAME connection is preferred over the first available model,
+ * because the fallback should not cross providers: another connection can mean
+ * another vendor, another price and another key, which is a bigger decision than
+ * "this model went away". Only when the connection itself offers nothing does
+ * the choice move to another one, and only when nothing at all is offered does
+ * the preference survive — a workspace whose connection list has not loaded yet
+ * must not have its model silently blanked.
+ */
+export function pickEffectiveModel(
+  available: readonly string[],
+  preferred: string,
+): string {
+  if (preferred.length > 0 && available.includes(preferred)) {
+    return preferred;
+  }
+  const colon = preferred.indexOf(':');
+  if (colon > 0) {
+    const prefix = preferred.slice(0, colon + 1);
+    const sibling = available.find((v) => v.startsWith(prefix));
+    if (sibling !== undefined) {
+      return sibling;
+    }
+  }
+  return available[0] ?? preferred;
+}
+
 export function createProvider(
   kind: 'anthropic' | 'openai',
   opts: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch },

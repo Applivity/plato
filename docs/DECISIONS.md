@@ -2304,6 +2304,79 @@ found by reading rather than by reproducing, and it happened to be adjacent to t
 cause. **Reproduce first, then fix** — the D49v reproduction (an unprompted payload while
 in the chat) took ten minutes and would have found it immediately.
 
+---
+
+**D49x — a model the user unchecked is not the model to run (M5.0, 0.25.0 — 2026-09-23).**
+
+The founder's screenshot: **`ornith-1.5-35b-a3b` unchecked in Settings → Providers, yet
+that model in the chat's dropdown**, marked as the current one and labelled *"not in the
+fetched list"*. This is the report carried as "Bug 3" for three days, and the reason it
+was left alone was right — the fallback row exists on purpose, so the fix could not be
+"delete the row". The question was never the row. It was **what the run would use.**
+
+**Two causes, one symptom.**
+
+**1. The rule asked the wrong question.** `effectiveModel()` kept the preferred ref when
+its **connection** existed — and a model the user had just unchecked satisfies that: the
+connection is still there. So a deselected model stayed selected, and the run would send
+it. That is not a cosmetic mismatch: **a key scoped to a model list answers 403 for a name
+it does not allow**, which is the exact error the founder had already hit (*"key not
+allowed to access model… can only access models=[…]"*). A stale selection is a failed
+run, not a no-op. The rule is now `pickEffectiveModel` in core, and it asks whether the
+model is **offered**.
+
+**2. The picker's choice did not survive a reload.** The composer and the Duo/Academy
+doer selects are the **only** model controls in the product, and a click wrote
+`modelOverride` — **memory only**. Every panel reload reverted to `plato.model`, a setting
+with **no UI at all** (its one handler, `set-default-model`, is never posted by any
+view). So the durable answer was a value only editable by hand in `settings.json`, and a
+hand-edited value from an earlier session is what kept reappearing. The pick now writes
+the setting, making the doer row's own help text true: *"change it here or in the
+composer — it is the same setting."* It was not.
+
+**The fallback deliberately does not cross connections.** Losing a model is not a reason
+to change providers — another connection can mean another vendor, another price and
+another key. Only when that connection offers nothing does the choice move, and only when
+**nothing** is offered does the preference survive, so a workspace whose connections have
+not loaded yet is not blanked.
+
+**Accepted consequence, stated plainly: unchecking the model a chat is using moves that
+chat to another enabled model on the same connection, and says nothing.** Every trigger is
+either the user's own action or a stale-config correction, and the model chip is visible
+at all times. If a notice is wanted, it is one line in the two handlers that shrink the
+active set — and it should be added on request, not now.
+
+**Nothing here weakens the fallback row.** It still renders a current model that no
+connection offers — a pooled name, a custom entry — which is honest, and is why it is
+still there.
+
+---
+
+**D49y — the answer box grows to three lines, then scrolls (M5.0, 0.25.0 — 2026-09-23).**
+
+The free-text *"Others"* answer to a Plato question was a one-line `<input>`, which
+scrolled sideways while the answer was still being written — the founder's ask, and a
+small one, but it turns out the cap is the part that matters.
+
+**A box that grows with its text is not the feature; a box that stops is.** The question
+card carries its own Submit button, so a box that grew without limit would push that
+button off the card — trading one unusable state for another. It grows to **three lines**,
+then scrolls.
+
+**Measured, not guessed.** The height comes from the box's own `scrollHeight` clamped at
+three resolved line-heights, so `line-height` is stated in CSS rather than left to the
+font: the role textarea's fitter exists precisely because `normal` resolves differently
+per font, and it documents that an unset value is what made a fixed min-height clip real
+text.
+
+**One trap, found by predicting it rather than by shipping it:** a hidden element measures
+**zero**, and the box starts hidden behind the *Others* radio. So an answer restored by
+**Back** — which sets the value while the row is still `display:none` — measured as a
+0px sliver. The fit therefore runs where the row is already in the document, and a render
+suite pins that path specifically.
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

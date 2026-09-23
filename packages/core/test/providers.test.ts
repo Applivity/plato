@@ -7,6 +7,7 @@ import {
   maxOutputFor,
   modelSupportsReasoning,
   parseModelRef,
+  pickEffectiveModel,
   resolveMaxContext,
   resolveMaxOutput,
 } from '../src/providers/registry.js';
@@ -296,5 +297,56 @@ describe('resolveMaxContext / resolveMaxOutput (D49t)', () => {
   it('lets an advertised output cap beat the 8192 fallback', () => {
     expect(resolveMaxOutput('my-litellm-group')).toBe(8192);
     expect(resolveMaxOutput('my-litellm-group', 100000)).toBe(100000);
+  });
+});
+
+/**
+ * D49x: the founder's report — `ornith` unchecked in Settings, yet still the
+ * model the chat would run. A preference naming a model that is no longer
+ * offered must NOT be honoured; a restricted key answers 403 for a model it does
+ * not allow, so the stale preference is a failed run rather than a no-op.
+ *
+ * These assertions pin the rule the shell asks for. The shell used to ask a
+ * weaker question ("does the connection exist?"), which is true for a deselected
+ * model and was the whole defect — so the case below is the one that separates
+ * the two rules.
+ */
+describe('pickEffectiveModel (D49x)', () => {
+  const OFFERED = ['litellm:claude-sonnet-5', 'anthropic:claude-sonnet-4-5'];
+
+  it('keeps the preference while the connections still offer it', () => {
+    expect(pickEffectiveModel(OFFERED, 'anthropic:claude-sonnet-4-5'))
+      .toBe('anthropic:claude-sonnet-4-5');
+  });
+
+  it('leaves a deselected model for one the same connection offers', () => {
+    expect(pickEffectiveModel(OFFERED, 'litellm:ornith-1.5-35b-a3b'))
+      .toBe('litellm:claude-sonnet-5');
+  });
+
+  // Another connection can mean another vendor, another price and another key,
+  // so losing a model is not a reason to change providers.
+  it('does not cross connections while the named one has anything left', () => {
+    expect(pickEffectiveModel(
+      ['openai:gpt-4o', 'litellm:claude-sonnet-5'],
+      'litellm:ornith-1.5-35b-a3b',
+    )).toBe('litellm:claude-sonnet-5');
+  });
+
+  it('falls back to the first offered model when the connection is gone', () => {
+    expect(pickEffectiveModel(['openai:gpt-4o'], 'litellm:claude-sonnet-5'))
+      .toBe('openai:gpt-4o');
+  });
+
+  // A workspace whose connection list has not loaded yet must keep the model it
+  // would have used, not have it blanked.
+  it('keeps the preference when nothing is offered at all', () => {
+    expect(pickEffectiveModel([], 'litellm:claude-sonnet-5'))
+      .toBe('litellm:claude-sonnet-5');
+  });
+
+  it('handles an empty preference', () => {
+    expect(pickEffectiveModel(OFFERED, '')).toBe('litellm:claude-sonnet-5');
+    expect(pickEffectiveModel([], '')).toBe('');
   });
 });

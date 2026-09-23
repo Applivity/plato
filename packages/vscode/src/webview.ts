@@ -234,10 +234,14 @@ export function chatHtml(): string {
   .q-option.selected .q-radio { border-color:var(--pl-accent); background:var(--pl-accent); }
   .q-text { font-size:12px; line-height:1.3; }
   .q-custom-row { padding-top:4px; padding-bottom:4px; }
-  .q-custom-row input { width:100%; padding:6px; background:var(--vscode-input-background);
+  .q-custom-row input, .q-custom-row textarea { width:100%; padding:6px; background:var(--vscode-input-background);
                         color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border);
                         border-radius:3px; outline:none; }
-  .q-custom-row input:focus { border-color:var(--vscode-focusBorder); }
+  .q-custom-row input:focus, .q-custom-row textarea:focus { border-color:var(--vscode-focusBorder); }
+  /* D49y: a stated line-height keeps the three-line cap exact — an unset one
+     resolves differently per font, and the cap is computed from it. */
+  .q-custom-row textarea { display:block; resize:none; overflow-y:auto;
+                           font-family:inherit; font-size:inherit; line-height:1.4; }
   @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
@@ -4158,10 +4162,28 @@ export function chatHtml(): string {
       const customRow = document.createElement('div');
       customRow.className = 'q-custom-row';
       customRow.style.display = 'none';
-      const customInput = document.createElement('input');
-      customInput.type = 'text';
+      // D49y: a one-line box made every answer scroll sideways while it was
+      // written. It is a textarea that grows with the text and stops at three
+      // lines, where it scrolls instead \u2014 past that the box would push the
+      // Submit button off the card. Nothing submits on Enter, so a multi-line
+      // answer is reachable.
+      const customInput = document.createElement('textarea');
+      customInput.rows = 1;
       customInput.placeholder = 'Type your answer\u2026';
       customRow.appendChild(customInput);
+      const growCustom = () => {
+        // Reset first: a box measured at its previous height never shrinks.
+        customInput.style.height = 'auto';
+        const cs = getComputedStyle(customInput);
+        const lh = parseFloat(cs.lineHeight)
+          || (parseFloat(cs.fontSize) || 13) * 1.4;
+        const box =
+          (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) +
+          (parseFloat(cs.borderTopWidth) || 0) +
+          (parseFloat(cs.borderBottomWidth) || 0);
+        customInput.style.height =
+          Math.min(customInput.scrollHeight, 3 * lh + box) + 'px';
+      };
 
       const prev = answers[idx] || '';
       const prevIsOption = options.indexOf(prev) !== -1;
@@ -4194,6 +4216,7 @@ export function chatHtml(): string {
           if (isCustom) {
             customRow.style.display = 'block';
             customInput.focus();
+            growCustom();
             answers[idx] = customInput.value.trim();
           } else {
             customRow.style.display = 'none';
@@ -4205,6 +4228,7 @@ export function chatHtml(): string {
       });
 
       customInput.addEventListener('input', () => {
+        growCustom();
         answers[idx] = customInput.value.trim();
         updateNext();
       });
@@ -4212,6 +4236,9 @@ export function chatHtml(): string {
       block.appendChild(optsDiv);
       block.appendChild(customRow);
       body.appendChild(block);
+      // A hidden box measures zero, so the restored answer is fitted HERE,
+      // where the row is in the document and its height means something.
+      if (customRow.style.display !== 'none') { growCustom(); }
 
       const act = document.createElement('div');
       act.className = 'actions';

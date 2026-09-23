@@ -29,9 +29,9 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49p (amended twice on 2026-09-21)** — Phases 0–5 of the agent
-  capability plan are **complete** (roadmap in DECISIONS **D49**). Push stays
-  with the founder. Working tree clean.
+- HEAD = **M5.0 / D49x** — Phases 0–5 of the agent capability plan are
+  **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
+  Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -54,6 +54,23 @@ are now only in PROGRESS.
   added without reading D49p**: Anthropic's server-side search needs no key, but
   it runs inside the API call, so **no approval card can fire** — it would break
   the always-ask rule.
+- **A model the user unchecked is not the model to run (D49x).** `pickEffectiveModel`
+  (core) is the one rule: a ref is kept only if the connections still **offer** it.
+  Asking whether the ref's **connection** existed was the defect — a deselected model
+  satisfies that, and a key scoped to a model list answers **403** for a name it does not
+  allow, so a stale selection is a failed run and not a no-op. A **sibling on the same
+  connection** is preferred over the first available model, because losing a model is not
+  a reason to change vendors, prices or keys. **The picker now writes `plato.model`**: the
+  composer and the Duo/Academy doer selects are the only model controls in the product,
+  and they used to write memory only, so every reload reverted to a setting with **no UI**
+  — which is how a hand-set model kept reappearing. **Unchecking the model a chat is using
+  therefore moves that chat to another enabled model, silently** — deliberate, and one
+  line to add a notice if that changes.
+- **Never measure a hidden element.** A `display:none` node reports `scrollHeight` **0**
+  and a zero `clientWidth`, so a fit that runs while the node is hidden collapses it to a
+  sliver or wraps every character. The question card's answer box (D49y) starts hidden
+  behind its *Others* radio, so the fit runs where the row is already in the document —
+  and a render suite pins the restored-answer path, which is the one that got it wrong.
 - **Plato does not cap a model's output below its own limit (D49w).** `maxTokens` comes
   from `resolveMaxOutput` — the provider's advertised limit, the catalog, or a conservative
   8,192 when nothing knows the model. **There is no Plato-invented ceiling.** One used to
