@@ -111,9 +111,25 @@ const measure = (p) => p.evaluate(() => {
     !!r.h1 && r.h1.size / r.body >= 1.45, r.h1 && { h1: r.h1.size, body: r.body });
   check('the second heading dominates the prose (>=1.3x)',
     !!r.h2 && r.h2.size / r.body >= 1.3, r.h2 && { h2: r.h2.size, body: r.body });
-  check('the top two headings carry more weight than the lower rungs',
-    !!r.h1 && !!r.h3 && parseInt(r.h1.weight, 10) > parseInt(r.h3.weight, 10),
-    { h1: r.h1.weight, h3: r.h3.weight });
+  /**
+   * h3 is the WORKHORSE and was the rung with no assertion.
+   *
+   * A real report used a second-level heading once and a third-level heading for
+   * every one of its sections, so the two rungs this suite pinned were used once
+   * and three times respectively, and the rung it did not pin carried the whole
+   * structure. The
+   * fix had landed and the report still read flat. **Assert the rungs the
+   * document actually uses** — otherwise the suite measures the ladder instead of
+   * the page, which is the same mistake as a cap nobody had a test for.
+   */
+  check('the workhorse heading (h3) is pronounced, not a label (>=1.25x)',
+    !!r.h3 && r.h3.size / r.body >= 1.25, r.h3 && { h3: r.h3.size, body: r.body });
+  // All three rungs are bold now, including the workhorse — size alone separates
+  // them. Weight is not a ladder here, so the requirement is simply that a
+  // heading is never lighter than the prose it introduces.
+  check('every heading rung is bold, not merely larger',
+    [r.h1, r.h2, r.h3].every((h) => h && parseInt(h.weight, 10) >= 600),
+    { h1: r.h1 && r.h1.weight, h2: r.h2 && r.h2.weight, h3: r.h3 && r.h3.weight });
 
   // Space above must dominate space below, or a heading binds to the text above
   // it rather than to the text it introduces.
