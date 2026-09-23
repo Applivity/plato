@@ -50,7 +50,12 @@ const measure = (p) => p.evaluate(() => {
     const el = document.querySelector(sel);
     if (!el) { return null; }
     const cs = getComputedStyle(el);
-    return { size: px(cs.fontSize), mt: px(cs.marginTop), mb: px(cs.marginBottom) };
+    return {
+      size: px(cs.fontSize),
+      mt: px(cs.marginTop),
+      mb: px(cs.marginBottom),
+      weight: cs.fontWeight,
+    };
   };
   const para = document.querySelector('.msg.bot p');
   const li = document.querySelector('.msg.bot li');
@@ -82,6 +87,17 @@ const measure = (p) => p.evaluate(() => {
   check('the ladder descends, h1 > h2 > h3',
     !!r.h1 && !!r.h2 && !!r.h3 && r.h1.size > r.h2.size && r.h2.size > r.h3.size,
     r);
+  // "More pronounced" is the second read, and it is a different requirement from
+  // "bigger than the body": a title 1.1x the prose clears the first bar and is
+  // still a label. These pin the DOMINANCE ratios, so the ladder cannot be
+  // quietly shrunk back toward the prose.
+  check('the top heading dominates the prose (>=1.45x)',
+    !!r.h1 && r.h1.size / r.body >= 1.45, r.h1 && { h1: r.h1.size, body: r.body });
+  check('the second heading dominates the prose (>=1.3x)',
+    !!r.h2 && r.h2.size / r.body >= 1.3, r.h2 && { h2: r.h2.size, body: r.body });
+  check('the top two headings carry more weight than the lower rungs',
+    !!r.h1 && !!r.h3 && parseInt(r.h1.weight, 10) > parseInt(r.h3.weight, 10),
+    { h1: r.h1.weight, h3: r.h3.weight });
 
   // Space above must dominate space below, or a heading binds to the text above
   // it rather than to the text it introduces.

@@ -658,11 +658,17 @@ export function chatHtml(): string {
      below it, which is what makes a section read as a section. */
   .msg.bot { line-height:1.5; }
   .msg.bot p { margin:.5em 0; }
-  .msg.bot .md-h { font-weight:600; line-height:1.25; }
-  .msg.bot .md-h1 { font-size:17px; margin:1em 0 .45em; }
-  .msg.bot .md-h2 { font-size:15.5px; margin:1.1em 0 .45em; }
-  .msg.bot .md-h3 { font-size:14px; margin:1em 0 .4em; }
-  .msg.bot .md-h4 { font-size:13.5px; margin:.9em 0 .35em; }
+  /* D49ac follow-up: the first pass cleared the body text, which is the
+     correction that mattered, but the founder's second read was that the
+     headings were still not PRONOUNCED — and a section title at 1.19x the prose
+     is a label, not a heading. The top rungs are now well clear of the body and
+     the top two carry more weight, so the eye lands on the structure before the
+     words. Ratios against the 13px body: 1.54 / 1.35 / 1.19 / 1.08. */
+  .msg.bot .md-h { line-height:1.25; }
+  .msg.bot .md-h1 { font-size:20px; font-weight:700; margin:1.1em 0 .5em; }
+  .msg.bot .md-h2 { font-size:17.5px; font-weight:700; margin:1.3em 0 .5em; }
+  .msg.bot .md-h3 { font-size:15.5px; font-weight:600; margin:1.1em 0 .45em; }
+  .msg.bot .md-h4 { font-size:14px; font-weight:600; margin:1em 0 .4em; }
   /* The first heading needs no space above it: the reply's own name line is
      already the separation, and a gap there just pushes the text down. */
   .msg.bot .md-h:first-child { margin-top:0; }
