@@ -347,7 +347,7 @@ used to claim.
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
 
-## Trial runs — how Plato is actually judged
+## Trial runs — the proving-ground repo, and how Plato is actually judged
 
 Plato is developed against a **real** repo, not a demo: `/Users/ai/Desktop/HcadPublicAndroid-demo`,
 an Android app, a Git repo, private. The point is that a capability is only proven by real work.
