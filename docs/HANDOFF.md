@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-21)
+## Current state (verified 2026-09-24)
 
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
@@ -32,6 +32,20 @@ are now only in PROGRESS.
 - HEAD = **M5.0 / D49af** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
+- **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
+  Plato on an external Android repo (the trial ground — see "Trial runs" below).
+  In order: `D49r` compaction could strand tool results; `D49s` an empty turn was
+  sent to the wire; `D49t` the model's advertised context window reached the run;
+  `D49u` **the environment was choosing Plato's endpoint and lending it a
+  credential** (a security fix); `D49v`/`D49w` the Settings bounce and the invented
+  16,384 output ceiling; `D49x`/`D49y` a deselected model was still the model to
+  run, and the answer box grows to three lines; `D49z` the model tick boxes are
+  gone, so every fetched model is eligible; `D49aa` **the chat log is append-only
+  and compaction is a request, not a deletion** (the founder's scrollback was being
+  erased); `D49ab` **the turn cap is deleted**; `D49ac`/`D49af` reply readability;
+  `D49ad` thematic breaks; `D49ae` per-claim evidence in the worker prompt.**
+  **The two that changed the product's shape are D49aa and D49ab** — read those
+  first if you are picking this up cold.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -284,13 +298,20 @@ used to claim.
 - Node.js v24.19.0 (LTS) via nvm 0.40.7; pnpm 11.23.0 global.
 - If a terminal reports `node: command not found`, open a fresh terminal
   or run `. ~/.nvm/nvm.sh` first.
+- **No JDK / no Java runtime is installed on this machine.** `java`, `javac` and
+  `jshell` in `/usr/bin` are the macOS stubs and fail with *"Unable to locate a
+  Java Runtime"*. **This matters for trial runs**, which are Java: Plato cannot
+  compile or run what it reviews here, and neither can you — so a Java claim is
+  verified by reading or not at all. Opening the project in Android Studio (which
+  bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
+  verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **422** passing
-  vitest cases across **32** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **487** passing
+  vitest cases across **33** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Eleven suites, **236 assertions**; see
+  unit tests + render suites. Fourteen suites, **296 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -325,6 +346,42 @@ used to claim.
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
+
+## Trial runs — how Plato is actually judged
+
+Plato is developed against a **real** repo, not a demo: `/Users/ai/Desktop/HcadPublicAndroid-demo`,
+an Android app, a Git repo, private. The point is that a capability is only proven by real work.
+
+**These files are SECRET-BEARING. Read "Non-negotiable safety rules" before touching that
+repo.** `keystore.properties`, `local.properties`, `.env*` and `*.keystore` must never
+reach a model — including *you*. When inspecting a run, read the run's transcript, not the
+project's secret files.
+
+- **Run transcripts** live in `~/.plato/runs/<sha1-of-root-8>/*.jsonl`, one per run, with a
+  header then one JSON event per line. The newest is `ls -t | head -1`. **They record tool
+  NAMES and phases, not arguments** — so a transcript cannot tell you which files a run
+  touched. Useful fields: `usage` per turn (`inputTokens`, `outputTokens`, `cacheReadTokens`,
+  `costUsd`), `context`, `text`, `tool-event`, `approval-requested`, and a final
+  `run-completed` with `reason`.
+- **`costUsd` is 0 for any model outside the shipped price table** — which is every model on
+  the founder's LiteLLM. The dollars a run reports are absent, not small.
+- **The founder's setup**: LiteLLM at his own base URL, model refs like `litellm:claude-sonnet-5`,
+  plus a direct Anthropic connection. Context windows come from the connection (D49t), and
+  prompt caching is working — a 40-turn run showed **99.5% of input served from cache**.
+
+**State of the trial repo as of 2026-09-24, left by run `muehk6e4mhvq` and NOT committed:**
+four modified files (`DateHelper.java`, `FormatterUtility.java`, `ApiSecurityUtility.java`,
+`QualificationViewModel.java`) plus an untracked `PLATO.md`. **Two things in that set need a
+human decision before it is trusted:**
+
+1. **`DateHelper.parse` truncates a 7-digit ISO8601 fraction to 3 digits.** The fix may be
+   right, but its stated reason is wrong — it claims the project's own formatter emits 3
+   digits, and `ISO8601` is `SSSSSSS`, which `SimpleDateFormat` pads to **7**. Under the
+   documented semantics, formatting and parsing that pattern already round-trip, so the change
+   can *introduce* a millisecond error rather than fix one. **Unverifiable here: no JDK.**
+2. **`SubmissionsViewModel.java:144` still has the `URLDecoder` defect** Plato fixed in
+   `FormatterUtility` — same bug, a fourth file, correctly left alone as outside the named
+   scope. Live and unfixed; the founder's call.
 
 ## Critical gotchas
 
@@ -420,10 +477,10 @@ used to claim.
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 448/448 vitest in packages/core (32 files)
-3. `pnpm run render` — the real-DOM render suites (or `render:fast` to reuse the
-   bundle). Add an assertion here for any UI defect you fix, and prove it
-   falsifiable.
+2. `pnpm -r test` — 487/487 vitest in packages/core (33 files)
+3. `pnpm run render` — the real-DOM render suites, **14 suites / 296 assertions**
+   (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
+   you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
    a local stub. See "Environment prerequisites".
@@ -439,7 +496,49 @@ used to claim.
 
 ## Queued next work (in priority order — pick up here)
 
-**The active workstream is the M5 agent capability plan. Read DECISIONS D49 for
+**First, the three things the 2026-09-23/24 repairs left open.** Each is written up
+in the PROGRESS backlog with its reasoning; these are the pointer, not the record.
+
+1. **Compaction cannot see tool activity, so a tool-heavy run summarises to
+   nothing (D49aa).** The summariser is fed only user and assistant message text —
+   never tool calls or results — and a real run's own summary admitted it saw no
+   work (`"No files read (contents not available in transcript)"`). **This is the
+   next step of D49aa and it is the one with the most value**: the founder's runs
+   are ~92% tool results by context, so without this, folding discards exactly what
+   was learned. Pair it with the two cheaper items below, because a summary should
+   be the LAST resort, not the only tool.
+2. **Trim old tool OUTPUT before summarising anything (new, unscoped).** Same
+   evidence — 92% of context is tool results — and both Claude Code and Codex run a
+   cheap snip/microcompact pass before the expensive summariser. Highest headroom,
+   least lossy, and it would push the fold far out for most sessions.
+3. **The compaction threshold should be an absolute token window, not a percentage
+   (new, unscoped).** The founder's 80% of a 1M window meant 800,000 tokens, which
+   never fires — so the in-run guard was silently inert and the 26-pair fold was
+   the only mechanism running. Claude Code uses a token window with a per-model
+   default and `min(yours, model max)`. **The control stays a slider; its UNIT
+   changes**, which is a product decision he has agreed in principle but not
+   specified.
+
+**Also open from that work, smaller:**
+
+- **How to bound `auto` now that no turn cap exists (D49ab).** Nothing stops a model
+  that loops without concluding. **Do not replace it with a step count** — and do
+  not re-propose a `$/turns` budget without reading D49h, which was built and
+  removed the same day as unrequested. The promising shape is a **repetition
+  detector** (the failure mode is a repeated identical tool call, not volume), and
+  `duo`/`academy` already put a supervising observer in the loop.
+- **Ordering the model list** — drag or arrows, so the user controls picker
+  priority. Founder-requested and deliberately held back as a capability rather
+  than a repair. Four unsettled points are in the backlog; **read them before
+  building**, especially that drag has no keyboard path and is hard to drive from
+  the render harness.
+- **The model should report what it did at the end of a run** — the user-facing
+  account, which is what makes folding stop feeling like theft. Founder's idea,
+  not yet scoped.
+- **Plato never reads a reasoning model's thinking tokens.** Recorded in the
+  backlog. **Do not build a thinking display without the founder.**
+
+**Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–5 are DONE.** Phase 3 opened by
 repairing a fault the plan did not anticipate — **no tool enforced workspace
 containment** (D49k). **Next is Phase 6, task coherence** — a `todo_write` tool and
