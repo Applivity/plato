@@ -14,6 +14,7 @@ import {
   PROVIDER_PRESETS,
   fetchModelPool,
   resolveMaxContext,
+  resolveOfferedModels,
   pickEffectiveModel,
   renderMarkdown,
   McpServer,
@@ -637,37 +638,6 @@ class ChatHost {
           }
           // The key may unblock the model list, so refresh it like Add does.
           void this.fetchAndStoreModels(m.connId);
-          return;
-        }
-        if (m.type === 'settings-models' && typeof m.connId === 'string') {
-          const sel = Array.isArray(m.models)
-            ? (m.models as unknown[]).filter(
-                (x): x is string => typeof x === 'string',
-              )
-            : [];
-          const user = rawUserConnections();
-          const idx = user.findIndex((u) => u.id === m.connId);
-          if (idx >= 0 && user[idx]) {
-            user[idx].models = sel;
-            if (!user[idx].allModels) {
-              user[idx].allModels = sel;
-            }
-          } else {
-            user.push({
-              id: m.connId,
-              kind: 'openai',
-              models: sel,
-              allModels: sel,
-            });
-          }
-          await vscode.workspace.getConfiguration('plato').update(
-            'connections',
-            user,
-            vscode.ConfigurationTarget.Global,
-          );
-          // Silent save (D29): refresh only the chat dropdown payload —
-          // a full settings re-render would close the open details list.
-          this.postModelState();
           return;
         }
         if (m.type === 'settings-fetch' && typeof m.connId === 'string') {
@@ -1647,9 +1617,11 @@ class ChatHost {
         (c.pool ?? []).map((p) => [p.id, p] as const),
       );
       const ctx: Record<string, number> = {};
-      for (const mid of c.allModels && c.allModels.length > 0
-        ? c.allModels
-        : (c.models ?? [])) {
+      // D49z: one offered list, the same one the run and the composer picker
+      // see. It was two fields — a ticked subset and the fetched pool — until
+      // the tick boxes went.
+      const offered = resolveOfferedModels(c.allModels, c.models);
+      for (const mid of offered) {
         const n = resolveMaxContext(mid, poolByName.get(mid)?.maxContext);
         if (n !== null) ctx[mid] = n;
       }
@@ -1657,9 +1629,7 @@ class ChatHost {
         id: c.id,
         kind: c.kind,
         baseUrl: c.baseUrl ?? '',
-        models: c.models ?? [],
-        // Picker pool: fetched list when present, else the selection.
-        all: c.allModels && c.allModels.length > 0 ? c.allModels : (c.models ?? []),
+        models: offered,
         ctx,
         keyStatus,
         builtin: !userRaw.has(c.id),
@@ -2404,7 +2374,9 @@ class ChatHost {
       const poolByName = new Map(
         (c.pool ?? []).map((p) => [p.id, p] as const),
       );
-      for (const m of c.models ?? []) {
+      // D49z: everything the connection fetched, so the picker cannot show a
+      // model the run would refuse — nor hide one it would accept.
+      for (const m of resolveOfferedModels(c.allModels, c.models)) {
         const poolEntry = poolByName.get(m);
         // D26c/D49t: ONE resolution rule, shared with the run. The catalog and
         // the connection can both claim a window; the smaller wins, so the ring

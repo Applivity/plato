@@ -553,11 +553,10 @@ export function chatHtml(): string {
   .conn .modellist { display:block; padding:8px 11px;
                      max-height:280px; overflow-y:auto;
                      background:var(--vscode-input-background); }
+  /* D49z: a read-only row — no pointer cursor and no hover, because there is
+     nothing here to click. */
   .conn .mopt { display:flex; align-items:flex-start; gap:7px;
-                padding:4px; cursor:pointer; font-size:12px; }
-  .conn .mopt:hover { background:var(--vscode-list-hoverBackground,
-                                       rgba(128,128,128,.12)); }
-  .conn .mopt input { margin:0; flex:none; margin-top:2px; }
+                padding:4px; font-size:12px; }
   .conn .mopt .mopt-text { flex:1; min-width:0; display:flex;
                            flex-direction:column; gap:1px; }
   .conn .mopt .mopt-name { white-space:nowrap; overflow:hidden;
@@ -567,8 +566,6 @@ export function chatHtml(): string {
                           white-space:nowrap; overflow:hidden;
                           text-overflow:ellipsis; }
   .conn .mopt span { overflow:hidden; text-overflow:ellipsis; }
-  .conn .mbtns { grid-column:1 / -1; display:flex; gap:8px; margin-top:8px;
-                 padding-top:8px; border-top:1px solid var(--pl-border); }
   /* Add-connection card: the prominent CTA. */
   .add-card { border:1px dashed var(--pl-border); border-radius:8px;
               padding:16px 18px; margin-top:14px;
@@ -2520,22 +2517,23 @@ export function chatHtml(): string {
       if (c.baseUrl) {
         card.appendChild(el('div', 'cbase', String(c.baseUrl)));
       }
-      const pool = c.all || c.models || [];
-      const selected = new Set(c.models || []);
+      const pool = c.models || [];
       if (pool.length > 0) {
+        // D49z: this list is a REFERENCE, not a control. Every model a provider
+        // returns is eligible, so there is nothing to tick and nothing to save.
+        // The tick boxes existed to narrow what the chat could offer, and that
+        // narrowing is what let a stored model reference outlive the model: the
+        // chat and every Duo/Academy member could name something the user had
+        // since unticked, which a key scoped to a model list answers 403 for.
         const det = document.createElement('details');
         det.className = 'picker';
         det.appendChild(el('summary', null,
-          'Models \u2014 ' + selected.size + ' of ' + pool.length + ' active'));
+          'Models \u2014 ' + pool.length + ' available'));
         const box = el('div', 'modellist');
         const ctxMap = c.ctx || {};
         for (const mid of pool) {
           const key = String(mid);
-          const lbl = el('label', 'mopt', null);
-          const cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.value = key;
-          cb.checked = selected.has(key);
+          const row = el('div', 'mopt', null);
           // D49t: the name gets the whole line and the window sits beneath it,
           // the same shape the composer's picker uses.
           const text = el('span', 'mopt-text');
@@ -2543,31 +2541,9 @@ export function chatHtml(): string {
           const ctxN = fmtCtx(ctxMap[key]);
           text.appendChild(el('span', 'mopt-sub',
             ctxN ? ctxN + ' context' : 'context unknown'));
-          lbl.appendChild(cb);
-          lbl.appendChild(text);
-          box.appendChild(lbl);
+          row.appendChild(text);
+          box.appendChild(row);
         }
-        const okB = sbtn('OK', () => {
-          const chosen = Array.from(box.querySelectorAll('input'))
-            .filter((i) => i.checked)
-            .map((i) => String(i.value));
-          vsapi.postMessage({
-            type: 'settings-models', connId: c.id, models: chosen,
-          });
-          det.querySelector('summary').textContent =
-            'Models \u2014 ' + chosen.length + ' of ' + pool.length + ' active';
-          det.open = false;
-        }, 'primary');
-        const cancelB = sbtn('Cancel', () => {
-          for (const cb of Array.from(box.querySelectorAll('input'))) {
-            cb.checked = selected.has(String(cb.value));
-          }
-          det.open = false;
-        }, 'secondary');
-        const rowBtns = el('div', 'mbtns');
-        rowBtns.appendChild(okB);
-        rowBtns.appendChild(cancelB);
-        box.appendChild(rowBtns);
         det.appendChild(box);
         card.appendChild(det);
       } else {

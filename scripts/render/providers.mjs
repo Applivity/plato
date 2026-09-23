@@ -263,8 +263,9 @@ console.log('');
   const CONN = {
     id: 'litellm', kind: 'openai', baseUrl: 'https://llm.example/v1',
     keyStatus: 'set', builtin: false,
-    models: ['Auto-Act'],
-    all: [
+    // D49z: ONE list. Every fetched model is eligible, so there is no ticked
+    // subset beside it to disagree with.
+    models: [
       'Auto-Act',
       'openrouter-dots-studio/dots-3-note-preview-free',
       'claude-sonnet-5',
@@ -289,6 +290,12 @@ console.log('');
       rows: rows.length,
       columns: cs ? cs.gridTemplateColumns : '(not a grid)',
       display: cs ? cs.display : null,
+      // D49z: nothing in this list is a control any more. The tick boxes and
+      // their OK/Cancel were the only way a model could be made ineligible.
+      boxes: document.querySelectorAll('.conn .modellist input').length,
+      buttons: document.querySelectorAll('.conn .modellist button').length,
+      summary: (document.querySelector('.conn .picker > summary') || {}).textContent,
+      cursor: rows.length > 0 ? getComputedStyle(rows[0]).cursor : null,
       items: rows.map((row) => {
         const n = row.querySelector('.mopt-name');
         const s = row.querySelector('.mopt-sub');
@@ -303,7 +310,14 @@ console.log('');
   });
 
   check('the list is one column, not a two-column grid', r.display === 'block', r);
-  check('every model still gets a row', r.rows === 4, r.rows);
+  check('every fetched model gets a row', r.rows === 4, r.rows);
+  check('no model can be ticked out of availability', r.boxes === 0, r);
+  check('there is nothing to confirm, so there are no OK/Cancel buttons',
+    r.buttons === 0, r);
+  check('the summary counts what is available, it does not claim an active subset',
+    r.summary === 'Models — 4 available', r.summary);
+  check('an inert row does not pretend to be clickable',
+    r.cursor !== 'pointer', r.cursor);
   check('each row shows a name and a context subtitle',
     r.items.every((x) => x.name && x.sub), r.items);
   check('the name sits above the subtitle',

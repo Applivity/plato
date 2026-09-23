@@ -2352,6 +2352,54 @@ still there.
 
 ---
 
+**D49z — every fetched model is eligible; the tick boxes are gone (M5.0, 0.25.0 —
+2026-09-23).**
+
+D49x fixed the *symptom* the founder saw — a chat running a model he had unticked. This
+removes the **state** that made it possible, on his call after reading the options:
+*"user can't uncheck or opt out of model (that's confusing). Right now, all fetched models
+from a provider are eligible."*
+
+**The tick boxes were an opt-out, not a gate, and that is worth recording because it
+changes how big the change looked.** "Fetch models" wrote the whole fetched list into both
+fields, so the default was already "everything is available"; the boxes only ever narrowed
+it. The founder's own screenshot is that narrowing — nine models fetched, one ticked.
+
+**What the narrowing cost, beyond the bug he hit.** The chat is not the only place a model
+reference is stored. **Every Duo and Academy member stores one**, and those are validated
+only for SHAPE — `<connection>:<model>` — never against what is available. So unticking a
+model could leave a council member pointing at a name the key refuses, and that 403 would
+land **mid-run, after the doer had already done work**. D49x covered the chat; nothing
+covered the members. With no opt-out, no stored reference can be out of the offered set,
+so that whole class is gone rather than guarded.
+
+**Two fields became one, and the read rule is the migration.** A connection carried
+`models` (the ticked subset) and `allModels` (the fetched pool), and the boxes were the
+only thing that could ever make them differ. `resolveOfferedModels` reads **the wider list
+first**, falling back to the narrower one only when no fetch has happened — so a config
+narrowed before this change offers everything immediately, with no migration step and
+nothing rewritten in the user's settings. Reading the narrow one would have preserved the
+fault, which is the whole reason the order matters.
+
+**The Settings list is now a reference, not a control**, and says `Models — N available`
+instead of `N of M active`. That wording was doing real damage: it promised *active*, which
+is why the founder's own screenshot read as a bug rather than a preference. Its rows also
+lost the pointer cursor and the hover, because an inert row that highlights is claiming to
+be clickable.
+
+**D49x's rule is NOT superseded.** With nothing to untick, the rule now covers what
+nothing can prevent: the endpoint withdrew a model, or the connection was deleted — the
+same fallback, now reached only by real absence rather than by a preference.
+
+**Deliberately NOT built, and held as a backlog item:** the founder's next idea was to
+replace the boxes with **drag-to-reorder** so the picker shows his priority. That is a
+**capability, not a repair**, so it does not belong in this change — and it is worth more
+than its name suggests, because the top of the list becomes the fallback default. The four
+unsettled points (keyboard path, testability of the gesture, capability-vs-repair, and not
+scaling past a few dozen models) are recorded in the PROGRESS backlog.
+
+---
+
 **D49y — the answer box grows to three lines, then scrolls (M5.0, 0.25.0 — 2026-09-23).**
 
 The free-text *"Others"* answer to a Plato question was a one-line `<input>`, which

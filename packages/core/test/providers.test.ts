@@ -10,6 +10,7 @@ import {
   pickEffectiveModel,
   resolveMaxContext,
   resolveMaxOutput,
+  resolveOfferedModels,
 } from '../src/providers/registry.js';
 
 describe('parseModelRef', () => {
@@ -348,5 +349,34 @@ describe('pickEffectiveModel (D49x)', () => {
   it('handles an empty preference', () => {
     expect(pickEffectiveModel(OFFERED, '')).toBe('litellm:claude-sonnet-5');
     expect(pickEffectiveModel([], '')).toBe('');
+  });
+});
+
+/**
+ * D49z: every fetched model is offered. The case that matters is the config
+ * written while the checkbox existed — a narrow `models` beside a wider
+ * `allModels` — because reading the narrow one there would preserve, rather than
+ * fix, a model reference that points at something the key refuses.
+ */
+describe('resolveOfferedModels (D49z)', () => {
+  const FETCHED = ['a', 'b', 'c', 'd'];
+
+  it('offers the whole fetched list, in its stored order', () => {
+    expect(resolveOfferedModels(FETCHED, ['b'])).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  // A config hand-written before any fetch has no fetched list to prefer.
+  it('falls back to the stored selection when nothing was fetched', () => {
+    expect(resolveOfferedModels(undefined, ['gpt-4o'])).toEqual(['gpt-4o']);
+    expect(resolveOfferedModels([], ['gpt-4o'])).toEqual(['gpt-4o']);
+  });
+
+  it('reports nothing when the connection has no list at all', () => {
+    expect(resolveOfferedModels(undefined, undefined)).toEqual([]);
+  });
+
+  it('does not hand the caller a live config array', () => {
+    const stored = ['a'];
+    expect(resolveOfferedModels(stored, undefined)).not.toBe(stored);
   });
 });

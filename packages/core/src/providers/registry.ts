@@ -162,6 +162,32 @@ export function pickEffectiveModel(
   return available[0] ?? preferred;
 }
 
+/**
+ * D49z: the models a connection OFFERS — every model it fetched, in the order
+ * they are stored.
+ *
+ * A connection used to carry two lists: `models`, the subset the user had
+ * ticked, and `allModels`, everything the endpoint returned. Only the ticked
+ * subset was offered, which is what let a stored model reference outlive its
+ * own availability — the chat, and every Duo/Academy member, could name a model
+ * the user had since unticked, and a key scoped to a model list answers 403 for
+ * a name it does not allow. Nothing narrows the list any more, so the two are
+ * the same list whenever a fetch has run.
+ *
+ * `selected` is read as a FALLBACK, for a config that was narrowed before this
+ * change or hand-written before any fetch. Preferring the wider list is the
+ * whole point: reading the narrower one would preserve the fault.
+ */
+export function resolveOfferedModels(
+  fetched: readonly string[] | undefined,
+  selected: readonly string[] | undefined,
+): string[] {
+  if (fetched !== undefined && fetched.length > 0) {
+    return [...fetched];
+  }
+  return selected !== undefined ? [...selected] : [];
+}
+
 export function createProvider(
   kind: 'anthropic' | 'openai',
   opts: { apiKey: string; baseUrl?: string; fetchImpl?: typeof fetch },

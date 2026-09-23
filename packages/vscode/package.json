@@ -53,7 +53,7 @@
               "id": { "type": "string", "description": "Connection id used in model refs, e.g. litellm" },
               "kind": { "type": "string", "enum": ["anthropic", "openai"], "description": "Wire protocol of the endpoint" },
               "baseUrl": { "type": "string", "description": "OpenAI-compatible base URL (openai kind only)" },
-              "models": { "type": "array", "items": { "type": "string" }, "description": "Bare model names offered in the dropdown; omit to use catalog defaults for the kind" }
+              "models": { "type": "array", "items": { "type": "string" }, "description": "The models this connection offers, in this order. Written by Fetch models; every entry is selectable. Omit only if the connection has never been fetched." }
             }
           }
         },
