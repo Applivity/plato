@@ -1527,9 +1527,14 @@ class ChatHost {
       model: this.effectiveModel(),
       title: this.chatTitle,
     });
+    // D49aa: the count is what it is, but the old wording — "Compacted N earlier
+    // messages into a summary" — now describes something that did NOT happen: the
+    // founder read it directly above the very messages it implied were gone.
+    const label = foldCount === 1 ? 'message' : 'messages';
     this.send(
       'notice',
-      'Compacted ' + foldCount + ' earlier messages into a summary.',
+      'Summary added for ' + foldCount + ' earlier ' + label
+        + '. Nothing was removed.',
     );
     return true;
   }

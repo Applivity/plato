@@ -2395,6 +2395,17 @@ no unit tests and a data-loss bug must be reproducible. **The falsification is t
 decisive evidence:** implementing `applyFold` as the discarded rewrite fails
 *"writes a row without removing any row"* with a log that shrank from 33 rows to 25.
 
+**Confirmed in production, the same day.** A real 40-turn run on the Android repo triggered
+a fold of 28 messages, and the founder could still scroll back to his original message. The
+transcript survived, which is the whole claim of this entry.
+
+**And the notice it printed was still describing the old behaviour** —
+*"Compacted 28 earlier messages into a summary"* — sitting directly under the 28 messages it
+implied were gone. A mechanism and the sentence that reports it are two things, and changing
+one leaves the other lying. The wording now says a summary was ADDED and that nothing was
+removed. **Worth remembering as a class:** any message that reports what a mechanism did has
+to be re-read whenever the mechanism changes, and the founder found this one by scrolling.
+
 **Not done, and next:** the summariser still sees only message text, never tool calls or
 results — which is why a tool-heavy run summarises to nothing, and why the founder's own
 summary admitted it saw no work. Then the threshold (an absolute window, not a percentage
