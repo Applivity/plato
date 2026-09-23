@@ -977,3 +977,74 @@ describe('advertised model limits reach the run (D49t)', () => {
     expect(seenCtx).toBe(32768);
   });
 });
+
+/**
+ * D49ab. `MAX_TURNS = 40` bounded every run and **no test ever described it** —
+ * which is why removing it broke nothing and why it survived three weeks of
+ * changes unchallenged. What it cost was real: a run in `edit` mode was stopped
+ * at turn 40 with a third of its task untouched, after the user had approved
+ * eleven writes. The user was the backstop and the cap fired anyway.
+ *
+ * The run now ends when the model stops calling tools. These pin that, so a
+ * future count cannot come back without a test failing.
+ */
+describe('a run is not bounded by a turn count (D49ab)', () => {
+  const toolTurn = (n: number): TurnResponse => ({
+    content: [{
+      type: 'tool_use',
+      id: 'call_' + n,
+      name: 'read_file',
+      input: { path: 'packages/core/package.json' },
+    }],
+    usage: { inputTokens: 10, outputTokens: 10 },
+    stopReason: 'tool_use',
+  });
+
+  it('keeps working past 40 turns while the model still calls tools', async () => {
+    const TURNS = 55; // well past the old 40
+    let served = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        served += 1;
+        return served <= TURNS ? toolTurn(served) : {
+          content: [{ type: 'text', text: 'finished at last' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus: new AgentBus(),
+      controller: new RunController(),
+      getMode: () => 'auto' as const,
+    });
+    expect(r.reason).toBe('complete');
+    expect(r.turns).toBe(TURNS + 1);
+    expect(r.finalText).toBe('finished at last');
+  });
+
+  it('never reports a turn cap — only a truncated answer is a cap', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus: new AgentBus(),
+      controller: new RunController(),
+      getMode: () => 'auto' as const,
+    });
+    expect(r.reason).toBe('complete');
+    expect(r.finalText).not.toContain('turn cap');
+  });
+});

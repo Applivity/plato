@@ -82,11 +82,35 @@ export function decide(tool: string, mode: Mode): Decision {
   if (mode === 'act') {
     return kind === 'read' ? 'allow' : 'ask';
   }
-  return 'allow'; // auto: everything allowed; turn cap is the safety net
+  return 'allow'; // auto: everything allowed, and nothing counts the turns
 }
 
-/** Hard turn cap for every M1 run (D22c); auto relies on it most. */
-export const MAX_TURNS = 40;
+/**
+ * D49ab: there is no turn cap, and `MAX_TURNS = 40` is gone.
+ *
+ * It arrived under D22's delegated mandate as the backstop for `auto` — the one
+ * mode with no click in the loop — and was then applied to EVERY mode, where it
+ * guarded nothing: `edit` and `act` gate every write behind an approval, and
+ * `plan` cannot mutate at all. A real run in `edit` mode was cut off at turn 40
+ * with a third of its task untouched, after the user had already approved eleven
+ * writes and while the model was doing good work. **The user was the backstop and
+ * the cap still fired.**
+ *
+ * Turns were also the wrong unit. That run spent 10,442 output tokens across its
+ * 40 turns; a run that thinks can spend more than that in three. A count of steps
+ * bounds neither money nor time — it bounds the one thing a larger task
+ * legitimately needs more of.
+ *
+ * **The run now ends when the model stops calling tools.** That is the whole
+ * termination rule, and it is what an agent should do: work until done, with the
+ * user able to cancel at any point and — since D49aa — with the transcript
+ * preserved whatever happens.
+ *
+ * **Recorded risk, not a solved one:** in `auto` nothing else stops a run that
+ * loops without concluding. See the PROGRESS backlog for how that should be
+ * bounded — the short version is that the failure mode is REPETITION, so a bound
+ * should detect it rather than count volume or pick a number out of the air.
+ */
 
 /**
  * Security invariant 2 for M1: refuse tool arguments that reference

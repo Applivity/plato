@@ -130,8 +130,7 @@ export class ShellManager {
   /**
    * Reads output produced SINCE THE LAST READ and clears it, so polling a noisy
    * process does not resend everything each time. Optionally waits for new
-   * output or for exit — one waiting call is far cheaper than a poll loop, and
-   * the run has a 40-turn cap to spend.
+   * output or for exit — one waiting call is far cheaper than a poll loop.
    */
   async read(
     id: string,

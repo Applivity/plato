@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49aa** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49ab** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
@@ -64,6 +64,18 @@ are now only in PROGRESS.
   composer and the Duo/Academy doer selects are the only model controls in the product,
   and they used to write memory only, so every reload reverted to a setting with **no UI**
   — which is how a hand-set model kept reappearing.
+- **There is NO turn cap (D49ab).** `MAX_TURNS = 40` is deleted, and `reason: 'cap'` now
+  means exactly one thing — a **truncated answer**. **The run ends when the model stops
+  calling tools**; that is the whole termination rule. The bound arrived under D22's
+  delegated mandate for `auto` and was applied to every mode, where an approval card was
+  already the backstop — it cut a working `edit`-mode run at two-thirds after eleven
+  approvals. **Do not re-add a step count:** turns bound neither money nor time, and a
+  user-facing `$/turns` budget was already built and removed as unrequested (D49h).
+  **Known and open:** in `auto` nothing now stops a model that loops without concluding.
+  The PROGRESS backlog carries the design question and what is known about it — **the
+  failure mode is repetition, so a bound should detect a repeated identical tool call**.
+  Two tests pin the absence (one runs 55 turns); **deleting the cap broke no test because
+  no test had ever described it.**
 - **The chat log is append-only; compaction is a REQUEST, not a deletion (D49aa).** The log
   is the user's transcript and the request is what the model sees — they used to be the
   same array, so a fold that rebuilt the request from a summary also deleted the

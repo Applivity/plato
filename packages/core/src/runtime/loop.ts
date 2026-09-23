@@ -18,7 +18,7 @@ import type {
 } from '../providers/types.js';
 import { decide } from './modes.js';
 import type { Mode } from './modes.js';
-import { MAX_TURNS, secretRefusal } from './modes.js';
+import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
 import { AgentBus, RunController } from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
@@ -307,7 +307,7 @@ export interface LoopOptions {
 export interface LoopResult {
   finalText: string;
   turns: number;
-  /** Why the run ended: natural completion, turn cap, or observer cancel. */
+  /** Why the run ended: natural completion, a truncated answer, or a cancel. */
   reason: 'complete' | 'cap' | 'cancelled';
   /** True when the run stopped because the output hit the token cap. */
   truncated?: boolean;
@@ -477,17 +477,18 @@ async function runLoop(
   // 8,201 -> **16,384 exactly**, spent the whole budget thinking, and produced no
   // visible text at all.
   //
-  // Nothing replaces it as a hanger: `MAX_TURNS` bounds the run, and
-  // `resolveMaxOutput` still falls back to a conservative 8,192 when NOTHING
-  // knows the model. What changes is that a known limit is now used rather than
-  // overridden. A single turn can therefore cost more — that is the model's own
-  // ceiling, which is what the user picked.
+  // Nothing replaces it as a hanger: `resolveMaxOutput` still falls back to a
+  // conservative 8,192 when NOTHING knows the model. What changes is that a known
+  // limit is now used rather than overridden. A single turn can therefore cost
+  // more — that is the model's own ceiling, which is what the user picked.
   const maxTokens = resolveMaxOutput(bareModel, opts.advertised?.maxOutput);
 
   bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
 
+  // D49ab: no turn bound. The loop ends when the model stops calling tools —
+  // see the note in modes.ts for why the count was removed and what it cost.
   let turn = 1;
-  for (; turn <= MAX_TURNS; turn++) {
+  for (;; turn++) {
     // Safe point (D24b): honour cancel/pause and drain observer guidance.
     if (!(await ctrl.gate())) {
       reason = 'cancelled';
@@ -704,8 +705,8 @@ async function runLoop(
       }
     }
 
-    if (toolUses.length === 0 || turn === MAX_TURNS) {
-      const truncated = toolUses.length === 0 && res.stopReason === 'max_tokens';
+    if (toolUses.length === 0) {
+      const truncated = res.stopReason === 'max_tokens';
       // Auto-continue (D25f follow-up): an answer cut by the output cap is a
       // truncated reply, NOT a completion. Ask the model to resume exactly
       // where it stopped, then judge the continuation as a fresh turn.
@@ -720,7 +721,7 @@ async function runLoop(
       // precisely that (DeepSeek via LiteLLM: "Invalid assistant message:
       // content or tool_calls must be set"). An empty capped turn now ends the
       // run with the cap note, which is what actually happened.
-      if (truncated && res.content.length > 0 && !autoContinued && turn < MAX_TURNS) {
+      if (truncated && res.content.length > 0 && !autoContinued) {
         autoContinued = true;
         messages.push({
           role: 'user',
@@ -733,15 +734,14 @@ async function runLoop(
         });
         continue;
       }
-      // Surface it as a cap, never as a silent 'complete'.
-      reason = truncated || toolUses.length > 0 ? 'cap' : 'complete';
+      // Surface a truncated ANSWER as a cap, never as a silent 'complete'.
+      // D49ab: this is now the only 'cap' — the turn count no longer exists, so
+      // '[plato] turn cap reached; stopping.' is gone with it.
+      reason = truncated ? 'cap' : 'complete';
       truncatedStop = truncated;
-      capNote =
-        reason === 'cap'
-          ? truncated
-            ? '[plato] output hit the token cap; the answer may be incomplete.'
-            : '[plato] turn cap reached; stopping.'
-          : null;
+      capNote = truncated
+        ? '[plato] output hit the token cap; the answer may be incomplete.'
+        : null;
       break;
     }
 

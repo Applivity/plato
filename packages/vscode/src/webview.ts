@@ -1469,7 +1469,7 @@ export function chatHtml(): string {
     plan: 'Read-only. Plato can look at files and answer questions, but never modifies anything on disk or runs shell.',
     edit: 'File edits via diff approval cards. Plato can read and propose changes; shell access is denied.',
     act:  'Shell + writes. Every action is gated by an approval card. Full power, every step.',
-    auto: 'No approval clicks. Plato runs end-to-end on its own. A hard turn cap is the only backstop.',
+    auto: 'No approval clicks. Plato runs end-to-end on its own — watch it, and stop it if it goes wrong.',
   };
   function setMode(m) {
     m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';

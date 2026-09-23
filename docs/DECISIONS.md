@@ -2354,6 +2354,56 @@ still there.
 
 ---
 
+**D49ab — there is no turn cap (M5.0, 0.25.0 — 2026-09-24).**
+
+`MAX_TURNS = 40` is deleted. The founder's question was not "raise it" but *"why is there
+even a cap"* — and the record answers it badly.
+
+**Nobody asked for it.** It arrived inside **D22, marked "(delegated)"** — the M1
+tool-loop choices the founder left to the assistant — as one clause of the mode table:
+*"`auto`: everything auto-approved under a hard turn cap. **All modes turn-capped.**"* The
+first half has a real reason: `auto` is the one mode with no click in the loop, so
+something should stop a runaway. **The second half is where the reasoning stops.**
+`edit` and `act` gate every write behind an approval and `plan` cannot mutate at all, so
+in those three modes the cap guarded nothing that was not already guarded by a human.
+
+**What that cost, from a real run.** In `edit` mode, against a task to review three
+classes, the run was stopped at turn 40 — `reason: "cap"` — with the third class untouched
+and no written review, **after the founder had already approved eleven writes.** It was
+not looping or burning anything: 10,442 output tokens across all 40 turns, 99.5% of its
+input served from cache, 45.7k of a 1M window. **The user was the backstop and the cap
+still fired.**
+
+**Turns were also the wrong unit.** That run averaged ~261 output tokens a turn; a run
+that thinks can spend more than its whole total in three. A count of steps bounds neither
+money nor time — it bounds the one thing a larger task legitimately needs more of. **The
+concrete that settles it:** two days earlier D49h built a *user-facing* `$/turns` budget
+and the founder removed it the same day as a capability nobody had asked for, while its own
+text noted that `MAX_TURNS` was the only remaining bound. So the bound he asked to remove
+went, and the bound nobody asked for stayed, enforcing a number with no reason behind it.
+
+**The run now ends when the model stops calling tools** — work until done, with cancel
+available at any point and, since D49aa, the transcript preserved whatever happens.
+`reason: 'cap'` now means exactly one thing, a **truncated answer**, so the string
+`'[plato] turn cap reached; stopping.'` is gone; the `auto` mode blurb no longer promises a
+cap as its backstop; and `background.ts` no longer tells the model it has 40 turns to spend.
+
+**A coverage finding worth keeping.** Deleting the cap broke **no test** — because **no test
+had ever described it.** Three weeks of changes never touched it. That is why it survived
+unchallenged, and it is the same gap as D49aa's notice: a behaviour with no test is a
+behaviour nobody re-reads. Two tests now pin the replacement, one of them running **55
+turns** with the model still calling tools.
+
+**Deliberately NOT replaced.** In `auto` nothing now bounds a model that loops without
+concluding. The founder's read is that the runway fear is exaggerated — models conclude
+their tasks — and that Claude Code ships an auto mode with no limit. Rather than invent
+another number, the question is recorded in the PROGRESS backlog with what is already
+known: **the failure mode is repetition, not volume**, so a bound should detect a repeated
+identical tool call rather than count steps; and `duo`/`academy` already put a supervising
+observer in the loop, which is the structural answer for an unattended run.
+
+---
+
 **D49aa — the transcript is append-only; compaction is a request, not a deletion
 (M5.0, 0.25.0 — 2026-09-23).**
 
