@@ -42,6 +42,8 @@ import {
   emitTeamConfig,
   emitDuoConfig,
   isSecretPath,
+  isWriteTool,
+  writePathsOf,
   loadProjectFile,
   loadImageAttachment,
   looksLikeImage,
@@ -3082,15 +3084,24 @@ class ChatHost {
     // the merged mode quieter than the old `act`, which asked on every single
     // write. A `shell` call is NOT cached here: it asks every time, with the
     // card's own "approve all for this session" as the way to widen it.
+    //
+    // The tool test and the path list both come from core. They used to be a
+    // local pair here, and the local list missed `apply_patch` — see the comment
+    // on `isWriteTool`. `paths` is empty for a malformed patch, which falls
+    // through to the card without remembering anything.
     if (this.mode === 'edit' && isWriteTool(req.tool)) {
-      const key = String(req.args['path'] ?? '');
-      if (this.sessionWrites.has(key)) {
+      const paths = writePathsOf(req.tool, req.args);
+      if (paths.length > 0 && paths.every((p) => this.sessionWrites.has(p))) {
         return true;
       }
       const ok = await this.promptCard(req);
       if (ok) {
-        this.sessionWrites.add(key);
-        this.send('notice', `Session-approved future edits to ${key}`);
+        for (const p of paths) {
+          this.sessionWrites.add(p);
+        }
+        if (paths.length > 0) {
+          this.send('notice', `Session-approved future edits to ${paths.join(', ')}`);
+        }
       }
       return ok;
     }
@@ -3133,10 +3144,6 @@ class ChatHost {
       });
     });
   }
-}
-
-function isWriteTool(tool: string): boolean {
-  return tool === 'write_file' || tool === 'apply_diff';
 }
 
 export function deactivate(): void {}

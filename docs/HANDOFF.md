@@ -29,10 +29,10 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49al + D49ak + D49aj** (multi-select questions; three modes; the
-  question tabs) on top of **D49ah + D49ai** — Phases 0–6 of the agent capability plan
-  are **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
-  Working tree clean.
+- HEAD = **M5.0 / D49am + D49al + D49ak + D49aj** (small question cards; multi-select;
+  three modes; the question tabs) on top of **D49ah + D49ai** — Phases 0–6 of the agent
+  capability plan are **complete** (roadmap in DECISIONS **D49**). Push stays with the
+  founder. Working tree clean.
 - **There are THREE modes, not four (D49ak).** `act` was merged into `edit`, so
   `edit` **runs the shell** and `plan` is the only mode that cannot. **`auto` fetches
   without asking** — the founder's call, amending D49p. **Any doc or comment that still
@@ -100,11 +100,12 @@ are now only in PROGRESS.
   single one**, because a string of labels is otherwise indistinguishable from one
   answer containing semicolons. **The shape is the affordance** — box for multi, circle
   for single — and the fill carries the same state, so neither reading rests on colour.
-  **Free text joins the picks rather than replacing them.** **The option limit is unchanged and is not a
-  multi-select rule:** the schema lets the model declare **2-6 labels per question**, single
-  and multi alike, and the card adds the free-text *Others* row on top of them. **How many
-  boxes may be ticked is unlimited.** Left out: only a one-click "tick everything" and a
-  minimum-picks rule.
+  **Free text joins the picks rather than replacing them.** **The card is kept small on purpose (D49am):** a question
+  carries **2-3 options**, never more, and one call carries **1-4 questions** — the founder's
+  call, *"we don't want to overwhelm the users."* The free-text *Others* row is added ON TOP of
+  the declared options, so 3 options are 4 rows on screen. **How many boxes may be ticked is
+  unlimited.** A ceiling binds only the model, which may offer fewer; the card renders whatever
+  arrives.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -691,6 +692,18 @@ form:
   host classifies a *tool* and not a *command*. **Read D49ak before touching the mode
   table** — two architecture documents state the opposite of what now ships, and their
   bodies stay verbatim with a superseded-map row instead.
+- **A write is remembered per file — and `apply_patch` now is too (D49am).** The shell used
+  to answer "is this a write?" with **its own hardcoded pair** (`write_file`,
+  `apply_diff`), while the mode table classified `apply_patch` as a write when it landed
+  (D49l). **The two lists disagreed, so a multi-file patch raised an approval card on every
+  call** even for files already approved that session — the nagging the memory exists to
+  stop. **The fix was to delete the second list, not to extend it:** `isWriteTool` derives
+  from `TOOL_KIND` now, and `writePathsOf` gives the files a write would change (one path,
+  or every path in a patch). The rule: ask unless **all** are approved, remember **all** on
+  a yes, drop a malformed entry rather than store an empty path. **Both are in core, where
+  they can be tested — the shell has no unit tests, which is why the bug could live there.**
+  **A `shell` call is deliberately NOT remembered**: it asks every time, with the card's
+  "approve all for this session" as the way to widen it.
 
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and

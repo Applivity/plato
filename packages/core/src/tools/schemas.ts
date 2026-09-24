@@ -226,15 +226,15 @@ export function toolDeclarations(): CanonicalTool[] {
     {
       name: 'ask_user',
       description:
-        'Ask the user one or more questions with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. You can ask up to 3 questions at once. Always provide a recommended option. Set multiple: true on a question where more than one option may be right — the user then gets checkboxes and can pick several, and their answer comes back as those picks separated by "; ".',
+        'Ask the user one or more questions with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. Keep it small: at most 4 questions at once, and 2-3 options on each, because a long list of questions or choices is a worse interruption than a short one. Always provide a recommended option. Set multiple: true on a question where more than one option may be right — the user then gets checkboxes and can pick several, and their answer comes back as those picks separated by "; ".',
       parameters: {
         type: 'object',
         properties: {
           questions: {
             type: 'array',
             minItems: 1,
-            maxItems: 3,
-            description: 'The list of questions to ask.',
+            maxItems: 4,
+            description: 'The list of questions to ask (1-4).',
             items: {
               type: 'object',
               properties: {
@@ -244,8 +244,9 @@ export function toolDeclarations(): CanonicalTool[] {
                   type: 'array',
                   items: { type: 'string' },
                   minItems: 2,
-                  maxItems: 6,
-                  description: '2-6 answer options (short labels)',
+                  maxItems: 3,
+                  description:
+                    '2-3 answer options (short labels). Three is the ceiling whether the question is single-answer or multiple: the user always also gets a free-text row, so a fourth label crowds the card for no gain.',
                 },
                 recommended: {
                   type: 'string',

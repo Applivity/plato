@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decide, secretRefusal } from '../src/runtime/modes.js';
+import { decide, isWriteTool, secretRefusal, writePathsOf } from '../src/runtime/modes.js';
 import { toolDeclarations } from '../src/tools/schemas.js';
 import type { Mode } from '../src/runtime/modes.js';
 import type { ToolName } from '../src/runtime/modes.js';
@@ -170,5 +170,108 @@ describe('secretRefusal', () => {
 
   it('unknown non-mcp tools are denied outright', () => {
     expect(decide('totally_unknown', 'auto')).toBe('deny');
+  });
+});
+
+/**
+ * D49ak. `isWriteTool` used to be a second, hardcoded list in the shell —
+ * `write_file || apply_diff` — and `apply_patch` landed later without being added
+ * to it, so a multi-file patch was the one write tool with NO session memory:
+ * every call raised a card even for files the user had already approved. That is
+ * the nagging the per-file memory exists to stop.
+ *
+ * The names are listed here rather than derived from TOOL_KIND, because deriving
+ * them would make the test tautological. These three are the tools that change
+ * files, and that is the fact the bug was about.
+ */
+describe('isWriteTool covers every file-changing tool (D49ak)', () => {
+  it('says yes to all three write tools, apply_patch included', () => {
+    for (const t of ['write_file', 'apply_diff', 'apply_patch']) {
+      expect(isWriteTool(t), t).toBe(true);
+    }
+  });
+
+  it('says no to everything that does not change a file', () => {
+    for (const t of [
+      'read_file', 'list_dir', 'grep', 'glob', 'git',
+      'shell', 'bash_output', 'kill_shell', 'web_fetch',
+    ]) {
+      expect(isWriteTool(t), t).toBe(false);
+    }
+  });
+});
+
+/**
+ * D49ak. `writePathsOf` is what the session memory is keyed on, so it decides
+ * both halves of the bargain: which files a "yes" covers, and whether a later
+ * call is answered without asking. A path it drops is a file the user is asked
+ * about forever; a path it invents is a file approved without being shown.
+ */
+describe('writePathsOf returns exactly the files a write would change (D49ak)', () => {
+  it('returns the single path of a one-file write', () => {
+    expect(writePathsOf('write_file', { path: 'a.ts' })).toEqual(['a.ts']);
+    expect(writePathsOf('apply_diff', { path: 'src/b.ts' })).toEqual(['src/b.ts']);
+  });
+
+  it('returns EVERY path of a multi-file patch', () => {
+    expect(
+      writePathsOf('apply_patch', {
+        patches: [{ path: 'a.ts' }, { path: 'src/b.ts' }, { path: 'c.ts' }],
+      }),
+    ).toEqual(['a.ts', 'src/b.ts', 'c.ts']);
+  });
+
+  it('drops entries with no usable path instead of inventing an empty one', () => {
+    // An empty string in the approved set would approve a nameless write.
+    expect(
+      writePathsOf('apply_patch', { patches: [{ path: 'a.ts' }, {}, { path: '' }, null] }),
+    ).toEqual(['a.ts']);
+  });
+
+  it('returns nothing when there is nothing to return', () => {
+    expect(writePathsOf('apply_patch', {})).toEqual([]);
+    expect(writePathsOf('apply_patch', { patches: [] })).toEqual([]);
+    expect(writePathsOf('write_file', {})).toEqual([]);
+    expect(writePathsOf('write_file', { path: '' })).toEqual([]);
+  });
+});
+
+/**
+ * D49ak, the founder's call: *"cap it to 3 choices and one free text box... and
+ * maybe may ask up to 4 questions at a time. We don't want to overwhelm the
+ * users."*
+ *
+ * These are product limits rather than technical ones, so they are pinned here —
+ * a later session raising them should have to delete an assertion that says why.
+ * The card adds its own free-text row on top of the declared options, so 3
+ * declared labels are 4 rows on screen.
+ */
+describe('the ask_user declaration keeps the question card small (D49ak)', () => {
+  const ask = () => {
+    const t = toolDeclarations().find((x) => x.name === 'ask_user');
+    if (!t) throw new Error('ask_user is not declared');
+    return t;
+  };
+  const param = (path: string[]): Record<string, unknown> => {
+    let cur = ask().parameters;
+    for (const key of path) {
+      cur = (cur[key] ?? {}) as Record<string, unknown>;
+    }
+    return cur;
+  };
+
+  it('caps a question at 3 options', () => {
+    expect(param(['properties', 'questions', 'items', 'properties', 'options']).maxItems).toBe(3);
+    expect(param(['properties', 'questions', 'items', 'properties', 'options']).minItems).toBe(2);
+  });
+
+  it('caps one call at 4 questions', () => {
+    expect(param(['properties', 'questions']).maxItems).toBe(4);
+  });
+
+  it('tells the model the limits, not only the JSON schema', () => {
+    // A schema constraint the prompt never mentions is one the model will cross.
+    expect(ask().description).toContain('at most 4 questions');
+    expect(ask().description).toContain('2-3 options');
   });
 });

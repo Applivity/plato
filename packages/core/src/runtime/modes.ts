@@ -139,6 +139,47 @@ export function decide(tool: string, mode: Mode): Decision {
  */
 
 /**
+ * D49ak: is this tool one that CHANGES files? **Derived from TOOL_KIND rather
+ * than listed again**, and that is the whole point of the function.
+ *
+ * The shell used to answer this with its own hardcoded pair —
+ * `tool === 'write_file' || tool === 'apply_diff'` — and `apply_patch` landed
+ * later without being added to it. So a multi-file patch was the one write tool
+ * that got no session memory: in `edit` mode it raised an approval card on every
+ * call even for files the user had already approved, which is precisely the
+ * nagging the per-file memory exists to stop. **A second list that must agree
+ * with the first is a list that will not.** Nothing here needs updating when a
+ * write tool is added: classifying it in TOOL_KIND is enough.
+ */
+export function isWriteTool(tool: string): boolean {
+  return TOOL_KIND[tool as ToolName] === 'write';
+}
+
+/**
+ * The files a write tool would change, as workspace-relative paths.
+ *
+ * `/` takes one path; `apply_patch` takes several, and every one of them must be
+ * covered by an approval — see the caller, which asks unless ALL of them are
+ * already approved and remembers all of them once the user says yes.
+ *
+ * An entry with no usable path is dropped rather than kept as an empty string,
+ * so a malformed patch cannot put `''` in the approved set.
+ */
+export function writePathsOf(tool: string, args: Record<string, unknown>): string[] {
+  if (tool === 'apply_patch') {
+    const patches = Array.isArray(args['patches']) ? args['patches'] : [];
+    return patches
+      .map((p) => {
+        const rec = (typeof p === 'object' && p !== null ? p : {}) as Record<string, unknown>;
+        return typeof rec['path'] === 'string' ? rec['path'] : '';
+      })
+      .filter((p) => p.length > 0);
+  }
+  const one = args['path'];
+  return typeof one === 'string' && one.length > 0 ? [one] : [];
+}
+
+/**
  * Security invariant 2 for M1: refuse tool arguments that reference
  * secret-bearing files. Applied to every tool call before execution.
  * Returns a short reason when refused.

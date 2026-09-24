@@ -2963,6 +2963,60 @@ suite exits 1 (three for the row, one for the stale description).
 
 ---
 
+**D49am — the question card is kept small, and `apply_patch` joins the session memory
+(M5.0, 0.25.0 — 2026-09-24).**
+
+**Two things, from one founder message, and the second was found while answering the first.**
+
+**1. The limits are now 3 options and 4 questions.** His words: *"I guess 6 is too many, lets cap it
+to 3 choices (radio or checkbox) and one free text box. and maybe may ask up to 4 questions at a
+time. we don't want overwhelm the users."* The schema said **2-6 options** and **1-3 questions**;
+it now says **2-3** and **1-4**. **The free-text row is not counted** — it is added by the card on
+top of the declared options, so 3 options are 4 rows on screen, and that is the shape the founder
+had in mind. **The model is told the limits in prose as well as in the schema**, because a
+constraint the prompt never mentions is one the model will cross.
+
+**Why 3 and not 4 or 5.** Four or five options is where a person stops comparing and starts
+re-reading; three is the point where the choice is still visible at once. **The cost is stated
+plainly rather than hidden: this is tight for a MULTI-select question**, where offering candidates
+is the point ("which of these files should I read?"). It was flagged to the founder before the
+change and he chose one number for both kinds, which is also the simpler thing to explain and to
+hold in the head. **If it bites, the split is one line** — 3 for single-answer, more for multi —
+and nothing else in the design depends on the number.
+
+**The ceiling is a limit on the MODEL, not on the user.** A model may declare fewer options than it
+is allowed, the card renders whatever arrives, and nothing truncates. So a model that ignores the
+schema still renders correctly; it just asks a worse question. **Refusing an over-long call was
+considered and rejected**: the card would then be unable to show a question the model had already
+decided to ask, which is worse than a slightly crowded card.
+
+**Pinned by test, because these are product limits rather than technical ones** — a later session
+raising them should have to delete an assertion that says why. The test also asserts the prose
+mentions the limits, since the schema alone is not what the model reads first.
+
+**2. `apply_patch` was the one write tool with NO session memory, and that is a defect the founder's
+own worry found.** He asked whether per-file approval *"will constant nagging the user be annoying"*.
+Checking the answer turned up this: the shell decided "is this a write?" with **its own hardcoded
+pair, `write_file || apply_diff`**, while the mode table classified `apply_patch` as a write when it
+landed (D49l). The two lists disagreed, and the consequence was exactly the nagging he was asking
+about — a multi-file patch raised an approval card on **every call**, even for files the user had
+already approved in that session.
+
+**The fix is not "add `apply_patch` to the list"; it is "delete the second list."**
+`isWriteTool` now derives from `TOOL_KIND`, so a write tool added later is covered by being
+classified, which is the one place it has to be classified anyway. **A second list that must agree
+with the first is a list that will not.** A new `writePathsOf` returns the files a write would
+change — one path, or every path in a patch — and the rule is: ask unless **all** of them are already
+approved, and remember **all** of them once the user says yes. A malformed entry is dropped rather
+than stored as an empty path, so a nameless write cannot enter the approved set. Both functions live
+in **core**, where they can be tested — the shell has no unit tests, which is why the bug was
+possible there in the first place.
+
+**Falsified:** restoring the hardcoded pair fails the test that names the three write tools, with
+`apply_patch` as the failing case.
+
+---
+
 **D49al — a question may be multi-select, and the several picks travel as one string
 (M5.0, 0.25.0 — 2026-09-24).**
 
@@ -3000,10 +3054,10 @@ Submit gates, and the single-select behaviour those paths already had (the D49y 
 Back restore) is pinned by existing assertions that the rewrite had to keep passing.
 
 **A wording note, because the first version of this entry misled the founder when he read it.**
-The **6** is not a multi-select cap: the tool schema lets the model declare **2-6 labels per
-question**, unchanged for both kinds. **The card adds the free-text *Others* row on top of the
-declared labels** — three declared labels show as three boxes plus a text row — and **the number of
-boxes the user may tick is unlimited.**
+The **6** was not a multi-select cap: the schema let the model declare **2-6 labels per question**,
+unchanged for both kinds. **The card adds the free-text *Others* row on top of the declared
+labels** — three declared labels showed as three boxes plus a text row — and **the number of boxes
+the user may tick is unlimited.** **The 6 is now 3, on the founder's instruction — see D49am.**
 
 **Two things were considered and deliberately left out**, and neither is an option limit: a
 one-click "tick everything", and a minimum-picks rule (the model cannot require "pick at least
