@@ -3,7 +3,7 @@
  * (ARCHITECTURE.md: modes are permission filters, not separate loops;
  * D22c records the per-mode rules).
  */
-import { isSecretPath } from '../security/secrets.js';
+import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
 
 export type Mode = 'plan' | 'edit' | 'act' | 'auto';
 
@@ -55,8 +55,12 @@ export type Decision = 'allow' | 'ask' | 'deny';
  * denied in plan/edit.
  */
 export function decide(tool: string, mode: Mode): Decision {
-  // ask_user is meta (the agent asking the user) — always allowed in all modes.
-  if (tool === 'ask_user') return 'allow';
+  // D49ah: the META tools — the agent talking to the user, and the agent keeping
+  // its own plan. Neither touches the workspace or the network, so neither has
+  // anything to gate: an approval card for "write down your plan" would be
+  // friction with nothing behind it, and `plan` mode is where a plan is most
+  // useful, so denying it there would be exactly backwards.
+  if (tool === 'ask_user' || tool === 'todo_write') return 'allow';
   const kind = TOOL_KIND[tool as ToolName] ?? (tool.startsWith('mcp_') ? 'shell' : undefined);
   if (kind === undefined) {
     return 'deny';
@@ -118,6 +122,26 @@ export function decide(tool: string, mode: Mode): Decision {
  * Returns a short reason when refused.
  */
 export function secretRefusal(tool: string, args: Record<string, unknown>): string | null {
+  // D49ah: `todo_write` is exempt, and the reason is what the check is FOR. It
+  // reads arguments that can cause a secret to be READ — a path, a shell command.
+  // A plan item is none of those: it is the model's own sentence about work it
+  // intends, and it is never sent anywhere the model's context does not already
+  // go. Without this, a plan item that merely *names* `keystore.properties` — a
+  // legitimate step in this very project — would be refused, and the model would
+  // lose a turn renaming a word. Nothing is weakened: the file is still refused
+  // by `read_file`, `grep` and `shell`.
+  if (tool === 'todo_write') return null;
+  // D49ai: a shell command is the one argument that can read ANY file, and the
+  // name of the file is a word inside a sentence rather than the whole string —
+  // so the whole-string check below cannot see it. `cat keystore.properties` ran
+  // and returned the file; `cat app/keystore.properties` was refused. See
+  // mentionsSecretPath for the repro and for what this does not cover.
+  if (tool === 'shell') {
+    const command = args['command'];
+    if (typeof command === 'string' && mentionsSecretPath(command)) {
+      return 'shell was refused: the command references a protected file.';
+    }
+  }
   const candidates: string[] = [];
   for (const v of Object.values(args)) {
     if (typeof v === 'string') {

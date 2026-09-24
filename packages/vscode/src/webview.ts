@@ -219,6 +219,18 @@ export function chatHtml(): string {
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
+  /* D49ah: the plan. Rows are sized like the reply text rather than the diff
+     pane — this is prose a person reads, not output to scan. */
+  .todo-list { margin:0; padding:6px 10px 8px; list-style:none;
+               font-size:12.5px; line-height:1.5; }
+  .todo-item { display:flex; gap:7px; align-items:baseline; padding:1px 0; }
+  .todo-box { flex:none; width:12px; text-align:center; }
+  .todo-item.completed .todo-text { color:var(--pl-muted);
+                                    text-decoration:line-through; }
+  .todo-item.in_progress { font-weight:600; }
+  .todo-item.in_progress .todo-text { color:var(--vscode-textLink-foreground,
+                                                #4daafc); }
+  .todo-item.pending .todo-text { color:var(--pl-muted); }
   .q-form { padding: 4px 10px; display:flex; flex-direction:column; gap:12px; }
   .q-progress { font-size:11px; color:var(--pl-muted); padding:2px 0; }
   .q-block { display:flex; flex-direction:column; gap:6px; }
@@ -3879,6 +3891,10 @@ export function chatHtml(): string {
         break;
       }
       case 'team': flushToolBuffer(); showTeam(m); break;
+      // D49ah: the plan, drawn where it was set. The model replaces the whole
+      // list on every call, so each card is the plan AS IT STOOD then and the
+      // transcript shows the run changing its mind, which is what happened.
+      case 'todo': flushToolBuffer(); addTodoCard(m.todos); break;
       case 'tool':
         // Only completed calls count; pending/denied phases stay in the chip.
         if (m.phase === 'done') {
@@ -3953,6 +3969,7 @@ export function chatHtml(): string {
         break;
       case 'card-open': showCard(t, false); break;
       case 'card-done': cardDone(t); break;
+      case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;
       case 'trim': addTrimNote(t); break;
     }
@@ -3982,6 +3999,52 @@ export function chatHtml(): string {
    * rewrites itself — and if the cap took the summary, that is Plato's memory
    * going, not just the view, so it is said differently.
    */
+  /**
+   * D49ah: the plan the agent is working to. The founder's runs reach 78 turns
+   * with no cap (D49ab), and a long run with no visible plan is one you cannot
+   * tell is on track until it stops — this is the panel that fixes that, and it
+   * is the part of the phase the user actually sees.
+   *
+   * Reuses the card shell so there is no new UI machinery, and marks state with
+   * a GLYPH plus a class rather than colour alone: colour is the theme's, and a
+   * plan legible only in colour is not legible.
+   */
+  function addTodoCard(todos) {
+    if (!Array.isArray(todos) || todos.length === 0) { return; }
+    let done = 0;
+    for (const t of todos) { if (t.status === 'completed') { done += 1; } }
+    const card = document.createElement('div');
+    card.className = 'card todo-card';
+    const h = document.createElement('h3');
+    h.className = 'todo-head';
+    h.textContent = 'Plan — ' + done + ' of ' + todos.length
+      + (todos.length === 1 ? ' step done' : ' steps done');
+    card.appendChild(h);
+    const list = document.createElement('ul');
+    list.className = 'todo-list';
+    for (const t of todos) {
+      const li = document.createElement('li');
+      li.className = 'todo-item ' + String(t.status);
+      const box = document.createElement('span');
+      box.className = 'todo-box';
+      // A glyph, not an image or a border trick: it survives the mono font, it
+      // is readable at a glance, and it says the same thing to a screen reader
+      // as it does to the eye.
+      box.textContent = t.status === 'completed' ? '✓'
+        : t.status === 'in_progress' ? '▸' : '○';
+      box.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span');
+      text.className = 'todo-text';
+      text.textContent = String(t.content);
+      li.appendChild(box);
+      li.appendChild(text);
+      list.appendChild(li);
+    }
+    card.appendChild(list);
+    log.appendChild(card);
+    scroll();
+  }
+
   function addTrimNote(t) {
     const n = Number(t.dropped) || 0;
     const div = document.createElement('div');

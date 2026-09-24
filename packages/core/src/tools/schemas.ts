@@ -284,6 +284,40 @@ export function toolDeclarations(): CanonicalTool[] {
         required: ['verb'],
       },
     },
+    {
+      name: 'todo_write',
+      description:
+        'Record or update your plan for the current task. Send the COMPLETE list every time — it replaces the previous one, so the list is always what you currently intend. Use it for a task with several steps: write the steps before you start, mark exactly one in_progress as you work, and mark each completed as you finish. This is not a status report to the user; it is how you keep your own thread across a long run, and the user watches it to see where you are.',
+      parameters: {
+        type: 'object',
+        properties: {
+          todos: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 20,
+            description: 'The complete plan, in order. Replaces the previous list.',
+            items: {
+              type: 'object',
+              properties: {
+                content: {
+                  type: 'string',
+                  description:
+                    'The step, stated as an action. Under 200 characters — the step, not its detail.',
+                },
+                status: {
+                  type: 'string',
+                  enum: ['pending', 'in_progress', 'completed'],
+                  description:
+                    'pending before you start it, in_progress while you are on it, completed once it is done and verified.',
+                },
+              },
+              required: ['content', 'status'],
+            },
+          },
+        },
+        required: ['todos'],
+      },
+    },
   ];
 }
 

@@ -27,6 +27,7 @@
  * can re-read for the content.
  */
 import { pathArgsOf } from '../security/paths.js';
+import { parseTodos, todoSummary } from '../tools/todo.js';
 
 /** The part of a chat-log row these rules read. */
 export interface LogRow {
@@ -139,6 +140,16 @@ export function digestToolCall(
       const q = args['questions'];
       const n = Array.isArray(q) ? q.length : 0;
       parts.push(n === 1 ? '1 question' : n + ' questions');
+      break;
+    }
+    case 'todo_write': {
+      // D49ah: the plan's SHAPE, not its text. A fold or a later run should know
+      // a plan exists, how far it got, and what was in hand — but ten item lines
+      // in every digest would spend the log's room on a list the panel already
+      // shows, and DIGEST_MAX would cut it mid-list, which is worse than a
+      // summary. The items themselves stay in the tool result.
+      const parsed = parseTodos(args['todos']);
+      if ('todos' in parsed) parts.push(todoSummary(parsed.todos));
       break;
     }
     case 'bash_output':

@@ -165,6 +165,105 @@ describe('runAgentLoop truncation handling', () => {
     expect(result.isError).toBe(false);
   });
 
+  /**
+   * D49ah, and the assertion the whole phase turns on: **the model is handed its
+   * own plan back on the next turn.** The plan is what keeps a long run coherent
+   * — the founder's runs reach 78 turns now that no cap exists (D49ab) — and it
+   * only does that if the list is IN the conversation the next request carries,
+   * not merely drawn in a panel beside it.
+   */
+  it('hands the model its own plan back on the next turn (D49ah)', async () => {
+    let second: TurnRequest | undefined;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'plan_1',
+                name: 'todo_write',
+                input: {
+                  todos: [
+                    { content: 'Read the utility', status: 'completed' },
+                    { content: 'Fix the formatter', status: 'in_progress' },
+                    { content: 'Add a test', status: 'pending' },
+                  ],
+                },
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use',
+          };
+        }
+        second = req;
+        return {
+          content: [{ type: 'text', text: 'carrying on' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    expect(r.reason).toBe('complete');
+
+    const block = second?.messages
+      .flatMap((m) => m.content)
+      .find(
+        (c): c is Extract<typeof c, { type: 'tool_result' }> =>
+          c.type === 'tool_result' && c.toolUseId === 'plan_1',
+      );
+    expect(block).toBeDefined();
+    expect(block!.isError).toBe(false);
+    // The rendered list, item order and state included — the same string the
+    // panel draws, so the two cannot disagree about what the plan is.
+    expect(block!.content).toContain('[x] Read the utility');
+    expect(block!.content).toContain('[>] Fix the formatter');
+    expect(block!.content).toContain('[ ] Add a test');
+    expect(block!.content).toContain('3 items, 1 done');
+  });
+
+  it('refuses a malformed plan without ending the run (D49ah)', async () => {
+    let second: TurnRequest | undefined;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'plan_bad',
+                name: 'todo_write',
+                input: { todos: [{ content: 'Fix it', status: 'nearly' }] },
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use',
+          };
+        }
+        second = req;
+        return {
+          content: [{ type: 'text', text: 'noted' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    // A refusal is a turn the model can correct, not a dead run.
+    expect(r.reason).toBe('complete');
+    const block = second?.messages
+      .flatMap((m) => m.content)
+      .find(
+        (c): c is Extract<typeof c, { type: 'tool_result' }> =>
+          c.type === 'tool_result' && c.toolUseId === 'plan_bad',
+      );
+    expect(block!.isError).toBe(true);
+    expect(block!.content).toMatch(/pending, in_progress or completed/);
+  });
+
   it('supports multiple questions in one ask_user call', async () => {
     const p: ChatProvider = {
       id: 'anthropic',

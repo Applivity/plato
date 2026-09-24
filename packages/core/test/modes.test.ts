@@ -80,6 +80,36 @@ describe('secretRefusal', () => {
     expect(secretRefusal('shell', cmd)).not.toBeNull();
   });
 
+  /**
+   * D49ai. The regression this closes, as the two commands that differ only by a
+   * directory prefix. **Verified by running the first one before the fix:**
+   * `executeTool` returned `ok: true` WITH the file's contents, and `shell` is
+   * `allow` in `auto`, so nothing asked. The proving-ground repo keeps the file
+   * at its root, so the spelling that read it was the natural one.
+   */
+  it('refuses a protected file named inside a command, not just as a whole path (D49ai)', () => {
+    expect(secretRefusal('shell', { command: 'cat keystore.properties' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'cat ./keystore.properties' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'cp keystore.properties /tmp/x' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'grep -R secret keystore.properties' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'openssl pkcs12 -in release.jks' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'cat .env' })).not.toBeNull();
+  });
+
+  it('does not refuse a command that merely mentions the letters (D49ai)', () => {
+    // The check is a token scan, not a substring one, or the guard would fight
+    // the model over words instead of files.
+    for (const command of [
+      'cat app/src/main/MainActivity.java',
+      'grep -rn "secretsmanager" app/src',
+      './gradlew assembleRelease',
+      'git status',
+      'echo hello > notes.txt',
+    ]) {
+      expect(secretRefusal('shell', { command }), command).toBeNull();
+    }
+  });
+
   it('allows clean paths', () => {
     expect(
       secretRefusal('read_file', { path: 'app/src/main/MainActivity.java' }),
@@ -87,9 +117,39 @@ describe('secretRefusal', () => {
     expect(secretRefusal('grep', { pattern: 'gradle' })).toBeNull();
   });
 
+  /**
+   * D49ah. The scan is for arguments that could cause a secret to be READ — a
+   * path, a shell command. A plan item is the model's own sentence about work it
+   * intends, and it must be able to name a protected file without the call being
+   * refused: "rotate the keystore" is a legitimate step, and the file is never
+   * opened. Nothing is weakened — the read tools still refuse it.
+   */
+  it('does not scan a plan item, which names rather than opens (D49ah)', () => {
+    expect(
+      secretRefusal('todo_write', {
+        todos: [{ content: 'rotate keystore.properties', status: 'pending' }],
+      }),
+    ).toBeNull();
+    // The control: the same words in a tool that CAN read still refuse.
+    expect(secretRefusal('read_file', { path: 'keystore.properties' })).not.toBeNull();
+    expect(secretRefusal('shell', { command: 'cat keystore.properties' })).not.toBeNull();
+  });
+
   it('ask_user is allow in every mode (meta tool, D34)', () => {
     for (const mode of ['plan', 'edit', 'act', 'auto'] as Mode[]) {
       expect(decide('ask_user', mode)).toBe('allow');
+    }
+  });
+
+  /**
+   * D49ah. `todo_write` is the agent's own plan — no workspace, no network — so
+   * it is meta for the same reason `ask_user` is, and the mode it most needs to
+   * work in is `plan`, where writing the plan down is the whole job. Gating it
+   * would have made an approval card out of "write down what you intend".
+   */
+  it('todo_write is allow in every mode, plan included (meta tool, D49ah)', () => {
+    for (const mode of ['plan', 'edit', 'act', 'auto'] as Mode[]) {
+      expect(decide('todo_write', mode)).toBe('allow');
     }
   });
 

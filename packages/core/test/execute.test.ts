@@ -543,6 +543,57 @@ describe('apply_patch atomicity (D49l)', () => {
   });
 });
 
+/**
+ * D49ai. **The executor is the guarantee; the loop's refusal is the courtesy**
+ * (D49k's doctrine, applied to the secret invariant).
+ *
+ * Found by writing an unrelated test. `isSecretPath` takes the BASENAME of the
+ * whole string, so `cat app/keystore.properties` was refused and `cat
+ * keystore.properties` — the natural spelling, since the proving-ground repo
+ * keeps the file at its root — ran and returned the file. `shell` is `allow` in
+ * `auto`, so nothing asked. These tests run the command for real against a
+ * workspace that HAS the file, which is the only way to prove the content did not
+ * come back.
+ */
+describe('a shell command may not read a protected file (D49ai)', () => {
+  const withSecret = (): string => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'keystore.properties'), 'storePassword=SUPERSECRET\n');
+    mkdirSync(join(root, 'app'), { recursive: true });
+    writeFileSync(join(root, 'app', 'local.properties'), 'sdk.dir=/secret\n');
+    return root;
+  };
+
+  it('refuses the bare name, which the whole-string check could not see', async () => {
+    const r = await executeTool(withSecret(), 'shell', {
+      command: 'cat keystore.properties',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('protected file');
+  });
+
+  it('refuses it however the command is spelled', async () => {
+    for (const command of [
+      'cat ./keystore.properties',
+      'cp keystore.properties /tmp/leak',
+      'grep -R password keystore.properties',
+      'cat app/local.properties',
+    ]) {
+      const r = await executeTool(withSecret(), 'shell', { command });
+      expect(r.ok, command).toBe(false);
+      expect(r.output, command).toContain('protected file');
+    }
+  });
+
+  it('still runs an ordinary command', async () => {
+    const r = await executeTool(withSecret(), 'shell', {
+      command: 'echo ordinary output',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('ordinary output');
+  });
+});
+
 describe('background shells through the tool surface (D49m)', () => {
   it('refuses run_in_background when no manager is available', async () => {
     const r = await executeTool(tempRoot(), 'shell', {

@@ -27,6 +27,8 @@ import {
   tailPairs,
   digestToolCall,
   buildFoldPrompt,
+  parseTodos,
+  type TodoItem,
   ObserverAgent,
   loadTeamConfig,
   parseTeamConfig,
@@ -343,6 +345,14 @@ type Entry =
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
+  /**
+   * D49ah: the agent's plan, as it stood at that moment in the run. A row rather
+   * than a floating panel because the transcript is already the record of what
+   * happened in order — a run that replans three times should show three plans,
+   * and a reload should rebuild the last one from the log rather than from
+   * memory the shell does not keep.
+   */
+  | { k: 'todo'; todos: TodoItem[] }
   /**
    * D49aa: the display cap dropped rows. The transcript may be bounded; it may
    * not lose a row without saying so. `lostSummary` is true when the cap took
@@ -2976,6 +2986,20 @@ class ChatHost {
               digest: digestToolCall(e.tool, e.args),
               ok: e.ok,
             });
+          }
+          // D49ah: the plan is shown as it is set, and recorded so a reload
+          // rebuilds it. Parsed with the same reader the tool itself used, so a
+          // list the panel draws is a list the runner accepted — never a
+          // half-read one.
+          if (e.tool === 'todo_write' && e.phase === 'done') {
+            const parsed = parseTodos(e.args['todos']);
+            if ('todos' in parsed) {
+              this.push({ k: 'todo', todos: parsed.todos });
+              void this.panel.webview.postMessage({
+                type: 'todo',
+                todos: parsed.todos,
+              });
+            }
           }
         },
       });

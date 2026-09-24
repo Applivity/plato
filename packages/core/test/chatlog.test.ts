@@ -266,6 +266,28 @@ describe('digestToolCall (D49ag)', () => {
     expect(digestToolCall('kill_shell', {})).toBe('');
     expect(digestToolCall('read_file', { path: '' })).toBe('');
   });
+
+  /**
+   * D49ah. A plan is the one thing in a run that SHOULD outlive it, so it gets a
+   * digest like everything else — but the shape, not the text: ten item lines
+   * would spend the log's room on a list the panel already shows, and DIGEST_MAX
+   * would cut it mid-list, which reads as a whole plan that is not.
+   */
+  it('records a plan by its shape, where the run had got to (D49ah)', () => {
+    const d = digestToolCall('todo_write', {
+      todos: [
+        { content: 'Read the utility', status: 'completed' },
+        { content: 'Fix the formatter', status: 'in_progress' },
+        { content: 'Add a test', status: 'pending' },
+      ],
+    });
+    expect(d).toBe('3 items, 1 done, in progress: Fix the formatter');
+    expect(d.length).toBeLessThanOrEqual(DIGEST_MAX);
+  });
+
+  it('says nothing rather than guessing at a malformed plan (D49ah)', () => {
+    expect(digestToolCall('todo_write', { todos: 'do the thing' })).toBe('');
+  });
 });
 
 /**

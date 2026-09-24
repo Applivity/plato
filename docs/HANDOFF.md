@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ag** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49ah + D49ai** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
@@ -48,6 +48,36 @@ are now only in PROGRESS.
   fold and the cross-run request were both blind to 80.8% of a run.**
   **The two that changed the product's shape are D49aa and D49ab** — read those
   first if you are picking this up cold.
+- **A protected file was readable by naming it plainly in a shell command (D49ai).**
+  `isSecretPath` matches a whole string after taking its **basename**, so
+  `cat app/keystore.properties` was refused while **`cat keystore.properties` ran** — and
+  the spelling that read the file is the natural one, because the proving-ground repo
+  keeps it at the **root**. `shell` is `allow` in `auto`, so nothing asked. **Checked in
+  TWO places, and both were blind:** the executor (`shellTool`, the guarantee) and the
+  loop's pre-flight (`secretRefusal`, the courtesy — it refused nothing, so the approval
+  card never named the file). Both now use **`mentionsSecretPath`, a token scan**:
+  `echo do not commit keystore.properties` is refused, while `grep -rn "secretsmanager"
+  app/src` and `./gradlew assembleRelease` are not, so the guard does not fight the model
+  over words instead of files. **Best effort and recorded as such** — a command built to
+  evade a text check still can, and in `act`/`edit` the approval card is the real gate.
+  **`todo_write` is exempt** from that scan, because its arguments are the model's own
+  words about work it intends, not an instruction to open a file — do not "fix" that
+  exemption without reading D49ai, and note a test asserts the pairing (the same words in
+  `read_file` and `shell` still refuse).
+- **The agent writes its plan down and the user sees it (D49ah, Phase 6).** `todo_write`
+  **replaces the whole list on every call** — a delta protocol lets the model's picture and
+  the real list drift apart silently. **The tool's result IS the rendered list**, the same
+  string the panel draws, which is what makes the phase's claim checkable: a loop test pins
+  that **the model is handed its own plan back on the next turn**. It is a **META tool
+  beside `ask_user`** — allowed in every mode, never approved, because it touches no
+  workspace and no network and **`plan` mode is where writing the plan down is the whole
+  job**. **A malformed plan is refused, never guessed at** (an unknown status gets a
+  correction, not a coerced item; an over-long item is refused, not truncated). The plan is
+  a **log row drawn where it was set**, so a replan adds a card rather than rewriting one,
+  and a reload rebuilds them from the log — **no new bus event was needed**, since the shell
+  already receives every tool call's arguments. **The rule a user lives with: state is
+  legible WITHOUT COLOUR** — completed struck through, in-progress heaviest, a distinct
+  glyph per state.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -323,12 +353,12 @@ used to claim.
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **508** passing
-  vitest cases across **33** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **534** passing
+  vitest cases across **34** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Fourteen suites, **296 assertions**; see
+  unit tests + render suites. Fifteen suites, **318 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -519,8 +549,8 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 508/508 vitest in packages/core (33 files)
-3. `pnpm run render` — the real-DOM render suites, **14 suites / 296 assertions**
+2. `pnpm -r test` — 534/534 vitest in packages/core (34 files)
+3. `pnpm run render` — the real-DOM render suites, **15 suites / 318 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -591,12 +621,16 @@ seeing** — which is worth knowing before anyone spends a session on them.
   backlog. **Do not build a thinking display without the founder.**
 
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** **Phases 0–5 are DONE.** Phase 3 opened by
-repairing a fault the plan did not anticipate — **no tool enforced workspace
-containment** (D49k). **Next is Phase 6, task coherence** — a `todo_write` tool and
-a panel. **`web_search` was deliberately deferred (D49p)**: it needs a backend
-decision, and the convenient option — Anthropic's server-side search — bypasses
-the approval card entirely. **D49q is closed as *not wanted***: `plato.net.allow`
+the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and
+Phase 6 opened by repairing a fault the phase did not anticipate: no tool enforced
+workspace containment (D49k), and a shell command could read a protected file by
+naming it plainly (D49ai).** **What remains is Phase 7, which is recorded-not-built
+by design** — subagents, checkpoints, LSP diagnostics, hooks, skills, notebooks —
+**each needs its own decision before it is built**, and the first of them amends the
+one-worker product lock (D45a-3). So the plan is at its end: the next work is a
+chosen item, not the next phase. **`web_search` was deliberately deferred (D49p)**:
+it needs a backend decision, and the convenient option — Anthropic's server-side
+search — bypasses the approval card entirely. **D49q is closed as *not wanted***: `plato.net.allow`
 and `plato.net.deny` were deleted on 2026-09-21 rather than given a UI, because
 `web_fetch` always asks and an allow list could therefore only ever subtract.
 

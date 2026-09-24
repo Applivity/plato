@@ -2,6 +2,7 @@ export * from './security/secrets.js';
 export * from './tools/files.js';
 export * from './tools/diff.js';
 export * from './tools/schemas.js';
+export * from './tools/todo.js';
 export * from './providers/types.js';
 export * from './providers/errors.js';
 export * from './providers/retry.js';

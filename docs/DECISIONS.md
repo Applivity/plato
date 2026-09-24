@@ -1278,7 +1278,11 @@ reads it here, not in a plan file outside the repo.
    `asWebviewUri` would expose every file under the workspace root to an `img src`;
    and a flat token estimate for the context ring, never chars/4 on base64.
 5. **Web access** — see the third fork below.
-6. **Task coherence** — a `todo_write` tool and a panel.
+6. **Task coherence** — a `todo_write` tool and a panel. **DONE (D49ah, 2026-09-24)**,
+   with one addition the sketch did not make: **state is legible without colour**.
+   The sketch also expected a new `AgentEvent` for todo state; it turned out to be
+   unnecessary — the shell already receives every tool call's arguments — so no bus
+   event was added.
 7. **Recorded, not built** — subagents, checkpoints/undo, LSP diagnostics after
    edits, hooks, skills, notebook and PDF input. Each needs its own decision.
 
@@ -2752,6 +2756,100 @@ same question in the same conversation, with the model's own earlier report text
 times, and the first run said outright that the detail was not available — so the report is not what
 changed. *This is the level of evidence a product claim should have: the same question, a stated
 inability, and the inability gone.*
+
+---
+
+**D49ai — a shell command could read a protected file by naming it plainly (M5.0, 0.25.0 — 2026-09-24).**
+
+**Found by accident, while writing an unrelated test.** One of the assertions had a
+"control" line — the same words in a tool that CAN read — and the control did not refuse. The
+invariant broken here is the one this project lists as non-negotiable: *secret-bearing file
+content never enters model context.*
+
+**The defect is a basename.** `isSecretPath` matches a whole string after taking its basename, so:
+
+| command | basename seen | outcome |
+|---|---|---|
+| `cat app/keystore.properties` | `keystore.properties` | refused |
+| `cat keystore.properties` | `cat keystore.properties` | **ran** |
+
+**The spelling that read the file is the natural one**, because the proving-ground repo keeps
+`keystore.properties` at its ROOT. **Verified by running it**, not by reading: with the file present,
+`executeTool(root, 'shell', {command: 'cat keystore.properties'})` returned `ok: true` with the file's
+contents in the output — which is the model's context and the transcript — and `shell` is **`allow`
+in `auto`**, so nothing asked.
+
+**Two things had to change, because the check exists in two places and both were blind:**
+
+1. **The executor** (`shellTool`), which is the guarantee. `isSecretPath(cmd)` → `mentionsSecretPath(cmd)`.
+2. **The loop's pre-flight** (`secretRefusal`), which is the courtesy: it refused nothing here, so
+   the approval card never even mentioned the file. It now scans a shell command as TOKENS.
+
+**`mentionsSecretPath` is a token scan, not a substring one**, and that choice is the design:
+`echo do not commit keystore.properties` is refused (the safe direction), while `grep -rn
+"secretsmanager" app/src` and `./gradlew assembleRelease` are not, so the guard does not fight the
+model over words instead of files. **Recorded as best effort:** a command built to evade a text check
+(`cat key'store'.properties`) still can. In `act` and `edit` the approval card is the real gate; in
+`auto` the user has chosen not to have one, which is why the plain case was worth closing.
+
+**`todo_write` is exempt from the scan** (D49ah) and the exemption is deliberate: the scan is for
+arguments that can cause a secret to be READ. A plan item is the model's own sentence about work it
+intends, and *"rotate the keystore"* is a legitimate step. Nothing is weakened — the file is still
+refused by `read_file`, `grep` and `shell`, and a test asserts exactly that pairing.
+
+**Falsified:** restoring `isSecretPath(cmd)` in the executor fails the two new executor tests, which
+run the command for real against a workspace that has the file.
+
+---
+
+**D49ah — the agent writes its plan down, and the user can see it (M5.0, 0.25.0 — 2026-09-24).**
+
+Phase 6 of the plan in D49, and **the first phase whose reason got STRONGER while it waited.** The
+plan justified it as "coherence, not decoration, for a 40-turn cap" — and D49ab deleted that cap. A
+real run then reached **78 turns**. A long run with no externalised plan drifts: the model
+re-derives what it is doing from a conversation that is mostly tool results (80.8% on that run,
+D49ag), and a summarised turn can drop the thread entirely.
+
+**`todo_write` replaces the whole list on every call.** A delta protocol (add item 3, complete item
+1) lets the model's picture and the real list drift apart silently; a full list makes the model
+restate its plan, so the list IS what it currently believes. Same choice as Claude Code's, for the
+same reason.
+
+**The tool's RESULT is the rendered list** — the same string the panel draws, so there is no second
+representation to disagree with — and that is what makes the phase's central claim checkable: **the
+model is handed its own plan back on the next turn**, pinned by a loop test.
+
+**Three design calls worth recording:**
+
+1. **It is a META tool, beside `ask_user`** — allowed in every mode, never approved. It touches
+   nothing in the user's world: no workspace, no network. An approval card reading *"write down your
+   plan"* would be friction with nothing behind it, and **`plan` mode is where writing the plan down
+   is the whole job**, so gating it there would be exactly backwards.
+2. **A malformed plan is refused, never guessed at.** An unknown status returns the model a
+   correction, not a coerced item — a silently coerced status would put a plan in front of the user
+   that the model never wrote, which is the ambiguous-diff rule applied to a panel line. An
+   over-long item is **refused rather than truncated**, for the reason behind D49c.
+3. **The plan is recorded as a LOG ROW, and drawn where it was set.** A run that replans shows each
+   plan as it stood, so the transcript keeps showing what actually happened; a reload rebuilds them
+   from the log rather than from state the shell would have to hold. **No new bus event was needed**
+   — the shell already receives every tool call's arguments, and a second channel for the same data
+   would have been machinery for nothing.
+
+**Its digest is the plan's SHAPE, not its text** (D49ag): *"3 items, 1 done, in progress: Fix the
+formatter"*. Ten item lines would spend the log's room on a list the panel already shows, and
+`DIGEST_MAX` would cut them mid-list — which reads as a whole plan that is not one.
+
+**Asserted in the panel too, and this is the part the plan did not ask for:** **state is legible
+without colour.** Completed is struck through, in-progress is the heaviest item, and every state
+carries a distinct glyph — a plan read by someone who cannot separate the accent colours is still a
+plan. A render suite pins all three, and every assertion was falsified (removing the strike rule
+fails it; making a replan replace the previous card fails it).
+
+**Not done, and honestly:** the escaping assertion (a plan item is text, never markup) is verified by
+construction — `textContent`, and an item containing an `img onerror` renders as text — but its
+**falsification was blocked by the sandbox classifier**, which correctly refuses to let a session
+build an XSS payload and then drive a browser at it. That one assertion therefore rests on review,
+not on a watched failure.
 
 ---
 

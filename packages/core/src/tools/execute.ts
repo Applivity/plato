@@ -9,11 +9,12 @@ import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveInRoot } from '../security/paths.js';
-import { isSecretPath } from '../security/secrets.js';
+import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
 import { listWorkspaceFiles } from './files.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
 import { matchGlob } from './glob.js';
 import { htmlToText, isPrivateHostname, isTextualContentType } from './web.js';
+import { parseTodos, renderTodos } from './todo.js';
 import type { ShellManager } from './background.js';
 import type { DiffBlock } from './diff.js';
 
@@ -100,6 +101,8 @@ export async function executeTool(
       return webFetchTool(args, ctx);
     case 'git':
       return gitTool(root, args);
+    case 'todo_write':
+      return todoWriteTool(args);
     default:
       return fail(`unknown tool: ${name}`);
   }
@@ -374,7 +377,12 @@ async function shellTool(
   if (typeof cmd !== 'string' || cmd.trim().length === 0) {
     return fail('missing command');
   }
-  if (isSecretPath(cmd)) {
+  // D49ai: `isSecretPath(cmd)` was here and it could not see the plain case —
+  // it takes the BASENAME of the whole string, so `cat app/keystore.properties`
+  // was refused while `cat keystore.properties` ran. The executor is the
+  // guarantee (the loop's earlier refusal is the courtesy), so the stronger
+  // check belongs here as well as there.
+  if (mentionsSecretPath(cmd)) {
     return fail('command references a protected file');
   }
 
@@ -747,4 +755,15 @@ async function gitTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
       },
     );
   });
+}
+
+/**
+ * D49ah: the agent's plan. Pure — no workspace, no filesystem, so this is the
+ * one tool that needs neither `root` nor any context. Its only effects are the
+ * text it returns (which the model reads next turn) and, in the shell, a panel.
+ */
+function todoWriteTool(args: ToolArgs): ToolOutcome {
+  const parsed = parseTodos(args['todos']);
+  if ('error' in parsed) return fail(parsed.error);
+  return { ok: true, output: renderTodos(parsed.todos) };
 }
