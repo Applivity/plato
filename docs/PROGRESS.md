@@ -130,28 +130,31 @@ One combined workstream, per founder decision 2026-08-25:
 
 ## Deferred / backlog (do not lose these)
 
-- **Compaction is priced as a PERCENTAGE of the window, which is inert at a large one
-  (measured 2026-09-24, unfixed).** `shouldAutoCompact` fires at
-  `maxContext * threshold`, so the founder's 80% of a 1,000,000 window means **800,000
-  tokens** — and his 78-turn run ended at **113,793, or 11.4% of it**, with **zero
-  `context-compacted` events** in the transcript. The in-run guard was therefore silently
-  inert the whole time, and the between-runs fold was the only mechanism running. **This
-  is the queue item that looked like the founder's complaint and is not it** — do not
-  spend a session on it believing it explains a fold he objected to. Claude Code uses an
-  **absolute token window** with a per-model default and `min(yours, model max)`; the fix
-  here is to change the slider's UNIT, which is a product decision the founder has agreed
-  in principle and not specified. **Where it does matter:** a model with a small or
-  unknown window, which lands on `UNKNOWN_CONTEXT_FLOOR` = 8,192 — see the catalog entry
-  above, which is the sharper version of the same problem.
-- **Trim old tool OUTPUT before summarising anything (measured 2026-09-24, unfixed,
+- **CLOSED as NOT a defect (2026-09-24): the compaction threshold is already a percentage
+  of the model's own window — and that is the right shape.** A previous session queued
+  *"the threshold should be an absolute token window, not a percentage"*, copying Claude
+  Code's design. **The founder rejected the premise and the code agrees with him:**
+  `shouldAutoCompact` is `estimatedTokens >= (maxContext ?? UNKNOWN_CONTEXT_FLOOR) *
+  threshold`, with `threshold` defaulting to **0.8** and clamped to `[0.5, 0.95]` — so
+  **nothing is hardcoded**, and the slider already reads *"80% of context"*. A percentage
+  **scales with the model**: 256k trips at 204,800, 512k at 409,600, and the founder's
+  reported 1,000,000 at 800,000. A fixed token count would be the thing that breaks across
+  models. **The 800,000 figure was never a constant** — it is 80% of *his* window, and
+  reading it back as a hardcoded guard is the mistake this entry exists to stop.
+  **What IS still true, and is a different item:** when the window is **unknown** the floor
+  is 8,192, so the guard fires at ~6,553 tokens — see the catalog entry above, which is the
+  real defect and is about *discovery*, not about percentage versus absolute.
+- **Trim old tool OUTPUT before summarising anything (measured 2026-09-24, deferred —
   lower priority than it looked).** Tool results are the overwhelming majority of a
   request — **80.8%** on the founder's 78-turn run — and both Claude Code and Codex run a
   cheap snip/microcompact pass before the expensive summariser, so the theory was that
   folding could usually be avoided instead of performed. **The measurement says it would
-  not have helped him**: the in-run guard never fired at his window (see the entry above),
-  so there was no summarising to avoid. **What was actually wrong was that the log had no
-  record of tool activity at all — that is D49ag, and it is done.** This item stays for
-  small-window models, where the guard DOES fire early.
+  not have helped him:** his runs end around 11% of his window, so the guard never trips
+  and there was no summarising to avoid (his transcript holds **zero `context-compacted`
+  events**). **What was actually wrong was that the log had no record of tool activity at
+  all — that is D49ag, and it is done.** This item stays for models with a **small or
+  unknown** window, where the guard does fire early; it is not a repair for anything the
+  founder has seen.
 - **The fold's cadence constants count MESSAGES, not pairs, and their names say
   otherwise (found 2026-09-24, recorded not changed).** `AUTO_FOLD_AT = 26` and
   `KEEP_AFTER_FOLD = 12` are written and discussed as *pairs*, but `tailPairs` counts

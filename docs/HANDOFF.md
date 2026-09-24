@@ -302,10 +302,7 @@ Open, in priority order:
 1. **The acceptance test** — restate it for the current model, then run it on
    `/Users/ai/Desktop/HcadPublicAndroid-demo`.
 2. **Secret audit** (D15) — everything that leaves the machine: repo history,
-   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos. **It already has
-   one concrete finding, and it is in the trial repo rather than this one:** a tracked
-   `keystore.properties` and signing `.jks` that have been pushed to a shared remote —
-   see "Trial runs" below. That audit is not a formality.
+   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos.
 3. **Trademark sweep** (D16) and the **license decision** (D19).
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
@@ -375,20 +372,10 @@ an Android app, a Git repo, private. The point is that a capability is only prov
 **These files are SECRET-BEARING. Read "Non-negotiable safety rules" before touching that
 repo.** `keystore.properties`, `local.properties`, `.env*` and `*.keystore` must never
 reach a model — including *you*. When inspecting a run, read the run's transcript, not the
-project's secret files.
-
-> **The deny-list protects Plato, not the repo — and the repo has a problem (found 2026-09-24).**
-> `keystore.properties` and `app/HcadAndroidSigningCertificate.jks` are **TRACKED in git**, not
-> merely present: `.gitignore` covers `local.properties`, `build`, `.idea`, `.gradle` and `*.iml`
-> but **not** `keystore.properties` or `*.jks`. Because `master` is level with `origin/master`,
-> **both have been pushed** to `https://git.cama.io/dev/hcadpublicandroid.git`. Whoever can read
-> that repo can read the app's signing key material — and `keystore.properties` is, by convention,
-> where the store and key passwords live. **This is the founder's call and is not something to
-> fix from here** (no history rewrite, no deletion, no rotation without him): the actions are
-> rotate the key, purge the history, and add both patterns to `.gitignore`. **It is recorded
-> because it is exactly what the D15 secret audit is for, and because "the deny-list keeps the
-> secret out of the model" is only half the exposure — the other half is the remote.** Names only
-> were read to establish this; the contents were not opened.
+project's secret files. **The trial repo's own git hygiene is the founder's business, not
+this doc's** — he has said so, and this file is Plato's current state. Do not audit, fix,
+rewrite or report on it from here; Plato's job on that repo is to read the code it is asked
+to read and nothing else.
 
 - **Run transcripts** live in `~/.plato/runs/<sha1-of-root-8>/*.jsonl`, one per run, with a
   header then one JSON event per line. The newest is `ls -t | head -1`. **They record tool
@@ -563,18 +550,22 @@ seeing** — which is worth knowing before anyone spends a session on them.
    number to remember: on a real 78-turn run, tool results were 80.8% of the final
    request and the fold could see 0% of them.**
 2. **Trim old tool OUTPUT before summarising anything.** Still worth doing for a
-   model with a **small** window (Claude Code and Codex run a cheap snip first).
-   **But it was measured and it is not what the founder was seeing:** his guard's
-   threshold was 80% of a 1,000,000 window, the run ended at **11.4%** of it, and
-   the transcript holds **zero `context-compacted` events** — the in-run guard never
-   fired at all. Do not spend a session on this believing it explains a fold he
-   complained about.
-3. **The compaction threshold should be an absolute token window, not a percentage.**
-   Same measurement as above, and the same caveat: at a 1M window a percentage is
-   inert, so this changes nothing for the founder's setup and matters for a small
-   one. Claude Code uses a token window with a per-model default and
-   `min(yours, model max)`. **The control stays a slider; its UNIT changes**, which
-   is a product decision he has agreed in principle but not specified.
+   model with a **small or unknown** window (Claude Code and Codex run a cheap snip
+   first). **Measured, and it is not what the founder was seeing:** his runs end
+   around **11%** of his window and his transcript holds **zero
+   `context-compacted` events**, so the guard never trips and there is no
+   summarising to avoid. Do not spend a session on this believing it explains a
+   fold he complained about.
+3. ~~**The compaction threshold should be an absolute token window**~~ — **CLOSED
+   as NOT a defect (2026-09-24).** The premise was a previous session's note copying
+   Claude Code, and **it was wrong.** `shouldAutoCompact` is
+   `estimated >= window * threshold`, default **0.8**, clamped `[0.5, 0.95]`, and the
+   slider already says *"80% of context"* — **nothing is hardcoded**, and a percentage
+   **scales with the model** (256k trips at 204,800; 512k at 409,600). **The 800,000
+   figure was 80% of the founder's own reported window, not a constant**, and reading
+   it back as one is the mistake this line exists to stop. The real defect here is
+   **discovery**, not the unit: an unknown window falls to 8,192 — see the catalog
+   backlog entry.
    **Related and unmeasured:** the fold's cadence constants (`AUTO_FOLD_AT = 26`,
    `KEEP_AFTER_FOLD = 12`) are called *pairs* in the code and in this doc, but
    `tailPairs` counts **message rows** — so the fold fires on ~13 exchanges, twice
