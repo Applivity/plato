@@ -1506,7 +1506,7 @@ export function chatHtml(): string {
     auto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   };
   const MODE_DESCS = {
-    plan: 'Read-only. Plato can look at files and answer questions, but never modifies anything on disk or runs shell.',
+    plan: 'Read-only. Plato can look at files and run commands that only read, but never changes anything on disk.',
     edit: 'Writes and commands, each behind an approval card. A file you approve once is not asked about again this session.',
     auto: 'No approval clicks, web requests included. Plato runs end-to-end on its own — watch it, and stop it if it goes wrong.',
   };

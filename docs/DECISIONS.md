@@ -2963,6 +2963,60 @@ suite exits 1 (three for the row, one for the stale description).
 
 ---
 
+**D49ao — `plan` runs read-only commands too, and a background command is never one
+(M5.0, 0.25.0 — 2026-09-24).**
+
+**One sentence from the founder — *"plan can run read only commands"* — and it changes what `plan`
+IS rather than only what it permits.**
+
+**The character of the mode changes, and that is worth stating plainly.** `plan` was "runs
+nothing"; it is now **"changes nothing"**. That is a weaker promise in one sense and a truer one in
+another: the property that makes `plan` the safe place to be is that **nothing it can do alters the
+project**, and that property is untouched — `plan` has no write tool, and a command that passes
+`isReadOnlyShellCommand` cannot write by construction. What it gains is the power the founder asked
+for in the first place, when he described this mode as *"read only for project files, but with full
+power to do search"*: `grep`, `rg`, `git log`, `git diff`, `find`, `ls`, `cat`.
+
+**D49an refused him this, and the refusal was wrong.** That entry argued that "plan runs nothing" is
+what makes plan safe, and that one exception would turn a rule into a judgement call. **The founder
+overrode it, and the argument he overrode it with is the better one:** the rule was never "runs
+nothing", it was "cannot change anything" — and a read-only *allowlist* enforces exactly that, in
+the one form that is enforceable. The old objection was to a **denylist** of writing commands, which
+is a guess; it does not apply to an allowlist, which fails closed. **So the refusal rested on a
+mechanism I had already rejected in the same entry** — the two halves of D49an disagreed with each
+other, and the founder's sentence is what exposed it.
+
+**What did NOT change:** only the shell is widened, and only for commands the allowlist recognises.
+Everything else `plan` denied stays denied — writes, `web_fetch` still asks rather than running,
+MCP tools, `kill_shell`. **And in `plan` a refusal is a `deny`, never an `ask`** — plan shows no
+approval cards at all, so an unrecognised command is refused outright rather than offered.
+
+**The gap the widening exposed, which is a defect in D49an rather than in this change: a background
+command was being treated as a read.** `shell` takes `run_in_background`, and D49an's check looked
+only at `command` — so `shell({command:'ls', run_in_background:true})` would have been auto-approved
+in `edit` and, after this change, in `plan`. **A background command is not a read:** it starts a
+process that outlives the turn and keeps running while the run continues, and the only tool that
+stops one is `kill_shell` — which `plan` denies. An auto-approved background shell in `plan` would
+therefore be **a process the user could not stop from the mode they were in.** One rule for both
+modes, at the top of the check: **a background command asks.**
+
+**The tool test is what keeps both widenings exact.** The refinement returns `allow` only after
+`tool !== 'shell'` has already returned, so the only verdicts it can change are the shell's own —
+`deny` in `plan`, `ask` in `edit`. A `deny` belonging to any other tool cannot be upgraded by
+supplying a `command` argument, and that is asserted with an MCP tool and `kill_shell`, both of which
+are denied in `plan` and both of which take arguments shaped like the ones the allowance looks for.
+
+**The user-facing copy moved with the behaviour.** The mode picker said plan *"never … runs shell"*,
+which would now be a claim the user could falsify in one keystroke; it says **"run commands that only
+read"** and **"never changes anything on disk"**. The render suite asserts the new sentence *and*
+asserts the absence of the old claim, because a stale sentence here is a lie rather than a stale
+label.
+
+**Falsified, two reverts at once:** putting `plan` back to no-shell, and removing the background
+guard, each fail exactly one test, and the suite exits 1.
+
+---
+
 **D49an — a read-only shell command runs in `edit` without a card, and the allowance is an
 allowlist (M5.0, 0.25.0 — 2026-09-24).**
 
@@ -2993,9 +3047,10 @@ as before, so a mistake costs a click instead of a write.** `sort` (has `-o`), `
    (D49k).
 
 **The composition, which is where a widening actually goes wrong.** Only `ask` becomes `allow`; a
-`deny` is never upgraded. So **`plan` keeps no shell at all, even for `git status`** — deliberately
-not an oversight. "Plan runs nothing" is what makes plan the safe place to be, and one exception
-would turn a rule into a judgement call. And the secret and containment refusals run **before** the
+`deny` is never upgraded. So **`plan` kept no shell at all, even for `git status`.**
+*(Superseded the same day on this one point — see D49ao: the founder then said "plan can run read
+only commands", so `plan` does now run them. Everything else in this entry stands, including the
+exactness argument, which is what made the widening safe to make.)* And the secret and containment refusals run **before** the
 mode decision in the loop, so a command naming a protected file is refused outright and never
 reaches the allowance — with one consequence worth stating: for that command there is now **no card
 at all**, where before the user at least saw it and clicked Deny. The refusal is asserted

@@ -64,8 +64,17 @@ const label = (p) => p.evaluate(() => {
     /command/i.test(by.edit.desc) && !/shell access is denied/i.test(by.edit.desc), by.edit.desc);
   check('edit says an approval is asked for',
     /approval/i.test(by.edit.desc), by.edit.desc);
-  check('plan still tells the user it runs nothing',
-    /never modifies|read-only/i.test(by.plan.desc), by.plan.desc);
+  // D49ao changed what plan DOES, so the assertion follows the behaviour instead
+  // of pinning the old sentence: it must still say it cannot change anything, and
+  // it must now say that it can read and run reading commands. A card that
+  // claimed plan "never runs shell" would be a lie the user could test in one
+  // keystroke.
+  check('plan says it cannot change anything',
+    /never changes|read-only/i.test(by.plan.desc), by.plan.desc);
+  check('plan says it can run commands that only read (D49ao)',
+    /only read|read only/i.test(by.plan.desc), by.plan.desc);
+  check('plan does not claim it runs no shell at all',
+    !/never.*shell|runs no shell|shell.*denied/i.test(by.plan.desc), by.plan.desc);
   check('auto now claims web requests, since it no longer asks for them',
     /web/i.test(by.auto.desc), by.auto.desc);
   checkPageClean(p, 'mode descriptions');

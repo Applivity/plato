@@ -140,24 +140,32 @@ export function decide(tool: string, mode: Mode): Decision {
  */
 
 /**
- * D49an: `decide`, plus the one refinement that needs the ARGUMENTS.
+ * D49an, widened by D49ao: `decide`, plus the one refinement that needs the
+ * ARGUMENTS.
  *
- * A read-only shell command runs in `edit` without a card (the founder's ask —
- * see `isReadOnlyShellCommand` for what counts and why it cannot be faked). The
- * mode table itself stays a pure function of (tool, mode); this is the single
- * place where a command's text is allowed to change the verdict, and it is
- * deliberately the narrowest possible widening:
+ * A read-only shell command runs without a card in **`plan` and `edit`** (the
+ * founder's asks — see `isReadOnlyShellCommand` for what counts and why it
+ * cannot be faked). The mode table itself stays a pure function of (tool, mode);
+ * this is the single place where a command's text may change the verdict.
  *
- * - **`ask` becomes `allow`, nothing else.** A `deny` is never upgraded, so
- *   `plan` keeps no shell at all even though it is the read-only mode — that is
- *   a decision, not an oversight: "plan runs nothing" is what makes plan the
- *   safe place to be, and one exception would turn a rule into a judgement call.
- * - **`edit` only, named explicitly.** `auto` already allows everything, so the
- *   check would be dead code there; saying so prevents a later reader thinking
- *   the allowance is global.
- * - The secret and containment refusals run BEFORE this in the loop, so a
- *   command that names a protected file is already refused and never reaches
- *   here.
+ * **The widening is exact, and the tool test is what makes it safe.** After
+ * `tool !== 'shell'` returns, the only verdicts reachable here are the shell's —
+ * `deny` in `plan`, `ask` in `edit` — so returning `allow` cannot quietly upgrade
+ * a `deny` belonging to any other tool. `auto` is left alone because it already
+ * allows every command.
+ *
+ * **What changes about `plan`:** it is no longer "runs nothing", it is "changes
+ * nothing". The founder asked for exactly that (*"plan can run read only
+ * commands"*), and it is the power he wanted from the start — search, `git log`,
+ * `grep` — without the ability to write. The property that still holds is the one
+ * that matters: `plan` has no write tool, and a command that passes
+ * `isReadOnlyShellCommand` cannot write by construction.
+ *
+ * **A background command is NOT a read** (D49ao). `run_in_background` starts a
+ * process that outlives the turn and that `kill_shell` alone can stop — and
+ * `kill_shell` is denied in `plan`, so an auto-approved background shell there
+ * would be a process the user could not stop from that mode. One rule for both
+ * modes: a background command asks.
  */
 export function decideWithArgs(
   tool: string,
@@ -165,7 +173,8 @@ export function decideWithArgs(
   args: Record<string, unknown>,
 ): Decision {
   const base = decide(tool, mode);
-  if (base !== 'ask' || mode !== 'edit' || tool !== 'shell') return base;
+  if (tool !== 'shell' || mode === 'auto') return base;
+  if (args['run_in_background'] === true) return base;
   const command = args['command'];
   if (typeof command === 'string' && isReadOnlyShellCommand(command)) return 'allow';
   return base;

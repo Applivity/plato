@@ -1,10 +1,15 @@
 /**
- * D49an: which shell commands `edit` mode may run WITHOUT an approval card.
+ * D49an, widened by D49ao: which shell commands `plan` and `edit` may run WITHOUT
+ * an approval card.
  *
- * **The founder's ask:** *"for read only shell commands the edit should not ask
- * permission."* His reasoning is the one that matters: a run that stops to
- * approve `git status` and `ls` is a run whose approvals the user starts clicking
- * through, and an approval nobody reads protects nothing.
+ * **The founder's asks:** *"for read only shell commands the edit should not ask
+ * permission"*, and then *"plan can run read only commands"*. His reasoning is
+ * the one that matters: a run that stops to approve `git status` and `ls` is a
+ * run whose approvals the user starts clicking through, and an approval nobody
+ * reads protects nothing. **For `plan` the effect is a change of character, not
+ * just convenience:** it is no longer "runs nothing" but "changes nothing", which
+ * is the power he asked for from the start — search, `git log`, `grep` — with no
+ * way to write.
  *
  * # Why an allowlist, and not a "does this command write?" check
  *

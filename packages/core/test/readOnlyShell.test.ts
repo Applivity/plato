@@ -203,10 +203,56 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
     expect(decideWithArgs('shell', 'edit', {})).toBe('ask');
   });
 
-  it('does NOT give plan a shell, even for a read-only command', () => {
-    // "plan runs nothing" is what makes plan the safe place to be.
-    expect(decideWithArgs('shell', 'plan', { command: 'git status' })).toBe('deny');
-    expect(decideWithArgs('shell', 'plan', { command: 'ls' })).toBe('deny');
+  /**
+   * D49ao, the founder's instruction: *"plan can run read only commands."*
+   *
+   * **Both halves matter and they are different halves.** A read-only command is
+   * allowed, and every command that is not one is still DENIED in plan — not
+   * asked, denied, because plan shows no cards. So the widening has to be exact:
+   * anything the allowlist does not recognise leaves the verdict at `deny`.
+   */
+  it('gives plan the read-only commands, and nothing else (D49ao)', () => {
+    expect(decideWithArgs('shell', 'plan', { command: 'git status' })).toBe('allow');
+    expect(decideWithArgs('shell', 'plan', { command: 'ls -la' })).toBe('allow');
+    expect(decideWithArgs('shell', 'plan', { command: 'grep -rn foo src' })).toBe('allow');
+    // Denied, not asked: plan never shows an approval card.
+    expect(decideWithArgs('shell', 'plan', { command: 'rm -rf src' })).toBe('deny');
+    expect(decideWithArgs('shell', 'plan', { command: 'npm test' })).toBe('deny');
+    expect(decideWithArgs('shell', 'plan', { command: 'cat /etc/passwd' })).toBe('deny');
+    expect(decideWithArgs('shell', 'plan', { command: 'git commit -m x' })).toBe('deny');
+    expect(decideWithArgs('shell', 'plan', {})).toBe('deny');
+  });
+
+  /**
+   * D49ao. **A background command is not a read**, and this is the gap the
+   * widening exposed rather than introduced: `run_in_background` starts a process
+   * that outlives the turn, and the only tool that stops one is `kill_shell`,
+   * which `plan` denies. So an auto-approved background shell in `plan` would be
+   * a process the user could not stop from the mode they were in. One rule for
+   * both modes: a background command asks.
+   */
+  it('never auto-approves a background command (D49ao)', () => {
+    expect(
+      decideWithArgs('shell', 'edit', { command: 'ls', run_in_background: true }),
+    ).toBe('ask');
+    expect(
+      decideWithArgs('shell', 'plan', { command: 'ls', run_in_background: true }),
+    ).toBe('deny');
+    // The same command in the foreground is still a read.
+    expect(decideWithArgs('shell', 'edit', { command: 'ls' })).toBe('allow');
+  });
+
+  /**
+   * The tool test is what keeps the widening exact: a `deny` for anything other
+   * than the shell must never become an `allow`.
+   */
+  it('never upgrades a deny belonging to another tool (D49ao)', () => {
+    // An MCP tool is shell-class and denied in plan; it carries a `command` arg
+    // shaped exactly like the one the allowance looks for.
+    expect(
+      decideWithArgs('mcp_fake_echo', 'plan', { command: 'git status' }),
+    ).toBe('deny');
+    expect(decideWithArgs('kill_shell', 'plan', { id: 'x' })).toBe('deny');
   });
 
   it('leaves the verdict for every other tool alone', () => {

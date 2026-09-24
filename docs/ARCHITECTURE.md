@@ -18,7 +18,7 @@ here are binding unless a DECISIONS.md entry supersedes them.
 > | `.aplivity/teams.yaml` + `~/.applivity/teams.yaml` | `~/.plato/ACADEMY.yaml` for the council, `~/.plato/DUO.yaml` for Duo (D33, D46, D47) |
 > | `mcp.yaml` at the repo root | `~/.plato/mcp.yaml` (D46). Parsed by a zero-dependency subset parser in core; it has **no JSON schema and no editor binding** — only `academy.yaml` and `duo.yaml` are bound in `package.json` |
 > | "supervisor channel … rate-limited injections" | shipped as `core/src/runtime/observer.ts` + `RunController` (pause / cancel / guidance) |
-> | **"Modes — plan/edit/act/auto"**, and §Security invariant 3, *"`plan` and `edit` modes cannot execute \[the shell\]"* | **three modes — plan / edit / auto.** `act` was merged into `edit`, so `edit` **now runs the shell** and only **`plan`** cannot (D49ak). Invariants 1, 2 and 4 are unchanged; invariant 3's mode list is the part superseded |
+> | **"Modes — plan/edit/act/auto"**, and §Security invariant 3, *"`plan` and `edit` modes cannot execute \[the shell\]"* | **three modes — plan / edit / auto.** `act` was merged into `edit`, so `edit` **now runs the shell** (D49ak), and **both `plan` and `edit` run commands that only read** under a strict allowlist (D49an, D49ao) — so `plan` denies only commands that could change something, and the sentence above is true of no mode as written. Invariants 1, 2 and 4 are unchanged; invariant 3's mode list is the part superseded |
 >
 > **Still binding, verbatim:** the monorepo rule (`packages/vscode` and
 > `packages/cli` are thin shells; all logic, tools, providers and team logic live
