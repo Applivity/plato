@@ -136,7 +136,9 @@ are now only in PROGRESS.
   with **no** digest is skipped, so a log written before D49ag produces a byte-identical
   request. **The display is deliberately unchanged** — the digest is the model's memory,
   not a new chip. Measured: tool results were **80.8%** of a 78-turn run's final request,
-  and before this the fold could see none of them.
+  and before this the fold could see none of them. **Confirmed in real use the same day:**
+  asked *"which files did you read?"*, Plato went from *"that detail isn't in my current
+  context"* to the full list with **0 tool calls** — see D49ag.
 - **There is one model list per connection, and nothing can be ticked out of it (D49z).**
   Every model a provider returns is eligible and appears in the chat picker, in the order
   stored. `resolveOfferedModels` (core) is the one read rule and it prefers the **wider**

@@ -2742,6 +2742,17 @@ carries paths, commands, patterns and URLs the log did not hold. It is the model
 back, and the commands were already shown on an approval card, so nothing is newly exposed to the
 model. But a future secret audit (D15) should know it is there.
 
+**Confirmed in real use, the same day.** The founder asked Plato *"which files did you read?"* before
+and after the change. **Before:** *"I can't honestly give you a precise log of every read_file call —
+that detail isn't in my current context"*, reached after two `git` calls spent trying to re-derive
+it. **After:** the complete list, grouped by how each file was used, with **0 tool calls in 3s** —
+the tell, because it re-derived nothing. It even knows the **order** (*"read in full, then re-read
+after editing"*), which only the log order preserved here could supply. **The control is clean:** the
+same question in the same conversation, with the model's own earlier report text in context both
+times, and the first run said outright that the detail was not available — so the report is not what
+changed. *This is the level of evidence a product claim should have: the same question, a stated
+inability, and the inability gone.*
+
 ---
 
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
