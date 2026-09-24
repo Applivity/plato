@@ -386,17 +386,39 @@ project's secret files.
   plus a direct Anthropic connection. Context windows come from the connection (D49t), and
   prompt caching is working — a 40-turn run showed **99.5% of input served from cache**.
 
-**State of the trial repo as of 2026-09-24, left by run `muehk6e4mhvq` and NOT committed:**
-four modified files (`DateHelper.java`, `FormatterUtility.java`, `ApiSecurityUtility.java`,
-`QualificationViewModel.java`) plus an untracked `PLATO.md`. **Two things in that set need a
-human decision before it is trusted:**
+**State of the trial repo as of 2026-09-24 (re-verified against the working tree, not the
+previous session's notes).** `git status` shows **six modified files and two untracked**, none
+committed — the repo's last commit is the pre-existing `31bf716`, so nothing Plato did has been
+committed there:
 
-1. **`DateHelper.parse` truncates a 7-digit ISO8601 fraction to 3 digits.** The fix may be
-   right, but its stated reason is wrong — it claims the project's own formatter emits 3
-   digits, and `ISO8601` is `SSSSSSS`, which `SimpleDateFormat` pads to **7**. Under the
-   documented semantics, formatting and parsing that pattern already round-trip, so the change
-   can *introduce* a millisecond error rather than fix one. **Unverifiable here: no JDK.**
-2. **`SubmissionsViewModel.java:144` still has the `URLDecoder` defect** Plato fixed in
+| File | Change |
+|---|---|
+| `DateHelper.java` | **1 line** — the `ISO8601` *constant*: `SSSSSSS` → `SSS` (see 1 below) |
+| `FormatterUtility.java` | **+7/−4** — `setGroupingUsed(false)`, `Integer.parseInt(formatter.format(…))` replacing an `(int)` cast, `encodedAuthority(host:port)` replacing `authority(host)`, and the `URLDecoder.decode` call removed |
+| `DamageReportViewModel.java`, `IFileLookupViewModel.java`, `DriversLicenseViewModel.java`, `SignatureCaptureViewModel.java` | **~9–10 lines each** — the error-state guards, from the 2026-09-24 session |
+| `PLATO.md` (untracked) | the project override, materialised by `/system-prompt` |
+| `CORRECTNESS_REVIEW.md` (untracked) | **new** — the findings document, i.e. D49ae's "write the findings out before the first edit" |
+
+**Superseded from the previous session's note:** `ApiSecurityUtility.java` and
+`QualificationViewModel.java` are **clean again** (that run's HMAC-charset fix and its
+`QualificationViewModel` edit are no longer in the tree — reverted or discarded, not committed),
+and `Formatters`/`Activities` were read but not edited. **Three things need a human decision
+before any of it is trusted:**
+
+1. **The `ISO8601` change is a PERSISTED-FORMAT change, not a parse tweak — and that is worse
+   than it first looked.** The diff is on the *constant itself* (`SSSSSSS` → `SSS`), and
+   `ISO8601` is what `DatabaseHelper` **writes into DB rows** and what the cache-expiry value is
+   stored as. So it does not only change how a 7-digit fraction is parsed: it changes what the
+   app writes, and **rows already stored with 7 digits may no longer round-trip.** The fix may
+   still be right; its stated reason is not — it claims the project's own formatter emits 3
+   digits, and the constant it edited said otherwise. **Unverifiable here: no JDK.**
+2. **The new `Integer.parseInt(formatter.format(…))` in `FormatterUtility` can throw where the
+   `(int)` cast it replaces could not.** A cast truncates toward zero and saturates at the int
+   bounds; `parseInt` throws `NumberFormatException` on anything non-integral or out of range.
+   The change is probably fixing a real bug (the old path formatted under grouping, so a large
+   value produced a comma and the result was wrong), but it may **trade a wrong number for a
+   crash** on the same input. **Nothing here can be run: no JDK.**
+3. **`SubmissionsViewModel.java:144` still has the `URLDecoder` defect** Plato removed from
    `FormatterUtility` — same bug, a fourth file, correctly left alone as outside the named
    scope. Live and unfixed; the founder's call.
 
