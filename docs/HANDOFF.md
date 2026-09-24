@@ -302,7 +302,10 @@ Open, in priority order:
 1. **The acceptance test** — restate it for the current model, then run it on
    `/Users/ai/Desktop/HcadPublicAndroid-demo`.
 2. **Secret audit** (D15) — everything that leaves the machine: repo history,
-   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos.
+   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos. **It already has
+   one concrete finding, and it is in the trial repo rather than this one:** a tracked
+   `keystore.properties` and signing `.jks` that have been pushed to a shared remote —
+   see "Trial runs" below. That audit is not a formality.
 3. **Trademark sweep** (D16) and the **license decision** (D19).
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
@@ -373,6 +376,19 @@ an Android app, a Git repo, private. The point is that a capability is only prov
 repo.** `keystore.properties`, `local.properties`, `.env*` and `*.keystore` must never
 reach a model — including *you*. When inspecting a run, read the run's transcript, not the
 project's secret files.
+
+> **The deny-list protects Plato, not the repo — and the repo has a problem (found 2026-09-24).**
+> `keystore.properties` and `app/HcadAndroidSigningCertificate.jks` are **TRACKED in git**, not
+> merely present: `.gitignore` covers `local.properties`, `build`, `.idea`, `.gradle` and `*.iml`
+> but **not** `keystore.properties` or `*.jks`. Because `master` is level with `origin/master`,
+> **both have been pushed** to `https://git.cama.io/dev/hcadpublicandroid.git`. Whoever can read
+> that repo can read the app's signing key material — and `keystore.properties` is, by convention,
+> where the store and key passwords live. **This is the founder's call and is not something to
+> fix from here** (no history rewrite, no deletion, no rotation without him): the actions are
+> rotate the key, purge the history, and add both patterns to `.gitignore`. **It is recorded
+> because it is exactly what the D15 secret audit is for, and because "the deny-list keeps the
+> secret out of the model" is only half the exposure — the other half is the remote.** Names only
+> were read to establish this; the contents were not opened.
 
 - **Run transcripts** live in `~/.plato/runs/<sha1-of-root-8>/*.jsonl`, one per run, with a
   header then one JSON event per line. The newest is `ls -t | head -1`. **They record tool
