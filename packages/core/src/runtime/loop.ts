@@ -283,6 +283,12 @@ export interface LoopOptions {
       context?: string;
       options: string[];
       recommended?: string;
+      /**
+       * D49al: true when more than one option may be right. The host renders
+       * checkboxes rather than radios and the answer is the chosen labels joined
+       * by '; ' — still ONE string per question, so the transport is unchanged.
+       */
+      multiple?: boolean;
     }[];
   }) => Promise<string[]>;
   /**
@@ -835,6 +841,9 @@ async function runLoop(
                   ? (rec['options'] as unknown[]).map(String)
                   : [],
                 recommended: typeof rec['recommended'] === 'string' ? rec['recommended'] : undefined,
+                // D49al: only an explicit `true` makes a question multi-select,
+                // so a model that omits the field keeps single-answer behaviour.
+                multiple: rec['multiple'] === true,
               };
             });
             if (questions.length === 0) {
@@ -845,7 +854,13 @@ async function runLoop(
               .map((a, i) =>
                 questions.length === 1
                   ? String(a)
-                  : `Q${i + 1}: ${questions[i]!.question}\nAnswer: ${String(a)}`,
+                  : // D49al: the singular/plural label is the only signal the model
+                    // gets that a question allowed several picks. Without it a
+                    // multi answer reads exactly like a single one that happens to
+                    // contain semicolons.
+                    `Q${i + 1}: ${questions[i]!.question}\n${
+                      questions[i]!.multiple ? 'Answers' : 'Answer'
+                    }: ${String(a)}`,
               )
               .join('\n\n');
             return { ok: true, output: text || '(no answer given)' };

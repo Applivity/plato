@@ -2957,6 +2957,52 @@ suite exits 1 (three for the row, one for the stale description).
 
 ---
 
+**D49al — a question may be multi-select, and the several picks travel as one string
+(M5.0, 0.25.0 — 2026-09-24).**
+
+**The founder's reason is the design, so it is recorded first: *"a model can reason to ask a
+multiple choice answer, so we should support checkboxes."*** A model that can see several
+correct answers and can only offer one forces the user to throw away the rest — and the free-text
+row is a poor workaround, because then the user writes the option labels out by hand.
+
+**The change is one new optional field and one state model.** The schema's question object gains
+`multiple?: boolean`. A question **without** it behaves exactly as before, so nothing that already
+works changed shape.
+
+**Four decisions worth keeping:**
+
+1. **The answer is still ONE string per question** — the picks joined by `'; '`. This is what kept
+   the change small: the tool-result transport, the `askUser` callback signature and the transcript
+   all stay as they were. The cost is that a pick containing `'; '` would be ambiguous, and that is
+   accepted rather than hidden: options are the model's own 2–6 short labels.
+2. **The model is told which kind it asked for.** The tool result reads `Answers:` (plural) for a
+   multi question and `Answer:` for a single one. Without that label a multi answer is
+   indistinguishable from a single answer that happens to contain semicolons — a string of labels
+   looks like a string.
+3. **The shape is the affordance: a BOX for multi, a CIRCLE for single.** The fill carries the same
+   state, so neither reading depends on colour. A user who has never seen the feature can tell from
+   the marker whether one answer or several are wanted.
+4. **Free text joins rather than replaces.** Picking *Others* on a multi question adds the typed
+   answer to the picked labels. This is the case where "one string per question" could have silently
+   dropped half of what the user said, so it has its own assertion.
+
+**One state model for both kinds, deliberately.** The card previously kept a single `answers[i]`
+string, which cannot hold a set. It now keeps the chosen labels as a list per question plus the free
+text, and derives the sent string from them. **The alternative — a second code path for multi — was
+rejected:** it would have meant two restore-on-Back paths, two "is it answered" rules and two
+Submit gates, and the single-select behaviour those paths already had (the D49y box-growth and the
+Back restore) is pinned by existing assertions that the rewrite had to keep passing.
+
+**Not built, and it is a choice:** multi-select questions still cap at **6 options** (the schema's
+existing `maxItems`), and there is no "select all" or minimum-picks rule. The question is the
+model's; the card does not add policy the model did not ask for.
+
+**Falsified, three reverts at once:** drawing a circle for every question, making a multi click
+replace instead of toggle, and forcing every question to be multi **fails 5 assertions** and the
+suite exits 1.
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

@@ -29,9 +29,10 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ak + D49aj** (three modes; the question tabs) on top of
-  **D49ah + D49ai** — Phases 0–6 of the agent capability plan are **complete**
-  (roadmap in DECISIONS **D49**). Push stays with the founder. Working tree clean.
+- HEAD = **M5.0 / D49al + D49ak + D49aj** (multi-select questions; three modes; the
+  question tabs) on top of **D49ah + D49ai** — Phases 0–6 of the agent capability plan
+  are **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
+  Working tree clean.
 - **There are THREE modes, not four (D49ak).** `act` was merged into `edit`, so
   `edit` **runs the shell** and `plan` is the only mode that cannot. **`auto` fetches
   without asking** — the founder's call, amending D49p. **Any doc or comment that still
@@ -90,9 +91,18 @@ are now only in PROGRESS.
   on its own tab, and jumps on a click. **Three states, and colour is not the only
   cue** — active filled, answered outlined, untouched grey. **`← Back` was already
   there and is unchanged**: it restores a prior answer including free text, pinned by
-  the `question` render suite since D49y, and the tabs do not replace it. **A
-  multi-select question is NOT supported** — every question is single-answer plus a
-  free-text *Others* row, and that is recorded in the backlog, not built.
+  the `question` render suite since D49y, and the tabs do not replace it.
+- **A question may be multi-select, and the model asks for it (D49al).** Set
+  `multiple: true` on a question and the card draws **checkboxes** instead of radios;
+  the user picks several, and the answer travels as **one `"; "`-joined string per
+  question** — so the transport, the callback signature and the transcript are
+  unchanged. **The tool result reads `Answers:` for a multi question and `Answer:` for a
+  single one**, because a string of labels is otherwise indistinguishable from one
+  answer containing semicolons. **The shape is the affordance** — box for multi, circle
+  for single — and the fill carries the same state, so neither reading rests on colour.
+  **Free text joins the picks rather than replacing them.** Still capped at 6 options,
+  with no select-all and no minimum-picks rule: the question is the model's, and the
+  card adds no policy the model did not ask for.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -658,15 +668,17 @@ seeing** — which is worth knowing before anyone spends a session on them.
 - **Plato never reads a reasoning model's thinking tokens.** Recorded in the
   backlog. **Do not build a thinking display without the founder.**
 
-**Two items the founder raised on 2026-09-24 — his calls, and one of them is a
-contract change.** The full analysis is in the PROGRESS backlog; the short form:
+**Three items the founder raised on 2026-09-24 — all three settled, and one of them was a
+contract change.** The full analysis is in the PROGRESS backlog and DECISIONS; the short
+form:
 
-- ~~**Numbered tabs on the questions panel**~~ — **DONE (D49aj, 2026-09-24).**
-  Plus the two answers he asked for, both of which are *no change needed*: the
-  card **does** have a Back button and it **does** restore a prior answer
-  (pinned by a render suite since D49y), and it **cannot** ask a multi-select
-  question — single answer plus free text is the whole of it. Multi-select is
-  recorded in the backlog, **not built**, because he asked what exists.
+- ~~**Numbered tabs on the questions panel**~~ — **DONE (D49aj, 2026-09-24).** Plus the
+  answer he asked for, which is *no change needed*: the card **does** have a Back button
+  and it **does** restore a prior answer, pinned by a render suite since D49y.
+- ~~**Multi-select questions (checkboxes)**~~ — **DONE (D49al, 2026-09-24).** Built rather
+  than only answered, on his reasoning: *"a model can reason to ask a multiple choice
+  answer, so we should support checkboxes."* A question carries an optional `multiple`
+  flag; the answer stays one string per question.
 - ~~**Simplifying the action model**~~ — **DONE (D49ak, 2026-09-24).** `act` is gone;
   `edit` absorbed it. **The mode table is now three rows: `plan` reads and does not
   touch; `edit` reads freely, asks for a write and remembers the yes per file for the

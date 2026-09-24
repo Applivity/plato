@@ -248,6 +248,10 @@ export function chatHtml(): string {
   .q-option.selected { border-color:var(--vscode-focusBorder); background:var(--vscode-list-activeSelectionBackground, rgba(128,128,128,.3)); }
   .q-radio { margin-top:2px; width:12px; height:12px; border-radius:50%; border:1px solid var(--pl-muted); flex-shrink:0; }
   .q-option.selected .q-radio { border-color:var(--pl-accent); background:var(--pl-accent); }
+  /* D49al: a multi-select question gets a BOX, not a circle, because the shape
+     is what says "several of these may be true". Filled when chosen. */
+  .q-check { margin-top:2px; width:12px; height:12px; border-radius:3px; border:1px solid var(--pl-muted); flex-shrink:0; }
+  .q-option.selected .q-check { border-color:var(--pl-accent); background:var(--pl-accent); }
   .q-text { font-size:12px; line-height:1.3; }
   .q-custom-row { padding-top:4px; padding-bottom:4px; }
   .q-custom-row input, .q-custom-row textarea { width:100%; padding:6px; background:var(--vscode-input-background);
@@ -4214,7 +4218,25 @@ export function chatHtml(): string {
       : 'Plato has a question';
     card.appendChild(h);
 
-    const answers = new Array(questions.length).fill('');
+    // D49al: ONE state model for both kinds of question. picked[i] holds the
+    // chosen labels (so it is already a list when the question is multi-select)
+    // and othersTxt[i] holds the free text. answerOf derives the single string
+    // that is sent for a question, which is what keeps the transport to the
+    // model unchanged: one string per question either way. No backticks here —
+    // this file is one template literal and a stray one closes it (gotcha 1).
+    const picked = questions.map(() => []);
+    const othersTxt = questions.map(() => '');
+    const isMulti = (i) => questions[i] && questions[i].multiple === true;
+    const answerOf = (i) => {
+      const labels = picked[i].filter((l) => l !== 'Others').map(String);
+      const custom = String(othersTxt[i] || '').trim();
+      if (!isMulti(i)) {
+        // Single answer: a label, or the free text when Others is the pick.
+        return picked[i].indexOf('Others') !== -1 ? custom : (labels[0] || '');
+      }
+      return labels.concat(custom ? [custom] : []).join('; ');
+    };
+
     const body = document.createElement('div');
     body.className = 'q-form';
     card.appendChild(body);
@@ -4244,7 +4266,7 @@ export function chatHtml(): string {
             tab.classList.add('active');
             tab.setAttribute('aria-selected', 'true');
           }
-          if (answers[i]) tab.classList.add('answered');
+          if (answerOf(i)) tab.classList.add('answered');
           tab.addEventListener('click', () => {
             idx = i;
             render();
@@ -4298,43 +4320,48 @@ export function chatHtml(): string {
           Math.min(customInput.scrollHeight, 3 * lh + box) + 'px';
       };
 
-      const prev = answers[idx] || '';
-      const prevIsOption = options.indexOf(prev) !== -1;
+      const multi = isMulti(idx);
+      const prevPicks = picked[idx];
+      const othersPicked = prevPicks.indexOf('Others') !== -1;
 
       options.forEach((opt) => {
         const isCustom = opt === 'Others';
         const row = document.createElement('div');
         row.className = 'q-option';
-        const circle = document.createElement('div');
-        circle.className = 'q-radio';
+        const mark = document.createElement('div');
+        // D49al: the shape is the affordance — a box means several may be
+        // chosen, a circle means one. The fill carries the same state, so the
+        // meaning does not rest on colour alone.
+        mark.className = multi ? 'q-check' : 'q-radio';
         const text = document.createElement('div');
         text.className = 'q-text';
         text.textContent = String(opt) + (opt === q.recommended ? ' (recommended)' : '');
-        row.appendChild(circle);
+        row.appendChild(mark);
         row.appendChild(text);
 
         // Restore a prior answer when navigating Back.
-        const selectedNow = isCustom ? (!prevIsOption && prev !== '') : (prev === opt);
-        if (selectedNow) row.classList.add('selected');
-        if (isCustom && selectedNow) {
-          customInput.value = prev;
+        if (prevPicks.indexOf(opt) !== -1) row.classList.add('selected');
+        if (isCustom && othersPicked) {
+          customInput.value = othersTxt[idx];
           customRow.style.display = 'block';
         }
 
         row.addEventListener('click', () => {
-          Array.from(optsDiv.querySelectorAll('.q-option')).forEach((r) =>
-            r.classList.remove('selected'),
-          );
-          row.classList.add('selected');
-          if (isCustom) {
-            customRow.style.display = 'block';
-            customInput.focus();
-            growCustom();
-            answers[idx] = customInput.value.trim();
+          if (multi) {
+            const at = picked[idx].indexOf(opt);
+            if (at === -1) { picked[idx] = picked[idx].concat([opt]); }
+            else { picked[idx] = picked[idx].filter((l) => l !== opt); }
+            row.classList.toggle('selected', picked[idx].indexOf(opt) !== -1);
           } else {
-            customRow.style.display = 'none';
-            answers[idx] = String(opt);
+            Array.from(optsDiv.querySelectorAll('.q-option')).forEach((r) =>
+              r.classList.remove('selected'),
+            );
+            picked[idx] = [opt];
+            row.classList.add('selected');
           }
+          const showCustom = picked[idx].indexOf('Others') !== -1;
+          customRow.style.display = showCustom ? 'block' : 'none';
+          if (showCustom) { customInput.focus(); growCustom(); }
           updateNext();
         });
         optsDiv.appendChild(row);
@@ -4342,7 +4369,7 @@ export function chatHtml(): string {
 
       customInput.addEventListener('input', () => {
         growCustom();
-        answers[idx] = customInput.value.trim();
+        othersTxt[idx] = customInput.value;
         updateNext();
       });
 
@@ -4369,13 +4396,14 @@ export function chatHtml(): string {
       const next = document.createElement('button');
       const isLast = idx === questions.length - 1;
       next.textContent = isLast ? 'Submit answers' : 'Next \u2192';
-      next.disabled = !answers[idx];
+      next.disabled = !answerOf(idx);
       function updateNext() {
-        next.disabled = !answers[idx];
+        next.disabled = !answerOf(idx);
       }
       next.addEventListener('click', () => {
         if (next.disabled) return;
         if (isLast) {
+          const answers = questions.map((_qq, i) => answerOf(i));
           vsapi.postMessage({ type: 'user-answer', answers });
           card.remove();
           questions.forEach((qq, i) =>

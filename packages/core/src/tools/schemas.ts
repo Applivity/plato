@@ -226,7 +226,7 @@ export function toolDeclarations(): CanonicalTool[] {
     {
       name: 'ask_user',
       description:
-        'Ask the user one or more questions with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. You can ask up to 3 questions at once. Always provide a recommended option.',
+        'Ask the user one or more questions with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. You can ask up to 3 questions at once. Always provide a recommended option. Set multiple: true on a question where more than one option may be right — the user then gets checkboxes and can pick several, and their answer comes back as those picks separated by "; ".',
       parameters: {
         type: 'object',
         properties: {
@@ -250,6 +250,11 @@ export function toolDeclarations(): CanonicalTool[] {
                 recommended: {
                   type: 'string',
                   description: 'Which option you recommend (must exactly match one of the options)',
+                },
+                multiple: {
+                  type: 'boolean',
+                  description:
+                    'Set true when the user may pick MORE THAN ONE option. Default false: one answer only. The answer arrives as the chosen labels joined by "; ".',
                 },
               },
               required: ['question', 'options'],

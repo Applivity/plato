@@ -214,5 +214,146 @@ const type = async (p, text) => {
   await p.close();
 }
 
+// D49al. Multi-select. A question with `multiple: true` gets CHECKBOXES and the
+// user may pick several; a question without it keeps radios and one answer. The
+// assertions below pin the four things that can silently go wrong: the wrong
+// marker is drawn, a second pick replaces the first instead of adding to it, a
+// pick cannot be taken back, and the several picks never reach the model as
+// several.
+const MULTI = {
+  question: 'Which files should I read first?',
+  context: 'Pick any that matter.',
+  options: ['DateHelper.java', 'SubmissionsViewModel.java', 'MainActivity.java'],
+  multiple: true,
+};
+
+/** Dispatch a card and return nothing; the caller drives it. */
+const openCard = async (p, questions) => {
+  await p.evaluate((x) => window.dispatchEvent(
+    new MessageEvent('message', { data: x }),
+  ), { type: 'user-question', questions });
+  await p.waitForTimeout(260);
+};
+
+const marks = (p) => p.evaluate(() => ({
+  boxes: document.querySelectorAll('.q-check').length,
+  radios: document.querySelectorAll('.q-radio').length,
+  selected: [...document.querySelectorAll('.q-option.selected')]
+    .map((r) => r.querySelector('.q-text').textContent),
+  nextDisabled: (() => {
+    const b = [...document.querySelectorAll('.q-form button')]
+      .find((x) => /Next|Submit/.test(x.textContent));
+    return b ? b.disabled : null;
+  })(),
+}));
+
+const clickOption = async (p, label) => {
+  await p.evaluate((l) => {
+    const row = [...document.querySelectorAll('.q-option')]
+      .find((r) => r.querySelector('.q-text').textContent.indexOf(l) === 0);
+    if (row) { row.click(); }
+  }, label);
+  await p.waitForTimeout(120);
+};
+
+// A. The marker: boxes for a multi question, circles for a single one.
+{
+  const p = await page(760);
+  await openCard(p, [MULTI, Q1]);
+
+  const m = await marks(p);
+  check('a multi question draws checkboxes, not radios',
+    m.boxes === 4 && m.radios === 0, m);
+  check('nothing is selected to begin with', m.selected.length === 0, m);
+  check('Submit is refused until something is picked', m.nextDisabled === true, m);
+
+  await clickOption(p, 'DateHelper.java');
+  const one = await marks(p);
+  check('one pick selects one row', one.selected.length === 1, one);
+  check('and that unlocks the button', one.nextDisabled === false, one);
+
+  await clickOption(p, 'MainActivity.java');
+  const two = await marks(p);
+  check('a second pick ADDS to the first instead of replacing it',
+    two.selected.length === 2, two);
+
+  await clickOption(p, 'DateHelper.java');
+  const back = await marks(p);
+  check('clicking a chosen box again takes it back',
+    back.selected.length === 1 && /MainActivity/.test(back.selected[0]), back);
+
+  // The contrast case, in the same card: the single question still behaves like
+  // a radio group, so supporting several did not make EVERY question multi.
+  await p.evaluate(() => {
+    [...document.querySelectorAll('.q-form button')]
+      .find((b) => /Next/.test(b.textContent)).click();
+  });
+  await p.waitForTimeout(240);
+  const single = await marks(p);
+  check('the single question in the same card still draws radios',
+    single.radios === 3 && single.boxes === 0, single);
+
+  await clickOption(p, 'Change and fix callers');
+  await clickOption(p, 'Keep signatures and correct minimally');
+  const switched = await marks(p);
+  check('choosing another radio REPLACES the first',
+    switched.selected.length === 1 && /Keep signatures/.test(switched.selected[0]),
+    switched);
+  checkPageClean(p, 'checkbox affordance');
+  await p.close();
+}
+
+// B. What actually reaches the model: the picks, as one string per question.
+{
+  const p = await page(760);
+  await openCard(p, [MULTI]);
+  await clickOption(p, 'DateHelper.java');
+  await clickOption(p, 'MainActivity.java');
+  await p.evaluate(() => {
+    [...document.querySelectorAll('.q-form button')]
+      .find((b) => /Submit/.test(b.textContent)).click();
+  });
+  await p.waitForTimeout(240);
+
+  const posted = await p.evaluate(() =>
+    window.__posted.filter((m) => m.type === 'user-answer'));
+  check('the answer is posted once', posted.length === 1, posted);
+  check('several picks travel as several, separated by a semicolon',
+    posted.length === 1 && posted[0].answers[0] === 'DateHelper.java; MainActivity.java',
+    posted.length === 1 ? posted[0].answers : posted);
+  checkPageClean(p, 'multi answer');
+  await p.close();
+}
+
+// C. A free-text pick joins the others rather than replacing them — the case
+//    where "one string per question" could quietly drop one of the two answers.
+{
+  const p = await page(760);
+  await openCard(p, [MULTI]);
+  await clickOption(p, 'DateHelper.java');
+  await clickOption(p, 'Others');
+  await p.waitForTimeout(160);
+  await p.evaluate(() => {
+    const t = document.querySelector('.q-custom-row textarea');
+    t.focus();
+    t.value = 'BuildConfig.java';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(160);
+  await p.evaluate(() => {
+    [...document.querySelectorAll('.q-form button')]
+      .find((b) => /Submit/.test(b.textContent)).click();
+  });
+  await p.waitForTimeout(240);
+
+  const posted = await p.evaluate(() =>
+    window.__posted.filter((m) => m.type === 'user-answer'));
+  check('a typed answer joins the picked ones, not replaces them',
+    posted.length === 1 && posted[0].answers[0] === 'DateHelper.java; BuildConfig.java',
+    posted.length === 1 ? posted[0].answers : posted);
+  checkPageClean(p, 'multi answer with free text');
+  await p.close();
+}
+
 console.log('');
 await finish('question card');
