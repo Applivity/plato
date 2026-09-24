@@ -142,5 +142,77 @@ const type = async (p, text) => {
   await p.close();
 }
 
+// D. Numbered tabs. The old label said "Question 2 of 3", which told the user
+//    nothing about the other questions and offered no way to reach one except
+//    stepping through with Next. The strip shows the whole set, marks what is
+//    already answered, and jumps straight to a question.
+{
+  const p = await page(760);
+  await p.evaluate((x) => window.dispatchEvent(
+    new MessageEvent('message', { data: x }),
+  ), { type: 'user-question', questions: [Q1, Q2] });
+  await p.waitForTimeout(250);
+
+  const initial = await p.evaluate(() => {
+    const tabs = [...document.querySelectorAll('.q-tabs .q-tab')];
+    return {
+      count: tabs.length,
+      labels: tabs.map((t) => t.textContent).join(','),
+      active: tabs.findIndex((t) => t.classList.contains('active')),
+      answered: tabs.filter((t) => t.classList.contains('answered')).length,
+    };
+  });
+  check('there is one tab per question', initial.count === 2, initial);
+  check('the tabs are numbered from 1', initial.labels === '1,2', initial);
+  check('the first tab is the active one', initial.active === 0, initial);
+  // The count is repeated here on purpose: on its own this passes vacuously on
+  // a card with no tabs at all, which is exactly the regression it must catch.
+  check('no tab is marked answered before an answer exists',
+    initial.count === 2 && initial.answered === 0, initial);
+
+  await p.evaluate(() => { document.querySelector('.q-option').click(); });
+  await p.waitForTimeout(140);
+  await p.evaluate(() => {
+    const next = [...document.querySelectorAll('.q-form button')]
+      .find((b) => /Next/.test(b.textContent));
+    next.click();
+  });
+  await p.waitForTimeout(240);
+
+  const afterNext = await p.evaluate(() => {
+    const tabs = [...document.querySelectorAll('.q-tabs .q-tab')];
+    return {
+      active: tabs.findIndex((t) => t.classList.contains('active')),
+      answered: tabs.filter((t) => t.classList.contains('answered'))
+        .map((t) => t.textContent).join(','),
+    };
+  });
+  check('Next moves the active tab to question 2', afterNext.active === 1, afterNext);
+  check('the answered question is marked on its own tab',
+    afterNext.answered === '1', afterNext);
+
+  // The point of the strip: reach a question without walking back through Next.
+  // Guarded, so a card with no tabs reports the failures above instead of
+  // throwing and hiding the rest of the block.
+  await p.evaluate(() => {
+    const tabs = document.querySelectorAll('.q-tabs .q-tab');
+    if (tabs.length) { tabs[0].click(); }
+  });
+  await p.waitForTimeout(240);
+  const jumped = await p.evaluate(() => {
+    const tabs = [...document.querySelectorAll('.q-tabs .q-tab')];
+    const selected = document.querySelector('.q-option.selected');
+    return {
+      active: tabs.findIndex((t) => t.classList.contains('active')),
+      selected: selected ? selected.textContent : '',
+    };
+  });
+  check('clicking tab 1 returns to question 1', jumped.active === 0, jumped);
+  check('and the answer given to it is still selected',
+    /Keep signatures/.test(jumped.selected), jumped);
+  checkPageClean(p, 'question tabs');
+  await p.close();
+}
+
 console.log('');
 await finish('question card');

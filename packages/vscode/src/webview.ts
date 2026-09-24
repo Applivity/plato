@@ -232,7 +232,13 @@ export function chatHtml(): string {
                                                 #4daafc); }
   .todo-item.pending .todo-text { color:var(--pl-muted); }
   .q-form { padding: 4px 10px; display:flex; flex-direction:column; gap:12px; }
-  .q-progress { font-size:11px; color:var(--pl-muted); padding:2px 0; }
+  .q-tabs { display:flex; gap:4px; padding:2px 0; }
+  .q-tab { min-width:22px; height:22px; padding:0 6px; border-radius:11px; font-size:11px;
+           font-family:inherit; cursor:pointer; color:var(--pl-muted);
+           background:transparent; border:1px solid var(--pl-muted); }
+  .q-tab:hover { color:var(--vscode-foreground); border-color:var(--vscode-focusBorder); }
+  .q-tab.answered { color:var(--pl-accent); border-color:var(--pl-accent); }
+  .q-tab.active { color:#fff; background:var(--pl-accent); border-color:var(--pl-accent); }
   .q-block { display:flex; flex-direction:column; gap:6px; }
   .q-title { font-weight:600; font-size:12px; color:var(--vscode-foreground); }
   .q-context { font-size:11.5px; color:var(--pl-muted); line-height:1.4; margin-bottom:2px; }
@@ -4227,11 +4233,32 @@ export function chatHtml(): string {
       const options = Array.isArray(q.options) ? [...q.options] : [];
       options.push('Others'); // always allow a custom answer
 
+      // D49aj: numbered tabs. The old label said "Question 2 of 3" and told the
+      // user nothing about the others; a tab strip shows the whole set, marks
+      // the ones already answered, and lets the user jump straight to any of
+      // them instead of stepping through with Next.
       if (questions.length > 1) {
-        const prog = document.createElement('div');
-        prog.className = 'q-progress';
-        prog.textContent = 'Question ' + (idx + 1) + ' of ' + questions.length;
-        body.appendChild(prog);
+        const tabs = document.createElement('div');
+        tabs.className = 'q-tabs';
+        tabs.setAttribute('role', 'tablist');
+        questions.forEach((_qq, i) => {
+          const tab = document.createElement('button');
+          tab.type = 'button';
+          tab.className = 'q-tab';
+          tab.setAttribute('role', 'tab');
+          tab.textContent = String(i + 1);
+          if (i === idx) {
+            tab.classList.add('active');
+            tab.setAttribute('aria-selected', 'true');
+          }
+          if (answers[i]) tab.classList.add('answered');
+          tab.addEventListener('click', () => {
+            idx = i;
+            render();
+          });
+          tabs.appendChild(tab);
+        });
+        body.appendChild(tabs);
       }
 
       const block = document.createElement('div');

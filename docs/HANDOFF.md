@@ -29,9 +29,9 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ah + D49ai** — Phases 0–6 of the agent capability plan are
-  **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
-  Working tree clean.
+- HEAD = **M5.0 / D49aj** (the question tabs) on top of **D49ah + D49ai** — Phases
+  0–6 of the agent capability plan are **complete** (roadmap in DECISIONS **D49**).
+  Push stays with the founder. Working tree clean.
 - **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
   Plato on an external Android repo (the trial ground — see "Trial runs" below).
   In order: `D49r` compaction could strand tool results; `D49s` an empty turn was
@@ -78,6 +78,16 @@ are now only in PROGRESS.
   already receives every tool call's arguments. **The rule a user lives with: state is
   legible WITHOUT COLOUR** — completed struck through, in-progress heaviest, a distinct
   glyph per state.
+- **The questions panel numbers its questions as tabs (D49aj).** The card said
+  *"Question 2 of 3"*, which tells the user how many questions there are and nothing
+  about **which are already answered or how to reach one** without stepping through
+  every question before it. The strip shows the whole set, marks an answered question
+  on its own tab, and jumps on a click. **Three states, and colour is not the only
+  cue** — active filled, answered outlined, untouched grey. **`← Back` was already
+  there and is unchanged**: it restores a prior answer including free text, pinned by
+  the `question` render suite since D49y, and the tabs do not replace it. **A
+  multi-select question is NOT supported** — every question is single-answer plus a
+  free-text *Others* row, and that is recorded in the backlog, not built.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -347,9 +357,11 @@ platform.** Until then the test verifies a change by reading, and says so.
 **Still to do, in priority order:**
 
 1. **Restate the acceptance test** for the current model and write it into DECISIONS as its own
-   entry, replacing BLUEPRINT §4's version. **Held deliberately until the founder's open items
-   are heard (2026-09-24)** — it is the product's definition of done, so a change he is about to
-   describe belongs in the text rather than in a rewrite after it.
+   entry, replacing BLUEPRINT §4's version. **The hold is lifted (2026-09-24):** it was held so
+   that a change the founder was about to describe would land in the text rather than in a rewrite
+   after it, and his two items have now been heard — one is built (the question tabs), one is a
+   pending decision that does not touch the acceptance test. **The restatement is therefore
+   unwritten for a plainer reason: nobody has written it yet.**
 2. **Secret audit** (D15) — everything that leaves the machine: **Plato's own** repo history,
    VSIX/npm artifacts, transcripts, docs, screenshots. Scoped to Plato, not the proving ground.
 3. **Trademark sweep** (D16) and the **license decision** (D19) — the founder's; D19 is the one
@@ -640,6 +652,31 @@ seeing** — which is worth knowing before anyone spends a session on them.
   not yet scoped.
 - **Plato never reads a reasoning model's thinking tokens.** Recorded in the
   backlog. **Do not build a thinking display without the founder.**
+
+**Two items the founder raised on 2026-09-24 — his calls, and one of them is a
+contract change.** The full analysis is in the PROGRESS backlog; the short form:
+
+- ~~**Numbered tabs on the questions panel**~~ — **DONE (D49aj, 2026-09-24).**
+  Plus the two answers he asked for, both of which are *no change needed*: the
+  card **does** have a Back button and it **does** restore a prior answer
+  (pinned by a render suite since D49y), and it **cannot** ask a multi-select
+  question — single answer plus free text is the whole of it. Multi-select is
+  recorded in the backlog, **not built**, because he asked what exists.
+- **Simplifying the action model: merge `edit` and `act`, leaving plan / act /
+  auto. NOT BUILT — awaiting his decision, and one part of the proposal cannot be
+  built as stated.** He says he cannot tell the two middle modes apart. **He is
+  right that the difference is not what the names imply** — `edit` and `act` differ
+  in exactly two things (shell denied vs asked; write approval remembered per file
+  per session vs asked on every write), and both allow all reads and both ask for
+  `web_fetch`. The merged mode he describes is better than either. **But "let
+  `plan` run scripts without changing project files" is not enforceable** — a shell
+  command is a program, and a text check that tried to tell a mutating command from
+  a reading one is the mechanism that failed on 2026-09-24 (D49ai). **What he wants
+  from `plan` is mostly the missing web SEARCH, not more shell:** `web_fetch`
+  already asks-and-works in `plan`. **Before building anything, read the PROGRESS
+  backlog entry** — it has the options, the second argument he did not make (`edit`
+  denies the shell, so it cannot satisfy the worker prompt's own verification
+  rule), and the two architecture documents that state the opposite of the merge.
 
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and

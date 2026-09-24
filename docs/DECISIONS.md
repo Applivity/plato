@@ -2853,6 +2853,38 @@ not on a watched failure.
 
 ---
 
+**D49aj — the questions panel gets numbered tabs (M5.0, 0.25.0 — 2026-09-24).**
+
+The founder's ask, and a cosmetic one: number the questions as tabs. The change is small;
+what is worth recording is the weakness it exposed in my own tests.
+
+**The label was carrying one fact out of three.** The card said *"Question 2 of 3"*. That
+tells the user how many questions there are, and nothing about **which of them are already
+answered** or **how to reach one** without stepping through every question before it with
+Next. The strip shows the whole set at once, marks an answered question on its own tab, and
+jumps on a click.
+
+**Three states, and colour is not the only cue:** the active tab is **filled**, an answered
+one is **outlined in the accent**, an untouched one is **grey**. Standing on question 2, the
+user sees that 1 is done and 3 is not.
+
+**Back already existed and is unchanged.** The card has offered `← Back` since D34/D35, and
+it restores the previous answer — free text included — which the `question` suite has pinned
+since D49y. The tabs make a question faster to reach; they do not replace stepping, and the
+button was not removed to make the strip look tidier.
+
+**The part worth keeping: my first version of the tests was wrong twice, in the same way.**
+An assertion — *"no tab is marked answered before an answer exists"* — **passed vacuously**
+on a card that drew no tabs at all, because zero tabs means zero answered tabs. It now
+repeats the count it forgot to check. And the jump step **threw** on a missing tab, which
+aborted the block and hid every assertion after it, so it is guarded and reports instead.
+**A vacuous assertion is worse than no assertion: it is a green light on the exact
+regression it names.** Both were found by falsifying rather than by reading the test.
+
+**Falsified:** suppressing the strip fails **8 assertions** and the suite exits 1.
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 
