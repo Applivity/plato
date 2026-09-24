@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49af** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49ag** — Phases 0–5 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
@@ -43,7 +43,9 @@ are now only in PROGRESS.
   gone, so every fetched model is eligible; `D49aa` **the chat log is append-only
   and compaction is a request, not a deletion** (the founder's scrollback was being
   erased); `D49ab` **the turn cap is deleted**; `D49ac`/`D49af` reply readability;
-  `D49ad` thematic breaks; `D49ae` per-claim evidence in the worker prompt.**
+  `D49ad` thematic breaks; `D49ae` per-claim evidence in the worker prompt;
+  `D49ag` **the log now records what a tool DID, not only that one ran** — the
+  fold and the cross-run request were both blind to 80.8% of a run.**
   **The two that changed the product's shape are D49aa and D49ab** — read those
   first if you are picking this up cold.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
@@ -122,6 +124,19 @@ are now only in PROGRESS.
   **not printed** — it is the model's memory, not a document for the reader. The display
   cap leaves a `trim` row, and says so differently if it took the summary.
   **`LOG_MAX` is 400 ENTRIES, not messages** — every completed tool call is one row.
+- **A tool row records what the call was FOR, never what came back (D49ag).** The row
+  carries a **digest** — `digestToolCall` takes the salient argument *by tool name*
+  (path / grep pattern / shell command / URL) and never dumps `args`, because `args`
+  for `write_file` is a whole file body and for `apply_diff` a whole diff. **Never let
+  a result into the digest**: that rebuilds the weight compaction exists to shed, and a
+  test pins it with a 50,000-character body. Both readers of the log consume it — the
+  fold (`buildFoldPrompt`, which is **in core because the shell has no unit tests and
+  this is the half that decides whether a fold records the work**) and `requestFromLog`,
+  which carries the tail's digests as a `[tool activity — what Plato ran]` turn. A row
+  with **no** digest is skipped, so a log written before D49ag produces a byte-identical
+  request. **The display is deliberately unchanged** — the digest is the model's memory,
+  not a new chip. Measured: tool results were **80.8%** of a 78-turn run's final request,
+  and before this the fold could see none of them.
 - **There is one model list per connection, and nothing can be ticked out of it (D49z).**
   Every model a provider returns is eligible and appears in the chat picker, in the order
   stored. `resolveOfferedModels` (core) is the one read rule and it prefers the **wider**
@@ -306,7 +321,7 @@ used to claim.
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **487** passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **508** passing
   vitest cases across **33** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
@@ -477,7 +492,7 @@ human decision before it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 487/487 vitest in packages/core (33 files)
+2. `pnpm -r test` — 508/508 vitest in packages/core (33 files)
 3. `pnpm run render` — the real-DOM render suites, **14 suites / 296 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
@@ -496,28 +511,34 @@ human decision before it is trusted:**
 
 ## Queued next work (in priority order — pick up here)
 
-**First, the three things the 2026-09-23/24 repairs left open.** Each is written up
-in the PROGRESS backlog with its reasoning; these are the pointer, not the record.
+**First, what the 2026-09-23/24 repairs left open.** One of the three is now done
+and the other two were **measured and turned out not to be what the founder was
+seeing** — which is worth knowing before anyone spends a session on them.
 
-1. **Compaction cannot see tool activity, so a tool-heavy run summarises to
-   nothing (D49aa).** The summariser is fed only user and assistant message text —
-   never tool calls or results — and a real run's own summary admitted it saw no
-   work (`"No files read (contents not available in transcript)"`). **This is the
-   next step of D49aa and it is the one with the most value**: the founder's runs
-   are ~92% tool results by context, so without this, folding discards exactly what
-   was learned. Pair it with the two cheaper items below, because a summary should
-   be the LAST resort, not the only tool.
-2. **Trim old tool OUTPUT before summarising anything (new, unscoped).** Same
-   evidence — 92% of context is tool results — and both Claude Code and Codex run a
-   cheap snip/microcompact pass before the expensive summariser. Highest headroom,
-   least lossy, and it would push the fold far out for most sessions.
-3. **The compaction threshold should be an absolute token window, not a percentage
-   (new, unscoped).** The founder's 80% of a 1M window meant 800,000 tokens, which
-   never fires — so the in-run guard was silently inert and the 26-pair fold was
-   the only mechanism running. Claude Code uses a token window with a per-model
-   default and `min(yours, model max)`. **The control stays a slider; its UNIT
-   changes**, which is a product decision he has agreed in principle but not
-   specified.
+1. ~~**Compaction cannot see tool activity**~~ — **DONE (D49ag, 2026-09-24).** The
+   log's tool row was `{tool, phase}`, so both readers of the log saw *that* work
+   happened and never what it was. A tool row now carries a **digest** — the
+   salient argument per tool, never the result — the fold summarises the span in
+   log order, and the cross-run request carries the tail's digests too. **The
+   number to remember: on a real 78-turn run, tool results were 80.8% of the final
+   request and the fold could see 0% of them.**
+2. **Trim old tool OUTPUT before summarising anything.** Still worth doing for a
+   model with a **small** window (Claude Code and Codex run a cheap snip first).
+   **But it was measured and it is not what the founder was seeing:** his guard's
+   threshold was 80% of a 1,000,000 window, the run ended at **11.4%** of it, and
+   the transcript holds **zero `context-compacted` events** — the in-run guard never
+   fired at all. Do not spend a session on this believing it explains a fold he
+   complained about.
+3. **The compaction threshold should be an absolute token window, not a percentage.**
+   Same measurement as above, and the same caveat: at a 1M window a percentage is
+   inert, so this changes nothing for the founder's setup and matters for a small
+   one. Claude Code uses a token window with a per-model default and
+   `min(yours, model max)`. **The control stays a slider; its UNIT changes**, which
+   is a product decision he has agreed in principle but not specified.
+   **Related and unmeasured:** the fold's cadence constants (`AUTO_FOLD_AT = 26`,
+   `KEEP_AFTER_FOLD = 12`) are called *pairs* in the code and in this doc, but
+   `tailPairs` counts **message rows** — so the fold fires on ~13 exchanges, twice
+   as often as the names suggest. Recorded, not changed.
 
 **Also open from that work, smaller:**
 

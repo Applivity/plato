@@ -20,10 +20,13 @@ import {
   McpServer,
   loadMcpConfig,
   applyFold,
+  isMessageRow,
   lastSummaryIndex,
   planFold,
   requestFromLog,
   tailPairs,
+  digestToolCall,
+  buildFoldPrompt,
   ObserverAgent,
   loadTeamConfig,
   parseTeamConfig,
@@ -329,7 +332,13 @@ interface StoredChat {
  */
 type Entry =
   | { k: 'msg'; cls: string; who: string; text: string }
-  | { k: 'tool'; tool: string; phase: string }
+  /**
+   * D49ag: `digest` is what the call WAS FOR (see `digestToolCall`), `ok`
+   * whether it worked. Without them this row recorded only that something ran,
+   * so a fold summarising the row could not say what the run had done — and
+   * neither could the next run's model, whose memory is derived from this log.
+   */
+  | { k: 'tool'; tool: string; phase: string; digest?: string; ok?: boolean }
   | { k: 'card-open'; tool: string; preview: string }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
@@ -1456,19 +1465,16 @@ class ChatHost {
       c >= 0 && this.log[c]!.k === 'compact' ? this.log[c]!.text : null;
     const plan = planFold(this.log, KEEP_AFTER_FOLD);
     if (plan === null) return false;
-    const foldCount = plan.covered.length;
     const older = plan.covered;
+    // D49ag: the count the user is TOLD stays a count of exchanges. `covered`
+    // now also carries the tool rows, and "Summary added for 47 earlier
+    // messages" would be a lie when 40 of them were tool calls.
+    const foldCount = older.filter(isMessageRow).length;
 
-    const blocks: string[] = [];
-    if (prior !== null) {
-      blocks.push('[existing summary of the earlier conversation]\n' + prior);
-    }
-    for (const e of older) {
-      const m = e as Extract<Entry, { k: 'msg' }>;
-      blocks.push(
-        '--- ' + (m.cls === 'you' ? 'USER' : 'ASSISTANT') + ' ---\n' + m.text,
-      );
-    }
+    // D49ag: the prompt is built in core, where it is tested — the shell has no
+    // unit tests, and this is the half that decides whether a fold records the
+    // work or only the model's narration of it.
+    const prompt = buildFoldPrompt(prior, older);
     const provider = createProvider(conn.kind, {
       apiKey,
       baseUrl: conn.baseUrl,
@@ -1480,14 +1486,7 @@ class ChatHost {
       messages: [
         {
           role: 'user',
-          content: [
-            {
-              type: 'text',
-              text:
-                'Summarise the following conversation so the assistant can continue without it. Be terse and fact-only.\n\n' +
-                blocks.join('\n\n'),
-            },
-          ],
+          content: [{ type: 'text', text: prompt }],
         },
       ],
       maxTokens: compactMaxTokensFor(ref),
@@ -2970,7 +2969,13 @@ class ChatHost {
             ok: e.ok,
           });
           if (e.phase === 'done' || e.phase === 'denied' || e.phase === 'declined') {
-            this.push({ k: 'tool', tool: e.tool, phase: e.phase });
+            this.push({
+              k: 'tool',
+              tool: e.tool,
+              phase: e.phase,
+              digest: digestToolCall(e.tool, e.args),
+              ok: e.ok,
+            });
           }
         },
       });

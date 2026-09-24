@@ -2677,6 +2677,73 @@ suite pins that path specifically.
 
 ---
 
+**D49ag — the log recorded that a tool ran, never what it did (M5.0, 0.25.0 — 2026-09-24).**
+
+D49aa fixed the *rules* around the chat log: a fold writes a row instead of clearing the array, so
+the transcript only ever grows and the request is derived. This entry is the other half of that
+fault, and it was found by reading a real run rather than the code: **the rules were right and the
+data they read was empty.**
+
+**A tool row said `{tool, phase}` and nothing else.** So the log held a record that *something* ran,
+with no account of what it was for. Both readers of that log were therefore blind:
+
+- **The fold's summariser**, which is handed message rows, could see that work had happened and
+  never what the work was. A real run's own summary said so in as many words —
+  *"No files read (contents not available in transcript)"* — which is a sentence about an empty
+  prompt, not about the model.
+- **`requestFromLog`**, which is the model's memory at the start of the next run, dropped tool rows
+  entirely. So a second message in the same conversation arrived with no record of the files read
+  or the commands run — the same blindness, one turn earlier.
+
+**Measured on the founder's own 78-turn run** (`muejgc51j21i`, `~/.plato/runs/ff47b78d`), because
+this decided whether the work was worth doing. At the final turn: **91,987 of 113,793 estimated
+tokens were tool results — 80.8%** — against 17.9% assistant text and 0.2% user text. The fold could
+see **0%** of the largest part of the run.
+
+**The digest is the ARGUMENT, never the result, and that line is the whole design.** `digestToolCall`
+takes the salient argument *by tool name* — the path for a file tool, the pattern and glob for a
+`grep`, the command for a `shell`, the URL for a `web_fetch` — and never dumps `args`, because `args`
+for `write_file` is a whole file body and for `apply_diff` is a whole diff. Copying those in would
+put the work back into the log that compaction exists to shed, and persist it to workspace state to
+be re-sent on every run. The digest says what was done; the model re-reads for the content. A test
+pins it with a 50,000-character body.
+
+**Four decisions inside the fix:**
+
+1. **`planFold`'s `covered` now includes the tool rows, in log order.** Not a separate list, because
+   *when* each thing happened is most of what a summary is for. A caller wanting the exchange count
+   filters with `isMessageRow` — the count the user is told stays a count of messages, since
+   *"Summary added for 47 earlier messages"* would be a lie if 40 were tool calls.
+2. **The fold prompt moved to core (`buildFoldPrompt`).** The shell had its own copy of that loop,
+   and the shell has no unit tests — so the half of this change that decides whether a fold records
+   the work would have been invisible to every suite in the repo. That is D49aa's argument for
+   `applyFold`, applied to the part it missed.
+3. **The request carries the tail's digests as a bracketed turn** — `[tool activity — what Plato
+   ran]` — rather than as a sentence tacked onto the assistant's turn, so nothing arrives at the
+   model as words it did not write. `maxTailPairs` still counts exchanges: a run of tool rows
+   belongs to the exchange it happened in.
+4. **A tool row with no digest is skipped entirely**, so a log written before this change produces a
+   byte-identical request. The existing `requestFromLog` tests use exactly such rows and passed
+   unchanged.
+
+**A refusal, a decline and a failure are said differently:** `(not permitted in this mode)`,
+`(the user declined)`, `(failed)`. The first two are not things to retry, and a model that cannot
+tell them apart retries into a wall.
+
+**Not done, and why.** The in-run compaction path (`compactMessages`) already fed tool blocks to its
+summariser — it was never the blind one. The queued *"trim old tool output before summarising"* item
+was measured and left alone: on this run the guard's threshold was 80% of a 1,000,000 window, the run
+ended at **11.4%** of it, and the transcript contains **zero `context-compacted` events** — so the
+in-run guard never fired and the between-runs fold was the only mechanism running. Trimming tool
+output is worth doing for a small-window model; it is not what the founder was seeing.
+
+**Also recorded: the digest is now persisted data that was not there before** — workspace state
+carries paths, commands, patterns and URLs the log did not hold. It is the model's own call echoed
+back, and the commands were already shown on an approval card, so nothing is newly exposed to the
+model. But a future secret audit (D15) should know it is there.
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 
