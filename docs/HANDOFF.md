@@ -29,7 +29,7 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ah + D49ai** — Phases 0–5 of the agent capability plan are
+- HEAD = **M5.0 / D49ah + D49ai** — Phases 0–6 of the agent capability plan are
   **complete** (roadmap in DECISIONS **D49**). Push stays with the founder.
   Working tree clean.
 - **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
@@ -549,7 +549,7 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 534/534 vitest in packages/core (34 files)
+2. `pnpm -r test` — 538/538 vitest in packages/core (34 files)
 3. `pnpm run render` — the real-DOM render suites, **15 suites / 318 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.

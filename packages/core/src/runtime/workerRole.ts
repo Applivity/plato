@@ -151,6 +151,12 @@ For multi-step tasks, state a brief plan:
 3. [Step] → verify: [check]
 \`\`\`
 
+Record that plan with the todo_write tool instead of only writing it out in your
+reply. The list is what you re-read on every later turn, so it is how you keep the
+thread of a long task; it is also what the user watches to see where you are. Send
+the whole list each time, keep exactly one step marked in_progress, and mark a step
+completed only once you have verified it. Skip it for a task that is one step.
+
 When verifying:
 
 * Do not treat the first passing test command as sufficient evidence by itself.

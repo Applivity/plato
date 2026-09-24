@@ -199,6 +199,38 @@ describe('buildWorkerRole', () => {
  * shell — so if accuracy depended on the mode, `edit` would be the mode where
  * findings are least trustworthy, which is backwards.
  */
+/**
+ * D49ah. The tool alone is not the feature: the plan exists to survive a long
+ * run, and the model only reaches for it if the prompt says so. A tool the model
+ * is never told to use is a panel the user never sees — so the instruction is
+ * asserted here, next to the guideline it extends ("for multi-step tasks, state a
+ * brief plan").
+ */
+describe('the worker prompt tells the model to keep its plan (D49ah)', () => {
+  it('sends the plan to the tool, not only into the reply', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('Record that plan with the todo_write tool');
+  });
+
+  it('says the list is the model’s own thread across a long task', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('thread of a long task');
+  });
+
+  it('carries the three rules that keep the list honest', () => {
+    // Line-stable fragments: the prompt is hard-wrapped source, so a phrase that
+    // spans a line break is not in the string (the same constraint the D49ae
+    // assertions work under).
+    expect(DEFAULT_PLATO_BODY).toContain('the whole list each time');
+    expect(DEFAULT_PLATO_BODY).toContain('keep exactly one step marked in_progress');
+    expect(DEFAULT_PLATO_BODY).toContain('completed only once you have verified it');
+  });
+
+  // The tool is not for a one-step task; a prompt that demanded it always would
+  // make the panel noise and cost a turn per trivial ask.
+  it('exempts a task that is one step', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('Skip it for a task that is one step');
+  });
+});
+
 describe('the worker prompt requires per-claim evidence (D49ae)', () => {
   it('names the three kinds of claim', () => {
     expect(DEFAULT_PLATO_BODY).toContain('Observed:');
