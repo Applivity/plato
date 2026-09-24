@@ -102,7 +102,7 @@ describe('the loop treats an abort as cancellation (D49i)', () => {
     const run = runAgentLoop({
       root: process.cwd(),
       task: 'test task',
-      getMode: () => 'act' as const,
+      getMode: () => 'edit' as const,
       approve: () => Promise.resolve(true),
       model: 'anthropic:claude-sonnet-4-5',
       provider: p,

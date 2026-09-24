@@ -19,12 +19,14 @@ Every decision behind this document is logged with rationale in
 > | Preset teams ship as example files (Solo, Architect+Coder, Coder+Observer) | shipped examples are `academy.example.yaml` and `duo.example.yaml`; Solo/Duo/Academy are **modes**, not files |
 > | Non-goal: "visual team editor (config file + schema instead; editor comes later)" | **shipped** in D47 — the Settings UI edits Duo and Academy over the yaml, two-way |
 > | §4 acceptance test (architect → coder → Socrates) | predates the product lock; **must be restated before it can be run**, and it has not been run — see HANDOFF and PROGRESS |
+> | §"Modes: `plan` / `edit` (diffs, no shell) / `act` (per-action approval) / `auto` (hard-capped)" | **THREE modes — `plan` (read-only), `edit` (writes and commands, each approved), `auto` (nothing approved).** `act` was **merged into `edit`**, which now runs commands; and `auto` is **not** hard-capped — the turn cap was deleted (D49ab, D49ak) |
 >
 > **Still binding and unchanged:** the differentiator (§2 — the event bus, and
 > live mid-flight supervision with a write-back channel), the six-tool surface,
-> the four modes, user-supplied keys in SecretStorage only, transcripts on disk,
-> and the hard requirement that secret-bearing / `.gitignore`d files never reach
-> a model context.
+> user-supplied keys in SecretStorage only, transcripts on disk, and the hard
+> requirement that secret-bearing / `.gitignore`d files never reach a model
+> context. **The mode list is the one entry in this list that has changed** —
+> three modes, not four (D49ak).
 
 ## 1. What it is
 

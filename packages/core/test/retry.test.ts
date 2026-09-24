@@ -206,7 +206,7 @@ describe('the loop wires the retry policy (D49f)', () => {
   const BASE = {
     root: process.cwd(),
     task: 'test task',
-    getMode: () => 'act' as const,
+    getMode: () => 'edit' as const,
     approve: () => Promise.resolve(true),
     model: 'anthropic:claude-3-5-haiku-latest',
   };

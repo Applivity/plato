@@ -369,7 +369,9 @@ interface RunCtx {
 }
 
 class ChatHost {
-  private mode: Mode = 'act';
+  // D49ak: `edit` is the default — it replaced `act`, and it is the middle of
+  // the three modes (plan looks, edit asks, auto does not).
+  private mode: Mode = 'edit';
   private readonly sessionWrites = new Set<string>();
   private readonly sessionApprovals = new Set<string>();
   private controller = new RunController();
@@ -3075,7 +3077,11 @@ class ChatHost {
   }
 
   private async approve(req: ApprovalRequest): Promise<boolean> {
-    // edit mode: writes are approve-once-per-session per file (D22c)
+    // D49ak: in `edit`, a write is approve-once-per-file-per-session. This is the
+    // half of the old `edit` that survived the merge into it — it is what makes
+    // the merged mode quieter than the old `act`, which asked on every single
+    // write. A `shell` call is NOT cached here: it asks every time, with the
+    // card's own "approve all for this session" as the way to widen it.
     if (this.mode === 'edit' && isWriteTool(req.tool)) {
       const key = String(req.args['path'] ?? '');
       if (this.sessionWrites.has(key)) {

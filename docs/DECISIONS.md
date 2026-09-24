@@ -2885,6 +2885,78 @@ regression it names.** Both were found by falsifying rather than by reading the 
 
 ---
 
+**D49ak — three modes, not four: `act` is merged into `edit`, and `auto` fetches without asking
+(M5.0, 0.25.0 — 2026-09-24).**
+
+**The founder's finding, and it was correct: he could not tell `edit` and `act` apart.** The reason
+is that the two differed in places the names do not describe:
+
+| | `edit` (old) | `act` (old) |
+|---|---|---|
+| reads | allow | allow |
+| writes | ask, **then remembered per file for the session** | ask, **every single time** |
+| shell | **denied** | ask |
+| `web_fetch` | ask | ask |
+
+So the old `edit` was **quiet about edits and could not run anything**, and the old `act` **could run
+anything and nagged**. Both are unsatisfying, and neither name tells a user which they want.
+
+**Two things settled the merge, and the second is the one that makes it more than tidiness.**
+
+1. **The merged mode is strictly better than either it replaces** — the old `edit`'s per-file memory
+   plus the shell. That is what ships: `edit` reads freely, asks for a write, **remembers a "yes"
+   per file for the session**, and asks for every command.
+2. **The old `edit` could not satisfy the prompt it ran under.** It denied the shell, and the worker
+   prompt *requires* verification — *"mark a step completed only once you have verified it"*. A mode
+   that cannot run a test cannot verify, so `edit` was asking the model to obey a rule it had no tool
+   for. **That argument is the founder's decision, not his words**, and it is recorded as such.
+
+**The three, in his terms:** `plan` looks and does not touch; `edit` changes the project and asks
+first; `auto` asks nothing.
+
+**`plan` keeps NO shell, and that is the one part of his proposal that was not built as stated.** He
+asked for a `plan` that could "do full search or execute scripts but not change project files". **The
+host can classify a TOOL; it cannot classify a COMMAND.** A shell command is a program — `rm`,
+`sed -i`, `>` redirection, `git checkout`, `npm install` all write — and telling a mutating command
+from a reading one means reading the text, which is **exactly the mechanism that failed on
+2026-09-24 in D49ai**, where one missed spelling put a protected file into a model's context. So the
+choice was: no shell in `plan` (shipped), a shell in `plan` that makes it `edit` under a friendlier
+label (rejected — it would misdescribe what is protected), or a command **allowlist** (not built;
+it is enforceable, unlike a denylist, but every command added to it is a new chance to be wrong).
+**What he wants from `plan` is mostly the missing `web_search`, not more shell** — `web_fetch`
+already asks-and-works in `plan`; what it cannot do is *find* a URL, and `web_search` is deferred by
+his own decision (D49p).
+
+**Second change, and this one AMENDS D49p: `auto` now fetches without asking.** D49p made egress
+`ask` in every mode including `auto`, on the ground that a request cannot be un-sent. **The founder
+overrode it** — *"let's allow auto all perms including fetching urls mode thinks are necessary."*
+**What he is buying out of, recorded rather than argued again:** in `auto` no card stands between a
+fetched page and the model, so a page carrying instructions can steer the model to a URL with the
+user's data in the query string and nothing asks. **Three rules still hold, and they hold in the
+EXECUTOR rather than by permission, so `auto` cannot reach around them:** a redirect onto a loopback,
+private or link-local address is refused; a non-text content type is refused; fetched content still
+arrives labelled untrusted. `plan` and `edit` still ask.
+
+**What the merge cost, and what it did NOT cost.** It supersedes a documented contract in two
+architectural documents — `BLUEPRINT.md` (*"`edit` (diffs, no shell)"*) and `ARCHITECTURE.md`
+(*"`plan` and `edit` modes cannot execute it"*, security invariant 3) — and per D48 their bodies stay
+verbatim, so each gained a **superseded-map row** rather than an edit. **There is no settings
+migration:** the mode is not persisted across sessions, so a stored `edit` or `act` cannot exist to
+be migrated. The default moved from `act` to `edit` in both the host and the webview.
+
+**The test gap this exposed, closed in the same commit.** The unit tests covered `decide()` — the
+permission table — and **no render suite had ever opened the mode picker**, so the list of modes a
+user actually sees was asserted nowhere. Survivable while the list was stable; not survivable when a
+mode is removed from it. A new `modes` suite pins four things a removal gets silently wrong: the row
+is gone, the survivors are right and ordered, the default moved, and **the description that belonged
+to the old `edit` did not survive the mode it described** — the old text still said the shell was
+denied.
+
+**Falsified:** restoring the `act` row and the old `edit` description fails **4 assertions** and the
+suite exits 1 (three for the row, one for the stale description).
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

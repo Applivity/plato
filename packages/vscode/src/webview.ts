@@ -163,11 +163,9 @@ export function chatHtml(): string {
      divider line. */
   footer.mode-plan #q { border-color:#9575cd; }
   footer.mode-edit #q { border-color:#4a9eff; }
-  footer.mode-act  #q { border-color:#e08a3c; }
   footer.mode-auto #q { border-color:#3bba6a; }
   footer.mode-plan #q:focus,
   footer.mode-edit #q:focus,
-  footer.mode-act  #q:focus,
   footer.mode-auto #q:focus { border-color:inherit;
                                box-shadow:inset 0 0 0 1px currentColor; }
   /* #go is now styled by .btn-send (with per-mode color). The old
@@ -1026,11 +1024,10 @@ export function chatHtml(): string {
                         stroke:currentColor; stroke-width:2.2;
                         stroke-linecap:round; stroke-linejoin:round; }
   #modeBtn .caret { color:var(--pl-muted); flex:none; }
-  /* D39c: four distinct hues - plan=green, edit=amber, act=red,
-     auto=purple. No two modes are the same color. */
+  /* D49ak: three distinct hues - plan=violet, edit=blue, auto=green.
+     No two modes are the same color. The act mode's orange went with it. */
   #modeBtn.mode-plan { color:#7c4dbf; }
   #modeBtn.mode-edit { color:#4a9eff; }
-  #modeBtn.mode-act  { color:#b8651a; }
   #modeBtn.mode-auto { color:#1a8a4a; }
   /* Send button: same four-color palette, with readable text colors
      on each. */
@@ -1048,7 +1045,6 @@ export function chatHtml(): string {
                              stroke-linecap:round; stroke-linejoin:round; }
   .btn-send.mode-plan { background:#9575cd; color:#fff; }
   .btn-send.mode-edit { background:#4a9eff; color:#fff; }
-  .btn-send.mode-act  { background:#e08a3c; color:#3a1f00; }
   .btn-send.mode-auto { background:#3bba6a; color:#0d2a18; }
   /* D39: shared popover styles for the model picker and the mode
      picker. The body attaches the popover to a fixed-position wrapper
@@ -1129,11 +1125,9 @@ export function chatHtml(): string {
   .mp-row .mp-icn { padding:3px; border-radius:5px; }
   .mp-row.mode-plan .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
   .mp-row.mode-edit .mp-icn { color:#4a9eff; background:rgba(74,158,255,.14); }
-  .mp-row.mode-act  .mp-icn { color:#b8651a; background:rgba(224,138,60,.14); }
   .mp-row.mode-auto .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
   .mp-row.active.mode-plan .mp-icn { color:#fff; background:#9575cd; }
   .mp-row.active.mode-edit .mp-icn { color:#fff; background:#4a9eff; }
-  .mp-row.active.mode-act  .mp-icn { color:#3a1f00; background:#e08a3c; }
   .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
 </style>
 </head>
@@ -1174,7 +1168,7 @@ export function chatHtml(): string {
     <p>Plato signs in to a provider when it answers — Anthropic, OpenAI,
        OpenRouter, or any compatible endpoint. Your API key stays in
        VS Code&rsquo;s secure storage.</p>
-    <button id="emptyCta" class="btn-send mode-act" type="button">Connect a provider</button>
+    <button id="emptyCta" class="btn-send mode-edit" type="button">Connect a provider</button>
   </div>
   <div class="empty-card" id="projCard" hidden>
     <h3>Set up this project&rsquo;s rules</h3>
@@ -1259,12 +1253,12 @@ export function chatHtml(): string {
     <span class="bar-spacer"></span>
     <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
-    <button id="modeBtn" class="mode-btn mode-act" type="button" aria-haspopup="listbox" aria-expanded="false">
+    <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
       <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="mode-btn-label" id="modeBtnLabel">act</span>
       <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
     </button>
-    <button id="go" class="btn-send mode-act" type="button" title="Send">
+    <button id="go" class="btn-send mode-edit" type="button" title="Send">
       <svg class="btn-send-icn" id="goIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="btn-send-label">Send</span>
     </button>
@@ -1288,7 +1282,8 @@ export function chatHtml(): string {
   const vsapi = acquireVsCodeApi();
   const log = document.getElementById('log');
   const q = document.getElementById('q');
-  let mode = 'act';
+  // D49ak: edit replaced act as the default — it is the middle mode.
+  let mode = 'edit';
   let busy = false;
   let streaming = false;
   let runT0 = 0;
@@ -1504,17 +1499,15 @@ export function chatHtml(): string {
   const MODE_ICONS = {
     plan: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/>',
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
-    act:  '<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>',
     auto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   };
   const MODE_DESCS = {
     plan: 'Read-only. Plato can look at files and answer questions, but never modifies anything on disk or runs shell.',
-    edit: 'File edits via diff approval cards. Plato can read and propose changes; shell access is denied.',
-    act:  'Shell + writes. Every action is gated by an approval card. Full power, every step.',
-    auto: 'No approval clicks. Plato runs end-to-end on its own — watch it, and stop it if it goes wrong.',
+    edit: 'Writes and commands, each behind an approval card. A file you approve once is not asked about again this session.',
+    auto: 'No approval clicks, web requests included. Plato runs end-to-end on its own — watch it, and stop it if it goes wrong.',
   };
   function setMode(m) {
-    m = (m === 'plan' || m === 'edit' || m === 'act' || m === 'auto') ? m : 'act';
+    m = (m === 'plan' || m === 'edit' || m === 'auto') ? m : 'edit';
     mode = m;
     const btn = document.getElementById('modeBtn');
     const lbl = document.getElementById('modeBtnLabel');
@@ -1523,20 +1516,20 @@ export function chatHtml(): string {
     const sendIcn = document.getElementById('goIcn');
     const footer = document.querySelector('footer');
     if (btn) {
-      btn.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      btn.classList.remove('mode-plan', 'mode-edit', 'mode-auto');
       btn.classList.add('mode-' + m);
     }
     if (lbl) { lbl.textContent = m; }
     if (icn) { icn.innerHTML = MODE_ICONS[m] || ''; }
     if (send) {
-      send.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      send.classList.remove('mode-plan', 'mode-edit', 'mode-auto');
       send.classList.add('mode-' + m);
     }
     if (sendIcn) { sendIcn.innerHTML = MODE_ICONS[m] || ''; }
     // D39c: textbox border tracks the active mode so the user gets
     // a second visual cue of what their next send will do.
     if (footer) {
-      footer.classList.remove('mode-plan', 'mode-edit', 'mode-act', 'mode-auto');
+      footer.classList.remove('mode-plan', 'mode-edit', 'mode-auto');
       footer.classList.add('mode-' + m);
     }
   }
@@ -1603,7 +1596,7 @@ export function chatHtml(): string {
   const modeBtn = document.getElementById('modeBtn');
   const renderModePop = () => {
     modePop.textContent = '';
-    for (const m of ['plan', 'edit', 'act', 'auto']) {
+    for (const m of ['plan', 'edit', 'auto']) {
       const row = el('div', 'mp-row mode-' + m);
       row.dataset.mode = m;
       row.setAttribute('role', 'option');

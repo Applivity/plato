@@ -436,7 +436,7 @@ function scriptedProvider(
 const BASE = {
   root: process.cwd(),
   task: 'test task',
-  getMode: () => 'act' as const,
+  getMode: () => 'edit' as const,
   approve: () => Promise.resolve(true),
   model: 'anthropic:claude-3-5-haiku-latest',
   bus: new AgentBus(),

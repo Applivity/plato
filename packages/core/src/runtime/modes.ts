@@ -1,11 +1,31 @@
 /**
  * M1 modes: one permission-policy table over the single runtime loop
- * (ARCHITECTURE.md: modes are permission filters, not separate loops;
- * D22c records the per-mode rules).
+ * (ARCHITECTURE.md: modes are permission filters, not separate loops).
+ * **D49ak supersedes D22c's four-mode table with three** — see the Mode type.
  */
 import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
 
-export type Mode = 'plan' | 'edit' | 'act' | 'auto';
+/**
+ * D49ak: three modes, not four. `act` is GONE and `edit` absorbed it.
+ *
+ * The founder's finding, and he was right: **`edit` and `act` were hard to tell
+ * apart because they differed in two places and neither was what the names
+ * imply.** `edit` asked for writes but **remembered the answer per file for the
+ * session** and **denied the shell**; `act` asked for writes **every single
+ * time** and let the shell through. So `edit` was quiet about edits and could not
+ * run anything, and `act` could run anything and nagged. Everything else was
+ * identical — both allowed every read, both asked for `web_fetch`.
+ *
+ * Two things settled it. **A mode that cannot run a command cannot verify its own
+ * work**, and the worker prompt REQUIRES verification ("mark a step completed only
+ * once you have verified it") — so `edit` could not satisfy the instructions it
+ * ran under. And the merged mode is strictly better than either it replaces:
+ * **`edit`'s per-file memory plus the shell.**
+ *
+ * The three, in the founder's terms: **plan** looks and does not touch;
+ * **edit** changes the project and asks first; **auto** asks nothing.
+ */
+export type Mode = 'plan' | 'edit' | 'auto';
 
 /** Tool names as exposed to the model. */
 export type ToolName =
@@ -51,8 +71,7 @@ export type Decision = 'allow' | 'ask' | 'deny';
  * any approve-once-per-session caching and the actual user prompts.
  *
  * MCP tools (`mcp_*`, D06) are unknown-capability external actions:
- * treated as shell-class — allowed in auto, gated per-action in act,
- * denied in plan/edit.
+ * treated as shell-class — allowed in auto, gated in edit, denied in plan.
  */
 export function decide(tool: string, mode: Mode): Decision {
   // D49ah: the META tools — the agent talking to the user, and the agent keeping
@@ -65,25 +84,28 @@ export function decide(tool: string, mode: Mode): Decision {
   if (kind === undefined) {
     return 'deny';
   }
-  // D49p: egress ASKS IN EVERY MODE, including `auto` — the only kind that does.
-  // Egress is irreversible: a request cannot be un-sent, and a crafted URL can
-  // exfiltrate, so `auto`'s blanket allow is wrong for it. This needs no new UI —
-  // the approval card already offers Allow once and Approve-all-for-this-session,
-  // which is exactly the per-call and per-session consent the founder asked for.
-  // It is also why `web_fetch` is `ask` in `plan`, where every other tool is
-  // either allowed or denied outright.
+  // D49ak, amending D49p: **`auto` now fetches without asking.** D49p made egress
+  // `ask` in every mode, on the ground that a request cannot be un-sent. The
+  // founder overrode that on 2026-09-24 — *"let's allow auto all perms including
+  // fetching urls mode thinks are necessary"* — and the argument he is buying out
+  // of is real, so it is recorded rather than argued again: **in `auto` no card
+  // stands between a fetched page and the model.** A page carrying instructions
+  // can therefore steer the model to a URL with the user's data in the query
+  // string, and nothing asks. Three rules still hold, and they hold in the
+  // EXECUTOR rather than by permission, so `auto` does not reach around them: a
+  // redirect onto a loopback or private address is still refused, a non-text
+  // response is still refused, and fetched content still arrives labelled
+  // untrusted. In `plan` and `edit` egress still asks.
   if (kind === 'net') {
-    return 'ask';
+    return mode === 'auto' ? 'allow' : 'ask';
   }
   if (mode === 'plan') {
     return kind === 'read' ? 'allow' : 'deny';
   }
   if (mode === 'edit') {
-    if (kind === 'read') return 'allow';
-    if (kind === 'write') return 'ask'; // shell caches session approval
-    return 'deny';
-  }
-  if (mode === 'act') {
+    // D49ak: read is free; a write and a command both ask. The write answer is
+    // remembered per file for the session (see `approve` in the shell), which is
+    // the half of the old `edit` that survived the merge.
     return kind === 'read' ? 'allow' : 'ask';
   }
   return 'allow'; // auto: everything allowed, and nothing counts the turns

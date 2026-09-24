@@ -237,7 +237,7 @@ describe('images reach the model but never the transcript (D49n)', () => {
     await runAgentLoop({
       root: process.cwd(),
       task: 'what is this?',
-      getMode: () => 'act' as const,
+      getMode: () => 'edit' as const,
       approve: () => Promise.resolve(true),
       model: 'anthropic:claude-3-5-haiku-latest',
       provider: p,
@@ -278,7 +278,7 @@ describe('images reach the model but never the transcript (D49n)', () => {
     await runAgentLoop({
       root: process.cwd(),
       task: 'what is this?',
-      getMode: () => 'act' as const,
+      getMode: () => 'edit' as const,
       approve: () => Promise.resolve(true),
       model: 'anthropic:claude-3-5-haiku-latest',
       provider: p,

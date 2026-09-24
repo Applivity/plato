@@ -29,9 +29,14 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49aj** (the question tabs) on top of **D49ah + D49ai** — Phases
-  0–6 of the agent capability plan are **complete** (roadmap in DECISIONS **D49**).
-  Push stays with the founder. Working tree clean.
+- HEAD = **M5.0 / D49ak + D49aj** (three modes; the question tabs) on top of
+  **D49ah + D49ai** — Phases 0–6 of the agent capability plan are **complete**
+  (roadmap in DECISIONS **D49**). Push stays with the founder. Working tree clean.
+- **There are THREE modes, not four (D49ak).** `act` was merged into `edit`, so
+  `edit` **runs the shell** and `plan` is the only mode that cannot. **`auto` fetches
+  without asking** — the founder's call, amending D49p. **Any doc or comment that still
+  lists four modes is stale**; the two architecture documents keep their bodies verbatim
+  by design (D48) and carry superseded-map rows instead.
 - **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
   Plato on an external Android repo (the trial ground — see "Trial runs" below).
   In order: `D49r` compaction could strand tool results; `D49s` an empty turn was
@@ -662,21 +667,16 @@ contract change.** The full analysis is in the PROGRESS backlog; the short form:
   (pinned by a render suite since D49y), and it **cannot** ask a multi-select
   question — single answer plus free text is the whole of it. Multi-select is
   recorded in the backlog, **not built**, because he asked what exists.
-- **Simplifying the action model: merge `edit` and `act`, leaving plan / act /
-  auto. NOT BUILT — awaiting his decision, and one part of the proposal cannot be
-  built as stated.** He says he cannot tell the two middle modes apart. **He is
-  right that the difference is not what the names imply** — `edit` and `act` differ
-  in exactly two things (shell denied vs asked; write approval remembered per file
-  per session vs asked on every write), and both allow all reads and both ask for
-  `web_fetch`. The merged mode he describes is better than either. **But "let
-  `plan` run scripts without changing project files" is not enforceable** — a shell
-  command is a program, and a text check that tried to tell a mutating command from
-  a reading one is the mechanism that failed on 2026-09-24 (D49ai). **What he wants
-  from `plan` is mostly the missing web SEARCH, not more shell:** `web_fetch`
-  already asks-and-works in `plan`. **Before building anything, read the PROGRESS
-  backlog entry** — it has the options, the second argument he did not make (`edit`
-  denies the shell, so it cannot satisfy the worker prompt's own verification
-  rule), and the two architecture documents that state the opposite of the merge.
+- ~~**Simplifying the action model**~~ — **DONE (D49ak, 2026-09-24).** `act` is gone;
+  `edit` absorbed it. **The mode table is now three rows: `plan` reads and does not
+  touch; `edit` reads freely, asks for a write and remembers the yes per file for the
+  session, and asks for every command; `auto` asks nothing** — including `web_fetch`,
+  which **no longer asks in `auto`** (this amends D49p; the cost is recorded in
+  D49ak). **`plan` keeps no shell, and that part of his proposal was NOT built as
+  stated** — "run scripts but change no project files" is not enforceable, because a
+  host classifies a *tool* and not a *command*. **Read D49ak before touching the mode
+  table** — two architecture documents state the opposite of what now ships, and their
+  bodies stay verbatim with a superseded-map row instead.
 
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and
