@@ -730,6 +730,19 @@ form:
   **A `shell` call is deliberately NOT remembered**: it asks every time, with the card's
   "approve all for this session" as the way to widen it.
 
+**Live verification is OUTSTANDING for everything below (2026-09-24).** Six changes — the
+question tabs, the three-mode merge, multi-select questions, the 3-option/4-question caps, the
+`apply_patch` session memory, and the read-only shell allowance in `plan` and `edit` — are verified
+by **unit tests and render suites only. No live run has exercised any of them.** A checklist of the
+nine checks, each with the prompt to paste, the mode to run it in, and what to look for, was
+produced for the founder at `tmp/plato-field-test.html` — **note that `tmp/` is gitignored, so if
+that file is gone the checks are lost with it and worth rebuilding from the D-entries.** The two
+that matter most: **the secret guard must refuse a shell command naming a protected file with NO
+card** (D49an/D49ao reordered what happens for that command), and **a read-only command must run
+with no card while `./gradlew` still asks** (the contrast is the feature). The run transcripts at
+`~/.plato/runs/…` record an `approval-requested` line per card and a phase per tool call, so "no
+card appeared" is checkable from the file rather than from a screenshot.
+
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and
 Phase 6 opened by repairing a fault the phase did not anticipate: no tool enforced

@@ -130,6 +130,16 @@ One combined workstream, per founder decision 2026-08-25:
 
 ## Deferred / backlog (do not lose these)
 
+- **A per-project command allow/reject list — DEFERRED by the founder (2026-09-24).** The
+  follow-up offered for the remaining prompt: `npm test`, `./gradlew`, `node` and every run script
+  still ask in `edit` (a build file executes arbitrary code, so it cannot be granted from the
+  command text). The proposed fix was a `PLATO.md` field listing exact commands the user permits.
+  **His reason for deferring, recorded because it is the whole objection:** *"per project allow,
+  reject list is too broad scope and can't be exhaustively covered"* — a list that covers most of a
+  project's commands invites the belief that it covers all of them, and the gaps are invisible.
+  **Do not reopen this by adding a list without answering that objection.** The honest alternatives
+  if it does bite: leave it (`auto` already runs everything unasked), or grant one command shape at
+  a time as a named, narrow decision like the read-only allowlist (D49an).
 - **CLOSED — BUILT (2026-09-24): the action model is three modes — `plan` / `edit` / `auto`
   (D49ak).** The founder raised it as *"I cannot properly differentiate between act and
   edit"*, and he was right: old `edit` was quiet about writes but **denied the shell**, and
