@@ -2906,6 +2906,12 @@ anything and nagged**. Both are unsatisfying, and neither name tells a user whic
 1. **The merged mode is strictly better than either it replaces** — the old `edit`'s per-file memory
    plus the shell. That is what ships: `edit` reads freely, asks for a write, **remembers a "yes"
    per file for the session**, and asks for every command.
+   **The founder confirmed this half explicitly (2026-09-24): *"what edit can offer user is to
+   remember the decision per session."*** It had been written here as the choice that shipped out of
+   the two old behaviours; it is now his decision, so the per-action alternative is closed rather
+   than pending. **A command is deliberately NOT covered by that memory** — a `shell` call asks every
+   time, and the approval card's own "approve all {tool} for this session" is the way to widen it,
+   because a command is unbounded in a way that a named file is not.
 2. **The old `edit` could not satisfy the prompt it ran under.** It denied the shell, and the worker
    prompt *requires* verification — *"mark a step completed only once you have verified it"*. A mode
    that cannot run a test cannot verify, so `edit` was asking the model to obey a rule it had no tool
