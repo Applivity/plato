@@ -325,15 +325,36 @@ are now only in PROGRESS.
 
 M4 is *not* done. Its definition of done is the acceptance test in BLUEPRINT §4,
 and **that test has not been run** — no run of it is recorded anywhere in the
-docs, and the blueprint's version of it (architect → coder → Socrates) predates
-the product lock, so it needs restating for one-worker-plus-philosophers first.
-Open, in priority order:
+docs, and **it has gone stale: three of its five clauses no longer describe this
+product.**
 
-1. **The acceptance test** — restate it for the current model, then run it on
-   `/Users/ai/Desktop/HcadPublicAndroid-demo`.
-2. **Secret audit** (D15) — everything that leaves the machine: repo history,
-   VSIX/npm artifacts, transcripts, docs, screenshots, demo repos.
-3. **Trademark sweep** (D16) and the **license decision** (D19).
+| BLUEPRINT §4 clause | Status |
+|---|---|
+| "default 3-profile preset (architect → coder → Socrates the observer)" | **STALE** — the product lock (D45a-3, D47e) made it one worker + N philosophers: Solo / Duo / Academy, Plato always the doer |
+| "a small bug fix or feature across 1–3 files" | **stands** |
+| "the observer intervenes at least once meaningfully" | **STALE as written** — it measures chattiness, so a philosopher who correctly stays quiet fails it. Assert the observer path is LIVE and its activity reported; do not require an intervention |
+| "stays within its budget cap" | **VOID** — D49h built a budget cap and removed it the same day as unrequested, and D49ab deleted the turn cap. The clause contradicts a recorded decision |
+| "`./gradlew` verification passes" | **NOT RUNNABLE HERE — dropped by the founder's decision (2026-09-24)**, see below |
+| secrets never reach a model | **stands**, and D49ai (2026-09-24) closed a hole in it |
+
+**The founder's decision (2026-09-24): drop the build clause for now**, and record the
+toolchain as the prerequisite it is. **Verified that day: this machine has no JDK, NO Android
+Studio, and NO Android SDK** — so `./gradlew` is not a missing binary but a build with nothing
+to build against. That is the same gap that left the `DateHelper` reason unverifiable. **The
+prerequisite to restore the clause: a JDK plus the Android SDK command-line tools and
+platform.** Until then the test verifies a change by reading, and says so.
+
+**Still to do, in priority order:**
+
+1. **Restate the acceptance test** for the current model and write it into DECISIONS as its own
+   entry, replacing BLUEPRINT §4's version. **Held deliberately until the founder's open items
+   are heard (2026-09-24)** — it is the product's definition of done, so a change he is about to
+   describe belongs in the text rather than in a rewrite after it.
+2. **Secret audit** (D15) — everything that leaves the machine: **Plato's own** repo history,
+   VSIX/npm artifacts, transcripts, docs, screenshots. Scoped to Plato, not the proving ground.
+3. **Trademark sweep** (D16) and the **license decision** (D19) — the founder's; D19 is the one
+   thing gating any publish. Note "Plato" is a common noun and an ancient name, so it is a weak
+   mark.
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
 has shipped; the code is well past the `0.9.8` that PROGRESS's milestone table
