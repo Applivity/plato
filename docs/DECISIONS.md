@@ -2993,9 +2993,21 @@ rejected:** it would have meant two restore-on-Back paths, two "is it answered" 
 Submit gates, and the single-select behaviour those paths already had (the D49y box-growth and the
 Back restore) is pinned by existing assertions that the rewrite had to keep passing.
 
-**Not built, and it is a choice:** multi-select questions still cap at **6 options** (the schema's
-existing `maxItems`), and there is no "select all" or minimum-picks rule. The question is the
-model's; the card does not add policy the model did not ask for.
+**A wording note, because the first version of this entry misled the founder when he read it.**
+The **6** is not a multi-select cap: the tool schema lets the model declare **2-6 labels per
+question**, unchanged for both kinds. **The card adds the free-text *Others* row on top of the
+declared labels** — three declared labels show as three boxes plus a text row — and **the number of
+boxes the user may tick is unlimited.**
+
+**Two things were considered and deliberately left out**, and neither is an option limit: a
+one-click "tick everything", and a minimum-picks rule (the model cannot require "pick at least
+two"). The question is the model's; the card adds no policy the model did not ask for.
+
+**An observation for the founder, not a recommendation:** 6 is generous for a *single-choice* list,
+where the user has to weigh the options against each other, and it may be tight for a *multi* list,
+where offering many candidates is natural ("which of these files should I read?"). The ceiling could
+be raised for multi questions alone. Not done, because nothing has shown the limit biting, and the
+free-text row is the escape hatch.
 
 **Falsified, three reverts at once:** drawing a circle for every question, making a multi click
 replace instead of toggle, and forcing every question to be multi **fails 5 assertions** and the

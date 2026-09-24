@@ -100,9 +100,11 @@ are now only in PROGRESS.
   single one**, because a string of labels is otherwise indistinguishable from one
   answer containing semicolons. **The shape is the affordance** — box for multi, circle
   for single — and the fill carries the same state, so neither reading rests on colour.
-  **Free text joins the picks rather than replacing them.** Still capped at 6 options,
-  with no select-all and no minimum-picks rule: the question is the model's, and the
-  card adds no policy the model did not ask for.
+  **Free text joins the picks rather than replacing them.** **The option limit is unchanged and is not a
+  multi-select rule:** the schema lets the model declare **2-6 labels per question**, single
+  and multi alike, and the card adds the free-text *Others* row on top of them. **How many
+  boxes may be ticked is unlimited.** Left out: only a one-click "tick everything" and a
+  minimum-picks rule.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
