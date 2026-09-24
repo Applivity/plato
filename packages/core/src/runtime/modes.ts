@@ -4,6 +4,7 @@
  * **D49ak supersedes D22c's four-mode table with three** — see the Mode type.
  */
 import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
+import { isReadOnlyShellCommand } from '../security/readOnlyShell.js';
 
 /**
  * D49ak: three modes, not four. `act` is GONE and `edit` absorbed it.
@@ -137,6 +138,38 @@ export function decide(tool: string, mode: Mode): Decision {
  * bounded — the short version is that the failure mode is REPETITION, so a bound
  * should detect it rather than count volume or pick a number out of the air.
  */
+
+/**
+ * D49an: `decide`, plus the one refinement that needs the ARGUMENTS.
+ *
+ * A read-only shell command runs in `edit` without a card (the founder's ask —
+ * see `isReadOnlyShellCommand` for what counts and why it cannot be faked). The
+ * mode table itself stays a pure function of (tool, mode); this is the single
+ * place where a command's text is allowed to change the verdict, and it is
+ * deliberately the narrowest possible widening:
+ *
+ * - **`ask` becomes `allow`, nothing else.** A `deny` is never upgraded, so
+ *   `plan` keeps no shell at all even though it is the read-only mode — that is
+ *   a decision, not an oversight: "plan runs nothing" is what makes plan the
+ *   safe place to be, and one exception would turn a rule into a judgement call.
+ * - **`edit` only, named explicitly.** `auto` already allows everything, so the
+ *   check would be dead code there; saying so prevents a later reader thinking
+ *   the allowance is global.
+ * - The secret and containment refusals run BEFORE this in the loop, so a
+ *   command that names a protected file is already refused and never reaches
+ *   here.
+ */
+export function decideWithArgs(
+  tool: string,
+  mode: Mode,
+  args: Record<string, unknown>,
+): Decision {
+  const base = decide(tool, mode);
+  if (base !== 'ask' || mode !== 'edit' || tool !== 'shell') return base;
+  const command = args['command'];
+  if (typeof command === 'string' && isReadOnlyShellCommand(command)) return 'allow';
+  return base;
+}
 
 /**
  * D49ak: is this tool one that CHANGES files? **Derived from TOOL_KIND rather

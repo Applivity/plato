@@ -655,6 +655,97 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     expect(refusals.join(' ')).toContain('outside the workspace');
   });
 
+  it('runs a read-only shell command in edit with no card at all (D49an)', async () => {
+    let approvals = 0;
+    const declined: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [{ type: 'tool_use', id: 's1', name: 'shell', input: { command: 'ls' } }],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') declined.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE, // BASE is `edit`
+      provider: p,
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(false); // a denial, so a card WOULD be visible
+      },
+    });
+    expect(r.reason).toBe('complete');
+    // This is the whole feature: no card, and the command was not declined.
+    expect(approvals).toBe(0);
+    expect(declined.join(' ')).not.toContain('user declined');
+  });
+
+  /**
+   * D49an. The read-only-shell allowance makes `cat keystore.properties` an
+   * `allow`, because reading is all it does. **What stops it is the ORDER:** the
+   * secret refusal runs before the mode decision, so the command is refused
+   * outright and — unlike before the allowance existed — no approval card is even
+   * shown for it. This asserts the order end-to-end, which is the only place it
+   * can be observed; the unit test in `readOnlyShell.test.ts` pins the pairing
+   * from the other side.
+   */
+  it('refuses a read-only shell command that names a protected file, without asking (D49an)', async () => {
+    let approvals = 0;
+    const refusals: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 's1',
+                name: 'shell',
+                // Read-only by every rule in the allowlist, and it names a
+                // protected file — so the allowlist alone would let it run.
+                input: { command: 'cat keystore.properties' },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') refusals.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'understood' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(r.reason).toBe('complete');
+    expect(approvals).toBe(0);
+    expect(refusals.join(' ')).toContain('protected file');
+  });
+
   it('still asks before an ordinary in-workspace write', async () => {
     let approvals = 0;
     const p: ChatProvider = {
@@ -884,7 +975,12 @@ describe('web_fetch approvals carry a host (D49p)', () => {
                   type: 'tool_use',
                   id: 's1',
                   name: 'shell',
-                  input: { command: 'echo hi' },
+                  // A command that still asks. `echo hi` used to sit here, and
+                  // D49an made it auto-approved in `edit` — which is correct and
+                  // would have left this test asserting a card that no longer
+                  // appears. The subject here is the HOST field, so any asking
+                  // tool serves.
+                  input: { command: 'npm run build' },
                 },
               ],
               usage: { inputTokens: 5, outputTokens: 5 },

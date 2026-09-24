@@ -2963,6 +2963,72 @@ suite exits 1 (three for the row, one for the stale description).
 
 ---
 
+**D49an — a read-only shell command runs in `edit` without a card, and the allowance is an
+allowlist (M5.0, 0.25.0 — 2026-09-24).**
+
+**The founder's instruction:** *"for read only shell commands the edit should not ask permission."*
+The problem it solves is real and is about attention rather than speed: a run that stops to approve
+`git status` and `ls` is a run whose approvals the user starts clicking through, and an approval
+nobody reads protects nothing.
+
+**The design decision is that this is an ALLOWLIST, not a "does this command write?" check.** A
+shell command is a program, so predicting what its text will do is a guess — and the guess fails in
+both directions. The question this answers instead is narrower and answerable: *is this one of a
+small set of programs, given only plain words, that cannot write?* **Everything not recognised asks
+as before, so a mistake costs a click instead of a write.** `sort` (has `-o`), `sed` (has `-i`),
+`awk` (can write from inside its own program), `tee`, and every network tool are absent on purpose;
+`find`, `tree` and `file` are present with their write flags named and refused.
+
+**Three ways out of the list, all refused, and the second is the one that matters:**
+
+1. **Shell syntax.** `; & | < > $ ` ( ) { } !` and a newline all disqualify a command, so what
+   passes is a plain sequence of words with no shell meaning left in it.
+2. **Globbing — `*`, `?`, and `[`.** **This one is load-bearing for the secret rule.** The deny-list
+   (D49ai) matches the file NAMES written in a command, so `cat *.properties` names no secret and
+   would open `keystore.properties` if it is there. With globbing refused, a command can only open
+   files it spells out — and spelling one out is what the deny-list catches. `[` is the same hole
+   through a character class, which is why it is refused with the other two.
+3. **Leaving the workspace.** An argument starting `/` or `~`, or containing `..`, is refused, so an
+   auto-approved read stays inside the project — the containment the file tools already enforce
+   (D49k).
+
+**The composition, which is where a widening actually goes wrong.** Only `ask` becomes `allow`; a
+`deny` is never upgraded. So **`plan` keeps no shell at all, even for `git status`** — deliberately
+not an oversight. "Plan runs nothing" is what makes plan the safe place to be, and one exception
+would turn a rule into a judgement call. And the secret and containment refusals run **before** the
+mode decision in the loop, so a command naming a protected file is refused outright and never
+reaches the allowance — with one consequence worth stating: for that command there is now **no card
+at all**, where before the user at least saw it and clicked Deny. The refusal is asserted
+end-to-end at the loop level, because the ORDER is the thing that makes it safe and the order is
+not visible from either half alone.
+
+**What is deliberately still gated, and the founder should know it:** build and test commands.
+`npm test`, `./gradlew`, `node`, `python3` and every `run` script ask as before, because a build
+file executes arbitrary code and that cannot be inferred from the command text. **So a run still
+stops before it runs your tests.** The follow-up that would fix it is a per-project allowlist of
+exact commands (a `PLATO.md` field), which is enforceable because it is a list the user wrote rather
+than a pattern the model satisfies. **Not built:** nothing has shown the remaining prompts are the
+annoyance, and `auto` already exists for a run that wants no prompts at all.
+
+**Residual risks, recorded rather than implied.** A **symlink** defeats the lexical check —
+`notes.txt` pointing at `keystore.properties` passes every rule here. The secret check has the same
+limitation (D49ai), but it used to be backed by a card the user read and for these commands it no
+longer is. **`git status` is not strictly read-only**: it may refresh `.git/index`'s stat cache.
+Accepted, because it changes no tracked content and refusing it would remove the single most common
+thing an agent runs. And the per-program flag lists are **audit results, not proofs** — a
+writing flag added to one of these programs in future would widen this until someone notices.
+
+**Found by the suite, not by review:** D49p's "gives no host to a tool that contacts nobody" used
+`shell` with `echo hi` as its fixture, and `echo hi` is now auto-approved — so the test would have
+asserted a card that no longer appears. The fixture became a command that still asks, and its
+subject (the host field) is unchanged. **A second test was added at the loop level for the new
+behaviour itself:** a read-only command in `edit` runs with **zero** approval calls.
+
+**Falsified, three reverts at once:** dropping the globbing refusal, dropping the workspace-escape
+refusal, and letting the allowance reach `plan` each fail exactly one test, and the suite exits 1.
+
+---
+
 **D49am — the question card is kept small, and `apply_patch` joins the session memory
 (M5.0, 0.25.0 — 2026-09-24).**
 
@@ -3062,6 +3128,16 @@ the user may tick is unlimited.** **The 6 is now 3, on the founder's instruction
 **Two things were considered and deliberately left out**, and neither is an option limit: a
 one-click "tick everything", and a minimum-picks rule (the model cannot require "pick at least
 two"). The question is the model's; the card adds no policy the model did not ask for.
+
+**Follow-through, same day (2026-09-24): the description now says what a good option IS.** The
+founder's point: *"a model should really work hard to give us plausible options within limits."*
+A tighter ceiling only helps if the model spends the smaller space better, so the tool description
+now asks for **three real alternatives rather than three variations of one**, requires every option
+to be one the model **would genuinely act on**, and tells it to **ask only when the answer changes
+what it does next**. It also gives the model the way out that makes the ceiling safe: **the
+free-text row already covers what it cannot anticipate, so it must not pad the options with weak
+ones** — and **a question with only one plausible answer should not be asked at all**. Each of those
+is pinned by an assertion, because description text is the only place this behaviour lives.
 
 **An observation for the founder, not a recommendation:** 6 is generous for a *single-choice* list,
 where the user has to weigh the options against each other, and it may be tight for a *multi* list,

@@ -226,7 +226,17 @@ export function toolDeclarations(): CanonicalTool[] {
     {
       name: 'ask_user',
       description:
-        'Ask the user one or more questions with multiple-choice options. Use this when you need clarification, when there are multiple valid approaches, or when a decision requires user input. Keep it small: at most 4 questions at once, and 2-3 options on each, because a long list of questions or choices is a worse interruption than a short one. Always provide a recommended option. Set multiple: true on a question where more than one option may be right — the user then gets checkboxes and can pick several, and their answer comes back as those picks separated by "; ".',
+        'Ask the user one or more questions with multiple-choice options. Use this when you need '
+        + 'clarification, when there are multiple valid approaches, or when a decision requires '
+        + 'user input. Ask only when the answer changes what you do next, and make every option '
+        + 'one you would genuinely act on — three real alternatives, not three variations of one. '
+        + 'If only one answer is plausible, do not ask: say what you are doing and proceed. Keep '
+        + 'it small: at most 4 questions at once, and 2-3 options on each, because a long list of '
+        + 'questions or choices is a worse interruption than a short one. Always provide a '
+        + 'recommended option. Set multiple: true on a question where more than one option may be '
+        + 'right — the user then gets checkboxes and can pick several, and their answer comes back '
+        + 'as those picks separated by "; ". The card always adds a free-text row as well, so use '
+        + 'it for what you cannot anticipate instead of padding the options with weak ones.',
       parameters: {
         type: 'object',
         properties: {

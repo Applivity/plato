@@ -16,7 +16,7 @@ import type {
   ReasoningConfig,
   ToolResultBlock,
 } from '../providers/types.js';
-import { decide } from './modes.js';
+import { decideWithArgs } from './modes.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
@@ -780,10 +780,10 @@ async function runLoop(
         continue;
       }
 
-      const decision = decide(
-        name as Parameters<typeof decide>[0],
-        opts.getMode(),
-      );
+      // D49an: `decideWithArgs` is `decide` plus the read-only-shell allowance,
+      // which is the only verdict that needs the arguments. A command that names
+      // a protected file was already refused above, so it cannot reach this.
+      const decision = decideWithArgs(name, opts.getMode(), args);
       let allowed = decision === 'allow';
 
       if (decision === 'deny') {

@@ -29,10 +29,24 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49am + D49al + D49ak + D49aj** (small question cards; multi-select;
-  three modes; the question tabs) on top of **D49ah + D49ai** — Phases 0–6 of the agent
-  capability plan are **complete** (roadmap in DECISIONS **D49**). Push stays with the
-  founder. Working tree clean.
+- HEAD = **M5.0 / D49an + D49am + D49al + D49ak + D49aj** (read-only shell in `edit`;
+  small question cards; multi-select; three modes; the question tabs) on top of
+  **D49ah + D49ai** — Phases 0–6 of the agent capability plan are **complete** (roadmap
+  in DECISIONS **D49**). Push stays with the founder. Working tree clean.
+- **In `edit`, a read-only shell command runs with no approval card (D49an).** An
+  **allowlist**, not a "does this write?" guess: `ls`, `cat`, `grep`, `rg`, `find`, `diff`,
+  `wc`, `tree`, `file` and the read-only `git` subcommands (`status`, `diff`, `log`, `show`,
+  `blame`, …) run unasked when given **plain words**. Refused, and each for a reason that
+  matters: **shell syntax** (`; & | < > $` backtick, parens, newline — one command cannot
+  become several), **globbing** (`* ? [` — `cat *.properties` would name no secret and read
+  one, which is the deny-list's one bypass), and **anything leaving the workspace** (`/`,
+  `~`, `..`). **Only `ask` becomes `allow`**, so **`plan` still runs nothing at all**, and the
+  secret refusal fires first — a command naming a protected file is refused outright with no
+  card. **Still gated on purpose: `npm test`, `./gradlew`, `node` and every run script** — a
+  build file runs arbitrary code, so **a run still stops before it runs your tests**; the
+  fix would be a per-project allowlist the user writes. **Residual risks are in D49an** (a
+  symlink defeats the lexical check; `git status` may touch `.git/index`) — read them before
+  widening the list.
 - **There are THREE modes, not four (D49ak).** `act` was merged into `edit`, so
   `edit` **runs the shell** and `plan` is the only mode that cannot. **`auto` fetches
   without asking** — the founder's call, amending D49p. **Any doc or comment that still
@@ -65,7 +79,9 @@ are now only in PROGRESS.
   `echo do not commit keystore.properties` is refused, while `grep -rn "secretsmanager"
   app/src` and `./gradlew assembleRelease` are not, so the guard does not fight the model
   over words instead of files. **Best effort and recorded as such** — a command built to
-  evade a text check still can, and in `act`/`edit` the approval card is the real gate.
+  evade a text check still can. **Where the real gate is has changed since:** in `edit` the
+  approval card covers everything that is not a read-only command (**D49an**), and `auto` has
+  no card at all — which is why the globbing refusal in that same entry matters.
   **`todo_write` is exempt** from that scan, because its arguments are the model's own
   words about work it intends, not an instruction to open a file — do not "fix" that
   exemption without reading D49ai, and note a test asserts the pairing (the same words in

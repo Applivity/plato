@@ -274,4 +274,26 @@ describe('the ask_user declaration keeps the question card small (D49ak)', () =>
     expect(ask().description).toContain('at most 4 questions');
     expect(ask().description).toContain('2-3 options');
   });
+
+  /**
+   * The founder's point, in his words: *"a model should really work hard to give
+   * us plausible options within limits."* A tighter ceiling only helps if the
+   * model spends the smaller space better, so the description says what a good
+   * option IS and gives the model a way out of asking badly — the free-text row
+   * already covers what it cannot anticipate, and a question with one real answer
+   * should not be asked at all.
+   */
+  it('asks for options the model would act on, not padding (D49am)', () => {
+    expect(ask().description).toContain('one you would genuinely act on');
+    expect(ask().description).toContain('not three variations of one');
+  });
+
+  it('tells the model not to ask when only one answer is plausible (D49am)', () => {
+    expect(ask().description).toContain('If only one answer is plausible, do not ask');
+  });
+
+  it('points at the free-text row instead of weak options (D49am)', () => {
+    expect(ask().description).toContain('free-text row');
+    expect(ask().description).toContain('instead of padding the options');
+  });
 });
