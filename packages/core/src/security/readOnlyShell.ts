@@ -31,14 +31,38 @@
  *    chains, substitutes, redirects or expands disqualifies the command —
  *    `; & | < > $ ` ( ) { } !` and a newline. A command that passes is a plain
  *    sequence of words with no shell meaning left in it.
- * 2. **Globbing to a file the command does not name.** `*`, `?` and `[` are
- *    refused, and **this one is load-bearing for the secret deny-list**: the
- *    deny-list (D49ai) matches the file NAMES in the command text, so
- *    `cat *.properties` would name no secret and read one. Without globbing,
- *    a command can only open files it spells out.
+ * 2. **Globbing to a file the command does not name.** An UNQUOTED `*`, `?` or
+ *    `[` is refused, and **this one is load-bearing for the secret deny-list**:
+ *    the deny-list (D49ai) matches the file NAMES in the command text, so
+ *    `cat *.properties` would name no secret and read one. Without globbing, a
+ *    command can only open files it spells out.
  * 3. **Leaving the workspace.** An argument starting `/` or `~`, or containing
  *    `..`, is refused, so an auto-approved read stays inside the project — the
  *    same containment the file tools enforce (D49k).
+ *
+ * # Quoting: the command is read the way bash will read it (D49aq)
+ *
+ * The command does NOT run argv-style — the executor hands the whole string to
+ * `/bin/bash -c` (`execute.ts`), so quoting decides what bash does with it, and
+ * this file has to model that faithfully or its verdict describes a different
+ * command. Two rules follow, and both are consequences of bash's own:
+ *
+ * - **Quoted globs are literal, so they are allowed.** bash expands `*` only
+ *   when it is unquoted; inside quotes the character reaches the program
+ *   untouched. That is exactly what `find -name '*.java'` needs, and refusing
+ *   it (as this file did until now) refused a genuinely read-only search.
+ * - **A double-quoted `$` or backtick is STILL refused**, because those expand
+ *   in double quotes. Only single quotes suppress everything.
+ *
+ * The argument checks then run on the **unquoted** tokens, which is a repair as
+ * well as a convenience: `escapesWorkspace` used to see the literal text
+ * `".."`, whose segments are `".."` rather than `..`, so `ls ".."` was
+ * auto-approved and listed the parent directory.
+ *
+ * The parser is deliberately small, and it fails closed: an unterminated quote,
+ * a backslash, or a character this file does not recognise ends the question
+ * with `false`. A command that reaches bash by a route not modelled here is a
+ * command that asks for approval.
  *
  * # What this does NOT guarantee, stated rather than implied
  *
@@ -55,20 +79,28 @@
  */
 
 /**
- * Characters with shell meaning. Any one of them disqualifies the command.
+ * Characters with shell meaning when they are NOT quoted. Any one of them
+ * disqualifies the command.
  *
  * This is a refusal list for *shell syntax*, never for "commands that look
  * dangerous" — a distinction worth keeping, because a text check that tried to
  * recognise writing would be the guess this file exists to avoid.
  */
-const SHELL_SYNTAX = new Set([
+const UNQUOTED_SYNTAX = new Set([
   ';', '&', '|', '<', '>', '$', '`',
   '(', ')', '{', '}', '!',
-  // A newline separates commands exactly as `;` does.
-  '\n', '\r',
   // Globbing: see the header. `[` is a character class, which is why it is here.
   '*', '?', '[', ']',
 ]);
+
+/**
+ * Characters that still mean something inside DOUBLE quotes.
+ *
+ * bash expands parameters and command substitution in double quotes, so these
+ * are not made safe by quoting. Single quotes suppress everything, so nothing
+ * appears here for them.
+ */
+const DOUBLE_QUOTED_SYNTAX = new Set(['$', '`']);
 
 /**
  * Programs that cannot write, given plain arguments.
@@ -117,6 +149,63 @@ function escapesWorkspace(arg: string): boolean {
 }
 
 /**
+ * Splits a command the way bash will split it, returning the UNQUOTED tokens.
+ *
+ * `null` means this file will not answer for the command: it contains syntax
+ * that survives quoting (`$`, a backtick), a line break, a backslash, or an
+ * unbalanced quote. Every one of those is a case where a text reader could
+ * describe a different command from the one bash runs, so the answer is a
+ * refusal rather than a guess.
+ */
+function tokenize(command: string): string[] | null {
+  const argv: string[] = [];
+  let cur = '';
+  /** True once the current token has content, so an empty `''` is still a token. */
+  let open = false;
+  let quote: '"' | "'" | null = null;
+
+  for (const ch of command) {
+    // Refused in every context, quoted or not. No read-only command needs
+    // either, and both are ways to write something that reads differently from
+    // how it looks — a newline chains commands, a backslash continues one.
+    if (ch === '\n' || ch === '\r' || ch === '\\') return null;
+
+    if (quote === "'") {
+      // Single quotes suppress every expansion, so anything but the closing
+      // quote is literal — including `$`, a backtick and a glob.
+      if (ch === "'") quote = null;
+      else cur += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      else if (DOUBLE_QUOTED_SYNTAX.has(ch)) return null;
+      else cur += ch;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      open = true;
+      continue;
+    }
+    if (UNQUOTED_SYNTAX.has(ch)) return null;
+    if (ch === ' ' || ch === '\t') {
+      if (open) {
+        argv.push(cur);
+        cur = '';
+        open = false;
+      }
+      continue;
+    }
+    cur += ch;
+    open = true;
+  }
+  if (quote !== null) return null; // unterminated
+  if (open) argv.push(cur);
+  return argv;
+}
+
+/**
  * Can this command only read named files inside the workspace?
  *
  * Pure: it decides from the text alone and never touches the filesystem, so it
@@ -126,18 +215,16 @@ function escapesWorkspace(arg: string): boolean {
 export function isReadOnlyShellCommand(command: string): boolean {
   if (typeof command !== 'string' || command.trim().length === 0) return false;
 
-  for (const ch of command) {
-    if (SHELL_SYNTAX.has(ch)) return false;
-  }
-  // A backslash can continue a line or escape a character; treat it as syntax.
-  if (command.includes('\\')) return false;
+  const argv = tokenize(command);
+  if (argv === null) return false;
 
-  const argv = command.trim().split(/\s+/);
   const program = argv[0] ?? '';
   // A path-qualified program (`./x`, `/usr/bin/ls`) is not on the list.
   if (program.includes('/')) return false;
 
   const rest = argv.slice(1);
+  // The checks below run on the UNQUOTED tokens — the strings the program will
+  // actually receive — not on the raw text, where quoting hid them.
   for (const arg of rest) {
     if (escapesWorkspace(arg)) return false;
   }

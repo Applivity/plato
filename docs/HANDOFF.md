@@ -637,8 +637,58 @@ before any of it is trusted:**
 6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
-8. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
+8. `node scripts/field/run-field.mjs` — **the nine live field tests, driven
+   automatically in a real VS Code through the real webview.** A scripted model
+   answers, so there is no key, no network and no cost; `FIELD_CASES=1,5` runs a
+   subset. Reach for this when a change touches the mode gates, a refusal, the
+   approval or question cards, the session memory, or the transcript — it is the
+   only check in this list that exercises those in a running editor, and the only
+   one where the *screen* and the transcript are cross-examined against each
+   other. `scripts/field/README.md` says how to run it, `scripts/field/FINDINGS.md`
+   holds what it has found and the traps that will cost you an hour. A new
+   assertion here must be proved falsifiable, as in the suite below (D49ap).
+   **Once per clone** (not after every `pnpm install`): the harness owns its
+   dependencies and is not a workspace member, so install them with
+   `cd scripts/field && pnpm install --ignore-workspace` — the launcher checks
+   for them first and says so if they are missing. Never move them back into the
+   root `package.json`: a product install must not pull browser automation.
+9. Update PROGRESS.md (newest-first row) and DECISIONS.md when the
    change warrants a decision; commit.
+
+## The 2026-09-25 repairs (D49aq) — and the two gaps they leave open
+
+Four defects the field-test harness found are fixed; a fifth turned out not to be
+one. **Read D49aq before touching the mode gates, the refusal path, the approval
+cards or the question card** — the record now carries events it did not have
+before, and something reading those transcripts is affected.
+
+1. **A refusal is audible.** The pre-flight guard emits `tool-event` with phase
+   `refused` and a reason of `secret` or `containment`. It used to emit nothing.
+2. **A command is read the way bash reads it.** A quoted glob is allowed (bash
+   passes it through literally), an unquoted one is still refused. This also
+   closed a hole: `ls ".."` was auto-approved, because the workspace check ran on
+   the raw text and `".."` has no `..` path segment.
+3. **`approval-card` says whether a card was drawn.** `approval-requested` never
+   meant that, and in `edit` the session memory answers without drawing one.
+4. **Cancel now works while a question is open.** It did not: the handler
+   unblocked a waiting approval and never a waiting question, so the user could
+   not stop the run until they answered.
+
+**Two gaps, both recorded and neither fixed:**
+
+- **A refusal still prints nothing in the live chat log.** The run's *transcript
+  view* shows it with its reason; the conversation does not, because
+  `onToolEvent` drops events carrying no args and the live log only persists
+  `done`. A user watching a run cannot see that the guard stopped something.
+- **The cancel fix has no automated check.** The driver can click Allow, Deny and
+  question options but never Stop, so this is the one fix resting on code reading
+  alone. **Adding a cancel case is the next thing the harness should gain**, and
+  the cheapest place is a tenth case that cancels with a question on screen.
+
+**Also recorded, not a defect:** a run can end with unfinished work and report
+only "completed" — test 7's fourteen-minute run completed **zero** of its own
+plan's steps and nothing in the product said so. That is an observability gap in
+the same family as the four above, and it is the natural next repair.
 
 ## Queued next work (in priority order — pick up here)
 

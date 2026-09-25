@@ -641,9 +641,17 @@ describe('runAgentLoop workspace containment (D49k)', () => {
         };
       },
     };
+    const bus = new AgentBus();
+    const refused: { tool: string; reason?: string }[] = [];
+    bus.on((e) => {
+      if (e.type === 'tool-event' && e.phase === 'refused') {
+        refused.push({ tool: e.tool, ...(e.reason !== undefined ? { reason: e.reason } : {}) });
+      }
+    });
     const r = await runAgentLoop({
       ...BASE,
       provider: p,
+      bus,
       approve: () => {
         approvals += 1;
         return Promise.resolve(true);
@@ -653,6 +661,10 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     // The card never appeared, and the model was told why.
     expect(approvals).toBe(0);
     expect(refusals.join(' ')).toContain('outside the workspace');
+    // D49aq: and the refusal is now AUDIBLE. It used to emit nothing at all, so
+    // the transcript could not tell "the guard refused this" from "the model
+    // never called a tool" — the two produced the same empty file.
+    expect(refused).toEqual([{ tool: 'write_file', reason: 'containment' }]);
   });
 
   it('runs a read-only shell command in edit with no card at all (D49an)', async () => {
@@ -733,9 +745,17 @@ describe('runAgentLoop workspace containment (D49k)', () => {
         };
       },
     };
+    const bus = new AgentBus();
+    const refused: { tool: string; reason?: string }[] = [];
+    bus.on((e) => {
+      if (e.type === 'tool-event' && e.phase === 'refused') {
+        refused.push({ tool: e.tool, ...(e.reason !== undefined ? { reason: e.reason } : {}) });
+      }
+    });
     const r = await runAgentLoop({
       ...BASE,
       provider: p,
+      bus,
       approve: () => {
         approvals += 1;
         return Promise.resolve(true);
@@ -744,6 +764,9 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     expect(r.reason).toBe('complete');
     expect(approvals).toBe(0);
     expect(refusals.join(' ')).toContain('protected file');
+    // D49aq: the reason code distinguishes the two guards, and carries no
+    // argument — the command text never reaches the file (D24c).
+    expect(refused).toEqual([{ tool: 'shell', reason: 'secret' }]);
   });
 
   it('still asks before an ordinary in-workspace write', async () => {

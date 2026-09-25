@@ -190,6 +190,115 @@ describe('a command that could do more than read is refused (D49an)', () => {
 });
 
 /**
+ * D49aq. **The command does not run argv-style** — the executor hands the whole
+ * string to `/bin/bash -c` — so quoting decides what bash does with a glob, and
+ * a check that reads the raw text describes a different command from the one
+ * that runs.
+ *
+ * The reason this earns its own block: `find src -name "*.java"` is a genuinely
+ * read-only search that this file used to REFUSE, because every `*` was refused
+ * unconditionally. bash expands a glob only when it is unquoted, so the refusal
+ * belongs to the unquoted case and to nothing else. The unquoted half is still
+ * the load-bearing one and is asserted in the block above.
+ */
+describe('quoting is read the way bash reads it (D49aq)', () => {
+  it('accepts a quoted glob, which bash passes through literally', () => {
+    for (const cmd of [
+      'find src -name "*.java"',
+      "find src -name '*.java'",
+      'find . -name "*.ts" -o -name "*.tsx"',
+      "find src -name '[A-Z]*.java'",
+    ]) {
+      expect(isReadOnlyShellCommand(cmd), cmd).toBe(true);
+    }
+  });
+
+  /**
+   * The case that LOOKS like the load-bearing refusal being defeated. It is not:
+   * cat receives the literal name `*.properties`, no shell expands it, and the
+   * command opens nothing — least of all the secret the unquoted spelling would
+   * have read. Only the unquoted glob is the hole, and it is still refused.
+   */
+  it('allows a quoted glob to a reader that cannot expand it, and still refuses the unquoted one', () => {
+    expect(isReadOnlyShellCommand('cat "*.properties"')).toBe(true);
+    expect(isReadOnlyShellCommand('cat *.properties')).toBe(false);
+    // The half-quoted spelling is unquoted where it matters, so it is refused.
+    expect(isReadOnlyShellCommand('cat *".properties"')).toBe(false);
+  });
+
+  /**
+   * The containment repair. `escapesWorkspace` used to read the raw text, so the
+   * token `".."` split into the segments `"..` and `.."` — neither of them `..` —
+   * and `ls ".."` was auto-approved and listed the parent directory. The check
+   * runs on the unquoted tokens now, which is what the program receives.
+   */
+  it('refuses a quoted path out of the workspace', () => {
+    for (const cmd of [
+      'ls ".."',
+      "ls '..'",
+      'cat "../../etc/passwd"',
+      "cat 'src/../../outside.ts'",
+      'ls "/etc"',
+      'cat "~/notes"',
+    ]) {
+      expect(isReadOnlyShellCommand(cmd), cmd).toBe(false);
+    }
+  });
+
+  it('accepts a quoted ordinary path, which is the reason quoting exists', () => {
+    for (const cmd of [
+      'ls "src/main"',
+      "cat 'src/a b.ts'",
+      'grep -rn "two words" src',
+      'find . -name "a b.ts"',
+      "ls ''",
+    ]) {
+      expect(isReadOnlyShellCommand(cmd), cmd).toBe(true);
+    }
+  });
+
+  /**
+   * Quoting suppresses globbing in double quotes, but NOT expansion: bash still
+   * expands `$` and a backtick there. Single quotes suppress everything, so the
+   * same characters are inert — and the command is then a reader of a file whose
+   * name happens to contain them.
+   */
+  it('refuses expansion inside double quotes, and allows the same text in single quotes', () => {
+    expect(isReadOnlyShellCommand('cat "$HOME/notes"')).toBe(false);
+    expect(isReadOnlyShellCommand('cat "`ls`"')).toBe(false);
+    expect(isReadOnlyShellCommand('cat "${HOME}/notes"')).toBe(false);
+    // Single quotes: bash expands nothing, so this opens a literal filename.
+    expect(isReadOnlyShellCommand("cat '$HOME/notes'")).toBe(true);
+    expect(isReadOnlyShellCommand("cat '`ls`'")).toBe(true);
+  });
+
+  /**
+   * A write flag is a write flag however it is quoted — and running the flag
+   * check on the unquoted token is what makes that true.
+   */
+  it('refuses a quoted write flag', () => {
+    for (const cmd of [
+      "find . -name x '-delete'",
+      'tree "-o" out.txt',
+      'git log "--output=oops.txt"',
+    ]) {
+      expect(isReadOnlyShellCommand(cmd), cmd).toBe(false);
+    }
+  });
+
+  /**
+   * Fail closed on anything this parser does not model. An unterminated quote is
+   * the one worth naming: a reader that ignored it would treat the rest of the
+   * command as quoted text while bash treats it as live syntax.
+   */
+  it('refuses an unterminated quote and a backslash', () => {
+    for (const cmd of ['ls "src', "ls 'src", 'cat a\\ b.ts', 'ls "a" \\']) {
+      expect(isReadOnlyShellCommand(cmd), cmd).toBe(false);
+    }
+  });
+});
+
+/**
  * The composition, which is where a widening can go wrong even when each half is
  * right. `plan` keeps NO shell: only `ask` can become `allow`, and `plan` denies
  * the shell outright, so the read-only allowance cannot reach it.

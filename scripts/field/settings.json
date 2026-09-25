@@ -1,0 +1,22 @@
+{
+  "plato.connections": [
+    {
+      "id": "stub",
+      "kind": "openai",
+      "baseUrl": "http://127.0.0.1:4599/v1",
+      "models": ["stub-model"]
+    }
+  ],
+  "plato.model": "stub:stub-model",
+  "plato.orchestration": "solo",
+  "security.workspace.trust.enabled": false,
+  "extensions.ignoreRecommendations": true,
+  "workbench.tips.enabled": false,
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none",
+  "extensions.autoUpdate": false,
+  "window.restoreWindows": "none",
+  "workbench.startupEditor": "none",
+  "workbench.editor.enablePreview": false,
+  "git.autofetch": false
+}

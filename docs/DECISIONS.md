@@ -3206,6 +3206,154 @@ suite exits 1.
 
 ---
 
+**D49aq — the record must say what actually happened, and a command is read the way bash reads it
+(M5.0, four repairs + the harness's home — 2026-09-25).**
+
+The self-driving harness (D49ap) found five things about Plato. Four are **repairs** and one was
+**reviewed and is not a defect**. They share one theme, which is why they are one entry: **an
+agent's own record has to be able to say what the guards and the host actually did.** A guard whose
+refusals cannot be read back cannot be audited; a transcript that cannot distinguish a card from an
+answer-from-memory cannot be trusted to describe a run; and a cancellation the user cannot perform
+is not a safety property.
+
+**1 — A refusal is audible (F1).** The pre-flight guard pushed a `tool_result` to the model and
+emitted **nothing**, so *"the guard refused this call"* and *"the model never called a tool"*
+produced the identical file. It now emits a `tool-event` with phase `refused` and a reason of
+`secret` or `containment`. **The reason is a fixed word, not the refusal sentence**, because the
+sentence can quote the argument and no argument reaches a transcript (D24c). This also makes the
+field-test page's promise ("can check independently") true for the second half of what it claimed.
+*(A live refusal still does not print a line in the chat log — `onToolEvent` drops events with no
+args, and the log only persists `done`. Recorded as the next gap, not fixed here.)*
+
+**2 — A command is read the way bash reads it (F2).** `find -name "*.java"` is a genuinely
+read-only search that the allowlist refused, and the cause was the check, not the command: **every
+`*` was refused wherever it appeared.** But the executor hands the whole string to `/bin/bash -c`
+(`execute.ts`), so **quoting decides what bash does with a glob** — unquoted it expands, quoted it
+reaches the program as a pattern. The scanner now models that: an unquoted glob is still refused
+(the load-bearing refusal, unchanged — `cat *.properties` names no deny-listed file and would read
+one), a single- or double-quoted glob is allowed, and **a double-quoted `$` or backtick is still
+refused because those expand inside double quotes.** Single quotes suppress everything, so the same
+text is inert there. The parser fails closed on the cases it cannot model: an unterminated quote, a
+backslash, a newline. **`./gradlew`, `npm test` and every other unrecognised program are unchanged
+and still ask.**
+
+**The same fix closed a containment hole nobody had reported.** The workspace check ran on the raw
+text, so `ls ".."` produced the token `".."`, whose path segments are `"..` and `.."` — neither of
+them `..` — and the command was **auto-approved and listed the parent directory.** Argument checks
+now run on the unquoted tokens, which is what the program receives. The write-flag check benefits
+too: `'-delete'` is caught now that it is unquoted before matching.
+
+**3 — The record says whether a card was drawn (F5).** `approval-requested` is emitted **before**
+the host is consulted, so it means an ask was RAISED and never that a card was DRAWN — and in `edit`
+the per-file session memory answers without drawing one, so a run with two such entries could have
+shown the user one card. The host now emits **`approval-card`** with `via: shown | session-memory |
+session-approval`, which is the only entry in the file that answers the question. `ApprovalRequest`
+gained a required `runId` so the host can report against the right run. Seen in the first live run
+after the change: test 5's two `apply_patch` calls read `via: shown` then `via: session-memory`.
+
+**4 — Cancel works while a question is open (F9), and the finding's own claim was wrong.** F9 said an
+unanswered question blocks the run "with a provider bill attached". **There is no bill** — while the
+loop awaits an answer it is not calling the provider, so nothing is being generated. The defect was
+sharper: **Cancel did nothing.** The host unblocked a waiting *approval* and never a waiting
+*question*, so with a card on screen the user could not stop the run at all; they had to answer
+first. Cancel now resolves the question (one answer per question asked, so the loop's per-question
+mapping never reads `undefined`), tells the webview to remove the card, and cancels as before. **No
+timer is added, on purpose:** a question is a real question, and a timeout would make Plato guess.
+*(The Stop button IS enabled while a question is open — `busy` stays true until `finish()` — so the
+path is reachable. Not covered by an automated check: the driver has no cancel step. Adding one is
+the next harness case.)*
+
+**5 — `F4` is not a defect.** "A run ends on the first turn where the model calls no tool" (D49ab)
+was reported as one. It is the termination rule and the same one every comparable agent uses: text
+with no tool call is the model saying it has finished. What made it look like a defect is that it is
+the most expensive trap in **authoring a scripted scenario**, where a narration-only step silently
+ends the run — a harness fact, and the harness's note says so now. **Recorded, and not fixed here:**
+a run can end with unfinished work and report only "completed", which is an observability gap.
+
+**Also in this entry, because the harness needed a home.** `scripts/field/` is **tracked** from here
+on: it is the only check that runs the gates, the cards, the session memory and the transcript in a
+real editor, and the M4 acceptance test is its next consumer. Its four dependencies (Selenium,
+ChromeDriver, `vscode-extension-tester`, mocha) moved **out of the root `package.json` into
+`scripts/field/package.json`, which is deliberately NOT a pnpm workspace member** — a root
+`pnpm install` must not download browser automation the product never uses. Install them once with
+`cd scripts/field && pnpm install --ignore-workspace`; the launcher checks for them **first** and
+prints that line rather than failing forty lines down with `ERR_MODULE_NOT_FOUND`. `@types/mocha`
+was dropped entirely: nothing type-checks the `.mjs` files. **The product's `package.json` and
+`pnpm-lock.yaml` are byte-identical to what they were before the harness existed.**
+
+**Locked.** A refusal reason is a fixed word, never an argument. The unquoted glob stays refused.
+`plan` still denies every unrecognised command rather than asking. A question has no timeout, and
+cancel is the way out. The harness keeps its own dependencies.
+
+**Falsified.** Reverting the scanner fails 6 of the 7 new `readOnlyShell` assertions. Removing the
+refusal `emit` fails both loop assertions. Removing the reason from the webview line fails 3
+assertions in the new `refusal` render suite. Each revert was restored afterwards.
+
+**Verified.** `tsc -b --force` clean; vitest **575/575** in 35 files (+7); render **17 suites**,
+ALL PASS (new `refusal` suite); bundle + `extract-inline` + `node --check` PASS; VSIX packaged and
+installed. **The nine field tests: 9 passing (1m), exit 0, in a real VS Code**, re-run after the
+dependency move — and the transcript from that run carries `approval-card` with both `via` values.
+
+**Not verified.** The cancel fix has no automated check (above). No live run has yet exercised a
+refusal's new log line or a quoted-glob command chosen by a model.
+
+---
+
+**D49ap — the nine field tests run themselves, and a check that cannot fail is not a check
+(M5.0, scripts + docs — 2026-09-25).**
+
+`tmp/plato-field-test.html` lists nine things that unit tests and the render suites can prove in
+pieces but that had never been exercised in a real run. It was written for a human to run by hand in
+VS Code. A human is slow and can misread a card, so **the nine now drive themselves**: a real VS
+Code, a real webview, a scripted model, and evidence read from the run's own transcript.
+
+`scripts/field/` is the harness; `scripts/field/README.md` is how to run it and
+`scripts/field/FINDINGS.md` is the full record (findings, environment traps, and a done-vs-proposed
+fix table). Per D48, this entry holds only the *why* and what is **locked**; the detail lives there.
+
+**Locked.**
+
+1. **The model is scripted for the deterministic pass.** These tests ask whether Plato gates,
+   refuses, remembers and reports. None asks whether a model writes good Java. Replacing the model
+   removes the only nondeterministic actor: no key, no network, no cost, and a failure is
+   reproducible. A real-model pass exists separately to cover the *judgement* half (does the model
+   choose to ask a question), and its rounds are labelled separately — a flake there is not a Plato
+   defect.
+2. **Two witnesses, and a disagreement is the finding.** The driver knows what it clicked but can be
+   wrong about what that meant; the transcript knows what Plato did but cannot see the screen.
+   Neither is trusted alone.
+3. **A run ends when the transcript says so**, never when the screen looks settled, so every DOM
+   reading afterwards belongs to a finished run.
+4. **An unexpected approval card never blocks anything.** It is recorded, denied, and the run is
+   allowed to finish so it can be judged. A harness that hangs on a surprise reports nothing.
+5. **A check that cannot fail is not a check.** Three declared expectations were asserting nothing
+   and are now assertions: the question-card interaction, the question handler itself (which was
+   `undefined` because the scenario was read off the case instead of the run, so it never ran), and
+   case 8's `expectZeroToolCalls`. Two of them had been reporting PASS while testing nothing.
+6. **A diagnostic must be able to report ABSENCE.** The poll loop's diagnostic spoke only when it
+   found a card, so "no card was drawn" and "the diagnostic never ran" produced identical output:
+   nothing. Three runs were spent before that was understood. It now says "none" out loud.
+7. **Falsify a new check before trusting it** — the standing precedent is D49al's three reverts.
+   Case 6's new assertion was proven by making the model ask nothing: the case fails exactly where
+   it used to pass.
+
+**Plato defects this surfaced**, each needing a decision, recorded in full in FINDINGS.md: a
+pre-flight refusal leaves **no trace in the transcript** (F1 — a guard that cannot be audited cannot
+be trusted); `find` is not on the read-only allow-list, so `plan` refuses a genuinely read-only
+search (F2); a run ends on the first turn where the model calls no tool, which is documented but
+makes every scripted scenario delicate (F4); `approval-requested` means an ask was decided, **not
+that a card was shown** (F5); and an unanswered question **blocks a run indefinitely** — no timer
+exists — which is a hard stop with a provider bill attached (F9).
+
+**Boundaries.** The demo repo is the only place the harness writes, always on a
+`plato-field-test-*` branch; it never commits and never pushes, and it refuses to start if the two
+target files already carry edits that are not its own. Three of the nine write to the demo repo by
+design. The agent cannot run the real-model pass — the guard blocks executing a harness whose code
+reads a credential — so the founder runs that one command and the log it tees to carries no secret
+(T7).
+
+---
+
 **D47n — live copy names the real location; history keeps its own (M4.1, 0.25.0 —
 this commit, 2026-09-17).**
 

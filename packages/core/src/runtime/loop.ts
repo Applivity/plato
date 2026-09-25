@@ -20,7 +20,7 @@ import { decideWithArgs } from './modes.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
-import { AgentBus, RunController } from './bus.js';
+import { AgentBus, RunController, type ToolPhase } from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
 import type { RetryOptions } from '../providers/retry.js';
 import { estimateCost } from './cost.js';
@@ -59,6 +59,12 @@ export interface ApprovalRequest {
    * "approve all" cannot silently cover a different host reached later.
    */
   host?: string;
+  /**
+   * D49aq: the run this ask belongs to, so the host can report what it did with
+   * the ask on the bus (see the `approval-card` event). The host is the only
+   * party that knows whether a card was drawn, and the report needs a runId.
+   */
+  runId: string;
 }
 
 /**
@@ -222,7 +228,11 @@ export interface LoopOptions {
   onToolEvent?: (event: {
     tool: string;
     args: ToolArgs;
-    phase: 'requested' | 'allowed' | 'denied' | 'declined' | 'done';
+    // D49aq: the bus's own union, so adding a phase cannot leave this list
+    // behind. A 'refused' event carries no args and is filtered out below, so
+    // this bridge never sees one — but the type must not be the reason it
+    // could not.
+    phase: ToolPhase;
     ok?: boolean;
   }) => void;
   /**
@@ -767,10 +777,23 @@ async function runLoop(
       // approve an action that could never run. The executor enforces the same
       // rule again — this one is for the user's benefit, that one is the
       // guarantee.
+      const contained = containmentRefusal(opts.root, name, args);
       const refusal =
-        containmentRefusal(opts.root, name, args) ??
-        secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
+        contained ?? secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
       if (refusal !== null) {
+        // D49aq: the guard is loud. It used to push a tool_result to the model
+        // and emit NOTHING, so the transcript showed the same thing whether the
+        // guard refused a call or the model never made one — and a guard whose
+        // refusals cannot be read back cannot be audited or debugged. The event
+        // carries a fixed reason code, never the argument, because arguments
+        // never reach the file (D24c).
+        bus.emit({
+          type: 'tool-event',
+          runId,
+          tool: name,
+          phase: 'refused',
+          reason: contained !== null ? 'containment' : 'secret',
+        });
         results.push({
           type: 'tool_result',
           toolUseId: call.id,
@@ -806,6 +829,7 @@ async function runLoop(
           tool: name,
           args,
           preview,
+          runId,
           ...(host !== undefined ? { host } : {}),
         });
         bus.emit({ type: 'approval-decided', runId, tool: name, allowed });

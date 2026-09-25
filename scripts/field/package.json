@@ -1,0 +1,12 @@
+{
+  "name": "plato-field-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The nine live field tests, driven in a real VS Code. See README.md.",
+  "//": "Deliberately NOT a workspace member (see README): these are browser-automation tools the product never needs, and a root `pnpm install` should not pull them. Install once with: pnpm install --ignore-workspace",
+  "devDependencies": {
+    "mocha": "^12.0.2",
+    "selenium-webdriver": "^4.49.0",
+    "vscode-extension-tester": "^8.27.0"
+  }
+}

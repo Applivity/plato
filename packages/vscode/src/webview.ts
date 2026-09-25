@@ -1291,6 +1291,9 @@ export function chatHtml(): string {
   let busy = false;
   let streaming = false;
   let runT0 = 0;
+  // D49aq: the question card currently on screen, so the host can take it away
+  // when the run is cancelled. Null when no card is open. No backticks here.
+  let openQuestionCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -2047,11 +2050,18 @@ export function chatHtml(): string {
         case 'text':
           line('bot', String(e.html || ''), true);
           break;
-        case 'tool-event':
+        case 'tool-event': {
+          // D49aq: a refusal now says WHY. The reason is a fixed word from the
+          // host rather than the refusal sentence, so no argument \u2014 and nothing
+          // a model sent \u2014 can appear on this line. No backticks here.
+          const why = e.reason === 'secret'
+            ? ' (protected file)'
+            : (e.reason === 'containment' ? ' (outside the workspace)' : '');
           line('tool',
-            String(e.tool) + ' \u2014 ' + String(e.phase)
+            String(e.tool) + ' \u2014 ' + String(e.phase) + why
             + (e.ok === false ? ' (error)' : ''));
           break;
+        }
         case 'usage':
           meta.push('turn ' + e.turn + ': '
             + kfmt(Number(e.inputTokens) + Number(e.outputTokens))
@@ -3919,6 +3929,11 @@ export function chatHtml(): string {
         setStatus('awaiting your answer');
         showUserQuestion(m);
         break;
+      // D49aq: the run was cancelled while a question was open, so the card goes
+      // with it. Without this the user answers a card belonging to a dead run.
+      case 'question-done':
+        dismissQuestion();
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -4406,6 +4421,7 @@ export function chatHtml(): string {
           const answers = questions.map((_qq, i) => answerOf(i));
           vsapi.postMessage({ type: 'user-answer', answers });
           card.remove();
+          if (openQuestionCard === card) openQuestionCard = null;
           questions.forEach((qq, i) =>
             addMsg('you', 'You', String(qq.question) + ': ' + answers[i]),
           );
@@ -4419,9 +4435,24 @@ export function chatHtml(): string {
       body.appendChild(act);
     }
 
+    openQuestionCard = card;
     log.appendChild(card);
     render();
     scroll();
+  }
+
+  /**
+   * D49aq: the question card can be taken away by the host. Cancel used to leave
+   * it on screen while the run had already been cancelled, so the user answered
+   * a card that belonged to a finished run. Removing it here keeps the two in
+   * step, and the card is only ever removed once.
+   */
+  function dismissQuestion() {
+    if (openQuestionCard) {
+      openQuestionCard.remove();
+      openQuestionCard = null;
+      clearStatus();
+    }
   }
 
   function cardDone(t) {

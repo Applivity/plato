@@ -9,7 +9,20 @@ export type ToolPhase =
   | 'allowed'
   | 'denied'
   | 'declined'
+  // D49aq: the PRE-FLIGHT guard refused the call — a secret-bearing name or a
+  // path outside the workspace. Distinct from 'denied', which is the mode table
+  // (or an MCP capability) saying no. Before this phase existed the guard
+  // emitted NOTHING, so the transcript could not tell "the guard refused it"
+  // from "the model never called a tool" — the same silence either way.
+  | 'refused'
   | 'done';
+
+/**
+ * D49aq: which guard refused a call. A fixed vocabulary rather than the
+ * refusal sentence, because the sentence can quote the argument — and the
+ * transcript's whole rule (D24c) is that arguments never reach the file.
+ */
+export type RefusalReason = 'secret' | 'containment';
 
 export type AgentEvent =
   | { type: 'run-started'; runId: string; task: string; model: string }
@@ -23,8 +36,27 @@ export type AgentEvent =
       ok?: boolean;
       /** Present for bridge parity; transcripts strip it (D24c). */
       args?: unknown;
+      /** D49aq: set only on phase 'refused'. */
+      reason?: RefusalReason;
     }
   | { type: 'approval-requested'; runId: string; tool: string; preview: string }
+  /**
+   * D49aq: what the HOST did with an ask, which the loop cannot know.
+   *
+   * `approval-requested` is emitted before the host is consulted, so it says an
+   * ask was RAISED and never that a card was DRAWN. In `edit` the per-file
+   * session memory (and the tool:host session approval) return true without
+   * rendering anything — so a run with two `approval-requested` entries can have
+   * shown the user one card, and the transcript could not say which. This event
+   * is the host answering that question; a reader needs it to count cards
+   * actually shown, and nothing else in the file can.
+   */
+  | {
+      type: 'approval-card';
+      runId: string;
+      tool: string;
+      via: 'shown' | 'session-memory' | 'session-approval';
+    }
   | { type: 'approval-decided'; runId: string; tool: string; allowed: boolean }
   | {
       type: 'usage';

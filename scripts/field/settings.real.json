@@ -1,0 +1,23 @@
+{
+  "plato.connections": [
+    {
+      "id": "deepseek",
+      "kind": "openai",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "models": ["deepseek-v4-flash"]
+    }
+  ],
+  "plato.model": "deepseek:deepseek-v4-flash",
+  "plato.reasoning": "off",
+  "plato.orchestration": "solo",
+  "security.workspace.trust.enabled": false,
+  "extensions.ignoreRecommendations": true,
+  "workbench.tips.enabled": false,
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none",
+  "extensions.autoUpdate": false,
+  "window.restoreWindows": "none",
+  "workbench.startupEditor": "none",
+  "workbench.editor.enablePreview": false,
+  "git.autofetch": false
+}

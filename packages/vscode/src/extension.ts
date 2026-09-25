@@ -319,6 +319,15 @@ const LOG_MAX = 400;
  * throttle caps it at ~20 posts/second, which still reads as live typing.
  */
 const STREAM_THROTTLE_MS = 50;
+/**
+ * D49aq: what a cancelled question resolves to, one per question asked.
+ *
+ * The run is being cancelled, so the answer's content does not matter — but the
+ * loop maps the array across the questions it asked, and a short array would put
+ * `undefined` in the model's history. The text says plainly what happened, since
+ * the model reads it as a tool result before the run unwinds.
+ */
+const CANCELLED_ANSWER = '(the run was cancelled before this was answered)';
 const TITLE_KEY = 'plato.chatTitle';
 const SESSIONS_KEY = 'plato.chatSessions';
 const SESSIONS_MAX = 30;
@@ -379,6 +388,19 @@ class ChatHost {
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
   private pendingQuestion: ((answers: string[]) => void) | null = null;
+  /**
+   * D49aq: how many questions the open card is asking, so cancelling it can
+   * resolve with one answer per question rather than a short array the loop
+   * would pad with `undefined`.
+   */
+  private pendingQuestionCount = 0;
+  /**
+   * D49aq: the current run's bus, so an approval path can say on the record
+   * what it did with an ask — a card drawn or a session memory answering. Only
+   * the HOST knows which, and the loop's `approval-requested` says neither.
+   * Null outside a run, which is also when there is no ask to report.
+   */
+  private runBus: AgentBus | null = null;
   private replyBuffer = '';
   /**
    * D49j: the current turn's text as it arrives, and the pending throttle
@@ -523,6 +545,18 @@ class ChatHost {
           const r = this.pendingApproval;
           this.pendingApproval = null;
           r?.(false);
+          // D49aq: and unblock a waiting QUESTION, which this used to miss. The
+          // loop awaits the answer with nothing that can interrupt it, so with a
+          // question card on screen Cancel did nothing at all — the run stayed
+          // blocked until the user answered it, which is the one moment they are
+          // least likely to want to. One answer per question, so the loop's
+          // per-question mapping does not read `undefined`.
+          const q = this.pendingQuestion;
+          this.pendingQuestion = null;
+          const n = this.pendingQuestionCount;
+          this.pendingQuestionCount = 0;
+          q?.(Array.from({ length: n }, () => CANCELLED_ANSWER));
+          this.send('question-done');
           this.controller.cancel();
           return;
         }
@@ -956,6 +990,7 @@ class ChatHost {
         if (m.type === 'user-answer' && Array.isArray(m.answers)) {
           const resolve = this.pendingQuestion;
           this.pendingQuestion = null;
+          this.pendingQuestionCount = 0;
           resolve?.(m.answers.map(String));
           return;
         }
@@ -1631,6 +1666,8 @@ class ChatHost {
   }): Promise<string[]> {
     return new Promise((resolve) => {
       this.pendingQuestion = resolve;
+      // D49aq: remembered so a cancel can resolve with one answer per question.
+      this.pendingQuestionCount = req.questions.length;
       void this.panel.webview.postMessage({
         type: 'user-question',
         questions: req.questions,
@@ -2621,6 +2658,9 @@ class ChatHost {
     // M2: every run is transcribed under ~/.plato/runs/<project-key>/ (D24c,
     // D46) — personal state, never the shared repo.
     const bus = new AgentBus();
+    // D49aq: the approval paths report on this bus (see `approval-card`), so
+    // hold it for the run. Set before the loop starts and nulled in the finally.
+    this.runBus = bus;
     const writer = new TranscriptWriter(
       join(this.homePlatoDir(), 'runs', this.projectKey(root)),
       { task, root },
@@ -3069,6 +3109,9 @@ class ChatHost {
       this.push({ k: 'msg', cls: 'bot', who: 'Error', text });
     } finally {
       this.running = false;
+      // D49aq: cleared with the run, so no later approval can report against a
+      // run that has ended.
+      this.runBus = null;
       // D44d: once idle, auto-fold the conversation tail on its cadence.
       this.scheduleAutoFold(conn, apiKey, ref);
       writer.close();
@@ -3076,6 +3119,28 @@ class ChatHost {
         s.stop();
       }
     }
+  }
+
+  /**
+   * D49aq: put on the record what happened to an ask.
+   *
+   * The loop's `approval-requested` is emitted BEFORE the host is consulted, so
+   * it says an ask was RAISED and never that a card was DRAWN. Both session
+   * memories here answer without drawing one, so a run can carry two
+   * `approval-requested` entries while the user saw a single card — which is
+   * what the field-test page's claim ("an `approval-requested` entry per card")
+   * got wrong. This is the event that makes the count readable from the file.
+   */
+  private noteApproval(
+    via: 'shown' | 'session-memory' | 'session-approval',
+    req: ApprovalRequest,
+  ): void {
+    this.runBus?.emit({
+      type: 'approval-card',
+      runId: req.runId,
+      tool: req.tool,
+      via,
+    });
   }
 
   private async approve(req: ApprovalRequest): Promise<boolean> {
@@ -3092,6 +3157,7 @@ class ChatHost {
     if (this.mode === 'edit' && isWriteTool(req.tool)) {
       const paths = writePathsOf(req.tool, req.args);
       if (paths.length > 0 && paths.every((p) => this.sessionWrites.has(p))) {
+        this.noteApproval('session-memory', req);
         return true;
       }
       const ok = await this.promptCard(req);
@@ -3125,8 +3191,10 @@ class ChatHost {
     // Check if this tool (and host) is already approved for this session
     if (this.sessionApprovals.has(key)) {
       this.send('notice', `${key} auto-approved (session approval)`);
+      this.noteApproval('session-approval', req);
       return Promise.resolve(true);
     }
+    this.noteApproval('shown', req);
 
     this.push({
       k: 'card-open',
