@@ -690,6 +690,73 @@ only "completed" — test 7's fourteen-minute run completed **zero** of its own
 plan's steps and nothing in the product said so. That is an observability gap in
 the same family as the four above, and it is the natural next repair.
 
+## Recommended order (2026-09-25)
+
+Written because the queued list below had grown into a pile rather than an order.
+**Tier A is small and finishes the loop we are already in; Tier B closes M4; Tier C
+is capability work, and every item in it needs a decision before it is built.**
+
+**Tier A — finish what the field harness opened (small, all in-repo).**
+
+1. **A cancel case in the harness.** The driver can click Allow, Deny and question
+   options but never Stop, so D49aq's cancel fix is the one repair with no
+   automated check. Cheapest shape: a case that opens a question and cancels it,
+   asserting the run ended and the card is gone.
+2. **Show a refusal in the live chat log.** A refusal now reaches the transcript
+   and the run's transcript view, but not the conversation the user is watching —
+   `onToolEvent` drops events that carry no args. **A guard the user cannot see
+   working is a guard they are taking on faith.**
+3. **Say when a run ends with unfinished work.** Test 7's fourteen-minute run
+   completed **zero** of its own plan's steps and the product reported only
+   "completed". Same family as the four just fixed: the record must not read better
+   than reality.
+4. **The three trial-repo decisions the founder owes** — the `DateHelper` `ISO8601`
+   constant, the `Integer.parseInt(formatter.format(...))` change, and the live
+   `URLDecoder` defect at `SubmissionsViewModel.java:144`. Not Plato's to make;
+   listed so they are not lost.
+
+**Tier B — M4 closeout. One writing task and three pieces of housekeeping.** See the
+M4 section above for the clause-by-clause state.
+
+5. **Restate the acceptance test** for the current model (one worker + N
+   philosophers), replacing BLUEPRINT §4, and then **run it through the field
+   harness** — the first time that test will ever have been executable. Keep it
+   short: the harness already carries most of it.
+6. **Secret audit (D15)** scoped to Plato's own artifacts — repo history, VSIX and
+   npm contents, transcripts, docs, screenshots. Not the proving ground.
+7. **Trademark sweep (D16) and the license decision (D19).** Founder's, and D19
+   gates any publish. "Plato" is a common noun and an ancient name, so it is a weak
+   mark — decide whether that matters before spending on it.
+
+**Tier C — capability, in the order I would argue for. Each needs a decision.**
+
+8. **LSP diagnostics after an edit.** The biggest *quality* lever a coding agent can
+   have and the one Plato lacks entirely: the agent currently cannot tell that it
+   broke a file. **If one capability item is picked, this is it.**
+9. **`web_search`** — deferred (D49p) because it needs a backend decision, and the
+   convenient option has a trap: Anthropic's server-side search runs inside the API
+   call, so **no approval card can fire for it**. Needs either a key in
+   SecretStorage (Brave/Tavily) or an accepted exception to the egress rule.
+10. **Checkpoints / undo** — snapshot before a write. Large, and it changes what an
+    approval means.
+11. **Bound `auto` by repetition, not volume** — the failure mode is a repeated
+    identical tool call (D49ab removed the turn cap and nothing replaced it).
+12. **The two guard proposals** that survived the guard note: a **taint rule** for
+    secret materialisation, and **founder-owned protected names** with a visible
+    expiring override. Both need a DECISIONS entry first.
+13. **Smaller, each already scoped:** ordering the model list; an end-of-run report
+    of what the model did; closing the quote-splice hole in the secret check (one
+    line, but it changes every tool); the fold's cadence constants being named
+    *pairs* while counting messages; trimming old tool output for small/unknown
+    windows; and **discovery of an unknown model window** (it floors at 8,192, so
+    the compaction guard fires at ~6.5k tokens — a real defect, unlike the
+    percentage question that was closed as not-a-defect).
+14. **Subagents / `task`** — deferred, and it **amends the one-worker lock
+    (D45a-3)**, so it needs an explicit amendment rather than a slip-in.
+
+**Do not reopen without answering the recorded objection:** the per-project command
+allow/reject list (see the backlog).
+
 ## Queued next work (in priority order — pick up here)
 
 **First, what the 2026-09-23/24 repairs left open.** One of the three is now done
