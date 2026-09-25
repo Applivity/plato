@@ -5,7 +5,16 @@
 *.jks
 keystore.properties
 local.properties
-secrets.*
+# Named one by one, NOT `secrets.*`. That glob was here until 2026-09-25 and it
+# matched `security/secrets.ts` — the deny-list IMPLEMENTATION, which imports
+# nothing secret and is imported by six modules. The effect was that the file
+# never entered the repository at all: no history, no review, and a fresh clone
+# that cannot build. An ignore rule that can swallow SOURCE is the wrong shape,
+# so no wildcard returns here. If you add a local secret file, name it.
+secrets.json
+secrets.yaml
+secrets.yml
+secrets.toml
 
 # --- Node / pnpm ---
 node_modules/

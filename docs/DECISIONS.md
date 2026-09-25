@@ -1312,8 +1312,9 @@ reads it here, not in a plan file outside the repo.
   that is what leaves the machine.
 
 **Out of scope, and why.** No public release, license text or marketplace publish
-before D19. M4 closeout — the acceptance test, the D15 secret audit, the D16
-trademark sweep — is **not** advanced by this work and is not claimed by it.
+before D19. M4 closeout — the acceptance test and the D15 secret audit (read D49ar:
+the D16 trademark sweep and the D19 license decision left M4 for the publish gate) —
+is **not** advanced by this work and is not claimed by it.
 
 **D49a — the render suites must FAIL THE PROCESS (M5.0, 0.25.0 — 2026-09-17).**
 
@@ -3206,6 +3207,184 @@ suite exits 1.
 
 ---
 
+**D49au — an ignore rule must not be able to swallow source, and the deny-list had never been in the
+repository (D15 secret audit — 2026-09-25).**
+
+**What the audit found.** `packages/core/src/security/secrets.ts` — the module that implements the
+secret deny-list, imported by **six** others including the package barrel — **had never been
+committed.** Not once, in the whole history. `.gitignore` carried a bare `secrets.*`, added in
+`053d93a` with the intent of ignoring local secret *files*, and its glob matched `secrets.ts` and
+`secrets.test.ts` along with them. `git ls-files` never listed the file; `git log --all` had no
+deletion, because there was nothing to delete.
+
+**Why it matters more than an untidy ignore file.** Two independent consequences, and the second is
+the one to sit with:
+1. **A fresh clone could not build.** Six modules import the missing file, so `tsc -b` fails
+   immediately. **Every "verified" claim in this repo was therefore only ever true on the one
+   machine that happened to hold the file** — the verification loop proves a working tree, and a
+   working tree is not the repository.
+2. **The most safety-critical file in the product had no history and no review.** The deny-list is
+   the thing that keeps `keystore.properties` out of a model's context. It was invisible to
+   `git log`, to `git blame`, to any reviewer, and to any backup taken from the remote.
+
+**The rule, locked.** **An ignore pattern must not be able to match source.** A wildcard whose
+suffix is a category of secret (`.json`, `.yaml`, `.*`) will eventually match a module, because a
+module can carry any suffix. Local secret files are therefore **named one by one**
+(`secrets.json`, `secrets.yaml`, `secrets.yml`, `secrets.toml`), and the comment in `.gitignore`
+carries the incident so the next person does not reach for the tidy glob again.
+
+**How it was found, and why that is the point.** Not by reading the code — by running the D15 audit
+across the surfaces that leave the machine. It surfaced as `!! packages/core/src/security/secrets.ts`
+in `git status --ignored`: **a file that is present on disk and absent from the repository is
+invisible to every check that reads the working tree, which is all of them.** The audit's habit of
+listing ignored-but-present files is what caught it, and that habit is the durable lesson.
+
+**Everything else the audit checked came back clean**, so the finding above is the whole of it:
+- **Repo history, all refs**: **zero** credential-shaped lines were ever added (`sk-ant-`, `sk-`,
+  `AKIA`, `ghp_`/`gho_`/`github_pat_`, private-key headers, Slack tokens).
+- **Tracked files**: no secret-like names, no credential shapes in any tracked file or in `docs/`.
+- **Transcripts**: **149 files, zero `tool-event` lines carrying `args`** — the D24c invariant,
+  verified across every real run rather than in a unit test alone. Two real `refused`/`secret`
+  events recorded, so D49aq's event fires in the wild.
+- **Key storage**: `ctx.secrets.store` only. `rawUserConnections()` never reads `apiKey`, so the
+  settings write-back **cannot** carry a key to disk even if one were hand-placed in
+  `plato.connections`.
+- **`~/.plato`**: `ACADEMY.yaml` and `DUO.yaml` hold no key-shaped field or value; no `mcp.yaml`
+  exists (which is the file that *would* hold a server token, so this is a "not yet", not a "never").
+- **VSIX**: no secret-shaped entries, zero credential shapes in the bundled JS.
+
+**Two residuals, recorded rather than fixed:**
+- **The VSIX ships the full source and both source maps** — there is **no `.vscodeignore`**, so
+  `extension/src/*.ts`, `tsconfig.json` and `esbuild.mjs` are in the package. Nothing secret is in
+  them today; it is a **publish-hygiene item for the gate (D19)**, not a leak now.
+- **The real pass reads a key file from `~/Desktop/demo-creds.rtf`** — outside the repo, read at run
+  time, never copied. It is on the Desktop, so it is in the field of view of any screenshot or
+  screen share. Named here because that is the one path where the posture depends on a habit rather
+  than on code.
+
+**Not fixed here, and not Plato's:** the proving-ground repo's own `keystore.properties` and
+`local.properties` are still uncovered by that repo's `.gitignore`. The audit is scoped to Plato's
+artifacts (D49ar); that repo is the founder's.
+
+---
+
+**D49as — the guard is visible where the user is looking, and a run does not report better than it
+did (Tier A, 2026-09-25).**
+
+Three repairs, each closing a gap that D49aq recorded and left open. All three are the same
+principle: **the record must not read better than what happened.**
+
+1. **A refusal now appears in the live conversation.** It reached the run's *transcript view* and
+   never the chat the user was watching. **The cause was not styling**: `onToolEvent` forwards a bus
+   event only when it carries `args`, and the refusal event carried none — so the host was never
+   told, and a fix in the webview could not have worked. **The event now carries its `args`, exactly
+   as every other `tool-event` does**, and the transcript still strips them (D24c — the strip is
+   asserted, so a refusal cannot leak the command it refused). The line names the guard: *guard
+   stopped shell — it named a protected file*. **A revert to an args-less event breaks a unit test
+   AND the live line**, which is the point: the two are the same defect seen from two sides.
+2. **A run that ends against its own plan now says so.** Field test 7 ran fourteen minutes,
+   completed **zero** of the plan's steps, and reported only "completed". The newest `todo_write`
+   list is kept for the run, and the closing line adds *N of M plan steps unfinished* —
+   `unfinishedPlanNote` in core, where it can be tested, because the shell has no unit tests and
+   **this is the class of fault that lives there**. It returns `''` for a finished plan and for no
+   plan at all: a note on every run would stop the line meaning "this run ended early".
+3. **The cancel fix now has an automated check.** D49aq's fourth repair was verified by reading
+   alone, because the driver could click Allow, Deny and question options but never Stop. **Field
+   case 10** presses Stop with a question card on screen and asserts three things: the transcript
+   says `cancelled`, the card is gone from the screen, and the run says so to the user. **The case
+   scripts two steps AFTER the question** so an ignored Stop button leaves work for the run to do —
+   otherwise the model's own next step would end the run and the case would pass on a broken
+   product. The driver treats a disabled Stop button as an **error**, not a no-op click.
+
+**The cancellation path needed no product change.** `loop.ts` already gates at the top of every turn
+and the host's cancel already resolved the waiting question (D49aq), so the repair was to *prove* it.
+**A cancel is not a failure**: the transcript asserts `run-completed {reason: 'cancelled'}` and
+asserts that the run did **not** fail, because an abort and a transport failure are indistinguishable
+at the HTTP layer (D49i, gotcha 12).
+
+---
+
+**D49at — the acceptance test, restated for the product that exists (M4, 2026-09-25).**
+
+**What this replaces.** BLUEPRINT §4's sentence, which is the record's only statement of what "done"
+means. **Three of its five clauses no longer describe this product** — it names a 3-profile preset
+that the product lock deleted, requires an observer intervention that correct measure would have to
+forbid, and asserts a budget cap that was built and removed (D49h) alongside the turn cap (D49ab).
+A definition of done that describes a product nobody is building cannot be passed or failed; it can
+only be ignored, which is what happened to it.
+
+**The test.** On the proving-ground repo (`HcadPublicAndroid-demo`), Plato must satisfy every clause
+below. Each names its witness, because **a clause with no witness is what made the old one
+unfalsifiable.**
+
+| # | Clause | Witness |
+|---|---|---|
+| 1 | **A real change lands.** Given a task naming a small defect or feature, Plato edits **1–3 files** and the edit is on disk. | The demo repo's `git diff` after the run. |
+| 2 | **The gates hold, per mode.** In `edit` a write raises a card and the run waits; in `plan` the same write is refused with **no** card and the model is told why; in `auto` the write lands with **no card anywhere**. | Screen **and** transcript (`approval-requested` says an ask was raised; `approval-card` says one was drawn). |
+| 3 | **A protected file never reaches a model.** A tool call or command naming a deny-listed file is refused **before any read**, with no card. | The `refused` tool-event with its reason; the model's log showing the content was never in a request; the guard line on screen (D49as). |
+| 4 | **The observer path is LIVE in Duo, and its activity is reported.** **It does NOT require an intervention.** | The run's closing line. **Not yet automated** — see the gap below. |
+| 5 | **The run's account of itself is honest.** A run that ends with unfinished plan steps says so; a refusal is visible; a cancel says cancelled. **No clause asserts a cap** — there is no turn cap (D49ab) and no budget cap (D49h). | The closing line and the log (D49aq, D49as). |
+| 6 | **Nothing leaves the machine unasked.** `web_fetch` asks in every mode including `auto`, and the card shows the exact URL. | `approval-card` in the transcript, with the address. |
+| 7 | **Stop works.** Cancelling while a question card is open ends the run as `cancelled` and dismisses the card. | Transcript `run-completed {reason: 'cancelled'}`; the card gone from the screen; harness case 10. |
+
+**The build clause is DROPPED, not deferred quietly.** `./gradlew` cannot run on this machine — no
+JDK, no Android SDK (verified 2026-09-24, HANDOFF "Environment prerequisites"). **So no clause
+claims the change compiles**, and a report must say it was verified by reading and by the diff.
+**Restoring the clause requires a JDK plus the Android SDK platform tools**; that is the
+prerequisite, and it is named here so the omission is a recorded state rather than an oversight.
+
+**How it is executed.** `scripts/field/` — the ten scripted cases cover clauses 2, 3, 5, 6 and 7 and
+the mechanism of 1; the real-model pass covers clause 1's judgement and the question card. **The
+command is the one in `scripts/field/README.md`.**
+
+**The known gap, stated so it is not mistaken for coverage.** Clause 4 is **not automated**: no
+harness case runs a Duo or Academy team, so the observer's liveness is verified by hand or not at
+all. Adding a Duo case is the obvious next extension of the harness, and it is recorded in
+PROGRESS rather than assumed.
+
+**Why the observer clause is phrased that way.** The old text required the observer to "intervene at
+least once meaningfully" — which **fails a philosopher who correctly stays quiet**, and so pressures
+the product toward a chatty observer. The claim worth testing is that the path is live and its work
+is reported. The judgement half (was the guidance any good) is out of scope for a deterministic run.
+
+---
+
+**D49ar — M4 is the acceptance test and the secret audit; the trademark and license items are the
+PUBLISH GATE, and they come last (2026-09-25).**
+
+**The decision.** M4's deliverable is now **two** things: the **acceptance test** (restated for the
+current product, then run through the field harness) and the **secret audit (D15)**. The
+**trademark sweep (D16)** and the **license decision (D19) leave M4** and become a separate, final
+**publish gate** — entered only when a public release is actually planned.
+
+**Why.** The founder's words: *"move the licensing and trademarks sweep out of M4. Move them for
+last. We are still in dev."* Both are true and neither is a repair: they cost money or a lawyer,
+neither makes the product better, and neither can be finished by an agent working in this repo.
+Tying a milestone to them made M4 read as a large unfinished block when its real remainder is **one
+page of writing plus one audit**. **A milestone should end in something runnable and
+demonstrable;** a legal gate is not that, and a gate that opens once — at the end — is not
+milestone work at all.
+
+**What it supersedes.** D16 ("USPTO/EUIPO trademark sweep is a pre-release checklist item") is
+**confirmed**, not changed — it said *pre-release* all along, and the milestone attachment was the
+error. D18 and D19 say "license decision at M4"; **that timing is superseded** while the substance
+(repo private through MVP; publishing needs Microsoft review) **stands**. The founding entries keep
+their bodies verbatim per D48; this entry is the map.
+
+**How to apply.**
+- **M4 closeout = restate the acceptance test → run it through the harness → secret audit.** Nothing
+  else. HANDOFF → "M4 closeout — what is actually left" carries the clause-by-clause state.
+- **The secret audit stays in M4 and stays scoped to Plato's own artifacts** — repo history,
+  VSIX/npm contents, transcripts, docs, screenshots. Not the proving ground, whose git hygiene is
+  the founder's business.
+- **Do not pick up D16 or D19 as a session's work.** They are recorded in HANDOFF → "The publish
+  gate" precisely so they are not lost, and marked there as not-a-tier.
+- **The live constraint does not move, only its home:** the repo stays private and **no license text
+  is added** until D19 says otherwise. That is a constraint on every commit today, not a future
+  task — see HANDOFF → "Non-negotiable safety rules".
+
+---
+
 **D49aq — the record must say what actually happened, and a command is read the way bash reads it
 (M5.0, four repairs + the harness's home — 2026-09-25).**
 
@@ -3895,7 +4074,8 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
 - Toolchain setup: RESOLVED (was "Node.js not installed") — Node v24.19.0
   via nvm 0.40.7 and pnpm 11.23.0 installed and verified; see HANDOFF
   prerequisites.
-- Trademark sweep before public release (D16).
+- Trademark sweep before public release (D16) — **the PUBLISH GATE, not M4 (D49ar,
+  2026-09-25).** Do not start it as a session's work while Plato is in dev.
 - **SECRET AUDIT before any public release or repo visibility change**
   (D15, ARCHITECTURE security invariant 2). Sweep everything that leaves
   the machine: repo history, VSIX/npm artifacts, transcripts, docs,
@@ -3904,7 +4084,8 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
   and `local.properties` in its working tree that its own `.gitignore`
   does not cover. If that repo is ever made public: rotate those secrets
   and purge history FIRST.
-- License decision at M4 (D19).
+- License decision (D19) — **moved OUT of M4 to the publish gate (D49ar, 2026-09-25).**
+  Still the one thing that gates any publish; still the founder's.
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
 - Correction (verified during setup): GitHub account `applivity-com` is a
   personal user account, not an Organization. Repo target URL unchanged:

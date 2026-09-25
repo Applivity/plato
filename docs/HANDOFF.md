@@ -21,7 +21,18 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-24)
+## Current state (verified 2026-09-25)
+
+- **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
+  `.gitignore` carried a bare `secrets.*`, meant for local secret files, and it matched
+  `packages/core/src/security/secrets.ts` — **the module implementing the deny-list**, imported by
+  six others including the package barrel. Never committed, once, in the whole history: **a fresh
+  clone could not build, and the most safety-critical file in the product had no history or
+  review.** The glob is replaced by named files and the module and its test are added to the working
+  tree. **The rule: an ignore pattern must not be able to match source.** Found by listing
+  ignored-but-present files — the one check that sees a file the repository does not have. **The
+  `git add` of those two files was blocked pending the founder's nod, so check `git status` before
+  assuming the repo is buildable from a clone.**
 
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
@@ -395,23 +406,44 @@ to build against. That is the same gap that left the `DateHelper` reason unverif
 prerequisite to restore the clause: a JDK plus the Android SDK command-line tools and
 platform.** Until then the test verifies a change by reading, and says so.
 
-**Still to do, in priority order:**
+**M4 is now TWO things (restated 2026-09-25).** The trademark sweep (D16) and the
+license decision (D19) **left M4** — they gate a *publish*, not a milestone, and
+Plato is still in development. They are now the **publish gate**, tracked at the
+end of "Recommended order" below. M4's deliverable is the acceptance test and the
+secret audit; both prove the product is sound, which is what a milestone is for.
 
-1. **Restate the acceptance test** for the current model and write it into DECISIONS as its own
-   entry, replacing BLUEPRINT §4's version. **The hold is lifted (2026-09-24):** it was held so
-   that a change the founder was about to describe would land in the text rather than in a rewrite
-   after it, and his two items have now been heard — one is built (the question tabs), one is a
-   pending decision that does not touch the acceptance test. **The restatement is therefore
-   unwritten for a plainer reason: nobody has written it yet.**
-2. **Secret audit** (D15) — everything that leaves the machine: **Plato's own** repo history,
-   VSIX/npm artifacts, transcripts, docs, screenshots. Scoped to Plato, not the proving ground.
-3. **Trademark sweep** (D16) and the **license decision** (D19) — the founder's; D19 is the one
-   thing gating any publish. Note "Plato" is a common noun and an ancient name, so it is a weak
-   mark.
+**Both are now written or run; what remains is executing the test.**
+
+1. **The acceptance test is RESTATED (D49at, 2026-09-25)** — seven clauses, each naming its witness,
+   replacing BLUEPRINT §4. **What remains is running it through the field harness**, which is the
+   first time that test will ever have been executable. **Clause 4 (the observer is live in Duo) has
+   no case yet** — no harness case runs a Duo or Academy team — so that clause is by hand or not at
+   all, and it is recorded rather than assumed.
+2. **The secret audit is DONE (D49au, 2026-09-25)** — and it found that
+   **`packages/core/src/security/secrets.ts` had never been in the repository at all**, matched by
+   `.gitignore`'s bare `secrets.*`. A fresh clone could not build. Fixed in the working tree; **the
+   `git add` of the two files is pending the founder's nod.** Everything else was clean; D49au
+   records the two residuals.
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
 has shipped; the code is well past the `0.9.8` that PROGRESS's milestone table
 used to claim.
+
+## The publish gate — last, and not before a public release is actually planned
+
+**Not part of any milestone, and deliberately at the end.** These three are the
+founder's, they cost money or a lawyer, and none of them makes the product better
+— so they wait until a publish is real. **Recorded here so they are not lost, and
+explicitly NOT work item 1 of anything.**
+
+- **Trademark sweep (D16).** Note "Plato" is a common noun and an ancient name, so
+  it is a **weak mark** — decide whether that matters before spending on it.
+- **License decision (D19).** Name the license, add the text, and settle the
+  private-vs-public question. **This is the one thing that gates any publish** — no
+  marketplace listing, no public repo, no release before it.
+- **Consequence to keep in mind while building:** the repo stays private and no
+  license text is added until D19 says otherwise. That is a live constraint on
+  every commit, not a future task — see "Non-negotiable safety rules".
 
 ## Environment prerequisites (verified facts)
 
@@ -427,12 +459,12 @@ used to claim.
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **575** passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **580** passing
   vitest cases across **35** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Seventeen suites, **369 assertions**; see
+  unit tests + render suites. Seventeen suites, **379 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -500,7 +532,7 @@ committed there:
 
 | File | Change |
 |---|---|
-| `DateHelper.java` | **1 line** — the `ISO8601` *constant*: `SSSSSSS` → `SSS` (see 1 below) |
+| `DateHelper.java` | **NO LONGER THE TRIAL EDIT — re-checked 2026-09-25.** The file now carries **only the field harness's own scratch edit** (`ISO8601` → `ISO_8601`, case 5). The `SSSSSSS` → `SSS` change item 1 below describes is **not in the tree.** **The harness reverts it silently**: on a `plato-field-test-*` branch the launcher runs `git checkout --` on this file and `SubmissionsViewModel.java` **without asking**, and the dirty-tree guard does not run on that branch. See the trap in `scripts/field/README.md`. Item 1 is therefore **moot as a pending decision and live as a process hazard**. |
 | `FormatterUtility.java` | **+7/−4** — `setGroupingUsed(false)`, `Integer.parseInt(formatter.format(…))` replacing an `(int)` cast, `encodedAuthority(host:port)` replacing `authority(host)`, and the `URLDecoder.decode` call removed |
 | `DamageReportViewModel.java`, `IFileLookupViewModel.java`, `DriversLicenseViewModel.java`, `SignatureCaptureViewModel.java` | **~9–10 lines each** — the error-state guards, from the 2026-09-24 session |
 | `PLATO.md` (untracked) | the project override, materialised by `/system-prompt` |
@@ -513,12 +545,15 @@ and `Formatters`/`Activities` were read but not edited. **Three things need a hu
 before any of it is trusted:**
 
 1. **The `ISO8601` change is a PERSISTED-FORMAT change, not a parse tweak — and that is worse
-   than it first looked.** The diff is on the *constant itself* (`SSSSSSS` → `SSS`), and
-   `ISO8601` is what `DatabaseHelper` **writes into DB rows** and what the cache-expiry value is
-   stored as. So it does not only change how a 7-digit fraction is parsed: it changes what the
-   app writes, and **rows already stored with 7 digits may no longer round-trip.** The fix may
-   still be right; its stated reason is not — it claims the project's own formatter emits 3
-   digits, and the constant it edited said otherwise. **Unverifiable here: no JDK.**
+   than it first looked. SUPERSEDED 2026-09-25: the change is no longer in the tree** (see the
+   table above — the field harness reverted it; the file now holds only case 5's rename). Kept
+   because the analysis is what makes the harness's silent revert a real loss rather than a
+   tidy-up: the diff WAS on the *constant itself* (`SSSSSSS` → `SSS`), and `ISO8601` is what
+   `DatabaseHelper` **writes into DB rows** and what the cache-expiry value is stored as. So it
+   did not only change how a 7-digit fraction is parsed: it changed what the app writes, and
+   **rows already stored with 7 digits may no longer round-trip.** The fix may have been right;
+   its stated reason was not — it claimed the project's own formatter emits 3 digits, and the
+   constant it edited said otherwise. **Unverifiable here: no JDK.**
 2. **The new `Integer.parseInt(formatter.format(…))` in `FormatterUtility` can throw where the
    `(int)` cast it replaces could not.** A cast truncates toward zero and saturates at the int
    bounds; `parseInt` throws `NumberFormatException` on anything non-integral or out of range.
@@ -624,7 +659,7 @@ before any of it is trusted:**
 
 1. `pnpm exec tsc -b --force` — clean
 2. `pnpm -r test` — 538/538 vitest in packages/core (34 files)
-3. `pnpm run render` — the real-DOM render suites, **15 suites / 318 assertions**
+3. `pnpm run render` — the real-DOM render suites, **17 suites / 379 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -674,21 +709,23 @@ before, and something reading those transcripts is affected.
    unblocked a waiting approval and never a waiting question, so the user could
    not stop the run until they answered.
 
-**Two gaps, both recorded and neither fixed:**
+**Read this section with D49as next to it — the three gaps it records are now
+closed.** (Written 2026-09-25, closed the same day; the record is kept because the
+gaps are what the repairs answer.)
 
-- **A refusal still prints nothing in the live chat log.** The run's *transcript
-  view* shows it with its reason; the conversation does not, because
-  `onToolEvent` drops events carrying no args and the live log only persists
-  `done`. A user watching a run cannot see that the guard stopped something.
-- **The cancel fix has no automated check.** The driver can click Allow, Deny and
-  question options but never Stop, so this is the one fix resting on code reading
-  alone. **Adding a cancel case is the next thing the harness should gain**, and
-  the cheapest place is a tenth case that cancels with a question on screen.
-
-**Also recorded, not a defect:** a run can end with unfinished work and report
-only "completed" — test 7's fourteen-minute run completed **zero** of its own
-plan's steps and nothing in the product said so. That is an observability gap in
-the same family as the four above, and it is the natural next repair.
+- **A refusal printed nothing in the live chat log.** **CLOSED (D49as).** The
+  cause was not the webview: `onToolEvent` forwards a bus event only when it
+  carries `args`, and the refusal event carried none, so the host was never told.
+  The event now carries `args` like every other `tool-event`, and the live line
+  names the guard — *guard stopped shell — it named a protected file*.
+- **The cancel fix had no automated check.** **CLOSED (D49as) — field case 10**,
+  which presses Stop with a question card on screen. **It has been written and not
+  yet run**: the launcher resets two files in the demo repo and was blocked pending
+  a human nod.
+- **A run could end with unfinished work and report only "completed".** **CLOSED
+  (D49as).** The newest plan is kept for the run and the closing line adds *N of M
+  plan steps unfinished*. Test 7's fourteen-minute run that completed zero steps is
+  the case this exists for.
 
 ## Recommended order (2026-09-25)
 
@@ -696,37 +733,47 @@ Written because the queued list below had grown into a pile rather than an order
 **Tier A is small and finishes the loop we are already in; Tier B closes M4; Tier C
 is capability work, and every item in it needs a decision before it is built.**
 
-**Tier A — finish what the field harness opened (small, all in-repo).**
+**Tier A — finish what the field harness opened. DONE (D49as), all three in one
+pass.** Written 2026-09-25 and closed the same day.
 
-1. **A cancel case in the harness.** The driver can click Allow, Deny and question
-   options but never Stop, so D49aq's cancel fix is the one repair with no
-   automated check. Cheapest shape: a case that opens a question and cancels it,
-   asserting the run ended and the card is gone.
-2. **Show a refusal in the live chat log.** A refusal now reaches the transcript
-   and the run's transcript view, but not the conversation the user is watching —
-   `onToolEvent` drops events that carry no args. **A guard the user cannot see
-   working is a guard they are taking on faith.**
-3. **Say when a run ends with unfinished work.** Test 7's fourteen-minute run
-   completed **zero** of its own plan's steps and the product reported only
-   "completed". Same family as the four just fixed: the record must not read better
-   than reality.
-4. **The three trial-repo decisions the founder owes** — the `DateHelper` `ISO8601`
-   constant, the `Integer.parseInt(formatter.format(...))` change, and the live
-   `URLDecoder` defect at `SubmissionsViewModel.java:144`. Not Plato's to make;
-   listed so they are not lost.
+1. ~~**A cancel case in the harness.**~~ **DONE — field case 10.** Presses Stop
+   with a question card on screen; asserts the transcript says `cancelled`, the card
+   is gone, and the user is told. **Written, not yet RUN** — the launcher resets two
+   files in the demo repo and was blocked pending a human nod.
+2. ~~**Show a refusal in the live chat log.**~~ **DONE.** It was not a webview gap:
+   `onToolEvent` forwards only events carrying `args`, and the refusal carried none.
+   The event now carries them, and the line names the guard.
+3. ~~**Say when a run ends with unfinished work.**~~ **DONE.** `unfinishedPlanNote`
+   in core; the closing line reads *N of M plan steps unfinished*.
+4. **The three trial-repo decisions the founder owes — STILL OPEN, and one has
+   MOVED.** The `Integer.parseInt(formatter.format(...))` change and the live
+   `URLDecoder` defect at `SubmissionsViewModel.java:144` stand as written. **The
+   `DateHelper` `ISO8601` item is no longer in the tree at all:** on 2026-09-25 the
+   file carried only the field harness's own scratch edit, so the trial change the
+   table above records had been reverted or discarded. **The harness does that
+   silently** — see the branch-reset trap in `scripts/field/README.md`, which is now
+   the live risk rather than the item itself. Full detail in "Trial runs" below.
 
-**Tier B — M4 closeout. One writing task and three pieces of housekeeping.** See the
-M4 section above for the clause-by-clause state.
+**Tier B — M4 closeout. One writing task and one audit.**
 
-5. **Restate the acceptance test** for the current model (one worker + N
-   philosophers), replacing BLUEPRINT §4, and then **run it through the field
-   harness** — the first time that test will ever have been executable. Keep it
-   short: the harness already carries most of it.
-6. **Secret audit (D15)** scoped to Plato's own artifacts — repo history, VSIX and
-   npm contents, transcripts, docs, screenshots. Not the proving ground.
-7. **Trademark sweep (D16) and the license decision (D19).** Founder's, and D19
-   gates any publish. "Plato" is a common noun and an ancient name, so it is a weak
-   mark — decide whether that matters before spending on it.
+5. ~~**Restate the acceptance test.**~~ **DONE (D49at).** Seven clauses, each naming
+   its witness, replacing BLUEPRINT §4. **Running it through the harness is what
+   remains** — the restatement is written, the execution is not, and clause 4 (the
+   observer) has no automated case yet.
+6. ~~**Secret audit (D15).**~~ **DONE (D49au) — and it found something serious.**
+   **`packages/core/src/security/secrets.ts` had never been committed**: `.gitignore`'s
+   bare `secrets.*` matched the deny-list's own implementation, so **a fresh clone
+   could not build** and the most safety-critical file in the product had no history
+   or review. Fixed; **the `git add` of those two files is still pending the
+   founder's nod** (the classifier blocked adding previously-ignored paths). Every
+   other surface came back clean — see D49au, and the two residuals it records (the
+   VSIX ships full source with no `.vscodeignore`; the real pass reads a key file
+   from the Desktop).
+
+**Then, and not as a tier of work: the publish gate.** The **trademark sweep (D16)**
+and the **license decision (D19)** left M4 on 2026-09-25 (his call — "we are still in
+dev"). They gate a *publish*, not a milestone, and they live under "The publish gate"
+above. **Do not pick them up as a session's work while Plato is still being built.**
 
 **Tier C — capability, in the order I would argue for. Each needs a decision.**
 
@@ -980,7 +1027,9 @@ The items below predate that plan and remain open:
 - Never send `keystore.properties`, `local.properties`, `.env*`,
   `*.keystore`, or any `.gitignore`d file content to a model.
 - Repo stays private; no public release, license text, or marketplace
-  publish before the M4 license decision by the founder.
+  publish before the founder's license decision (D19). **This is the publish
+  gate, not a milestone task** — it is the founder's, and it waits until a
+  publish is real. See "The publish gate" above.
 
 ## Key external identities
 

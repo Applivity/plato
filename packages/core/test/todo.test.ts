@@ -4,6 +4,7 @@ import {
   renderTodos,
   todoCounts,
   todoSummary,
+  unfinishedPlanNote,
   TODO_MAX_CONTENT,
   TODO_MAX_ITEMS,
   type TodoItem,
@@ -140,5 +141,41 @@ describe('todoSummary (D49ah)', () => {
     // The log's DIGEST_MAX is 220; the summary must not depend on a truncation
     // to fit, because a half-written summary reads as a whole one.
     expect(todoSummary(many).length).toBeLessThan(220);
+  });
+});
+
+describe('unfinishedPlanNote (D49as)', () => {
+  it('says how much of the plan the run ended against', () => {
+    expect(
+      unfinishedPlanNote([
+        item('a', 'completed'),
+        item('b', 'pending'),
+        item('c', 'in_progress'),
+      ]),
+    ).toBe('2 of 3 plan steps unfinished');
+  });
+
+  it('counts an in-progress step as unfinished', () => {
+    // The failure this exists for: a run that stopped mid-step is not a finished
+    // run, and "in progress" is exactly where a stalled run leaves its plan.
+    expect(
+      unfinishedPlanNote([item('a', 'completed'), item('b', 'in_progress')]),
+    ).toBe('1 of 2 plan steps unfinished');
+  });
+
+  it('says nothing when the plan is complete', () => {
+    // Not an empty string by accident: a note on EVERY run is noise, and would
+    // stop the line meaning "this run ended early".
+    expect(unfinishedPlanNote([item('a', 'completed')])).toBe('');
+  });
+
+  it('says nothing when the run wrote no plan at all', () => {
+    expect(unfinishedPlanNote([])).toBe('');
+  });
+
+  it('uses the singular for a one-step plan', () => {
+    expect(unfinishedPlanNote([item('the only step', 'pending')])).toBe(
+      '1 of 1 plan step unfinished',
+    );
   });
 });

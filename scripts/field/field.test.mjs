@@ -147,6 +147,10 @@ describe('Plato field tests — real VS Code', function () {
           // never passed, never fired, and the question card was never touched. Two
           // runs of selector-hunting followed from that one wrong property, and a
           // silent handler is indistinguishable from a card that never appeared.
+          // D49as: case 10 presses Stop with the card on screen instead of
+          // answering it. The two are exclusive — a case that cancels has no
+          // answers to give, because the run is over.
+          cancelOnQuestion: run.cancelOnQuestion === true,
           question: run.question ? async () => {
             // Test 6's own ask: pick two options, jump to another tab, come back,
             // and check the picks survived the round trip. Every outcome below is
@@ -208,6 +212,24 @@ describe('Plato field tests — real VS Code', function () {
             if (!screen.includes(needle)) notes.push(`LOG: the chat log does not mention ${needle}`);
           }
         }
+        if (c.n === 10) {
+          // D49as: three things a cancelled run must show, and the middle one is
+          // the defect itself. "The run ended" was never in doubt — the transcript
+          // check covers that. What the user sees must agree: the card must be
+          // GONE, and the run must SAY it was cancelled. A run that stops in
+          // silence leaves the user unsure the Stop took effect.
+          const stillOpen = await field.questionOpen();
+          if (!field.questionSeen) {
+            notes.push('QUESTION: no question card was ever detected, so the cancel path was never exercised');
+          }
+          if (stillOpen) {
+            notes.push('CANCEL: the question card is STILL on screen after the run was cancelled');
+          }
+          if (!/cancelled/i.test(screen)) {
+            notes.push('CANCEL: the run does not say it was cancelled, so nothing tells the user the Stop worked');
+          }
+          notes.push(`cancel: card-dismissed=${!stillOpen} says-cancelled=${/cancelled/i.test(screen)}`);
+        }
         if (run.expectOnDisk) {
           const p = join(DEMO_REPO, run.expectOnDisk.file);
           const body = readFileSync(p, 'utf8');
@@ -246,7 +268,7 @@ describe('Plato field tests — real VS Code', function () {
           if (!chk.ok) notes.push(`TRANSCRIPT: ${chk.name} [${chk.detail}]`);
         }
 
-        const failures = notes.filter((n) => /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|LOG|DISK|TRANSCRIPT|TICKS):/.test(n));
+        const failures = notes.filter((n) => /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|LOG|DISK|TRANSCRIPT|TICKS|CANCEL):/.test(n));
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes) console.log(`    ${n}`);
         if (failures.length > 0) {

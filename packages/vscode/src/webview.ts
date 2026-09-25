@@ -265,6 +265,11 @@ export function chatHtml(): string {
   @keyframes pulse { 0%,100% { opacity:.25; } 50% { opacity:1; } }
   .msg.fin { border-left:2px solid var(--vscode-testing-iconPassed,#73c991);
              padding-left:8px; color:var(--pl-muted); font-size:12px; }
+  /* D49as: the guard stopping a call. Same stripe shape as the closing line, a
+     warning colour instead of a pass colour, and the text names the guard — so
+     the state is legible without the colour too. */
+  .msg.guard { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700);
+               padding-left:8px; color:var(--pl-muted); font-size:12px; }
   body.show-settings header:not(.shead), body.show-settings #log,
   body.show-settings #obs, body.show-settings footer,
   body.show-settings #statusbar, body.show-settings #emptyState { display:none !important; }
@@ -3909,6 +3914,16 @@ export function chatHtml(): string {
       // transcript shows the run changing its mind, which is what happened.
       case 'todo': flushToolBuffer(); addTodoCard(m.todos); break;
       case 'tool':
+        // D49as: a refusal is its own line, never a chip entry. The guard
+        // stopping a call is something the user must be able to watch happen —
+        // it ends the tool chain rather than being folded into a summary of what
+        // ran, because it did NOT run.
+        if (m.phase === 'refused') {
+          flushToolBuffer();
+          addMsg('guard', null, guardText(m.tool, m.reason));
+          refreshChip();
+          break;
+        }
         // Only completed calls count; pending/denied phases stay in the chip.
         if (m.phase === 'done') {
           toolBuffer.push({ tool: m.tool, phase: m.phase });
@@ -3983,6 +3998,13 @@ export function chatHtml(): string {
         }
         break;
       case 'tool':
+        // D49as: same rule on a reload as live — a refused call gets its own
+        // line and breaks the summary chain.
+        if (t.phase === 'refused') {
+          flushToolBuffer();
+          addMsg('guard', null, guardText(t.tool, t.reason));
+          break;
+        }
         if (t.phase === 'done') { toolBuffer.push({ tool: t.tool, phase: t.phase }); }
         break;
       case 'card-open': showCard(t, false); break;
@@ -4082,6 +4104,19 @@ export function chatHtml(): string {
     }
     log.appendChild(div);
     scroll();
+  }
+
+  /**
+   * D49as: the guard line's wording. ONE wording, shared by the live log and the
+   * rebuilt one, so a reload cannot tell a different story than the run did.
+   */
+  function guardText(tool, reason) {
+    const why = reason === 'secret'
+      ? 'it named a protected file'
+      : (reason === 'containment'
+        ? 'the path is outside the workspace'
+        : 'the guard refused it');
+    return 'guard stopped ' + String(tool) + ' — ' + why;
   }
 
   function addMsg(cls, who, text, asHtml) {

@@ -123,6 +123,24 @@ export function todoCounts(todos: readonly TodoItem[]): {
 }
 
 /**
+ * What to say when a run ends having written a plan it did not finish. Returns
+ * '' when the plan is complete, and '' when there is no plan at all, because a
+ * note on every run would be noise — the point is to mark the runs that ENDED
+ * early, not to summarise all of them.
+ *
+ * D49as: written because a real run (field test 7, 2026-09-25) ran fourteen
+ * minutes, completed ZERO of its own plan's steps, and the product reported only
+ * "completed". The plan is the model's own statement of the work; a run that ends
+ * against it must not read as a run that finished.
+ */
+export function unfinishedPlanNote(todos: readonly TodoItem[]): string {
+  const { total, done } = todoCounts(todos);
+  const open = total - done;
+  if (open === 0) return '';
+  return `${open} of ${total} plan ${total === 1 ? 'step' : 'steps'} unfinished`;
+}
+
+/**
  * The one-line account of a plan, used for the log's digest (D49ag) so a fold or
  * the next run knows a plan exists and where the run had got to — without
  * carrying the whole list through the summary.

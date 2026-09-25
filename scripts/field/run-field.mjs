@@ -1,5 +1,5 @@
 /**
- * Field-test launcher — the one command that runs the nine tests.
+ * Field-test launcher — the one command that runs the ten tests.
  *
  * What it does, in order, and why:
  *
@@ -13,6 +13,10 @@
  *      (they would be the founder's work, not the harness's), then puts the repo
  *      on a dated branch. It never commits and never pushes — the diff is left
  *      standing for a human to read.
+ *      **Read the trap in scripts/field/README.md before running on a
+ *      `plato-field-test-*` branch:** on that branch the two target files are
+ *      RESET without being asked, so any hand edit to them is destroyed. The
+ *      founder's trial work lives on that branch today.
  *   3. **Builds and packages fresh.** A stale VSIX would test old behaviour, so
  *      the bundle is rebuilt and the extension packaged before every run.
  *   4. **Starts the scripted model** and stops it afterwards.

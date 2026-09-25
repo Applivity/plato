@@ -1,12 +1,12 @@
-# Field tests — the nine live checks, driven automatically
+# Field tests — the ten live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
 was written for a human to run by hand in VS Code. This directory runs them
-without a human.
+without a human. **A tenth case was added here (D49as)** — see the table below.
 
 ```
-node scripts/field/run-field.mjs              # all nine
+node scripts/field/run-field.mjs              # all ten
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -64,6 +64,15 @@ Two rules keep the driver honest:
 | 7 plan card | exactly one step in progress | plan writes not gated |
 | 8 read/run memory | the log names the files | the recap turn makes 0 tool calls |
 | 9 auto | no card anywhere | the edit landed — and it is on disk |
+| 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
+
+**Why case 10 scripts work AFTER the question.** It stops a run that has a
+question on screen, and the two steps below that question are there so a run that
+was NOT stopped has something left to do. Without them the model's own next step
+would end the run, the transcript would say `complete`, and the case could pass on
+a product that ignored the Stop button entirely — a check that cannot fail. The
+case also refuses to pass if no question card was ever detected, and the driver
+treats a DISABLED Stop button as an error rather than a no-op click.
 
 ## Dependencies
 
@@ -148,6 +157,18 @@ on a dirty tree and, when already on a `plato-field-test-*` branch, resets the t
 target files. That reset is a `git checkout --`, which an auto-mode classifier may
 block as destructive — legitimate here (the branch exists only for this, and the
 edits are the harness's own), but it needs a human's nod or a permission rule.
+
+**The `git checkout --` on a `plato-field-test-*` branch destroys HAND EDITS to
+those two files, silently.** The guard that protects a founder's work — refusing
+to start on a dirty tree — **does not run on that branch**; the reset does. So if
+real work is ever done on the harness branch, an edit to `DateHelper.java` or
+`SubmissionsViewModel.java` is gone at the next run with nothing said. Seen for
+real on 2026-09-25: the trial-repo edit the handoff recorded for `DateHelper.java`
+was no longer in the tree, and only the harness's own scratch edits were. **Two
+ways out, and one of them should be taken:** teach the launcher to stash those
+files instead of discarding them, or keep the harness on its own branch and the
+trial work off it. Until one is chosen, **check `git diff` in the demo repo before
+a run, not after.**
 
 **Every step of a scripted scenario except the last must carry a tool call.** A
 narration-only step silently ends the run (that is the termination rule, D49ab),

@@ -20,7 +20,12 @@ import { decideWithArgs } from './modes.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
-import { AgentBus, RunController, type ToolPhase } from './bus.js';
+import {
+  AgentBus,
+  RunController,
+  type RefusalReason,
+  type ToolPhase,
+} from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
 import type { RetryOptions } from '../providers/retry.js';
 import { estimateCost } from './cost.js';
@@ -229,11 +234,12 @@ export interface LoopOptions {
     tool: string;
     args: ToolArgs;
     // D49aq: the bus's own union, so adding a phase cannot leave this list
-    // behind. A 'refused' event carries no args and is filtered out below, so
-    // this bridge never sees one — but the type must not be the reason it
-    // could not.
+    // behind.
     phase: ToolPhase;
     ok?: boolean;
+    // D49as: set only on phase 'refused' — which guard stopped the call. The
+    // live log names the guard, so the host needs the code, not just the phase.
+    reason?: RefusalReason;
   }) => void;
   /**
    * Optional M2 event bus (D24a); one is created internally when omitted
@@ -392,6 +398,7 @@ async function runLoop(
           args: e.args as ToolArgs,
           phase: e.phase,
           ok: e.ok,
+          reason: e.reason,
         });
       }
     });
@@ -784,14 +791,18 @@ async function runLoop(
         // D49aq: the guard is loud. It used to push a tool_result to the model
         // and emit NOTHING, so the transcript showed the same thing whether the
         // guard refused a call or the model never made one — and a guard whose
-        // refusals cannot be read back cannot be audited or debugged. The event
-        // carries a fixed reason code, never the argument, because arguments
-        // never reach the file (D24c).
+        // refusals cannot be read back cannot be audited or debugged.
+        // D49as: it carries `args` like every other tool-event. Omitting them was
+        // what kept a refusal out of the LIVE log: the host bridge only forwards
+        // an event that has args, so the reason never reached the conversation
+        // even though the transcript view showed it. The reason CODE is the new
+        // field; the arguments were always stripped before the file (D24c).
         bus.emit({
           type: 'tool-event',
           runId,
           tool: name,
           phase: 'refused',
+          args,
           reason: contained !== null ? 'containment' : 'secret',
         });
         results.push({

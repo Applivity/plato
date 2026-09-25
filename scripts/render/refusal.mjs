@@ -24,7 +24,19 @@ const showRun = async (p, events) => {
   await p.waitForTimeout(260);
 };
 
+const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
+  new MessageEvent('message', { data: x }),
+), msg);
+
+const replay = async (p, log) => {
+  await post(p, { type: 'restore', log, hasConnections: true, title: '' });
+  await p.waitForTimeout(260);
+};
+
 const toolLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.tool')]
+  .map((e) => e.textContent));
+
+const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.guard')]
   .map((e) => e.textContent));
 
 // A. Each guard names itself.
@@ -77,6 +89,72 @@ const toolLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.to
   check('the refusal sits between them, still named',
     /refused \(protected file\)/.test(lines), lines);
   checkPageClean(p, 'mixed phases');
+  await p.close();
+}
+
+// D. The LIVE conversation shows a refusal as it happens (D49as).
+//
+// The gap this closes: a refusal reached the run's transcript view and never the
+// chat the user was watching. The cause was not styling — the host bridge
+// forwards a bus event only when it carries `args`, and the refusal event
+// carried none, so the host was never told. These two blocks pin the host's
+// message shape and the drawing of it, so a revert to an args-less event (which
+// loop.test.ts guards from the other side) cannot pass unnoticed here either.
+{
+  const p = await page(760);
+  await post(p, { type: 'tool', tool: 'shell', phase: 'refused', reason: 'secret' });
+  await post(p, { type: 'tool', tool: 'write_file', phase: 'refused', reason: 'containment' });
+  await p.waitForTimeout(160);
+  const lines = (await guardLines(p)).join('\n');
+  check('a refusal is drawn in the live conversation', lines.length > 0, lines);
+  check('the live line names the secret guard',
+    /shell — it named a protected file/.test(lines), lines);
+  check('the live line names containment',
+    /write_file — the path is outside the workspace/.test(lines), lines);
+  checkPageClean(p, 'live guard line');
+  await p.close();
+}
+
+// E. A refusal breaks the tool chain instead of being folded into it.
+//
+// The chip merges a run of completed calls into one summary. A refused call did
+// NOT run, so it must end the chain — otherwise "3 tools" would count one that
+// the guard stopped, and the guard's line would sit under a summary it does not
+// belong to.
+{
+  const p = await page(760);
+  await post(p, { type: 'tool', tool: 'read_file', phase: 'done', ok: true });
+  await post(p, { type: 'tool', tool: 'shell', phase: 'refused', reason: 'secret' });
+  await post(p, { type: 'tool', tool: 'grep', phase: 'done', ok: true });
+  await p.waitForTimeout(700);
+  const guard = (await guardLines(p)).join('\n');
+  const summary = await p.evaluate(() => [...document.querySelectorAll('.msg.tool-summary')]
+    .map((e) => e.textContent).join('\n'));
+  check('the refusal is still drawn between two allowed calls',
+    /shell — it named a protected file/.test(guard), guard);
+  check('and the refused call is NOT counted among the tools that ran',
+    !/3 tools/.test(summary), summary);
+  checkPageClean(p, 'chain broken');
+  await p.close();
+}
+
+// F. A reload says the same thing the live line said (D49as).
+//
+// One wording, two paths. A second rendering that described the refusal
+// differently would mean the record depends on when you looked at it.
+{
+  const p = await page(760);
+  await replay(p, [
+    { k: 'msg', cls: 'you', who: 'You', text: 'do the thing' },
+    { k: 'tool', tool: 'read_file', phase: 'done' },
+    { k: 'tool', tool: 'shell', phase: 'refused', reason: 'secret' },
+    { k: 'tool', tool: 'grep', phase: 'done' },
+  ]);
+  const guard = (await guardLines(p)).join('\n');
+  check('a refusal survives a reload as its own line', guard.length > 0, guard);
+  check('and it says what the live line said',
+    /shell — it named a protected file/.test(guard), guard);
+  checkPageClean(p, 'reloaded guard line');
   await p.close();
 }
 

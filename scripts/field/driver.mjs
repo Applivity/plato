@@ -220,6 +220,27 @@ export class Field {
     return (await this.cardKind()).kind === 'question';
   }
 
+  /**
+   * Stops the run the way a person does — the Stop control in the composer.
+   *
+   * D49as: this is what case 10 exists for. The control is disabled unless a run
+   * is active, so a disabled button is an ERROR here rather than a silent no-op:
+   * a click on a disabled button does nothing, the run would keep going, and the
+   * harness would report the hang instead of the reason for it. While a QUESTION
+   * card is open the button must be enabled — that is the claim under test.
+   */
+  async cancel() {
+    const btn = await this.driver.findElement(By.id('cx'));
+    if ((await btn.getAttribute('disabled')) !== null) {
+      throw new Error(
+        'the Stop control is disabled while a run is active — the user has no way to stop it',
+      );
+    }
+    await this.clickElement(btn);
+    this.log('  cancelled the run');
+    await this.driver.sleep(SETTLE_MS);
+  }
+
   /** Clicks Allow once / Deny / Approve-all on the open card. */
   async decide(which) {
     const xpath =
@@ -263,11 +284,12 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false } = {}) {
     const started = Date.now();
     let step = 0;
     let finished = null;
     let answered = 0;
+    let cancelled = false;
     this.questionSeen = false;
     this.lastWatch = null;
     this.watchLines = 0;
@@ -286,13 +308,24 @@ export class Field {
       // on screen until the clock ran out — the very hang this rule exists to stop.
       if (finished === null) {
         await this.watchForQuestion(started);
-        if (await this.questionOpen()) {
+        if (!cancelled && (await this.questionOpen())) {
           if (answered >= MAX_QUESTIONS) {
             throw new Error(`answered ${MAX_QUESTIONS} question cards in one run — that is a loop, not a conversation`);
           }
           answered += 1;
           this.questionSeen = true;
-          if (question !== undefined) {
+          if (cancelOnQuestion) {
+            // D49as: the case under test. Stop is pressed WHILE the card is on
+            // screen. Before the fix the handler unblocked a waiting approval and
+            // never a waiting question, so pressing Stop did nothing and the only
+            // way out was to answer a card belonging to a run the user had
+            // already abandoned. `cancelled` guards the branch: if the card does
+            // not go away, this must not re-enter and cancel forever — the
+            // question must be answered or the run must end.
+            this.log('  cancelling with the question card open');
+            await this.cancel();
+            cancelled = true;
+          } else if (question !== undefined) {
             this.log('  question card is open');
             await question();
           } else {

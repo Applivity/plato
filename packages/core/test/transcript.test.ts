@@ -35,6 +35,18 @@ describe('TranscriptWriter', () => {
       args: { path: 'SECRETARGS.env' },
     });
     bus.emit({
+      type: 'tool-event',
+      runId: 'abc123',
+      tool: 'shell',
+      phase: 'refused',
+      ok: false,
+      reason: 'secret',
+      // D49as: a refusal now carries args so the LIVE log can name the guard.
+      // The file must keep stripping them — a guard that leaks the command it
+      // refused would be worse than the one that said nothing.
+      args: { command: 'cat REFUSEDARGS.keystore' },
+    });
+    bus.emit({
       type: 'approval-requested',
       runId: 'abc123',
       tool: 'apply_diff',
@@ -67,7 +79,7 @@ describe('TranscriptWriter', () => {
       .filter((l) => l.length > 0)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-    expect(lines).toHaveLength(8);
+    expect(lines).toHaveLength(9);
     expect(lines[0]).toMatchObject({
       kind: 'header',
       schemaVersion: 1,
@@ -78,6 +90,10 @@ describe('TranscriptWriter', () => {
     const raw = readFileSync(join(runsDir, name!), 'utf8');
     expect(raw).not.toContain('SECRETARGS');
     expect(raw).not.toContain('PREVIEWLEAK');
+    // The refusal's arguments are stripped with everyone else's.
+    expect(raw).not.toContain('REFUSEDARGS');
+    // ...but its reason survives, because that is the part worth reading back.
+    expect(raw).toContain('"reason":"secret"');
     // But ordinary payloads do.
     expect(raw).toContain('hello');
 

@@ -275,6 +275,30 @@ const RULES = {
       detail: summarise(a.toolEvents.filter((e) => e.tool.startsWith('write') || e.tool.startsWith('apply'))),
     },
   ],
+
+  // 10 — Stop, pressed while a question is on screen (D49as).
+  //
+  // The transcript's job here is to say the run really STOPPED, and to show that
+  // the question was resolved rather than left dangling: a cancelled run must not
+  // strand a tool call, because the model's next request would then carry an
+  // unanswered tool_use and a strict server rejects it outright (D49r).
+  10: (a) => [
+    {
+      name: 'the run ended as cancelled, not as a completion',
+      ok: a.completed.some((e) => e.reason === 'cancelled'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the question call was resolved rather than left hanging',
+      ok: a.phasesFor('ask_user').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('ask_user')),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
 };
 
 function summarise(events) {

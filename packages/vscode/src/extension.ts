@@ -28,6 +28,8 @@ import {
   digestToolCall,
   buildFoldPrompt,
   parseTodos,
+  unfinishedPlanNote,
+  type RefusalReason,
   type TodoItem,
   ObserverAgent,
   loadTeamConfig,
@@ -351,7 +353,15 @@ type Entry =
    * so a fold summarising the row could not say what the run had done — and
    * neither could the next run's model, whose memory is derived from this log.
    */
-  | { k: 'tool'; tool: string; phase: string; digest?: string; ok?: boolean }
+  | {
+      k: 'tool';
+      tool: string;
+      phase: string;
+      digest?: string;
+      ok?: boolean;
+      /** D49as: set only on phase 'refused' — which guard stopped the call. */
+      reason?: RefusalReason;
+    }
   | { k: 'card-open'; tool: string; preview: string }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
@@ -2655,6 +2665,8 @@ class ChatHost {
     void this.maybeGenerateTitle(conn, apiKey, ref, task);
     const started = Date.now();
     let toolsUsed = 0;
+    // D49as: the plan as the run last set it. Empty until the model writes one.
+    let lastPlan: TodoItem[] = [];
     // M2: every run is transcribed under ~/.plato/runs/<project-key>/ (D24c,
     // D46) — personal state, never the shared repo.
     const bus = new AgentBus();
@@ -3021,23 +3033,39 @@ class ChatHost {
             tool: e.tool,
             phase: e.phase,
             ok: e.ok,
+            // D49as: the guard's reason. Without it the live log can say a call
+            // was stopped but not which guard stopped it.
+            reason: e.reason,
           });
-          if (e.phase === 'done' || e.phase === 'denied' || e.phase === 'declined') {
+          // D49as: 'refused' joins the persisted set. The guard's decisions are
+          // part of what happened in the run, so a reload must not lose them —
+          // and a run the user is watching must show them as they happen.
+          if (
+            e.phase === 'done' ||
+            e.phase === 'denied' ||
+            e.phase === 'declined' ||
+            e.phase === 'refused'
+          ) {
             this.push({
               k: 'tool',
               tool: e.tool,
               phase: e.phase,
               digest: digestToolCall(e.tool, e.args),
               ok: e.ok,
+              reason: e.reason,
             });
           }
           // D49ah: the plan is shown as it is set, and recorded so a reload
           // rebuilds it. Parsed with the same reader the tool itself used, so a
           // list the panel draws is a list the runner accepted — never a
           // half-read one.
+          // D49as: the newest list is ALSO kept here, so the run's closing line
+          // can say when it ended against its own plan. The panel draws every
+          // list as it was set; this holds what the run FINISHED with.
           if (e.tool === 'todo_write' && e.phase === 'done') {
             const parsed = parseTodos(e.args['todos']);
             if ('todos' in parsed) {
+              lastPlan = parsed.todos;
               this.push({ k: 'todo', todos: parsed.todos });
               void this.panel.webview.postMessage({
                 type: 'todo',
@@ -3059,13 +3087,19 @@ class ChatHost {
         });
         this.replyBuffer = '';
       }
+      // D49as: the run's own account of how it ended. `unfinishedPlanNote`
+      // returns '' for a finished plan and for no plan at all, so this adds a
+      // line only where one is earned.
+      const endNotes: string[] = [];
+      if (result.reason === 'cap') {
+        endNotes.push('stopped early — output hit the token cap');
+      } else if (result.reason === 'cancelled') {
+        endNotes.push('cancelled');
+      }
+      const unfinished = unfinishedPlanNote(lastPlan);
+      if (unfinished !== '') endNotes.push(unfinished);
       this.send('done', {
-        note:
-          result.reason === 'cap'
-            ? 'stopped early — output hit the token cap'
-            : result.reason === 'cancelled'
-              ? 'cancelled'
-              : '',
+        note: endNotes.join(' · '),
         secs: Math.max(1, Math.round((Date.now() - started) / 1000)),
         tools: toolsUsed,
         tok: fmtTokens(result.inputTokens + result.outputTokens),

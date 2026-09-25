@@ -326,4 +326,44 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 10,
+    title: 'Stop works while a question is open — the run ends and the card goes',
+    // D49as. The one repair from the 2026-09-25 batch that had no automated
+    // check, because the driver could click Allow, Deny and question options but
+    // never Stop. It is the only way to reach the defect: the cancel handler
+    // unblocked a waiting APPROVAL and never a waiting QUESTION, so a run that
+    // had asked something could not be stopped until the user answered it.
+    runs: [
+      {
+        mode: 'plan',
+        prompt: 'Before you do anything, ask me which date behaviour matters most to me.',
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'ask_user',
+                args: {
+                  questions: [
+                    {
+                      question: 'Which date behaviour matters most?',
+                      options: ['Formatting', 'Parsing'],
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          // The steps below exist so a run that was NOT stopped has work left to
+          // do. Without them the model's own next step would end the run, and the
+          // case would pass on a product that had ignored the Stop button — the
+          // same shape of mistake as a check that cannot fail.
+          { calls: [{ tool: 'shell', args: { command: 'ls app/src/main/java' } }] },
+          { text: 'Here is what I found.' },
+        ],
+        cards: [],
+        cancelOnQuestion: true,
+      },
+    ],
+  },
 ];

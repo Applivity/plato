@@ -642,10 +642,14 @@ describe('runAgentLoop workspace containment (D49k)', () => {
       },
     };
     const bus = new AgentBus();
-    const refused: { tool: string; reason?: string }[] = [];
+    const refused: { tool: string; reason?: string; args?: unknown }[] = [];
     bus.on((e) => {
       if (e.type === 'tool-event' && e.phase === 'refused') {
-        refused.push({ tool: e.tool, ...(e.reason !== undefined ? { reason: e.reason } : {}) });
+        refused.push({
+          tool: e.tool,
+          ...(e.reason !== undefined ? { reason: e.reason } : {}),
+          args: e.args,
+        });
       }
     });
     const r = await runAgentLoop({
@@ -664,7 +668,19 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     // D49aq: and the refusal is now AUDIBLE. It used to emit nothing at all, so
     // the transcript could not tell "the guard refused this" from "the model
     // never called a tool" — the two produced the same empty file.
-    expect(refused).toEqual([{ tool: 'write_file', reason: 'containment' }]);
+    // D49as: it carries `args` too, LIKE EVERY OTHER tool-event. That is not
+    // decoration: the host bridge (`onToolEvent`) forwards only an event that
+    // has args, so without this the live log could never be told about a
+    // refusal — which is exactly why the guard was invisible in the chat while
+    // the transcript view showed it. A revert to an args-less event breaks this
+    // assertion AND the live line.
+    expect(refused).toEqual([
+      {
+        tool: 'write_file',
+        reason: 'containment',
+        args: { path: '../../escape.ts', content: 'x' },
+      },
+    ]);
   });
 
   it('runs a read-only shell command in edit with no card at all (D49an)', async () => {
@@ -746,10 +762,14 @@ describe('runAgentLoop workspace containment (D49k)', () => {
       },
     };
     const bus = new AgentBus();
-    const refused: { tool: string; reason?: string }[] = [];
+    const refused: { tool: string; reason?: string; args?: unknown }[] = [];
     bus.on((e) => {
       if (e.type === 'tool-event' && e.phase === 'refused') {
-        refused.push({ tool: e.tool, ...(e.reason !== undefined ? { reason: e.reason } : {}) });
+        refused.push({
+          tool: e.tool,
+          ...(e.reason !== undefined ? { reason: e.reason } : {}),
+          args: e.args,
+        });
       }
     });
     const r = await runAgentLoop({
@@ -764,9 +784,14 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     expect(r.reason).toBe('complete');
     expect(approvals).toBe(0);
     expect(refusals.join(' ')).toContain('protected file');
-    // D49aq: the reason code distinguishes the two guards, and carries no
-    // argument — the command text never reaches the file (D24c).
-    expect(refused).toEqual([{ tool: 'shell', reason: 'secret' }]);
+    // D49aq: the reason code distinguishes the two guards.
+    // D49as: the arguments ride the bus like every other tool-event, and the
+    // transcript still strips them (D24c) — the command text never reaches the
+    // file. They must be HERE, because the host bridge forwards only an event
+    // that has them, which is what makes the refusal visible in the live chat.
+    expect(refused).toEqual([
+      { tool: 'shell', reason: 'secret', args: { command: 'cat keystore.properties' } },
+    ]);
   });
 
   it('still asks before an ordinary in-workspace write', async () => {
