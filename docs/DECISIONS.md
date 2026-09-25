@@ -3288,13 +3288,19 @@ principle: **the record must not read better than what happened.**
    `unfinishedPlanNote` in core, where it can be tested, because the shell has no unit tests and
    **this is the class of fault that lives there**. It returns `''` for a finished plan and for no
    plan at all: a note on every run would stop the line meaning "this run ended early".
-3. **The cancel fix now has an automated check.** D49aq's fourth repair was verified by reading
-   alone, because the driver could click Allow, Deny and question options but never Stop. **Field
-   case 10** presses Stop with a question card on screen and asserts three things: the transcript
-   says `cancelled`, the card is gone from the screen, and the run says so to the user. **The case
-   scripts two steps AFTER the question** so an ignored Stop button leaves work for the run to do —
-   otherwise the model's own next step would end the run and the case would pass on a broken
-   product. The driver treats a disabled Stop button as an **error**, not a no-op click.
+3. **The cancel fix now has an automated check — and it has RUN.** D49aq's fourth repair was
+   verified by reading alone, because the driver could click Allow, Deny and question options but
+   never Stop. **Field case 10** presses Stop with a question card on screen and asserts three
+   things: the transcript says `cancelled`, the card is gone from the screen, and the run says so to
+   the user. **The case scripts two steps AFTER the question** so an ignored Stop button leaves work
+   for the run to do — otherwise the model's own next step would end the run and the case would pass
+   on a broken product. The driver treats a disabled Stop button as an **error**, not a no-op click.
+   **Result (2026-09-26): PASS.** Transcript — `ask_user: requested → allowed → done`, then
+   `run-completed {reason: 'cancelled', turns: 2}`, no failure. Screen — the card is gone and the
+   closing line reads *✓ done in 2s · 1 tool call · 120 tok — cancelled*. **The proof it was a stop
+   rather than an ending: the scripted `shell` step after the question never ran**, so the cancel
+   reached the turn gate before the model's next call. Three repairs, three falsified fixes, and now
+   no repair in this batch resting on code reading alone.
 
 **The cancellation path needed no product change.** `loop.ts` already gates at the top of every turn
 and the host's cancel already resolved the waiting question (D49aq), so the repair was to *prove* it.

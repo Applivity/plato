@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-25)
+## Current state (verified 2026-09-26)
 
 - **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
   `.gitignore` carried a bare `secrets.*`, meant for local secret files, and it matched
@@ -29,10 +29,10 @@ are now only in PROGRESS.
   six others including the package barrel. Never committed, once, in the whole history: **a fresh
   clone could not build, and the most safety-critical file in the product had no history or
   review.** The glob is replaced by named files and the module and its test are added to the working
-  tree. **The rule: an ignore pattern must not be able to match source.** Found by listing
-  ignored-but-present files — the one check that sees a file the repository does not have. **The
-  `git add` of those two files was blocked pending the founder's nod, so check `git status` before
-  assuming the repo is buildable from a clone.**
+  tree, and **the founder staged both files on 2026-09-26**, so they are tracked from the next
+  commit and a clone builds again. **The rule: an ignore pattern must not be able to match source.**
+  Found by listing ignored-but-present files — the one check that sees a file the repository does
+  not have.
 
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
@@ -421,9 +421,9 @@ secret audit; both prove the product is sound, which is what a milestone is for.
    all, and it is recorded rather than assumed.
 2. **The secret audit is DONE (D49au, 2026-09-25)** — and it found that
    **`packages/core/src/security/secrets.ts` had never been in the repository at all**, matched by
-   `.gitignore`'s bare `secrets.*`. A fresh clone could not build. Fixed in the working tree; **the
-   `git add` of the two files is pending the founder's nod.** Everything else was clean; D49au
-   records the two residuals.
+   `.gitignore`'s bare `secrets.*`. A fresh clone could not build. Fixed, and **the founder staged
+   both files on 2026-09-26** so they are tracked from the next commit. Everything else was clean;
+   D49au records the two residuals.
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
 has shipped; the code is well past the `0.9.8` that PROGRESS's milestone table
@@ -718,10 +718,13 @@ gaps are what the repairs answer.)
   carries `args`, and the refusal event carried none, so the host was never told.
   The event now carries `args` like every other `tool-event`, and the live line
   names the guard — *guard stopped shell — it named a protected file*.
-- **The cancel fix had no automated check.** **CLOSED (D49as) — field case 10**,
-  which presses Stop with a question card on screen. **It has been written and not
-  yet run**: the launcher resets two files in the demo repo and was blocked pending
-  a human nod.
+- **The cancel fix had no automated check.** **CLOSED AND VERIFIED (D49as) — field
+  case 10**, which presses Stop with a question card on screen. **Run 2026-09-26 and
+  PASSED**: the transcript ends `cancelled` with the question resolved, the card is
+  gone from the window, and the closing line says cancelled. **The decisive detail is
+  a step that never ran** — the case scripts a `shell` call AFTER the question and no
+  such call appears, so the stop reached the turn gate rather than merely arriving
+  after the work finished.
 - **A run could end with unfinished work and report only "completed".** **CLOSED
   (D49as).** The newest plan is kept for the run and the closing line adds *N of M
   plan steps unfinished*. Test 7's fourteen-minute run that completed zero steps is
@@ -736,10 +739,10 @@ is capability work, and every item in it needs a decision before it is built.**
 **Tier A — finish what the field harness opened. DONE (D49as), all three in one
 pass.** Written 2026-09-25 and closed the same day.
 
-1. ~~**A cancel case in the harness.**~~ **DONE — field case 10.** Presses Stop
-   with a question card on screen; asserts the transcript says `cancelled`, the card
-   is gone, and the user is told. **Written, not yet RUN** — the launcher resets two
-   files in the demo repo and was blocked pending a human nod.
+1. ~~**A cancel case in the harness.**~~ **DONE AND RUN — field case 10, PASSED
+   2026-09-26.** Presses Stop with a question card on screen; the transcript ends
+   `cancelled`, the card is gone, and the window says cancelled. The scripted step
+   after the question never ran, which is what distinguishes a stop from an ending.
 2. ~~**Show a refusal in the live chat log.**~~ **DONE.** It was not a webview gap:
    `onToolEvent` forwards only events carrying `args`, and the refusal carried none.
    The event now carries them, and the line names the guard.
@@ -757,16 +760,17 @@ pass.** Written 2026-09-25 and closed the same day.
 **Tier B — M4 closeout. One writing task and one audit.**
 
 5. ~~**Restate the acceptance test.**~~ **DONE (D49at).** Seven clauses, each naming
-   its witness, replacing BLUEPRINT §4. **Running it through the harness is what
-   remains** — the restatement is written, the execution is not, and clause 4 (the
-   observer) has no automated case yet.
+   its witness, replacing BLUEPRINT §4. **What remains is running the whole test end
+   to end** — ten supporting cases exist and case 10 ran on 2026-09-26, but **clause 4
+   (the observer in Duo) has no automated case at all**, so that clause is by hand or
+   not at all.
 6. ~~**Secret audit (D15).**~~ **DONE (D49au) — and it found something serious.**
    **`packages/core/src/security/secrets.ts` had never been committed**: `.gitignore`'s
    bare `secrets.*` matched the deny-list's own implementation, so **a fresh clone
    could not build** and the most safety-critical file in the product had no history
-   or review. Fixed; **the `git add` of those two files is still pending the
-   founder's nod** (the classifier blocked adding previously-ignored paths). Every
-   other surface came back clean — see D49au, and the two residuals it records (the
+   or review. Fixed, and **the founder staged both files on 2026-09-26** — they are
+   tracked from the next commit, so a clone builds. Every other surface came back
+   clean — see D49au, and the two residuals it records (the
    VSIX ships full source with no `.vscodeignore`; the real pass reads a key file
    from the Desktop).
 
