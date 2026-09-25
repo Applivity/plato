@@ -3308,8 +3308,11 @@ VS Code. A human is slow and can misread a card, so **the nine now drive themsel
 Code, a real webview, a scripted model, and evidence read from the run's own transcript.
 
 `scripts/field/` is the harness; `scripts/field/README.md` is how to run it and
-`scripts/field/FINDINGS.md` is the full record (findings, environment traps, and a done-vs-proposed
-fix table). Per D48, this entry holds only the *why* and what is **locked**; the detail lives there.
+`scripts/field/README.md` is the durable half of the record — how to run it, and the environment
+traps that report as something else. **The findings log itself was deliberately NOT kept** (founder's
+call, 2026-09-25): a list of symptoms goes stale as the symptoms are fixed, so the conclusions live
+here and in the PROGRESS row, and the traps live in the README. Nothing in this entry depends on a
+file that is no longer there.
 
 **Locked.**
 
@@ -3337,13 +3340,14 @@ fix table). Per D48, this entry holds only the *why* and what is **locked**; the
    Case 6's new assertion was proven by making the model ask nothing: the case fails exactly where
    it used to pass.
 
-**Plato defects this surfaced**, each needing a decision, recorded in full in FINDINGS.md: a
-pre-flight refusal leaves **no trace in the transcript** (F1 — a guard that cannot be audited cannot
-be trusted); `find` is not on the read-only allow-list, so `plan` refuses a genuinely read-only
-search (F2); a run ends on the first turn where the model calls no tool, which is documented but
-makes every scripted scenario delicate (F4); `approval-requested` means an ask was decided, **not
-that a card was shown** (F5); and an unanswered question **blocks a run indefinitely** — no timer
-exists — which is a hard stop with a provider bill attached (F9).
+**Plato defects this surfaced**, each needing a decision: a pre-flight refusal leaves **no trace in
+the transcript** (F1 — a guard that cannot be audited cannot be trusted); `find` is not on the
+read-only allow-list, so `plan` refuses a genuinely read-only search (F2); a run ends on the first
+turn where the model calls no tool, which is documented but makes every scripted scenario delicate
+(F4); `approval-requested` means an ask was decided, **not that a card was shown** (F5); and an
+unanswered question **blocks a run indefinitely**. **Four of the five are FIXED in D49aq** (the
+entry above, which also corrects the fifth clause's claim about a provider bill — there is none);
+**F4 was reviewed and is not a defect.**
 
 **Boundaries.** The demo repo is the only place the harness writes, always on a
 `plato-field-test-*` branch; it never commits and never pushes, and it refuses to start if the two

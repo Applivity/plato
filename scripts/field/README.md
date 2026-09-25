@@ -101,19 +101,97 @@ and before it touches the demo repo.
   prove the webview, the extension host, the gates and the transcript. They do
   not prove a real vendor endpoint — no test touches the network by design.
 
-## Two traps worth knowing
+## Traps
+
+Every one of these cost time to find. They are here because they are the kind of
+fault that reports as something else.
 
 **The editor's environment leaks.** Started from inside VS Code, the process
-inherits `ELECTRON_RUN_AS_NODE=1`, which makes any Electron binary start as
-plain Node. The VS Code under test then dies instantly and ChromeDriver reports
-it as `session not created: Chrome instance exited` — an error that says nothing
-about the cause. `run-field.mjs` deletes that variable and the `VSCODE_*` ones
-before launching. Never remove that block.
+inherits `ELECTRON_RUN_AS_NODE=1`, which makes any Electron binary start as plain
+Node. The VS Code under test then dies instantly and ChromeDriver reports it as
+`session not created: Chrome instance exited` — an error that says nothing about
+the cause (the binary also prints `task_name_for_pid: (os/kern) failure (5)`, and
+run by hand it reports `--version` as the *Node* version). `run-field.mjs` deletes
+that variable and the `VSCODE_*` ones before launching. **Never remove that
+block.**
 
-**The demo repo is the founder's real project.** Tests 4, 5 and 9 write files by
-design, and the repo holds `keystore.properties` and `local.properties`. So the
-launcher refuses to start if the two target files already carry uncommitted
-edits, puts the repo on a dated `plato-field-test-*` branch, and leaves the diff
-standing at the end. It never commits and never pushes. Test 1 uses a name that
-does not exist (`notes.keystore`) precisely so the guard can be tested without
-any secret being at risk — never change that to a real filename.
+**VS Code's modals are not in the webview.** The "Start a new chat?" confirmation
+is the workbench's own, outside the iframe. Unanswered, it blocks every later
+click, and the error blames the iframe — which reads like a webview bug.
+`driver.newChat()` steps out of the frame to answer it and back in.
+
+**Toasts sit over the composer.** A bottom-right toast covers the send button and
+the mode-picker rows, failing as `ElementClickInterceptedError` — again naming the
+iframe. Three defences: `extensions.ignoreRecommendations` so the recommendation
+never appears; `clearToasts()` before touching that corner (**the helper is
+`NotificationsCenter().clearAllNotifications()`** — `Notification().dismissAll()`
+does not exist, throws, and is swallowed by the catch, so it silently does
+nothing, which is worse than failing); and a JS-dispatch fallback in
+`clickElement()` that fires **only** on `intercepted`, never on a missing or
+disabled element, so a real regression still fails honestly. Sending uses Enter —
+it cannot be intercepted and it is what the placeholder tells a person to do.
+
+**A run with no stored API key never starts.** The host says "Plato needs an API
+key" and returns early: no provider call, no transcript error, just a run that
+appears to do nothing. The harness sets a throwaway key through the product's own
+command first.
+
+**A dependency install can break `pnpm run package`.** It once re-resolved
+`@vscode/vsce` and left a dangling symlink in `packages/vscode/node_modules`, so
+packaging failed with `Cannot find module …/vsce` while the lockfile was correct
+the whole time; `pnpm install` relinks it. After touching the dependency graph,
+re-run `pnpm --filter plato-vscode run package` to confirm.
+
+**A re-run needs the demo repo's scratch reset.** Tests 4, 5 and 9 write there, so
+a second run would start with the first run's edits. The launcher refuses to start
+on a dirty tree and, when already on a `plato-field-test-*` branch, resets the two
+target files. That reset is a `git checkout --`, which an auto-mode classifier may
+block as destructive — legitimate here (the branch exists only for this, and the
+edits are the harness's own), but it needs a human's nod or a permission rule.
+
+**Every step of a scripted scenario except the last must carry a tool call.** A
+narration-only step silently ends the run (that is the termination rule, D49ab),
+so every later step never executes and the case reports a *product* failure for a
+*script* error. This is how cases 3 and 5 first failed.
+
+**The harness must never wait for a person.** Answering a question card was once
+opt-in per case, so one omitted handler left the card on screen until the clock
+ran out — and against a real model that clock is 900 s, not 180. The driver now
+answers any question card the case did not declare and logs it as
+`UNEXPECTED question card`, the same rule the approval path already had: an
+unexpected card is recorded and dealt with, never allowed to block. **An omission
+now costs a wrong answer, never an indefinite wait.**
+
+**An approval list that runs out does not stop approving — it starts DENYING.**
+The scripted pass gives each case hand-written decisions, which is right when the
+model is scripted. The real pass inherited a fixed six and a real agent asks for
+more; the denial read to the model as the user refusing, so it re-planned and
+burned fifteen minutes without landing the change. The real pass uses
+`plan: 'all'`, which approves every card and still counts it.
+
+**"New Chat" is refused during a run, and silently.** One case overran its clock
+by fifteen seconds, so the next case's prompt went into the *still-live*
+conversation: no new run, no transcript, and a 900-second timeout reported against
+a case that had never started. `newChat` now proves the previous conversation is
+gone and fails loudly. **A silent refusal is worse than a loud one.**
+
+**A named-file assertion against a real model measures instruction-following.**
+Asked to comment a call in `SubmissionsViewModel.java`, a real model found it in
+`FormatterUtility.formatURL`, put it there, and said why. The write landed and the
+gate was absent — everything the case exists to check — but the assertion watched
+the other file. The disk check now measures the demo repo's diff as a whole and
+prints which files changed.
+
+**Test 1 uses a name that does not exist** (`notes.keystore`) precisely so the
+secret guard can be tested without a secret being at risk. **Never change it to a
+real filename.**
+
+**The real-model pass is the founder's to run.** The guard blocks an agent from
+*executing* a harness whose code reads the credential file, not merely from
+copying it. Write the assertions, and have the founder run the one command; tee it
+to a log the agent can read (the key is never printed):
+
+```
+cd /Users/ai/Desktop/plato
+PLATO_FIELD_REAL=1 node scripts/field/run-field.mjs 2>&1 | tee tmp/field/last-run.log
+```

@@ -427,12 +427,12 @@ used to claim.
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **534** passing
-  vitest cases across **34** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **575** passing
+  vitest cases across **35** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Fifteen suites, **318 assertions**; see
+  unit tests + render suites. Seventeen suites, **369 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -644,8 +644,8 @@ before any of it is trusted:**
    approval or question cards, the session memory, or the transcript — it is the
    only check in this list that exercises those in a running editor, and the only
    one where the *screen* and the transcript are cross-examined against each
-   other. `scripts/field/README.md` says how to run it, `scripts/field/FINDINGS.md`
-   holds what it has found and the traps that will cost you an hour. A new
+   other. `scripts/field/README.md` says how to run it and carries the traps that
+   will cost you an hour — read it before the first run. A new
    assertion here must be proved falsifiable, as in the suite below (D49ap).
    **Once per clone** (not after every `pnpm install`): the harness owns its
    dependencies and is not a workspace member, so install them with
@@ -743,6 +743,30 @@ seeing** — which is worth knowing before anyone spends a session on them.
   not yet scoped.
 - **Plato never reads a reasoning model's thinking tokens.** Recorded in the
   backlog. **Do not build a thinking display without the founder.**
+- **A taint rule for secret *materialisation*.** Withheld from the decision log
+  until now. Plato's secret check is a **name** check — it refuses tool arguments
+  that name a protected file. The stronger idea, which came out of watching a
+  real guard behave against a real agent: **a value READ from a sensitive source
+  reaching a new sink** is the thing to catch — copying it somewhere new, printing
+  it, or sending it out — where reading it to use it is ordinary. A deterministic
+  version needs no model: track which tool results came from a sensitive path and
+  refuse a later write, a shell command that emits it, or egress whose content
+  derives from one. **Needs a DECISIONS entry before it is built**, and it is the
+  interesting engineering rather than the urgent part.
+- **The founder owns the protected-name policy.** Today `SECRET_DENYLIST` is a
+  fixed list in `security/secrets.ts`. The proposal: make the set
+  **owner-configurable**, name the defaults in the UI rather than only in code,
+  give a refusal an explicit, visible, **expiring** per-session allowance (the way
+  `web_fetch` approvals already work, keyed `tool:host`), and have the refusal text
+  itself say how the human can permit it — so nobody has to read source to learn
+  why they are blocked. Small, and it is what turns a hard-coded prohibition into
+  a boundary with a gate.
+- **Close the quote-splice hole in the secret check, or decide not to.** `mentionsSecretPath`
+  is a text scan, so `cat key'store'.properties` names no deny-listed file and is
+  not refused — `secrets.ts` records the limit itself. **D49aq's shell tokenizer
+  produces the real filename and could close it in one line**, but that changes the
+  secret check for every tool, so it was left as a decision rather than taken
+  silently.
 
 **Three items the founder raised on 2026-09-24 — all three settled, and one of them was a
 contract change.** The full analysis is in the PROGRESS backlog and DECISIONS; the short
@@ -780,18 +804,21 @@ form:
   **A `shell` call is deliberately NOT remembered**: it asks every time, with the card's
   "approve all for this session" as the way to widen it.
 
-**Live verification is OUTSTANDING for everything below (2026-09-24).** Six changes — the
-question tabs, the three-mode merge, multi-select questions, the 3-option/4-question caps, the
-`apply_patch` session memory, and the read-only shell allowance in `plan` and `edit` — are verified
-by **unit tests and render suites only. No live run has exercised any of them.** A checklist of the
-nine checks, each with the prompt to paste, the mode to run it in, and what to look for, was
-produced for the founder at `tmp/plato-field-test.html` — **note that `tmp/` is gitignored, so if
-that file is gone the checks are lost with it and worth rebuilding from the D-entries.** The two
-that matter most: **the secret guard must refuse a shell command naming a protected file with NO
-card** (D49an/D49ao reordered what happens for that command), and **a read-only command must run
-with no card while `./gradlew` still asks** (the contrast is the feature). The run transcripts at
-`~/.plato/runs/…` record an `approval-requested` line per card and a phase per tool call, so "no
-card appeared" is checkable from the file rather than from a screenshot.
+**Live verification: no longer outstanding (2026-09-25).** Six changes were previously verified by
+unit tests and render suites only — the question tabs, the three-mode merge, multi-select questions,
+the 3-option/4-question caps, the `apply_patch` session memory, and the read-only shell allowance in
+`plan` and `edit`. **All six have now been exercised in a real VS Code**: the nine live checks run
+themselves (`scripts/field/`, D49ap) and pass, and a real-model pass covers the judgement half. The
+two that mattered most are covered — **the secret guard refuses a shell command naming a protected
+file with NO card**, and **a read-only command runs with no card while `./gradlew` still asks**.
+`tmp/plato-field-test.html` remains the by-hand checklist, but it is now a convenience rather than
+the only route; **`tmp/` is gitignored, so it is not the record** — `scripts/field/` is.
+
+**A note on how to read a run transcript, because the meaning of one line changed (D49aq).**
+`approval-requested` means an ask was RAISED, never that a card was DRAWN — in `edit` the per-file
+session memory answers without drawing one. **`approval-card` is the line that says which happened**
+(`via: shown | session-memory | session-approval`). A `refused` tool-event means the pre-flight
+guard stopped the call, and it names the guard (secret or containment).
 
 **Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
 the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and
