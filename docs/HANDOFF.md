@@ -70,7 +70,7 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and the whole scripted suite passes** — eleven cases when this landed, fourteen now. The
+  errors, and the whole scripted suite passes** — eleven cases when this landed, seventeen now. The
   notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
@@ -533,6 +533,12 @@ explicitly NOT work item 1 of anything.**
   how to **drive** a control (type into it, fire its real event, read back the
   message it posted) rather than only rendering it, and why the screenshot is
   part of the check.
+- Validate the **ACCEPTANCE TEST** — M4's definition of done, and the repo's end-to-end
+  check — with `node scripts/field/acceptance.mjs --run`. It packages a fresh VSIX, drives
+  all seventeen field cases through real VS Code, and judges the seven clauses (D49at),
+  exiting non-zero unless every one passes. `--run` inherits the launcher's **destructive
+  demo-repo reset**; to judge a run you already did, drop the flag. Use `render:fast`-style
+  judgement (`node scripts/field/verdict.mjs --case N --last 1`) when you want one case.
 - Validate the **provider adapters against the real SDK** with
   `node scripts/smoke-stream.mjs`. The unit tests **mock** `@anthropic-ai/sdk`,
   so they prove the adapter's wiring but not that the installed SDK behaves as
@@ -558,10 +564,14 @@ explicitly NOT work item 1 of anything.**
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Eleven
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Eighteen
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
+- `scripts/field/` — the **live** checks: seventeen scripted cases driving a real
+  VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
+  that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
+  including the traps and the honest boundaries.
 
 ## Trial runs — the proving-ground repo, and how Plato is actually judged
 
@@ -587,6 +597,15 @@ to read and nothing else.
 - **The founder's setup**: LiteLLM at his own base URL, model refs like `litellm:claude-sonnet-5`,
   plus a direct Anthropic connection. Context windows come from the connection (D49t), and
   prompt caching is working — a 40-turn run showed **99.5% of input served from cache**.
+
+> **RETIRED AS DECISION-TRACKING at the founder's direction (2026-09-27):** *"drop the trial
+> repo decision — we are building Plato, not fixing bugs for production."* What follows is a
+> **dated observation** of another repository's working tree, kept as the record of what a
+> trial run left behind. **Plato does not track it, does not maintain it, and owes it no
+> decisions.** Nothing here is a task. The one durable fact in it is a *process hazard* that
+> belongs to this repo and is documented where it applies: the launcher's `git checkout --`
+> on a `plato-field-test-*` branch discards hand edits to the two files it names, silently —
+> see the trap in `scripts/field/README.md`. **Do not re-verify this table; it is a snapshot.**
 
 **State of the trial repo as of 2026-09-24 (re-verified against the working tree, not the
 previous session's notes).** `git status` shows **six modified files and two untracked**, none
@@ -735,16 +754,18 @@ before any of it is trusted:**
 6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
-8. `node scripts/field/run-field.mjs` — **the nine live field tests, driven
-   automatically in a real VS Code through the real webview.** A scripted model
-   answers, so there is no key, no network and no cost; `FIELD_CASES=1,5` runs a
-   subset. Reach for this when a change touches the mode gates, a refusal, the
-   approval or question cards, the session memory, or the transcript — it is the
-   only check in this list that exercises those in a running editor, and the only
-   one where the *screen* and the transcript are cross-examined against each
-   other. `scripts/field/README.md` says how to run it and carries the traps that
-   will cost you an hour — read it before the first run. A new
-   assertion here must be proved falsifiable, as in the suite below (D49ap).
+8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
+   done) AND the seventeen live field cases it is built on, driven automatically in a real
+   VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
+   the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
+   A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
+   with `run-field.mjs` runs a subset. Reach for this when a change touches the mode gates,
+   a refusal, the approval, question or stuck cards, the session memory, the plan note, the
+   transcript, or egress — it is the only check in this list that exercises those in a
+   running editor, and the only one where the *screen* and the transcript are cross-examined
+   against each other. `scripts/field/README.md` says how to run it and carries the traps
+   that will cost you an hour — read it before the first run. A new assertion here must be
+   proved falsifiable, as in the suite below (D49ap).
    **Once per clone** (not after every `pnpm install`): the harness owns its
    dependencies and is not a workspace member, so install them with
    `cd scripts/field && pnpm install --ignore-workspace` — the launcher checks
@@ -811,16 +832,19 @@ pass.** Written 2026-09-25 and closed the same day.
    The event now carries them, and the line names the guard.
 3. ~~**Say when a run ends with unfinished work.**~~ **DONE.** `unfinishedPlanNote`
    in core; the closing line reads *N of M plan steps unfinished*.
-4. **The three trial-repo decisions the founder owes — STILL OPEN, and one has
-   MOVED.** The `Integer.parseInt(formatter.format(...))` change and the live
-   `URLDecoder` defect at `SubmissionsViewModel.java:144` stand as written. **The
-   `DateHelper` `ISO8601` item is no longer in the tree at all:** on 2026-09-25 the
-   file carried only the field harness's own scratch edit, so the trial change the
-   table above records had been reverted or discarded. **The harness does that
-   silently** — see the branch-reset trap in `scripts/field/README.md`, which is now
-   the live risk rather than the item itself. Full detail in "Trial runs" below.
+4. ~~**The three trial-repo decisions the founder owes.**~~ **DROPPED at the founder's
+   direction (2026-09-27): *"drop the trial repo decision — we are building Plato, not
+   fixing bugs for production."*** The `Integer.parseInt(formatter.format(...))` change and
+   the `URLDecoder` defect at `SubmissionsViewModel.java:144` are **not Plato's work and are
+   no longer tracked as open items here**; the proving ground is a place to exercise Plato,
+   not a codebase under maintenance. **Do not re-open them as a session's task.**
+   The one thing worth keeping from the item is the **process hazard, which is real
+   regardless**: the launcher's `git checkout --` on a `plato-field-test-*` branch discards
+   hand edits to those two files silently — see the trap in `scripts/field/README.md`.
 
-**Tier B — M4 closeout. One writing task and one audit.**
+**Tier B — M4 closeout. One writing task and one audit. BOTH DONE (2026-09-27) — M4 IS
+CLOSED.** Kept here as the record of what it took: the acceptance test restated and then
+executed, and the secret audit, which found a file the repository had never contained.
 
 5. ~~**Restate the acceptance test.**~~ **DONE, RESTATED AND EXECUTED (D49at,
    2026-09-27).** Seven clauses, each naming its witness, replacing BLUEPRINT §4 —
@@ -846,12 +870,14 @@ above. **Do not pick them up as a session's work while Plato is still being buil
 
 **Tier C — capability, in the order I would argue for. Each needs a decision.**
 
-8. ~~**LSP diagnostics after an edit.**~~ **BUILT (D49av, 2026-09-27) — with one
-   end-to-end verification outstanding.** The host now tells the model what the
-   editor reports about the files it just changed, keeping only errors new since
-   the write. **What is not proven: that a real editor's diagnostics reach a real
-   model, in any window** — the harness's VS Code publishes none to any extension
-   (measured), so that must be confirmed in a normal VS Code. See "Current state".
+8. ~~**LSP diagnostics after an edit.**~~ **BUILT AND VERIFIED END TO END (D49av,
+   2026-09-27).** The host tells the model what the editor reports about the files it just
+   changed, keeping only errors new since the write. **The mechanism was measured, not
+   assumed: a language server only reports on a file the editor is SHOWING.** An earlier
+   claim here — that the harness's VS Code "publishes no diagnostics to any extension" —
+   was **wrong** and was withdrawn: it publishes none for a file that is not being shown.
+   Collection is therefore quiet-first, and the file is shown only if that fails. See
+   "Current state" and D49av.
 9. **`web_search`** — deferred (D49p) because it needs a backend decision, and the
    convenient option has a trap: Anthropic's server-side search runs inside the API
    call, so **no approval card can fire for it**. Needs either a key in
@@ -859,8 +885,9 @@ above. **Do not pick them up as a session's work while Plato is still being buil
 10. **Checkpoints / undo** — snapshot before a write. Large, and it changes what an
     approval means.
 11. ~~**Bound `auto` by repetition, not volume.**~~ **BUILT (D49aw, 2026-09-27) and verified
-    end to end** — field case 12. Two triggers (a repeated call with the same result; turns
-    where nothing succeeded), a nudge at 3 and a card at 5, and the user decides. The
+    end to end** — field cases 12 (Stop), 13 ("keep going" with guidance) and 14 (the
+    no-progress trigger on its own). Two triggers (a repeated call with the same result;
+    turns where nothing succeeded), a nudge at 3 and a card at 5, and the user decides. The
     failure mode was the repeated identical call, exactly as predicted here.
 12. **The two guard proposals** that survived the guard note: a **taint rule** for
     secret materialisation, and **founder-owned protected names** with a visible

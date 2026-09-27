@@ -1189,6 +1189,11 @@ Socrates) predates the product lock, so it must be restated for one worker plus
 philosophers before it can be executed. M4 is **not** in closeout. Both HANDOFF
 and PROGRESS now say so.
 
+> **SUPERSEDED (2026-09-27).** The paragraph above was true when written and is not now:
+> the acceptance test was restated (**D49at**) and **executed — 7 of 7 clauses pass** — and
+> **M4 is done**. Left in place as the record of what was true on 2026-09-17; the current
+> state lives in HANDOFF and PROGRESS, per this entry's own rule.
+
 **BLUEPRINT and ARCHITECTURE are NOT rewritten.** They are the founder's
 design-tree record — BLUEPRINT was confirmed after the Q1–Q22 interview, and
 ARCHITECTURE's own terms are "binding unless a DECISIONS.md entry supersedes
