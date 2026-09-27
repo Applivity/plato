@@ -412,4 +412,45 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 12,
+    title: 'A run that repeats itself stops and asks, instead of looping forever',
+    // D49aw. The script IS the shape of a stuck model: the same call, with the
+    // same arguments, returning the same result, over and over. Nothing else in
+    // the product stops that — the turn cap was deleted (D49ab) because it also
+    // stopped WORKING runs, and nothing replaced it.
+    //
+    // `todo_write` is chosen deliberately. It repeats byte-identically, it
+    // touches nothing on disk, and it needs no approval in any mode — so this
+    // case measures the guard and not a tool, a gate, or the filesystem.
+    //
+    // FIVE identical turns is the number that matters: three earns the model a
+    // nudge and five is where the user is asked. Four would test only the nudge.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Keep working until the task is done.',
+        steps: [
+          ...Array.from({ length: 5 }, () => ({
+            calls: [
+              {
+                tool: 'todo_write',
+                args: {
+                  todos: [{ content: 'the same step', status: 'in_progress' }],
+                },
+              },
+            ],
+          })),
+          // The step below is what a product that IGNORED the guard would do
+          // next. Without it the model's own next step would end the run, the
+          // transcript would say `complete`, and the case could pass on a build
+          // with no bound at all — a check that cannot fail.
+          { text: 'Everything is done.' },
+        ],
+        cards: [],
+        // The driver presses Stop, because a card nobody answers parks the run.
+        stuckStop: true,
+      },
+    ],
+  },
 ];

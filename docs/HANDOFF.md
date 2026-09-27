@@ -23,6 +23,26 @@ are now only in PROGRESS.
 
 ## Current state (verified 2026-09-27)
 
+- **A run is bounded by repetition, not by volume (D49aw, Tier C item 2).** The turn cap was deleted
+  (D49ab) because it counted the wrong thing — it cut a *working* run at turn 40 after eleven
+  approved writes — and nothing replaced it, so in `auto` nothing stopped a model that kept calling
+  tools without concluding. **Two triggers, one card:** the same call with the same arguments
+  returning the same result consecutively, and turns in which something failed and nothing
+  succeeded. Both reset on any success. **Nudge at 3, card at 5** — Cline's CLI ships exactly those
+  numbers on exactly that signal. **The key is the call AND its result**, which is what makes it
+  safe: re-running the test suite after each edit issues the same command many times and the output
+  differs every time, so that false-positive class disappears. **A call the user DECLINED counts for
+  nothing** (not a repeat, not a failure, not a reset) — otherwise five declines in `edit` would
+  raise "you look stuck" at the user because the user said no. Deliberately **not** detected:
+  alternating patterns (edit→build→edit→build is the normal cycle), an unchanged workspace, and
+  paraphrased repeats. **Nothing ends a run on its own** — the model is nudged first, and only a
+  repeat after that reaches the user, because a silent stop cannot be told apart from a finished
+  run. **The card names what Plato was doing** (via `digestToolCall`) and says **what last worked**;
+  every escape hatch is open — Keep going (with the user's own typed guidance), Stop, the composer's
+  Stop button, typing mid-run, switching modes — and answering "Keep going" exempts that one call
+  for the run so it cannot nag. **Verified end to end: field case 12**, and cases 1/2/10/12 green
+  together.
+
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
   the ones **new since the write**, and appends them to the tool result — so the model learns in the
@@ -36,7 +56,8 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and all eleven scripted cases pass.** The notice says when a file had to be shown.
+  errors, and the whole scripted suite passes** (eleven cases when this landed, twelve now that
+  D49aw added case 12). The notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
 - **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
@@ -215,11 +236,15 @@ are now only in PROGRESS.
   already the backstop — it cut a working `edit`-mode run at two-thirds after eleven
   approvals. **Do not re-add a step count:** turns bound neither money nor time, and a
   user-facing `$/turns` budget was already built and removed as unrequested (D49h).
-  **Known and open:** in `auto` nothing now stops a model that loops without concluding.
-  The PROGRESS backlog carries the design question and what is known about it — **the
-  failure mode is repetition, so a bound should detect a repeated identical tool call**.
-  Two tests pin the absence (one runs 55 turns); **deleting the cap broke no test because
-  no test had ever described it.**
+  **CLOSED (D49aw):** in `auto` nothing stopped a model that looped without concluding, and
+  that is now bounded by **repetition** — the same call returning the same result, and turns
+  in which nothing succeeded. The replacement keeps the lesson the cap taught: it counts
+  **wasted effort and resets on any success**, so a long working run is never cut. See the
+  current-state entry above. Two tests pin the absence of a turn count (one runs 55 turns);
+  **deleting the cap broke no test because no test had ever described it** — and the D49aw
+  bound then broke that 55-turn test, because its stub issued the *same* `read_file` 55 times
+  with identical results. The bound was right and the stub was wrong; it now advances a plan,
+  so the test proves **both** claims at once.
 - **The chat log is append-only; compaction is a REQUEST, not a deletion (D49aa).** The log
   is the user's transcript and the request is what the model sees — they used to be the
   same array, so a fold that rebuilt the request from a summary also deleted the
@@ -475,12 +500,12 @@ explicitly NOT work item 1 of anything.**
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **580** passing
-  vitest cases across **35** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **638** passing
+  vitest cases across **37** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Seventeen suites, **379 assertions**; see
+  unit tests + render suites. Eighteen suites, **401 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -674,8 +699,8 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 538/538 vitest in packages/core (34 files)
-3. `pnpm run render` — the real-DOM render suites, **17 suites / 379 assertions**
+2. `pnpm -r test` — 638/638 vitest in packages/core (37 files)
+3. `pnpm run render` — the real-DOM render suites, **18 suites / 401 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -809,8 +834,10 @@ above. **Do not pick them up as a session's work while Plato is still being buil
    SecretStorage (Brave/Tavily) or an accepted exception to the egress rule.
 10. **Checkpoints / undo** — snapshot before a write. Large, and it changes what an
     approval means.
-11. **Bound `auto` by repetition, not volume** — the failure mode is a repeated
-    identical tool call (D49ab removed the turn cap and nothing replaced it).
+11. ~~**Bound `auto` by repetition, not volume.**~~ **BUILT (D49aw, 2026-09-27) and verified
+    end to end** — field case 12. Two triggers (a repeated call with the same result; turns
+    where nothing succeeded), a nudge at 3 and a card at 5, and the user decides. The
+    failure mode was the repeated identical call, exactly as predicted here.
 12. **The two guard proposals** that survived the guard note: a **taint rule** for
     secret materialisation, and **founder-owned protected names** with a visible
     expiring override. Both need a DECISIONS entry first.
@@ -864,12 +891,14 @@ seeing** — which is worth knowing before anyone spends a session on them.
 
 **Also open from that work, smaller:**
 
-- **How to bound `auto` now that no turn cap exists (D49ab).** Nothing stops a model
-  that loops without concluding. **Do not replace it with a step count** — and do
-  not re-propose a `$/turns` budget without reading D49h, which was built and
-  removed the same day as unrequested. The promising shape is a **repetition
-  detector** (the failure mode is a repeated identical tool call, not volume), and
-  `duo`/`academy` already put a supervising observer in the loop.
+- ~~**How to bound `auto` now that no turn cap exists (D49ab).**~~ **CLOSED — BUILT as D49aw
+  (2026-09-27), and its shape was predicted correctly here: a repetition detector, not a step
+  count.** Two triggers (a repeated call *with the same result*, and turns where nothing
+  succeeded), nudge at 3 and card at 5, reset on any success, and the user is asked rather than
+  the run being aborted. The research that settled it is in D49aw — Cline ships 3/5 on exactly
+  that signal, and no shipping agent kills a stuck run silently. **Still worth keeping:** do not
+  re-propose a step count or a `$/turns` budget (D49h), and `duo`/`academy` remain the structural
+  answer for an unattended run, since the nudge rides the observer's own channel.
 - **Ordering the model list** — drag or arrows, so the user controls picker
   priority. Founder-requested and deliberately held back as a capability rather
   than a repair. Four unsettled points are in the backlog; **read them before

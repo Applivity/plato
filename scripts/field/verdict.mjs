@@ -323,6 +323,38 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 12 — the repetition bound (D49aw).
+  //
+  // The transcript has to show BOTH halves, because either one alone can be
+  // faked. A run that nudged the model and never stopped would satisfy "a notice
+  // exists" while looping forever; a run that stopped without telling the model
+  // first would be a silent abort — which is the exact failure this feature
+  // exists to prevent. And the stop note must name the CALL, because "the same
+  // call repeated 5 times" tells a reader nothing they can act on.
+  12: (a) => [
+    {
+      name: 'the model was told it was repeating itself, before anyone was asked',
+      ok: a.notices.some((t) => /same call .* times|turns in a row have failed/i.test(t)),
+      detail: a.notices.join(' | ') || 'no notices at all',
+    },
+    {
+      name: 'the run ended as stuck, not as a completion',
+      ok: a.completed.some((e) => e.reason === 'stuck'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the stop note names what Plato was doing, not just that it repeated',
+      ok: a.notices.some((t) => /^Stopped: .*todo_write/.test(t)),
+      detail:
+        a.notices.filter((t) => t.startsWith('Stopped:')).join(' | ') || 'no stop note',
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
 };
 
 function summarise(events) {

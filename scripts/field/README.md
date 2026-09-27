@@ -1,12 +1,13 @@
-# Field tests — the ten live checks, driven automatically
+# Field tests — the twelve live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
 was written for a human to run by hand in VS Code. This directory runs them
-without a human. **A tenth case was added here (D49as)** — see the table below.
+without a human. **Cases 10, 11 and 12 were added here** (the cancel path, the
+editor's diagnostics, and the repetition bound) — see the table below.
 
 ```
-node scripts/field/run-field.mjs              # all ten
+node scripts/field/run-field.mjs              # all twelve
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -66,6 +67,18 @@ Two rules keep the driver honest:
 | 9 auto | no card anywhere | the edit landed — and it is on disk |
 | 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
 | 11 editor diagnostics | the chat is back in front afterwards | a `diagnostics:` notice naming one of three states |
+| 12 repetition bound | the card names the repeated call, and Stop ends the run | `run-completed` carries `reason: stuck` |
+
+**Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
+the same `todo_write` call with the same arguments — byte-identical, every time.
+`todo_write` is chosen because it repeats identically, touches nothing on disk
+and needs no approval, so the case measures the guard and not a tool or a gate.
+**The count is the point:** three identical turns earn the model a nudge and
+five is where the user is asked, so a four-turn script would test only the
+nudge. The step AFTER the repeats is deliberately there — without it a build
+with no bound at all would end the run normally on the model's own next step and
+the case would pass while testing nothing, which is the toothless-check mistake
+case 10 was fixed for.
 
 **Case 11 needs the editor, so it touches the screen.** It writes a deliberately
 broken TypeScript file and checks that what the editor says reaches the model.
@@ -191,6 +204,17 @@ it cannot be intercepted and it is what the placeholder tells a person to do.
 key" and returns early: no provider call, no transcript error, just a run that
 appears to do nothing. The harness sets a throwaway key through the product's own
 command first.
+
+**The harness bundles BUILT core, so a core change is invisible until `tsc -b` runs.** The bundle
+resolves `@applivity/plato-core` through that package's `main`, which is **`dist/src/index.js`** — so
+editing `packages/core/src/…` changes nothing the extension actually runs until it is compiled. The
+launcher rebuilt the bundle and the VSIX before every run and called that fresh, which was true of
+the shell and **false of core**: a core change could be tested against stale code, and the run would
+look exactly like success. **Found by a falsification that refused to fail** — the D49aw guard was
+neutered in `loop.ts`, the case was expected to break, and it passed. `run-field.mjs` now runs
+`tsc -b` first. **Never remove that step**, and if you package a VSIX by hand, compile before you
+package. The general rule is the same one the diagnostics work learned: *an experiment that comes
+back green is not evidence until you know it could have come back red.*
 
 **A dependency install can break `pnpm run package`.** It once re-resolved
 `@vscode/vsce` and left a dangling symlink in `packages/vscode/node_modules`, so

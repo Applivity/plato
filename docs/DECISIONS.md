@@ -3207,6 +3207,140 @@ suite exits 1.
 
 ---
 
+**D49aw — a run is bounded by repetition, not by volume; two triggers, one card, and the
+user decides (Tier C item 2 — 2026-09-27).**
+
+D49ab deleted `MAX_TURNS` and deliberately replaced it with nothing. In `plan`/`edit`/`act` that is
+plainly right — an approval card gates every write, so the user IS the backstop. In `auto` there is
+no click in the loop, so **nothing stopped a model that kept calling tools without concluding**. This
+is the replacement, and the first thing it had to get right is why the old one was wrong.
+
+**The turn cap counted the wrong thing.** It cut a *working* run at turn 40 with a third of its task
+untouched, after the user had approved eleven writes. Turns bound neither money nor time — one
+measured run spent 10,442 output tokens across 40 turns, while a thinking model can spend more in
+three. Every bound that survives in the field counts **wasted effort** instead, and **resets the
+moment anything succeeds**: Cline counts consecutive mistakes (default 6), Roo 3, and both reset on
+any productive turn. That is the whole design.
+
+**What the field actually does, read from source and from vendor docs (2026-09-27).** The numbers
+here are not invented: **Cline's CLI ships exactly soft 3 / hard 5 on consecutive identical tool
+calls** — `{ softThreshold: 3, hardThreshold: 5 }` in `LoopDetectionTracker`, where soft injects a
+warning into the conversation and hard escalates to the mistake limit. Roo Code ships 3
+(`ToolRepetitionDetector`, default limit 3) and asks the user. Gemini CLI nudges at 5 identical
+hashed calls and stops only on a *second* detection. OpenHands — the only shipped agent that pairs
+the call with its RESULT — requires 4, and nudges when an error streak exactly equals its threshold.
+OpenCode raises `doom_loop` (same tool, same input, 3×) as a permission that defaults to `"ask"` and
+**overrides an allow rule**.
+
+**And nobody ends a run on their own.** Gemini nudges first, OpenCode asks, OpenHands throttles,
+Cline and Roo both pause and ask. Claude Code has no detector at all and its users file bugs about
+loops only a kill signal escapes. **A silent stop cannot be told apart from a finished run**, which
+is the failure this codebase keeps re-learning — so Plato nudges the model, and only then asks the
+user.
+
+**The key is the call AND the result it produced.** This is the finding that makes the bound safe. A
+bare `(tool, args)` check — OpenCode's and Gemini's — is the cheap version and the one that misfires:
+an agent re-running the test suite after every edit issues the *same command* many times and is doing
+its job, but the output differs every time because the code changed. Pairing removes that entire
+class of false positive, and it is also exactly the stuck case: the same command failing with the
+same error, over and over.
+
+**Deliberately NOT detected, each for a named false positive.** Alternating patterns (edit → build →
+edit → build is both the normal working cycle and a textbook oscillation; true cycle detection would
+flag nearly every sane run), a workspace that has not changed (reading, grepping and planning
+legitimately change nothing), and paraphrased repeats (they need embeddings, and
+similar-intent-different-words is what real progress looks like). Telemetry at most; never a guard.
+
+**The two triggers.** (1) The same call with the same arguments returning the same result,
+consecutively. (2) Turns in which at least one call ran and failed and **none succeeded**. Both reset
+on any success. Both use the same two numbers, so there is one pair to reason about rather than two.
+
+**The user's own refusal is invisible.** A guard refusal and a user DECLINE both surface as errors in
+the loop, and counting them would raise "you look stuck" at the user *because the user said no* — and
+in `edit`/`act` five declines are normal. So a declined call counts for nothing: not a repeat, not a
+failure, not a reset. A *blocked* call (mode deny, guard refusal) DOES count toward repetition,
+because its message is deterministic text and re-issuing it identically is a loop; it does not count
+toward no-progress, because nothing failed.
+
+**Two misses found by measurement, both of which would have made the guard silently never fire on the
+real case.** First, `overwrote X` differs from `created X`, and second, D49av appends a diagnostics
+block to a write's result — so a repeated identical *write* does not produce an identical result the
+second time. Neither is a problem (the detector counts matching repeats, so it trips one iteration
+later), but both mean **the detector can never fire on a write's first repeat**, which is exactly the
+kind of detail that produces a guard that works in tests and never fires in practice.
+
+**The messaging is part of the decision, not decoration.** The founder's review was that "the same
+call repeated 5 times with the same result" is *vague*, and he is right. Every sentence names the
+call — `Plato has made the same call 3 times (shell: pnpm build)`, `Stopped: Plato made the same call
+5 times in a row (todo_write: 1 item, 0 done, in progress: the same step)` — reusing `digestToolCall`
+so the wording stays one line and stays honest. The no-progress card also says **what last worked**
+(`The last call that worked was write_file: src/DateHelper.java.`, or `Nothing has worked yet in this
+run.`), because that is what tells a person how far it had got.
+
+**The card, and the escape hatches — this was the founder's other condition, and it is the one that
+shaped the UI.** `auto` means "no card for every write", NOT "nobody is watching"; this is the only
+card `auto` ever raises. Every way out: **Keep going** (which carries whatever the user typed in the
+box, because the user often knows the answer — the fastest unstick there is); **Stop** (ends the run
+cleanly with a note that names what happened); **the Stop button in the composer, which is never
+disabled by the card**; **typing in the composer**, which already reaches the run mid-flight; and
+**switching modes mid-run**. A run with no way to ask — no handler wired — **stops rather than
+pretending it asked**, which mirrors Cline's own default.
+
+**Answering "Keep going" exempts THAT call for the rest of the run** and nothing else, so it cannot
+nag while a *different* stuck pattern is still caught. On a no-progress card there is no call to
+exempt, so the streak simply starts again: being told once more after another five failed turns is
+information, not nagging.
+
+**Reset on new information.** Guidance from the user clears both counters, because a card raised on
+the strength of turns that happened *before* the user spoke would be a card about the past.
+
+**Not a nuisance, and the argument for that is the key rather than the threshold.** Five consecutive
+identical (call, result) pairs is hard to reach legitimately: `git status` polling with nothing
+changing, the same file read five times, the same test output five times — each of those IS a run
+going nowhere. The nudge at three is invisible except as a line in the chat, so the occasional benign
+trip costs nothing. The card at five is rare by construction.
+
+**Two defects this work found, both worth more than the feature.**
+
+1. **`pnpm run install:vsix` does not exist, and the field harness never compiled core.** The bundle
+   resolves `@applivity/plato-core` through its package `main`, which is BUILT output
+   (`dist/src/index.js`) — so a change to core's *source* is invisible to esbuild until `tsc -b` runs.
+   `run-field.mjs` ran `bundle` + `package` only, while its own comment promised "a stale VSIX would
+   test old behaviour, so the bundle is rebuilt before every run". **A core change could therefore be
+   tested against a stale core, and a green run would look exactly like success.** Found because a
+   *falsification refused to fail*: neutering the guard in `loop.ts` was expected to break case 12
+   and the case passed. `tsc -b` now runs first, and the same falsification then fails correctly.
+2. **An answered card still counted as waiting for an answer.** Found by field case 12's own
+   assertion — the card stays on screen as the record of what was asked (as approval cards do), so
+   "is a card open" has to mean "is anything still demanding a reply". The card is now marked
+   `answered` and the harness looks for `.card.stuck-card:not(.answered)`.
+
+**Verified.** `tsc` clean. **638 core tests / 37 files**, of which 25 are the counting rules
+(`stuck.test.ts`) and 5 pin the loop seam. **18 render suites / 401 assertions**, of which 22 are the
+card. **Field case 12 passes end to end** in the harness's real VS Code: the card appears, it names
+the call (`names-the-call=true`), Stop ends the run, the transcript carries `reason: stuck`, and the
+card is not left waiting. **Falsified in both directions:** removing the result from the repeat key
+fails the "test suite after an edit" test; removing the decline exclusion fails the declines test;
+removing the reset-on-success fails two reset tests; deleting the replay case fails the reload
+assertions; dropping the guidance from the answer fails the "carries what the user typed" assertion;
+and neutering the ask in the loop fails field case 12 with `reason: complete` instead of `stuck`.
+
+**One existing test had to change, and that is a finding rather than a nuisance.** `loop.test.ts`'s
+"keeps working past 40 turns" (which pins D49ab) issued the *same* `read_file` call 55 times with
+byte-identical results — a stuck loop by any definition, so the new bound correctly stopped it. The
+bound was right and the stub was wrong: it now advances a plan, so the test proves **both** claims at
+once — no turn count bounds a run, **and the repetition bound never fires on work that is going
+somewhere**. A repeating stub would have silently stopped testing the first claim.
+
+**Carried, not hidden.** `duo`/`academy` already put an observer in the loop, and the nudge is
+delivered through the same channel the observer uses, so a supervised `auto` run is nudged where a
+solo one is only bounded. Alternating patterns remain undetected by design. And a reload while a
+stuck card is up rebuilds it from the log, which is what stops the user being left with a question
+they can no longer answer — though a *stale* card from a finished run is clickable and ignored, the
+same pre-existing wart approval cards have.
+
+---
+
 **D49av — Plato is told what the editor thinks of a file it just changed (Tier C item 1 —
 2026-09-26/27).**
 

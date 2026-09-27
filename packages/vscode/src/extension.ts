@@ -46,6 +46,8 @@ import {
   isSecretPath,
   isWriteTool,
   formatDiagnostics,
+  stuckCard,
+  type StuckRequest,
   writePathsOf,
   loadProjectFile,
   loadImageAttachment,
@@ -369,6 +371,14 @@ type Entry =
       reason?: RefusalReason;
     }
   | { k: 'card-open'; tool: string; preview: string }
+  /**
+   * D49aw: a stuck run asked the user. Recorded so a reload rebuilds the card —
+   * without this the question would vanish from the screen while the run was
+   * still waiting for the answer, which is the "left hanging" case exactly. A
+   * click on an old card is harmless: the host ignores an answer when nothing is
+   * pending.
+   */
+  | { k: 'stuck-open'; title: string; lines: string[] }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -410,6 +420,14 @@ class ChatHost {
    * would pad with `undefined`.
    */
   private pendingQuestionCount = 0;
+  /**
+   * D49aw: the stuck card's answer. Cancel must resolve this too — a run waiting
+   * on the card is waiting with nothing else able to interrupt it, which is the
+   * same trap `pendingQuestion` fell into (D49aq).
+   */
+  private pendingStuck:
+    | ((a: { action: 'continue' | 'stop'; guidance?: string }) => void)
+    | null = null;
   /**
    * D49aq: the current run's bus, so an approval path can say on the record
    * what it did with an ask — a card drawn or a session memory answering. Only
@@ -571,6 +589,23 @@ class ChatHost {
           this.controller.resume();
           return;
         }
+        // D49aw: the answer to a stuck card. "Keep going" carries whatever the
+        // user typed, and their words go back into the conversation — the same
+        // treatment the composer's own guidance gets.
+        if (m.type === 'stuck-answer') {
+          const resolve = this.pendingStuck;
+          this.pendingStuck = null;
+          const guidance = typeof m.guidance === 'string' ? m.guidance.trim() : '';
+          const action = m.value === 'stop' ? 'stop' : 'continue';
+          if (action === 'continue' && guidance.length > 0) {
+            this.push({ k: 'msg', cls: 'you', who: 'You', text: `[guide] ${guidance}` });
+          }
+          resolve?.({
+            action,
+            ...(action === 'continue' && guidance.length > 0 ? { guidance } : {}),
+          });
+          return;
+        }
         if (m.type === 'cancel' && this.running) {
           // Unblock a waiting approval too, so cancel takes effect now.
           const r = this.pendingApproval;
@@ -588,6 +623,12 @@ class ChatHost {
           this.pendingQuestionCount = 0;
           q?.(Array.from({ length: n }, () => CANCELLED_ANSWER));
           this.send('question-done');
+          // D49aw: and the stuck card, for exactly the same reason — the loop is
+          // parked on this promise, and Cancel has to mean cancel.
+          const s = this.pendingStuck;
+          this.pendingStuck = null;
+          s?.({ action: 'stop' });
+          this.send('stuck-done');
           this.controller.cancel();
           return;
         }
@@ -1656,7 +1697,11 @@ class ChatHost {
     setTimeout(() => {
       void (async () => {
         if (this.running || this.folding) return;
-        if (this.pendingApproval !== null || this.pendingQuestion !== null) {
+        if (
+          this.pendingApproval !== null ||
+          this.pendingQuestion !== null ||
+          this.pendingStuck !== null
+        ) {
           return;
         }
         if (this.tailPairCount() < AUTO_FOLD_AT) return;
@@ -2281,6 +2326,7 @@ class ChatHost {
     this.pendingAttachments = [];
     this.pendingHistory = null;
     this.pendingApproval = null;
+    this.pendingStuck = null;
     this.replyBuffer = '';
     // D49j: the webview is about to be blanked; a pending repaint would post
     // the old conversation's text into the new one.
@@ -3006,6 +3052,16 @@ class ChatHost {
           const answer = await this.askUser(req);
           return answer;
         },
+        // D49aw: the repetition bound. It reaches the model first (a nudge in
+        // the next turn) and only the user if that does not work.
+        onStuckAsk: (req) => this.promptStuck(req),
+        onStuckNudge: (note) => {
+          // The user hears about it BEFORE the card, so the pause is never a
+          // surprise. Pushed as well as sent, because this is part of the run's
+          // story and a reload should keep it.
+          this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: note });
+          this.send('notice', note);
+        },
         provider: createProvider(conn.kind, {
           apiKey,
           baseUrl: conn.baseUrl,
@@ -3150,6 +3206,11 @@ class ChatHost {
         endNotes.push('stopped early — output hit the token cap');
       } else if (result.reason === 'cancelled') {
         endNotes.push('cancelled');
+      } else if (result.reason === 'stuck') {
+        // D49aw: the sentence is written in core, so the closing line and the
+        // record say the same thing — and it names what Plato was actually
+        // doing, not "the same call repeated".
+        endNotes.push(result.stuckNote ?? 'stopped — the run was repeating itself');
       }
       const unfinished = unfinishedPlanNote(lastPlan);
       if (unfinished !== '') endNotes.push(unfinished);
@@ -3273,6 +3334,34 @@ class ChatHost {
     return req.host !== undefined && req.host.length > 0
       ? `${req.tool}:${req.host}`
       : req.tool;
+  }
+
+  /**
+   * D49aw: put a stuck run to the user.
+   *
+   * This is the ONLY card `auto` will ever raise, and that is the point: `auto`
+   * means "no card for every write", not "nobody is watching". The alternative
+   * — stopping on its own — is silent, and a silent stop cannot be told apart
+   * from a finished run. Cline and Roo both pause and ask here for the same
+   * reason, and neither aborts.
+   *
+   * The row is written BEFORE the promise so a reload rebuilds the card: an
+   * answer posted to a card the host is no longer waiting on is ignored, so an
+   * old card left in the log is inert rather than dangerous.
+   */
+  private promptStuck(
+    req: StuckRequest,
+  ): Promise<{ action: 'continue' | 'stop'; guidance?: string }> {
+    const card = stuckCard(req);
+    this.push({ k: 'stuck-open', title: card.title, lines: card.lines });
+    return new Promise((resolve) => {
+      this.pendingStuck = resolve;
+      void this.panel.webview.postMessage({
+        type: 'stuck',
+        title: card.title,
+        lines: card.lines,
+      });
+    });
   }
 
   private promptCard(req: ApprovalRequest): Promise<boolean> {

@@ -109,7 +109,8 @@ export type AgentEvent =
   | {
       type: 'run-completed';
       runId: string;
-      reason: 'complete' | 'cap' | 'cancelled';
+      /** `stuck` (D49aw): the user stopped a run that was repeating itself. */
+      reason: 'complete' | 'cap' | 'cancelled' | 'stuck';
       turns: number;
       inputTokens: number;
       outputTokens: number;

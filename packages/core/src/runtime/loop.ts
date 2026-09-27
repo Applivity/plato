@@ -40,6 +40,15 @@ import {
   shouldAutoCompact,
 } from './context.js';
 import { buildWorkerRole } from './workerRole.js';
+import {
+  askNote,
+  continueText,
+  stuckStopNote,
+  StuckWatch,
+  type CallOutcome,
+  type StuckRequest,
+  type StuckVerdict,
+} from './stuck.js';
 
 // D45a: the worker system prompt is assembled by `buildWorkerRole` at
 // the top of `runAgentLoop` (override >> PLATO.md default >> AGENTS.md).
@@ -264,6 +273,25 @@ export interface LoopOptions {
     ok: boolean;
     signal: AbortSignal;
   }) => Promise<string | undefined>;
+  /**
+   * D49aw: put to the user when the run looks stuck — the same call returning
+   * the same thing, or turns in which nothing succeeded. `continue` resumes and
+   * anything in `guidance` is handed to the model; `stop` ends the run with the
+   * reason `stuck`.
+   *
+   * **Absent, the loop STOPS.** A guard that cannot ask must not pretend it did,
+   * and this mirrors the default Cline ships. The shell always wires this to a
+   * card; a test or a headless caller gets the honest stop.
+   */
+  onStuckAsk?: (
+    req: StuckRequest,
+  ) => Promise<{ action: 'continue' | 'stop'; guidance?: string }>;
+  /**
+   * D49aw: the model was told it is going in circles. The shell shows this line
+   * so the pause is never a surprise — the first the user hears of a stuck run
+   * should not be a card appearing out of nowhere.
+   */
+  onStuckNudge?: (note: string) => void;
   /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
   controller?: RunController;
   /** Bound provider adapter (D25b). Replaces the old apiKey field. */
@@ -347,8 +375,17 @@ export interface LoopOptions {
 export interface LoopResult {
   finalText: string;
   turns: number;
-  /** Why the run ended: natural completion, a truncated answer, or a cancel. */
-  reason: 'complete' | 'cap' | 'cancelled';
+  /**
+   * Why the run ended: natural completion, a truncated answer, a cancel, or the
+   * user stopping a run that looked stuck (D49aw).
+   */
+  reason: 'complete' | 'cap' | 'cancelled' | 'stuck';
+  /**
+   * D49aw: the sentence to show when a run ended `stuck`. Written here rather
+   * than in the shell so the wording is testable, and so the done note and the
+   * record say the same thing.
+   */
+  stuckNote?: string;
   /** True when the run stopped because the output hit the token cap. */
   truncated?: boolean;
   inputTokens: number;
@@ -468,6 +505,23 @@ async function runLoop(
   let autoContinued = false;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
+  // D49aw: the repetition bound. `stuck.ts` explains why it keys on the call AND
+  // the result it produced, and why the user's own declines are invisible to it.
+  const stuck = new StuckWatch();
+  /** Verdicts from this turn's calls, judged together at the turn boundary. */
+  const judged: StuckVerdict[] = [];
+  /** Lines queued for the model's next turn — a nudge, or a "keep going". */
+  const stuckNotes: string[] = [];
+  let stuckNote: string | undefined;
+  const judge = (
+    tool: string,
+    args: ToolArgs,
+    result: string,
+    outcome: CallOutcome,
+  ): void => {
+    const v = stuck.observe({ tool, args, result, outcome });
+    if (v.kind !== 'ok') judged.push(v);
+  };
   // D45a: build the three-layer worker system prompt (override +
   // PLATO.md + AGENTS.md) before the loop starts. Project files are always
   // included when present (D45a-3 removed the opt-out). Loop is async so
@@ -794,7 +848,12 @@ async function runLoop(
         stopAfterTools = true;
         break;
       }
-      pendingGuidance.push(...ctrl.drainGuidance());
+      // D49aw: guidance is new information, so the model gets a fresh chance —
+      // no card is raised on the strength of turns that happened before someone
+      // spoke. Without this a user who helps at turn 4 is asked about turns 1-3.
+      const drained = ctrl.drainGuidance();
+      if (drained.length > 0) stuck.reset();
+      pendingGuidance.push(...drained);
       const name = call.name;
       const args = (call.input ?? {}) as ToolArgs;
 
@@ -829,6 +888,9 @@ async function runLoop(
           content: refusal,
           isError: true,
         });
+        // A guard refusal is deterministic text, so repeating it IS a loop. It
+        // is not a tool FAILURE though, so it never counts toward no-progress.
+        judge(name, args, refusal, 'blocked');
         continue;
       }
 
@@ -839,13 +901,15 @@ async function runLoop(
       let allowed = decision === 'allow';
 
       if (decision === 'deny') {
+        const blockedMsg = `blocked: ${name} is not permitted in ${opts.getMode()} mode`;
         results.push({
           type: 'tool_result',
           toolUseId: call.id,
-          content: `blocked: ${name} is not permitted in ${opts.getMode()} mode`,
+          content: blockedMsg,
           isError: true,
         });
         bus.emit({ type: 'tool-event', runId, tool: name, phase: 'denied', args });
+        judge(name, args, blockedMsg, 'blocked');
         continue;
       }
 
@@ -870,6 +934,10 @@ async function runLoop(
             isError: true,
           });
           bus.emit({ type: 'tool-event', runId, tool: name, phase: 'declined', args });
+          // D49aw: the user's own refusal is invisible here. Counting it would
+          // raise "you look stuck" at the user because the USER said no — and in
+          // `edit`/`act` mode that is five clicks away from a nuisance.
+          judge(name, args, 'user declined this action', 'declined');
           continue;
         }
       }
@@ -986,17 +1054,52 @@ async function runLoop(
         content,
         isError: !outcome.ok,
       });
+      judge(name, args, content, outcome.ok ? 'ok' : 'failed');
     }
 
     if (stopAfterTools) {
       break;
     }
 
+    // D49aw: judge the turn now that it is behind us — "nothing succeeded" is a
+    // fact about a finished turn, never about a moment inside one. A first trip
+    // only tells the MODEL to change approach; the user is asked only if that
+    // does not work. Nothing here ends a run silently.
+    let stoppedForStuck = false;
+    for (const v of [...judged.splice(0), stuck.endTurn()]) {
+      if (v.kind === 'nudge') {
+        stuckNotes.push(v.text);
+        bus.emit({ type: 'notice', runId, text: v.note });
+        opts.onStuckNudge?.(v.note);
+        continue;
+      }
+      if (v.kind !== 'ask') continue;
+      bus.emit({ type: 'notice', runId, text: askNote(v.request) });
+      // Nobody to ask means stop — the honest reading of "we are stuck", and
+      // the default Cline ships. Never a silent end: `stuckNote` says why.
+      const answer = opts.onStuckAsk
+        ? await opts.onStuckAsk(v.request)
+        : { action: 'stop' as const };
+      stuck.resolve(answer.action);
+      if (answer.action === 'stop') {
+        reason = 'stuck';
+        stuckNote = stuckStopNote(v.request);
+        bus.emit({ type: 'notice', runId, text: stuckNote });
+        stoppedForStuck = true;
+        break;
+      }
+      stuckNotes.push(continueText(v.request, answer.guidance ?? ''));
+    }
+    if (stoppedForStuck) break;
+
     // Flush queued observer guidance into the next user turn (D24b);
     // tool_result and text blocks may share one user message.
     const userContent: (CanonicalContent | ToolResultBlock)[] = [...results];
     for (const g of pendingGuidance.splice(0)) {
       userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
+    }
+    for (const n of stuckNotes.splice(0)) {
+      userContent.push({ type: 'text', text: n });
     }
     messages.push({ role: 'user', content: userContent });
   }
@@ -1019,6 +1122,7 @@ async function runLoop(
     finalText,
     turns: turn,
     reason,
+    ...(stuckNote === undefined ? {} : { stuckNote }),
     inputTokens,
     outputTokens,
     costUsd,

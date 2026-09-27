@@ -151,6 +151,10 @@ describe('Plato field tests — real VS Code', function () {
           // answering it. The two are exclusive — a case that cancels has no
           // answers to give, because the run is over.
           cancelOnQuestion: run.cancelOnQuestion === true,
+          // D49aw: case 12 presses Stop on the "repeating itself" card. A stuck
+          // card with no answer parks the run, so it is always dealt with here —
+          // declared or not.
+          stuckStop: run.stuckStop === true,
           question: run.question ? async () => {
             // Test 6's own ask: pick two options, jump to another tab, come back,
             // and check the picks survived the round trip. Every outcome below is
@@ -229,6 +233,31 @@ describe('Plato field tests — real VS Code', function () {
             notes.push('CANCEL: the run does not say it was cancelled, so nothing tells the user the Stop worked');
           }
           notes.push(`cancel: card-dismissed=${!stillOpen} says-cancelled=${/cancelled/i.test(screen)}`);
+        }
+        if (c.n === 12) {
+          // D49aw. The card must have appeared at all — without this check the
+          // case passes on a build with no bound, because the script's last step
+          // ends the run normally and every other assertion holds. That is the
+          // same shape of toothless check case 10 was fixed for.
+          if (!field.stuckSeen) {
+            notes.push('STUCK: no stuck card was ever detected, so the bound was never exercised');
+          }
+          const stillOpen = await field.stuckOpen();
+          // "Open" means still waiting for an answer. The answered card stays as
+          // the record of what was asked, so this asks the question that matters:
+          // is anything on screen still demanding a reply?
+          if (stillOpen) {
+            notes.push('STUCK: the card is still WAITING FOR AN ANSWER after the run ended');
+          }
+          // What the user is told. "Stopped" alone would leave them guessing;
+          // the run must say it was repeating itself and what it was repeating.
+          if (!/repeat/i.test(screen)) {
+            notes.push('STUCK: the run does not say it was repeating itself, so nothing explains the stop');
+          }
+          if (!/the same step/.test(screen)) {
+            notes.push('STUCK: the card/notice does not name which call was repeating');
+          }
+          notes.push(`stuck: card-seen=${field.stuckSeen} dismissed=${!stillOpen} names-the-call=${/the same step/.test(screen)}`);
         }
         if (c.n === 11) {
           // D49av. Two assertions and one report, and the split is deliberate.

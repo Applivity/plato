@@ -113,8 +113,26 @@ if (branch.startsWith('plato-field-test')) {
 }
 
 // 3 — fresh bundle and package.
-say('bundling and packaging the extension');
+//
+// COMPILE FIRST. The bundle resolves `@applivity/plato-core` through that
+// package's `main`, which is BUILT output (`dist/src/index.js`) — so a change to
+// core's source is invisible to esbuild until `tsc -b` has run. Without this
+// step the VSIX is fresh from the shell's point of view and stale in the part
+// that matters, which is worse than an obviously old build.
+//
+// This is not hypothetical. The D49aw falsification — neutering the stuck-run
+// guard in `packages/core/src/runtime/loop.ts` — was expected to FAIL case 12
+// and passed instead, because the edit had never been compiled. Only a
+// falsification that declines to fail gives that away; a normal green run would
+// have looked exactly like success.
+say('compiling core');
 mkdirSync(resolve(ROOT, 'tmp', 'field'), { recursive: true });
+const compiled = sh('pnpm', ['exec', 'tsc', '-b'], { cwd: ROOT, stdio: 'inherit' });
+if (compiled.status !== 0) {
+  console.error('tsc failed — the bundle would carry a stale core');
+  process.exit(2);
+}
+say('bundling and packaging the extension');
 const bundle = sh('pnpm', ['--filter', 'plato-vscode', 'run', 'bundle'], { cwd: ROOT, stdio: 'inherit' });
 if (bundle.status !== 0) {
   console.error('bundle failed');

@@ -217,6 +217,19 @@ export function chatHtml(): string {
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
+  /* D49aw: the stuck card. A warning stripe rather than an error colour — the
+     run has not failed, it has stopped to ask. */
+  .card.stuck-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
+  .card.stuck-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  .card .stuck-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
+                      color:var(--pl-muted); }
+  .card .stuck-line:first-of-type { padding-top:8px; }
+  .card .stuck-input { margin:8px 10px 0; padding:4px 8px;
+                       width:calc(100% - 20px); box-sizing:border-box;
+                       background:var(--vscode-input-background);
+                       color:var(--vscode-input-foreground);
+                       border:1px solid var(--vscode-input-border, var(--pl-border));
+                       border-radius:3px; font-size:12px; font-family:inherit; }
   /* D49ah: the plan. Rows are sized like the reply text rather than the diff
      pane — this is prose a person reads, not output to scan. */
   .todo-list { margin:0; padding:6px 10px 8px; list-style:none;
@@ -1299,6 +1312,8 @@ export function chatHtml(): string {
   // D49aq: the question card currently on screen, so the host can take it away
   // when the run is cancelled. Null when no card is open. No backticks here.
   let openQuestionCard = null;
+  /** D49aw: the stuck card, so a cancel can take it away like any other card. */
+  let openStuckCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -3949,6 +3964,16 @@ export function chatHtml(): string {
       case 'question-done':
         dismissQuestion();
         break;
+      // D49aw: the run is going in circles and has stopped to ask.
+      case 'stuck':
+        flushToolBuffer();
+        showStuck(m);
+        refreshChip();
+        setStatus('waiting for you — Plato is repeating itself');
+        break;
+      case 'stuck-done':
+        dismissStuck();
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -4008,6 +4033,10 @@ export function chatHtml(): string {
         if (t.phase === 'done') { toolBuffer.push({ tool: t.tool, phase: t.phase }); }
         break;
       case 'card-open': showCard(t, false); break;
+      // D49aw: a reload while the run is still waiting must rebuild the card,
+      // or the question disappears off the screen while the host waits for an
+      // answer that can no longer be given.
+      case 'stuck-open': showStuck(t); break;
       case 'card-done': cardDone(t); break;
       case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;
@@ -4486,6 +4515,82 @@ export function chatHtml(): string {
     if (openQuestionCard) {
       openQuestionCard.remove();
       openQuestionCard = null;
+      clearStatus();
+    }
+  }
+
+  /**
+   * D49aw: the run has stopped because it is repeating itself, and it is waiting
+   * for an answer. Deliberately NOT an approval card — there is nothing to allow
+   * — so it says what Plato was doing, offers the two honest answers, and leaves
+   * a box for the one thing that unsticks a run fastest: the user's own words.
+   */
+  function showStuck(m) {
+    flushToolBuffer();
+    const card = document.createElement('div');
+    card.className = 'card stuck-card';
+
+    const h = document.createElement('h3');
+    h.textContent = String(m.title || 'Plato looks stuck');
+    card.appendChild(h);
+
+    const lines = Array.isArray(m.lines) ? m.lines : [];
+    for (const line of lines) {
+      const p = document.createElement('div');
+      p.className = 'stuck-line';
+      p.textContent = String(line);
+      card.appendChild(p);
+    }
+
+    const box = document.createElement('input');
+    box.type = 'text';
+    box.className = 'stuck-input';
+    box.placeholder = 'What should Plato do instead? (optional)';
+    card.appendChild(box);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const go = document.createElement('button');
+    go.textContent = 'Keep going';
+    const stop = document.createElement('button');
+    stop.className = 'no';
+    stop.textContent = 'Stop';
+    go.addEventListener('click', () => answer('continue'));
+    stop.addEventListener('click', () => answer('stop'));
+
+    function answer(value) {
+      const guidance = box.value.trim();
+      vsapi.postMessage({ type: 'stuck-answer', value, guidance });
+      // The user's own words belong in the conversation beside everything else
+      // they have said. The host records the same row, so a reload keeps it.
+      if (guidance) addMsg('you', 'You', '[guide] ' + guidance);
+      if (openStuckCard === card) openStuckCard = null;
+      // Marked ANSWERED, not merely buttonless. The card stays as the record of
+      // what was asked — the same as an approval card — but "open" has to keep
+      // meaning "still waiting for an answer", or anything watching for the
+      // question (the harness, and any future host code) sees a spent card as a
+      // live one and waits for an answer that already arrived.
+      card.classList.add('answered');
+      actions.remove();
+      box.remove();
+      h.textContent = h.textContent + (value === 'stop' ? ' — stopped' : ' — continuing');
+      clearStatus();
+      scroll();
+    }
+
+    actions.appendChild(go);
+    actions.appendChild(stop);
+    card.appendChild(actions);
+    openStuckCard = card;
+    log.appendChild(card);
+    scroll();
+  }
+
+  /** D49aw: Cancel takes the card with it, exactly as it does for a question. */
+  function dismissStuck() {
+    if (openStuckCard) {
+      openStuckCard.remove();
+      openStuckCard = null;
       clearStatus();
     }
   }

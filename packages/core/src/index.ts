@@ -22,6 +22,7 @@ export * from './runtime/transcript.js';
 export * from './runtime/context.js';
 export * from './runtime/chatlog.js';
 export * from './runtime/diagnostics.js';
+export * from './runtime/stuck.js';
 export * from './format/markdown.js';
 export * from './mcp/client.js';
 export * from './mcp/config.js';

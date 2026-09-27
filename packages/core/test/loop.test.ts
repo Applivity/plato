@@ -1232,12 +1232,25 @@ describe('advertised model limits reach the run (D49t)', () => {
  * future count cannot come back without a test failing.
  */
 describe('a run is not bounded by a turn count (D49ab)', () => {
+  /**
+   * **This stub must do DISTINCT work, and that is now load-bearing.** It used
+   * to call `read_file` on the same path every turn, which returns byte-identical
+   * text every time — 55 identical calls with identical results. The repetition
+   * bound (D49aw) correctly reads that as a stuck run and stops it, so this test
+   * failed the moment the bound landed.
+   *
+   * The bound was right and the stub was wrong: a real agent working through 55
+   * turns advances a plan, and those calls differ. Keeping it distinct is what
+   * makes this test prove BOTH claims at once — no turn count bounds a run, and
+   * the repetition bound never fires on work that is actually going somewhere.
+   * A stub that repeats itself would silently stop testing the first claim.
+   */
   const toolTurn = (n: number): TurnResponse => ({
     content: [{
       type: 'tool_use',
       id: 'call_' + n,
-      name: 'read_file',
-      input: { path: 'packages/core/package.json' },
+      name: 'todo_write',
+      input: { todos: [{ content: `step ${n}`, status: 'in_progress' }] },
     }],
     usage: { inputTokens: 10, outputTokens: 10 },
     stopReason: 'tool_use',
@@ -1481,5 +1494,172 @@ describe('the host may add to a write result (D49av)', () => {
     });
     expect(r.reason).toBe('complete');
     expect(lastToolResult(requests[1]!)).toBe('created e.ts');
+  });
+});
+
+/**
+ * D49aw. The repetition bound, at the seam where it can actually hurt.
+ *
+ * The unit tests in `stuck.test.ts` pin the counting rules. These pin the three
+ * things only the loop can get wrong: that a nudge reaches the MODEL, that the
+ * user is only asked after the nudge failed, and that a run which is going
+ * somewhere is never cut — the mistake the deleted turn cap made.
+ */
+describe('a stuck run is bounded by repetition, not by turns (D49aw)', () => {
+  /** The same call, with the same result, every turn — a stuck model. */
+  const sameTurn = (): TurnResponse => ({
+    content: [
+      {
+        type: 'tool_use',
+        id: 't',
+        name: 'todo_write',
+        input: { todos: [{ content: 'the same step', status: 'in_progress' }] },
+      },
+    ],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  });
+
+  const done: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+
+  function scripted(
+    repeats: number,
+    tail: TurnResponse = done,
+  ): { p: ChatProvider; requests: TurnRequest[]; served: () => number } {
+    const requests: TurnRequest[] = [];
+    let served = 0;
+    return {
+      requests,
+      served: () => served,
+      p: {
+        id: 'anthropic',
+        async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+          // Snapshot: the loop keeps mutating the array it hands over.
+          requests.push({
+            ...req,
+            messages: req.messages.map((m) => ({
+              ...m,
+              content: m.content.map((b) => ({ ...b })),
+            })),
+          });
+          served += 1;
+          return served <= repeats ? sameTurn() : tail;
+        },
+      },
+    };
+  }
+
+  /** Everything the model was shown, as text. */
+  function textSeen(req: TurnRequest): string {
+    return req.messages
+      .map((m) =>
+        m.content
+          .map((b) => (b.type === 'text' ? b.text : b.type === 'tool_result' ? b.content : ''))
+          .join('\n'),
+      )
+      .join('\n');
+  }
+
+  it('tells the MODEL at the third identical call, and records that it did', async () => {
+    const { p, requests } = scripted(3);
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'notice') notices.push(e.text);
+    });
+    const r = await runAgentLoop({ ...BASE, provider: p, bus });
+    expect(r.reason).toBe('complete');
+    const shown = textSeen(requests[3]!);
+    expect(shown).toContain('You have now made this exact call 3 times in a row');
+    // The call is named by its digest, so the model (and the record) can see
+    // WHICH call it is and what it was doing.
+    expect(shown).toContain('in progress: the same step');
+    expect(shown).toContain('Change your approach');
+    // Never silent: the run record says the model was nudged.
+    expect(notices.join('\n')).toContain('asked to try something else');
+  });
+
+  it('asks the user at the fifth, and hands their answer to the model', async () => {
+    const { p, requests, served } = scripted(5);
+    const asked: string[] = [];
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      onStuckAsk: async (req) => {
+        asked.push(req.call ?? '');
+        return { action: 'continue', guidance: 'the lockfile is the problem' };
+      },
+    });
+    expect(asked).toEqual(['todo_write: 1 item, 0 done, in progress: the same step']);
+    expect(r.reason).toBe('complete');
+    expect(served()).toBe(6);
+    // Both the fact of the question AND the user's own words reach the model.
+    const shown = textSeen(requests[5]!);
+    expect(shown).toContain('The user has told you to continue');
+    expect(shown).toContain('the lockfile is the problem');
+  });
+
+  it('"stop" ends the run with a note that names what it was doing', async () => {
+    const { p, served } = scripted(5);
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      onStuckAsk: async () => ({ action: 'stop' }),
+    });
+    expect(r.reason).toBe('stuck');
+    expect(served()).toBe(5);
+    expect(r.stuckNote).toContain('todo_write');
+    expect(r.stuckNote).toContain('5 times in a row');
+    expect(r.stuckNote).toContain('the same step');
+  });
+
+  it('a run with NO way to ask stops rather than pretending it asked', async () => {
+    const { p } = scripted(5);
+    const r = await runAgentLoop({ ...BASE, provider: p });
+    expect(r.reason).toBe('stuck');
+    expect(r.stuckNote).toBeDefined();
+  });
+
+  it('a user DECLINING the same call never raises the card — it is aimed at them', async () => {
+    const turns = Array.from({ length: 7 }, () => ({
+      content: [
+        {
+          type: 'tool_use' as const,
+          id: 't',
+          name: 'write_file',
+          input: { path: 'never-written.txt', content: 'x' },
+        },
+      ],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      stopReason: 'tool_use' as const,
+    }));
+    const requests: TurnRequest[] = [];
+    let i = 0;
+    const asking: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req): Promise<TurnResponse> {
+        requests.push({
+          ...req,
+          messages: req.messages.map((m) => ({
+            ...m,
+            content: m.content.map((b) => ({ ...b })),
+          })),
+        });
+        i += 1;
+        return i <= turns.length ? turns[i - 1]! : done;
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: asking,
+      approve: () => Promise.resolve(false),
+      onStuckAsk: async () => ({ action: 'stop' }),
+    });
+    // Seven declined writes, and the run still ends the normal way.
+    expect(r.reason).toBe('complete');
   });
 });

@@ -43,6 +43,8 @@ export class Field {
     this.decisions = [];
     /** Set when a question card is actually handled — the check that had no teeth. */
     this.questionSeen = false;
+    /** D49aw: set when a stuck card was actually detected and answered. */
+    this.stuckSeen = false;
     this.lastWatch = null;
     this.watchLines = 0;
     /** The prompt of the run in progress, so `newChat` can prove the chat reset. */
@@ -199,6 +201,19 @@ export class Field {
    * share. Two paths meant one of them could be silently dead; there is now one.
    */
   async cardKind() {
+    // D49aw: the stuck card is identified by its CLASS, not by its heading. The
+    // heading is a sentence the product is free to reword ("Plato is repeating
+    // itself", "5 turns in a row have failed"), and a check that breaks when the
+    // wording improves would fail for exactly the wrong reason.
+    //
+    // `:not(.answered)` is load-bearing. An answered card STAYS on screen as the
+    // record of what was asked, exactly as an approval card does — so without
+    // this an already-answered question reads as a live one, and a case would
+    // click it again or report the run as left hanging.
+    if ((await this.driver.findElements(By.css('.card.stuck-card:not(.answered)'))).length > 0) {
+      const h = await this.driver.findElement(By.css('.card.stuck-card h3'));
+      return { kind: 'stuck', heading: (await h.getText()).trim() };
+    }
     for (const h of await this.driver.findElements(By.css('div.card h3'))) {
       const text = (await h.getText()).trim();
       if (/^Approve .+\?$/.test(text)) return { kind: 'approval', heading: text };
@@ -218,6 +233,28 @@ export class Field {
   /** Is the model waiting on a question card right now? */
   async questionOpen() {
     return (await this.cardKind()).kind === 'question';
+  }
+
+  /** D49aw: is the run parked on the "Plato is repeating itself" card? */
+  async stuckOpen() {
+    return (await this.cardKind()).kind === 'stuck';
+  }
+
+  /**
+   * D49aw: answers the stuck card the way a person does.
+   *
+   * Both buttons are located INSIDE `.stuck-card`, so this cannot accidentally
+   * click an approval card's buttons — which in `edit` mode may be sitting in
+   * the same conversation.
+   */
+  async answerStuck(which) {
+    const label = which === 'stop' ? 'Stop' : 'Keep going';
+    const xpath =
+      `//div[contains(@class,'stuck-card')]//button[normalize-space(text())='${label}']`;
+    const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
+    await this.clickElement(btn);
+    this.log(`  answered the stuck card: ${label}`);
+    await this.driver.sleep(SETTLE_MS);
   }
 
   /**
@@ -284,13 +321,15 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false } = {}) {
     const started = Date.now();
     let step = 0;
     let finished = null;
     let answered = 0;
     let cancelled = false;
+    let stuckCards = 0;
     this.questionSeen = false;
+    this.stuckSeen = false;
     this.lastWatch = null;
     this.watchLines = 0;
 
@@ -334,6 +373,24 @@ export class Field {
           }
         }
       }
+      // D49aw: the run stopped because it is repeating itself. An UNDECLARED one
+      // is told to continue rather than left on screen — the rule every other
+      // card here follows, and the reason is sharper for this one: a stuck card
+      // nobody answers parks the run until the clock runs out, which is the hang
+      // this whole harness exists to avoid. The cap stops a case that never
+      // declared the card from being answered forever.
+      if (finished === null && stuckCards < 5 && (await this.stuckOpen())) {
+        stuckCards += 1;
+        this.stuckSeen = true;
+        if (stuckStop) {
+          this.log('  the run is stuck — pressing Stop on the card');
+          await this.answerStuck('stop');
+        } else {
+          this.log('  UNEXPECTED stuck card — telling it to continue so the run can finish');
+          await this.answerStuck('continue');
+        }
+      }
+
       const isNew = this.transcripts().filter((f) => !before.has(f));
       for (const file of isNew) {
         let text = '';
