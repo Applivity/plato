@@ -11,7 +11,7 @@
  * Run it with:  node scripts/field/run-field.mjs
  * One case only: FIELD_CASES=5 node scripts/field/run-field.mjs
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
@@ -28,6 +28,17 @@ const STUB = `http://127.0.0.1:${process.env['PLATO_STUB_PORT'] ?? 4599}`;
 // (EPERM: uv_cwd). Deriving our paths from the module keeps the harness
 // runnable from anywhere.
 const SHOTS = join(import.meta.dirname, '..', '..', 'tmp', 'field', 'shots');
+
+/**
+ * Every run this spec performs, in order, with the transcript it wrote.
+ *
+ * D49at: this is the join between the seven acceptance clauses and the fourteen
+ * cases that witness them. A transcript records its task and its root, never
+ * which case produced it, so a judge over the transcripts alone cannot tell
+ * whether clause 6's case ran at all.
+ */
+const MANIFEST = [];
+const MANIFEST_PATH = join(import.meta.dirname, '..', '..', 'tmp', 'field', 'last-manifest.json');
 const RUNS = runsDirFor(DEMO_REPO);
 const only = (process.env['FIELD_CASES'] ?? '')
   .split(',')
@@ -137,6 +148,12 @@ describe('Plato field tests — real VS Code', function () {
         const label = c.runs.length > 1 ? `case-${c.n}-run${i + 1}-${run.mode}` : `case-${c.n}-${run.mode}`;
         await setScript(run.steps);
         await field.setMode(run.mode);
+        // D49at clause 4: set orchestration EXPLICITLY before every run, not only
+        // for the case that needs Duo. The chip is sticky, so a case that left it
+        // on duo would quietly turn every later case into a team run — and a
+        // run asserted to be solo with a philosopher in it is a case that no
+        // longer measures what it says.
+        await field.setOrchestration(run.orchestration ?? 'solo');
 
         const before = await field.send(run.prompt);
         const events = await field.waitRunEnd(before, {
@@ -393,15 +410,82 @@ describe('Plato field tests — real VS Code', function () {
           if (!chk.ok) notes.push(`TRANSCRIPT: ${chk.name} [${chk.detail}]`);
         }
 
-        const failures = notes.filter((n) => /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS):/.test(n));
+        // D49at: the acceptance clauses that are witnessed on SCREEN rather than
+        // in the transcript. Each names its clause so a failure reads as a failed
+        // clause rather than a mysterious note.
+        if (c.n === 15) {
+          // Clause 6: the card must carry the EXACT url, because the URL is what
+          // leaves the machine. The card stays on screen after the denial with
+          // its preview intact, so this is readable after the run.
+          const shown = /example\.com\/acceptance-check/.test(screen);
+          if (!shown) notes.push('FETCH: the approval card did not show the exact URL that would be sent');
+          notes.push(`fetch: url-on-card=${shown} cards=${actualCards}`);
+        }
+        if (c.n === 16) {
+          // Clause 4: the observer path RAN and its work is REPORTED. NOT that it
+          // intervened — a philosopher who correctly stays quiet must pass.
+          const reported = /observer \d+ checks/.test(screen);
+          if (!reported) {
+            notes.push('OBSERVER: the closing line does not report the observer, so its liveness is not visible');
+          }
+          notes.push(`observer: reported=${reported}`);
+        }
+        if (c.n === 17) {
+          // Clause 5: a run that ends mid-plan must say so. A run that reported
+          // only "done" here is the fault this exists for.
+          const says = /2 of 3 plan steps unfinished/.test(screen);
+          if (!says) {
+            notes.push('PLANNOTE: the run ended with 2 of 3 plan steps unfinished and did not say so');
+          }
+          notes.push(`plannote: says-unfinished=${says}`);
+        }
+
+        // D49at: `STUCK`, `GUIDANCE` and the clause prefixes above are FATAL. The
+        // stuck cases' screen checks were written as notes and were NOT in this
+        // list, so "no stuck card was ever detected" — the check that gives cases
+        // 12-14 their teeth — could not fail the case. Found while wiring the
+        // acceptance clauses; a note is not a check.
+        const failures = notes.filter((n) =>
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER):/.test(n),
+        );
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes) console.log(`    ${n}`);
+        // D49at: the manifest is what turns a pile of cases into an executable
+        // acceptance test. Without it a run of fourteen cases cannot be mapped
+        // back to the seven clauses, because a transcript records its TASK and
+        // its root but not which case produced it — so `acceptance.mjs` had
+        // nothing to join on. Written per RUN, so a clause witnessed by one run
+        // of a two-run case can name it.
+        MANIFEST.push({
+          case: c.n,
+          run: i + 1,
+          mode: run.mode,
+          orchestration: run.orchestration ?? 'solo',
+          title: c.title,
+          transcript: field.lastTranscript,
+          transcriptOk: v.ok,
+          screenFailures: failures,
+        });
         if (failures.length > 0) {
           throw new Error(`case ${c.n} run ${i + 1}: ${failures.join(' | ')}`);
         }
       }
     });
   }
+
+  /**
+   * D49at: the manifest is written even when a case FAILS — mocha runs `after`
+   * either way — so a failing acceptance run still reports which clauses passed
+   * and which did not, rather than reporting nothing at all.
+   */
+  after(() => {
+    mkdirSync(join(import.meta.dirname, '..', '..', 'tmp', 'field'), { recursive: true });
+    writeFileSync(
+      MANIFEST_PATH,
+      JSON.stringify({ at: new Date().toISOString(), runs: MANIFEST }, null, 2),
+    );
+    console.log(`\nmanifest: ${MANIFEST.length} run(s) → ${MANIFEST_PATH}`);
+  });
 });
 
 function chk(v) {

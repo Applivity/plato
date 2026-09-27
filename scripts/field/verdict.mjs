@@ -405,6 +405,101 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 15 — D49at CLAUSE 6: nothing leaves the machine unasked.
+  //
+  // `web_fetch` is the only tool that sends something out. In `edit` — where a
+  // user is in the loop — it asks, and this case is that ask. **In `auto` it
+  // does NOT ask, by D49ak's amendment of D49p**, and that half is witnessed by
+  // `modes.test.ts` rather than here, because no field case can witness a
+  // decision not to ask without either touching the network or asserting
+  // nothing.
+  //
+  // The card was DENIED by the driver, which is the point: the clause is about
+  // the ask, and this harness touches no network by design, so a denial proves
+  // the gate without a socket being opened.
+  //
+  // The URL on the card is SCREEN-only: the transcript drops `preview` (D24c,
+  // because a write preview carries file content), so `acceptance.mjs` reads
+  // that half from the spec's FETCH note. The two halves are deliberately in
+  // different witnesses.
+  15: (a) => [
+    {
+      name: 'web_fetch asked in edit — the card was raised',
+      ok: a.cardsFor('web_fetch').length === 1,
+      detail: `${a.cardsFor('web_fetch').length} web_fetch card(s)`,
+    },
+    {
+      name: 'the fetch was refused at the gate and NOT SENT',
+      ok: a.phasesFor('web_fetch').some((e) => e.phase === 'declined'),
+      detail: summarise(a.phasesFor('web_fetch')),
+    },
+    {
+      name: 'and no fetch ever ran',
+      ok: !a.phasesFor('web_fetch').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('web_fetch')),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 16 — D49at CLAUSE 4: the observer path is LIVE in Duo.
+  //
+  // This case is judged mostly on SCREEN, and that is recorded rather than
+  // hidden: "its activity is reported" is a fact about the run's closing line,
+  // which exists only in the webview. What the transcript can witness is that a
+  // real run happened with a team configured, which is here; the closing line's
+  // `observer N checks` is the spec's OBSERVER note.
+  //
+  // **No check requires an intervention.** An observer who correctly stays quiet
+  // must pass — requiring one would measure chattiness and push the product
+  // toward a noisy philosopher, which is the fault the clause's wording exists
+  // to avoid.
+  16: (a) => [
+    {
+      name: 'the run did the real work under a team',
+      ok: a.phasesFor('read_file').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('read_file')),
+    },
+    {
+      name: 'the run completed normally',
+      ok: a.completed.some((e) => e.reason === 'complete'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 17 — D49at CLAUSE 5: a run that ends with an unfinished plan says so.
+  //
+  // The transcript half: a plan was written and the run ended as an ordinary
+  // completion, with no cap anywhere (there is no turn cap and no budget cap).
+  // The note itself — "2 of 3 plan steps unfinished" — is on the closing line,
+  // so it is the spec's PLANNOTE check. Before this case the note had never been
+  // exercised end to end at all.
+  17: (a) => [
+    {
+      name: 'the plan was written',
+      ok: a.phasesFor('todo_write').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('todo_write')),
+    },
+    {
+      name: 'the run ended as a completion — nothing here is a cap',
+      ok: a.completed.some((e) => e.reason === 'complete'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
 };
 
 function summarise(events) {

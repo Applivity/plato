@@ -511,4 +511,110 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 15,
+    title: 'web_fetch asks wherever a user is in the loop, and the card carries the exact URL',
+    // D49at CLAUSE 6, and this case is EDIT mode on purpose — not auto.
+    //
+    // The clause as originally written said web_fetch "asks in every mode
+    // including auto", and that is STALE: **D49ak amended D49p on 2026-09-24 so
+    // that `auto` fetches without asking**, the founder's own decision. A clause
+    // describing the pre-amendment product cannot be passed or failed, which is
+    // the exact defect D49at was written to fix — so the clause is corrected and
+    // this case tests what the product does.
+    //
+    // The auto half is witnessed by `modes.test.ts` (`decide('web_fetch','auto')
+    // → 'allow'`), which is where that decision lives. What only a real window
+    // can witness is the CARD: that egress asks where the user is in the loop,
+    // and that the card shows the exact URL — the URL being the thing that
+    // leaves the machine.
+    //
+    // The driver DENIES it, deliberately on two counts: the clause is about the
+    // ask rather than the fetch, and this harness touches no network on purpose.
+    // A denial means no request is ever sent, so the gate is proved without a
+    // socket being opened.
+    runs: [
+      {
+        mode: 'edit',
+        prompt: 'Fetch the page at https://example.com/acceptance-check and summarise it.',
+        steps: [
+          {
+            calls: [
+              { tool: 'web_fetch', args: { url: 'https://example.com/acceptance-check' } },
+            ],
+          },
+          { text: 'I did not fetch it.' },
+        ],
+        cards: ['deny'],
+      },
+    ],
+  },
+  {
+    n: 16,
+    title: 'The observer path is live in Duo, and its work is reported',
+    // D49at CLAUSE 4, and the gap the decision entry names as unautomated: no
+    // harness case ran a Duo or Academy team, so the observer's liveness was
+    // verified by hand or not at all.
+    //
+    // **The clause does NOT require an intervention.** An observer that
+    // correctly stays quiet must pass — requiring an intervention would measure
+    // chattiness and push the product toward a noisy philosopher. What is
+    // asserted is that the path RAN and that its work is REPORTED.
+    //
+    // The script is read-only work, so no card is involved and the case is
+    // about the team rather than about a gate. The observer's own model call
+    // carries no tools, so the stub treats it as auxiliary and the script does
+    // not shift — see the stub's rule 1.
+    runs: [
+      {
+        mode: 'edit',
+        orchestration: 'duo',
+        prompt: 'Read DateHelper.java and tell me what it does.',
+        steps: [
+          { calls: [{ tool: 'read_file', args: { path: DATE_HELPER } }] },
+          { calls: [{ tool: 'grep', args: { pattern: 'ISO8601', path: 'app/src/main/java' } }] },
+          { text: 'DateHelper formats and parses the app date formats.' },
+        ],
+        cards: [],
+      },
+    ],
+  },
+  {
+    n: 17,
+    title: 'A run that ends with an unfinished plan says so',
+    // D49at CLAUSE 5, the half that had no witness: "a run that ends with
+    // unfinished plan steps says so". The note exists (`unfinishedPlanNote`,
+    // D49as) and nothing had ever exercised it end to end — the same shape of
+    // gap as the observer clause.
+    //
+    // The model writes a three-step plan, completes one, and then simply stops.
+    // The closing line must say two of three are unfinished: a run that ends
+    // mid-plan and reports only "done" is the fault this exists for. Test 7's
+    // fourteen-minute run that completed zero steps is the real case behind it.
+    runs: [
+      {
+        mode: 'edit',
+        prompt: 'Do the three things, then stop.',
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'todo_write',
+                args: {
+                  todos: [
+                    { content: 'Read the file', status: 'completed' },
+                    { content: 'Fix the formatter', status: 'in_progress' },
+                    { content: 'Add a test', status: 'pending' },
+                  ],
+                },
+              },
+            ],
+          },
+          { calls: [{ tool: 'read_file', args: { path: DATE_HELPER } }] },
+          { text: 'I stopped before finishing.' },
+        ],
+        cards: [],
+      },
+    ],
+  },
 ];

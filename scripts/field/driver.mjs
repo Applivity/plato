@@ -172,6 +172,66 @@ export class Field {
   }
 
   /**
+   * D49at clause 4: switches orchestration (solo → duo) through the real chip,
+   * exactly as a user would.
+   *
+   * The chip CYCLES rather than offering a menu, so this clicks until the label
+   * reads what the case asked for and fails loudly if it never does — a silent
+   * miss here would run the case solo and the observer clause would pass on a
+   * run with no observer in it at all.
+   */
+  async setOrchestration(target) {
+    const LABEL = { solo: 'Solo', duo: 'Duo', academy: 'Academy' };
+    const wanted = LABEL[target];
+    if (wanted === undefined) throw new Error(`unknown orchestration "${target}"`);
+    const chipLabel = async () =>
+      (await (await this.driver.findElement(By.id('orchChip'))).getText()).trim().toLowerCase();
+
+    if ((await chipLabel()).includes(target)) {
+      this.log(`  orchestration ${target}`);
+      return;
+    }
+
+    // The chip is a DOOR, not a switch: it opens Settings → Orchestration, where
+    // the three mode cards live. (An earlier version of this clicked the chip
+    // repeatedly expecting it to cycle, which is why it never took.)
+    await this.clearToasts();
+    await this.clickElement(await this.driver.findElement(By.id('orchChip')));
+    const card = await this.driver.wait(
+      until.elementLocated(
+        By.xpath(
+          `//div[contains(@class,'modes')]//div[contains(@class,'mcard')]` +
+            `[.//div[contains(@class,'mtitle') and normalize-space(text())='${wanted}']]`,
+        ),
+      ),
+      10000,
+    );
+    await this.driver.executeScript('arguments[0].scrollIntoView({block:"center"})', card);
+    await this.driver.sleep(200);
+    try {
+      await card.click();
+    } catch {
+      // Safe HERE and only here: the chip's own label is the post-condition
+      // below, so a click that did nothing fails loudly instead of passing.
+      this.log('  the orchestration card was not clickable — dispatching it directly');
+      await this.driver.executeScript('arguments[0].click()', card);
+    }
+    await this.driver.sleep(SETTLE_MS);
+    await this.clickElement(await this.driver.findElement(By.id('sback')));
+    await this.driver.sleep(SETTLE_MS);
+
+    // The post-condition, read from the product: the chip is the user's view of
+    // which arrangement is active, so it is the only honest thing to assert. A
+    // case that "set duo" and ran solo would pass the observer clause on a run
+    // with no observer in it at all.
+    const now = await chipLabel();
+    if (!now.includes(target)) {
+      throw new Error(`orchestration did not take: the chip reads "${now}", wanted ${target}`);
+    }
+    this.log(`  orchestration ${target}`);
+  }
+
+  /**
    * Sends a prompt. Returns the transcript files that were already on disk, so
    * `waitRunEnd` can identify the file this run creates.
    */

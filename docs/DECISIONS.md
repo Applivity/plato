@@ -3588,10 +3588,10 @@ unfalsifiable.**
 |---|---|---|
 | 1 | **A real change lands.** Given a task naming a small defect or feature, Plato edits **1–3 files** and the edit is on disk. | The demo repo's `git diff` after the run. |
 | 2 | **The gates hold, per mode.** In `edit` a write raises a card and the run waits; in `plan` the same write is refused with **no** card and the model is told why; in `auto` the write lands with **no card anywhere**. | Screen **and** transcript (`approval-requested` says an ask was raised; `approval-card` says one was drawn). |
-| 3 | **A protected file never reaches a model.** A tool call or command naming a deny-listed file is refused **before any read**, with no card. | The `refused` tool-event with its reason; the model's log showing the content was never in a request; the guard line on screen (D49as). |
+| 3 | **A protected file never reaches a model.** A tool call or command naming a deny-listed file is refused **before any read**, with no card. | The `refused` tool-event with its reason; **"no read ran"** (verdict rule 2), which is the stronger form of "the content was never in a request"; the guard line on screen (D49as). |
 | 4 | **The observer path is LIVE in Duo, and its activity is reported.** **It does NOT require an intervention.** | The run's closing line. **Not yet automated** — see the gap below. |
 | 5 | **The run's account of itself is honest.** A run that ends with unfinished plan steps says so; a refusal is visible; a cancel says cancelled. **No clause asserts a cap** — there is no turn cap (D49ab) and no budget cap (D49h). | The closing line and the log (D49aq, D49as). |
-| 6 | **Nothing leaves the machine unasked.** `web_fetch` asks in every mode including `auto`, and the card shows the exact URL. | `approval-card` in the transcript, with the address. |
+| 6 | **Nothing leaves the machine unasked — wherever a user is in the loop.** In `plan` and `edit`, `web_fetch` asks and the card shows the exact URL. **In `auto` it does not ask: D49ak amended D49p** (the founder's decision, 2026-09-24), so the clause is stated as the product now behaves. | Case 15 in `edit`: the card in the transcript **and** the URL on screen. The `auto` half is `modes.test.ts` — `decide('web_fetch','auto') === 'allow'`. |
 | 7 | **Stop works.** Cancelling while a question card is open ends the run as `cancelled` and dismisses the card. | Transcript `run-completed {reason: 'cancelled'}`; the card gone from the screen; harness case 10. |
 
 **The build clause is DROPPED, not deferred quietly.** `./gradlew` cannot run on this machine — no
@@ -3600,14 +3600,60 @@ claims the change compiles**, and a report must say it was verified by reading a
 **Restoring the clause requires a JDK plus the Android SDK platform tools**; that is the
 prerequisite, and it is named here so the omission is a recorded state rather than an oversight.
 
-**How it is executed.** `scripts/field/` — the ten scripted cases cover clauses 2, 3, 5, 6 and 7 and
-the mechanism of 1; the real-model pass covers clause 1's judgement and the question card. **The
-command is the one in `scripts/field/README.md`.**
+**How it is executed — NOW ACTUALLY EXECUTED (2026-09-27).** `scripts/field/acceptance.mjs` runs the
+seven clauses: it maps each clause onto the cases that witness it, judges each independently from the
+transcripts, and exits non-zero unless every clause passes. `node scripts/field/acceptance.mjs --run`
+drives the harness first, so the whole test is one command.
 
-**The known gap, stated so it is not mistaken for coverage.** Clause 4 is **not automated**: no
-harness case runs a Duo or Academy team, so the observer's liveness is verified by hand or not at
-all. Adding a Duo case is the obvious next extension of the harness, and it is recorded in
-PROGRESS rather than assumed.
+```
+clause 1  PASS  A real change lands — 1–3 files edited, and the edit is on disk   (cases 5, 9)
+clause 2  PASS  The gates hold, per mode: edit asks, plan refuses, auto does not  (2, 3, 4, 9)
+clause 3  PASS  A protected file never reaches a model                            (1)
+clause 4  PASS  The observer path is LIVE in Duo, and its work is reported        (16)
+clause 5  PASS  The run's account of itself is honest                             (7, 10, 17)
+clause 6  PASS  Nothing leaves the machine unasked                                (15)
+clause 7  PASS  Stop works                                                        (10)
+
+7 of 7 clauses pass.   All seventeen scripted cases pass in one pass.
+```
+
+**Two witnesses per clause, and that is the design.** The spec reports what it saw on **screen**; the
+judge recomputes the **transcript** verdict from the JSONL independently. They are wrong in different
+ways — the driver knows what it clicked but not always what that meant; the transcript knows what
+Plato did but cannot see the screen — so a disagreement is reported rather than averaged away. The
+**manifest** (`tmp/field/last-manifest.json`, written per run, including on failure) is the join: a
+transcript records its task and root but never which case produced it, so without it a judge cannot
+tell whether a clause's case ran at all.
+
+**Three gaps had to be closed to run this, and each is worth recording because a witness that does
+not exist is worse than none.**
+
+1. **Clause 6 had NO witness.** The entry claimed the scripted cases covered clauses 2, 3, 5, 6 and 7;
+   **no case touched `web_fetch` at all.** Case 15 is that witness.
+2. **Clause 6 was also STALE.** As first written it required `web_fetch` to ask "in every mode
+   including `auto`" — but **D49ak amended D49p** so that `auto` fetches without asking. **A clause
+   describing the pre-amendment product cannot be passed or failed**, which is precisely the defect
+   this entry was written to fix, so it was corrected to name two witnesses: the card in `edit`
+   (case 15) and the `auto` policy (`modes.test.ts`).
+3. **Clause 4's gap is closed.** It was recorded as not automated, because no case ran a Duo or
+   Academy team. **Case 16 does**, driven through the real chip and the Settings card, and it asserts
+   the closing line reports the observer. **It still does not require an intervention** — that wording
+   exists so a philosopher who correctly stays quiet passes.
+
+**Clause 3's third witness is subsumed.** "The model's log showing the content was never in a
+request" is implied by "no read ran" — the guard refuses by NAME before any tool opens anything —
+and a direct content test would need a real deny-listed file with a known marker, which the audit
+keeps out of this harness on purpose. The stronger claim is the one asserted.
+
+**A fourth defect found while wiring the clauses, and it was mine:** the two newest field cases'
+screen notes (`STUCK:`, `GUIDANCE:`) were **not in the spec's fatal-note regex**, so "no stuck card
+was ever detected" — the check written to give cases 12–14 their teeth — could not fail a case at
+all. **A note is not a check.** The regex now carries every clause prefix.
+
+**Falsified, because an acceptance test that cannot fail is the thing this entry replaced.**
+`unfinishedPlanNote` blanked in core → case 17 fails with *"the run ended with 2 of 3 plan steps
+unfinished and did not say so"*, the judge reports **clause 5 FAIL** naming that case, and the
+command exits 1. Reverted, re-run, 7/7 again.
 
 **Why the observer clause is phrased that way.** The old text required the observer to "intervene at
 least once meaningfully" — which **fails a philosopher who correctly stays quiet**, and so pressures

@@ -1,13 +1,23 @@
-# Field tests — the fourteen live checks, driven automatically
+# Field tests — the seventeen live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
 was written for a human to run by hand in VS Code. This directory runs them
-without a human. **Cases 10–14 were added here** (the cancel path, the editor's
-diagnostics, and the three faces of the repetition bound) — see the table below.
+without a human. **Cases 10–17 were added here** — the cancel path, the editor's
+diagnostics, the three faces of the repetition bound, and the three acceptance
+clauses that had no witness at all — see the table below.
+
+**This directory is also the M4 acceptance test's machine.** The seven clauses
+(D49at) are executed by `acceptance.mjs`, which maps each clause onto the cases
+that witness it and judges them independently from the transcripts:
 
 ```
-node scripts/field/run-field.mjs              # all fourteen
+node scripts/field/acceptance.mjs --run        # run the cases, then judge the clauses
+node scripts/field/acceptance.mjs              # judge the last run only
+```
+
+```
+node scripts/field/run-field.mjs              # all seventeen
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -68,6 +78,9 @@ Two rules keep the driver honest:
 | 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
 | 11 editor diagnostics | the chat is back in front afterwards | a `diagnostics:` notice naming one of three states |
 | 12 repetition bound | the card names the repeated call, says what to do, and Stop ends the run | `run-completed` carries `reason: stuck` |
+| 15 egress asks | the card shows the exact URL that would be sent (denied, so nothing is) | a `web_fetch` card, then a decline — and no fetch |
+| 16 observer live (Duo) | the closing line reports `observer N checks` | the read work ran under a team; no intervention required |
+| 17 unfinished plan | the closing line says `N of M plan steps unfinished` | the plan was written and the run completed |
 | 13 keep going | the card is answered "keep going" and the run finishes | `run-completed` carries `reason: complete` |
 | 14 no-progress | turns that all FAIL raise the card too | a `turns in a row have failed` notice, then `reason: stuck` |
 
@@ -112,6 +125,55 @@ would end the run, the transcript would say `complete`, and the case could pass 
 a product that ignored the Stop button entirely — a check that cannot fail. The
 case also refuses to pass if no question card was ever detected, and the driver
 treats a DISABLED Stop button as an error rather than a no-op click.
+
+## The acceptance test, executed (D49at)
+
+M4's definition of done is **seven clauses**, and `acceptance.mjs` runs them. It
+is not a separate suite: it maps each clause onto the cases that witness it and
+judges them, so a clause cannot pass without a case that ran.
+
+**Two witnesses, deliberately.** The spec reports what it saw on **screen**; the
+judge recomputes the **transcript** verdict from the JSONL, independently. They
+are wrong in different ways — the driver knows what it clicked but can be wrong
+about what that meant, the transcript knows what Plato did but cannot see the
+screen — so a disagreement is reported rather than averaged away.
+
+**The manifest is the join.** A transcript records its task and its root, never
+which case produced it, so a judge over transcripts alone cannot tell whether a
+clause's case even ran. `field.test.mjs` writes `tmp/field/last-manifest.json` —
+**including when a case fails**, so a failing run still reports which clauses
+passed.
+
+**Running it.** `node scripts/field/acceptance.mjs --run` does the whole thing:
+it drives `run-field.mjs`, then judges. `--run` inherits the launcher's demo-repo
+reset, which is destructive — see the branch-reset trap below.
+
+**What the exercise found, both recorded because a witness that does not exist is
+worse than none:**
+
+- **Clause 6 had no witness at all.** D49at listed it as covered by the scripted
+  cases and no case touched `web_fetch`. Case 15 is that witness.
+- **Clause 6 as written was also STALE.** It required `web_fetch` to ask "in every
+  mode including `auto`", but **D49ak amended D49p on 2026-09-24 so that `auto`
+  fetches without asking** — the founder's own decision. A clause describing the
+  pre-amendment product cannot be passed or failed, which is the exact defect
+  D49at was written to fix. The clause is now stated as what the product does, and
+  its two halves name two witnesses: the card in `edit` (case 15, a real window)
+  and the `auto` policy (`modes.test.ts`, where that decision lives).
+- **Clause 3's third witness is subsumed, not separate.** "The model's log showing
+  the content was never in a request" is implied by "no read ran" — the guard
+  refuses by NAME before anything is opened — and a direct content test would need
+  a real deny-listed file with a known marker, which the audit keeps out of this
+  harness on purpose.
+- **The stuck cases' screen notes were not fatal.** `STUCK:` and `GUIDANCE:` were
+  missing from the spec's failure regex, so "no stuck card was ever detected" —
+  the check written to give cases 12–14 their teeth — could not fail a case. Found
+  while wiring the acceptance clauses. **A note is not a check.**
+
+**Falsified.** Blanking `unfinishedPlanNote` in core makes case 17 fail with
+*"the run ended with 2 of 3 plan steps unfinished and did not say so"*, the judge
+reports **clause 5 FAIL** naming that case, and the command exits 1 — which is the
+property the old unfalsifiable test never had.
 
 ## Dependencies
 

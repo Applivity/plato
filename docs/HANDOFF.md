@@ -23,6 +23,16 @@ are now only in PROGRESS.
 
 ## Current state (verified 2026-09-27)
 
+- **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
+  acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
+  `node scripts/field/acceptance.mjs --run` across seventeen harness cases in real VS Code — the
+  first time that test has ever been runnable, let alone run. **The secret audit is done (D49au).**
+  Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
+  against a later decision**, and the recorded "clause 4 is not automated" gap is **closed** by a
+  harness case that runs a Duo team. It is falsifiable — blanking one product string makes a clause
+  fail and the command exit 1. The trademark sweep and license decision remain the **publish gate**,
+  not milestone work.
+
 - **A run is bounded by repetition, not by volume (D49aw, Tier C item 2).** The turn cap was deleted
   (D49ab) because it counted the wrong thing — it cut a *working* run at turn 40 after eleven
   approved writes — and nothing replaced it, so in `auto` nothing stopped a model that kept calling
@@ -451,24 +461,32 @@ to build against. That is the same gap that left the `DateHelper` reason unverif
 prerequisite to restore the clause: a JDK plus the Android SDK command-line tools and
 platform.** Until then the test verifies a change by reading, and says so.
 
-**M4 is now TWO things (restated 2026-09-25).** The trademark sweep (D16) and the
-license decision (D19) **left M4** — they gate a *publish*, not a milestone, and
-Plato is still in development. They are now the **publish gate**, tracked at the
-end of "Recommended order" below. M4's deliverable is the acceptance test and the
-secret audit; both prove the product is sound, which is what a milestone is for.
+**M4 is now TWO things (restated 2026-09-25), and BOTH ARE DONE (2026-09-27).** The trademark sweep
+(D16) and the license decision (D19) **left M4** — they gate a *publish*, not a milestone, and Plato
+is still in development. They are now the **publish gate**, tracked at the end of "Recommended
+order" below.
 
-**Both are now written or run; what remains is executing the test.**
-
-1. **The acceptance test is RESTATED (D49at, 2026-09-25)** — seven clauses, each naming its witness,
-   replacing BLUEPRINT §4. **What remains is running it through the field harness**, which is the
-   first time that test will ever have been executable. **Clause 4 (the observer is live in Duo) has
-   no case yet** — no harness case runs a Duo or Academy team — so that clause is by hand or not at
-   all, and it is recorded rather than assumed.
+1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 7 of 7 clauses pass.** One command
+   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (seventeen cases)
+   and judges each clause, exiting non-zero unless every one passes. Pass the `--run` flag or run the
+   harness yourself first; the judge reads `tmp/field/last-manifest.json`. **Two witnesses per
+   clause**, deliberately: the spec reports what it saw on **screen** and the judge recomputes the
+   **transcript** verdict independently, because they are wrong in different ways.
+   **Running it corrected the test itself in three places**, each recorded in D49at: clause 6 had
+   **no witness at all** (no case touched `web_fetch`), clause 6 was **stale** (it demanded that
+   `web_fetch` ask in `auto`, which D49ak's amendment of D49p had already changed), and clause 4's
+   recorded gap is **closed** — a harness case now runs a **Duo** team and asserts the closing line
+   reports the observer, still without requiring an intervention. **Falsified**: blanking the
+   unfinished-plan note makes case 17 fail, the judge reports clause 5 FAIL, and the command exits 1.
 2. **The secret audit is DONE (D49au, 2026-09-25)** — and it found that
    **`packages/core/src/security/secrets.ts` had never been in the repository at all**, matched by
    `.gitignore`'s bare `secrets.*`. A fresh clone could not build. Fixed, and **the founder staged
    both files on 2026-09-26** so they are tracked from the next commit. Everything else was clean;
    D49au records the two residuals.
+
+**What M4 does not claim.** No clause asserts that a change *compiles* — `./gradlew` cannot run on
+this machine (no JDK, no Android SDK), so clause 1 is verified by the diff and by reading. That is a
+recorded state, and restoring the clause requires a JDK plus the Android SDK platform tools.
 
 Everything else in M4 (packaged VSIX, onboarding, the whole D44–D47 UI series)
 has shipped; the code is well past the `0.9.8` that PROGRESS's milestone table
@@ -804,11 +822,13 @@ pass.** Written 2026-09-25 and closed the same day.
 
 **Tier B — M4 closeout. One writing task and one audit.**
 
-5. ~~**Restate the acceptance test.**~~ **DONE (D49at).** Seven clauses, each naming
-   its witness, replacing BLUEPRINT §4. **What remains is running the whole test end
-   to end** — ten supporting cases exist and case 10 ran on 2026-09-26, but **clause 4
-   (the observer in Duo) has no automated case at all**, so that clause is by hand or
-   not at all.
+5. ~~**Restate the acceptance test.**~~ **DONE, RESTATED AND EXECUTED (D49at,
+   2026-09-27).** Seven clauses, each naming its witness, replacing BLUEPRINT §4 —
+   **and 7 of 7 now pass**, run by `node scripts/field/acceptance.mjs --run` over
+   seventeen harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
+   harness case runs a **Duo** team and asserts the closing line reports the observer.
+   Two other clauses were corrected while wiring it — one had no witness at all, and
+   one was stale against a later decision. See D49at.
 6. ~~**Secret audit (D15).**~~ **DONE (D49au) — and it found something serious.**
    **`packages/core/src/security/secrets.ts` had never been committed**: `.gitignore`'s
    bare `secrets.*` matched the deny-list's own implementation, so **a fresh clone
