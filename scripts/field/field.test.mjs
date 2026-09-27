@@ -257,7 +257,12 @@ describe('Plato field tests — real VS Code', function () {
           if (!/the same step/.test(screen)) {
             notes.push('STUCK: the card/notice does not name which call was repeating');
           }
-          notes.push(`stuck: card-seen=${field.stuckSeen} dismissed=${!stillOpen} names-the-call=${/the same step/.test(screen)}`);
+          // `awaiting-answer`, NOT "dismissed": the answered card deliberately
+          // STAYS on screen as the record of what was asked, exactly as an
+          // approval card does. Calling that "dismissed" would print true while
+          // the card is plainly visible in the screenshot — the kind of label
+          // that reads as success and hides the thing it names.
+          notes.push(`stuck: card-seen=${field.stuckSeen} awaiting-answer=${stillOpen} names-the-call=${/the same step/.test(screen)}`);
         }
         if (c.n === 11) {
           // D49av. Two assertions and one report, and the split is deliberate.
