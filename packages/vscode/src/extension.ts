@@ -457,7 +457,13 @@ class ChatHost {
    * "nobody has looked" is not "nothing is wrong", and only a subscription that
    * outlives a single run can tell them apart.
    */
-  private readonly editorDiag = new EditorDiagnostics();
+  private readonly editorDiag = new EditorDiagnostics(() => {
+    // D49av: after a file has been shown to wake a language server, the
+    // conversation goes back in front. Naming it is what makes that reliable —
+    // closing the tab we opened was not, and a backgrounded chat is a chat the
+    // user (and the field harness) can no longer reach.
+    this.panel.reveal(undefined, true);
+  });
   /** D49av: what was known before the write in flight — see `onToolEvent`. */
   private pendingDiag: DiagSnapshot | null = null;
 

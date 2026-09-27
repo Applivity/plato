@@ -29,14 +29,15 @@ are now only in PROGRESS.
   same turn that it broke something. **The rule that shapes it: the ABSENCE of diagnostics is not
   evidence of correctness.** `getDiagnostics` answers `[]` for a clean file *and* for one no server
   has ever looked at, so the host records one of three states (clean / found N / **not analysed**), a
-  timeout counts as not analysed, and it never appends on a guess. **Its end-to-end proof is BLOCKED
-  and the reason is the test window, not the design:** the VS Code the field harness launches
-  publishes **no diagnostics to any extension** — measured with a throwaway probe extension, with
-  the TypeScript extension active and tsserver running, with and without a `tsconfig.json`, and with
-  JSON as a second language. **So confirm this in a normal VS Code before trusting it**: write a
-  file with a deliberate error and look for a `diagnostics:` line in the run record; `not checked`
-  there means that window's servers said nothing either. `scripts/field/README.md` carries the
-  experiment and the method.
+  timeout counts as not analysed, and it never appends on a guess. **A language server only reports
+  on a file the editor is SHOWING** — measured: merely writing or opening one gives nothing, showing
+  it gives the errors at once. So collection tries the **quiet route first** (`openTextDocument`,
+  short wait — a window whose servers answer on open never has its editor touched) and only then
+  shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
+  restoring "the last text editor" is the wrong signal and once left a file in front, which broke
+  every later field case). **Verified end to end: case 11 has the model told about two deliberate
+  errors, and all eleven scripted cases pass.** The notice says when a file had to be shown.
+  `scripts/field/README.md` carries the measurements.
 
 - **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
   `.gitignore` carried a bare `secrets.*`, meant for local secret files, and it matched

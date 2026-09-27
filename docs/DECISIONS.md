@@ -3240,36 +3240,48 @@ this", because an edit that rewrites the message on a pre-existing error legitim
 The prompt gains one line making the block an **OBSERVATION** and saying pre-existing errors are
 **not the model's to fix**, which is what stops the feature becoming a licence for scope creep.
 
-**The measured limit, which is the honest headline.** End-to-end verification is **BLOCKED**, and
-the reason is environmental, not architectural. **The VS Code the field harness launches publishes
-no diagnostics to any extension.** Established by experiment:
+**A language server only reports on a file the editor is SHOWING — measured, after two wrong
+guesses.** A broken `.ts` file gave **nothing** when merely written to disk, nothing when loaded with
+`openTextDocument` (waited 5 s), nothing with a valid `tsconfig.json`, and nothing as a broken
+`.json` either — but **`showTextDocument` produced both errors within a second**, with
+`typescript-language-features` active and `tsserver` running throughout. So the API had not moved
+(this build's typings still carry `getDiagnostics`/`onDidChangeDiagnostics`) and the language was
+irrelevant. **A merely-open document is not analysed here; a visible one is.**
 
-- a broken `.ts` file opened as language id `typescript`, with `typescript-language-features`
-  **active** and **tsserver processes running** → zero diagnostics, zero events, with **and**
-  without a valid `tsconfig.json`;
-- a broken `.json` file → the same zero, and JSON is a plain long-standing LSP client;
-- this build's bundled typings still carry `getDiagnostics`/`onDidChangeDiagnostics` unchanged, so
-  the API did not move.
+**That shapes the collection, in this order:**
 
-**What is therefore verified, and what is not.** Verified here: the seam, the three-state rule, the
-keying, the counted difference, the caps, the formatting and the prompt line — 28 unit tests, three
-of them falsified by reverting the rule they guard, on top of 608 green tests and 17 render suites.
-**Not verified end-to-end:** that a real editor's diagnostics reach a real model, in any window.
-That must be confirmed in a normal VS Code. **The failure mode is self-reporting, which is what
-makes shipping it defensible:** where the API yields nothing, Plato records *diagnostics: not
-checked* and appends nothing — it never reports a false "clean".
+1. **Quietly first** — `openTextDocument`, then a short wait. A window whose servers answer on open
+   (mainstream VS Code is expected to) **never has its editor disturbed at all**, and trying the
+   visible route first would make the flash the normal case.
+2. **Then, only if that got nothing**, show the files as preview tabs with `preserveFocus`, wait
+   again, and put the view back.
+3. **The view is restored by NAME, not by tab arithmetic.** The first attempt restored the
+   previously-active *text editor*, which is the wrong signal when the user is looking at the
+   Plato chat: `activeTextEditor` can still answer with a stale text editor, so a file went back in
+   front — and **every later field case failed**, because the harness drives the chat webview and a
+   backgrounded webview is unreachable. The host now re-reveals its panel explicitly. **The full
+   suite caught this; case 11 passing on its own did not.**
 
-**Two things tried and one kept.** `openTextDocument` after the write is **kept**: a language server
-only knows about files in a project it loaded or files the editor has opened, and a file Plato
-writes behind VS Code's back is neither, so without it the feature would miss its commonest case.
-It is a reasoned addition, **unverified end-to-end here** like the rest. An adaptive two-cap wait
-(3 s for a session's first look, to cover a server's cold start) was **written and removed**: in a
-window that publishes nothing it spent three seconds per write to learn nothing, and the measured
-cold start is under a second. The remaining cost of being wrong is small and self-explaining — a
-first write whose server is still booting says "not checked", and the next write gets an answer.
+**What is verified.** The seam, the three-state rule, the keying, the counted difference, the caps,
+the formatting and the prompt line — 28 unit tests, three falsified by reverting the rule they guard,
+on top of 608 green tests and 17 render suites. **And end to end: field case 11 writes a file with
+two deliberate errors and the model is TOLD about both**, with the visible route recorded in the
+notice. Falsified from the other side too: neutering the append makes the case fail with *"the editor
+reported errors and they never reached the model"* while the notice still reads "2 new errors",
+proving the two halves are independent. **The whole scripted suite — all eleven cases — passes**,
+which is what proves the editor-swap does not disturb anything else.
 
-**The harness's own lesson, again.** Two runs were spent before instrumenting, and both would have
-been avoided by asking the environment the question first. `tmp/diagprobe/` is the throwaway
+**What remains unverified, stated plainly:** that a window whose servers already answer on open
+needs no screen at all. That is the quiet route's branch, and no window available here exercises it.
+If it is wrong, the cost is a one-second preview-tab flash per write — visible, reversible, and
+self-reporting, since the notice says when the file had to be shown.
+
+**Two things tried and one kept.** An adaptive two-cap wait (3 s for a session's first look) was
+**written and removed**: it spent three seconds per write learning nothing, and the measured cold
+start is under a second. `openTextDocument` is **kept** as the quiet route's first step.
+
+**The harness's own lesson, again.** Three runs were spent before instrumenting, and all three would
+have been avoided by asking the environment the question first. `tmp/diagprobe/` is the throwaway
 extension that finally answered it, and the method is recorded in `scripts/field/README.md`:
 **before building on an environment assumption, write the smallest thing that measures it.**
 

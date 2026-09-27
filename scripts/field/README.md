@@ -65,7 +65,14 @@ Two rules keep the driver honest:
 | 8 read/run memory | the log names the files | the recap turn makes 0 tool calls |
 | 9 auto | no card anywhere | the edit landed — and it is on disk |
 | 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
-| 11 editor diagnostics | — (nothing is drawn; the block goes to the model) | a `diagnostics:` notice naming one of three states |
+| 11 editor diagnostics | the chat is back in front afterwards | a `diagnostics:` notice naming one of three states |
+
+**Case 11 needs the editor, so it touches the screen.** It writes a deliberately
+broken TypeScript file and checks that what the editor says reaches the model.
+The file carries **two** errors on purpose — a syntax error any analyser catches,
+and a type error only a full one does — so the notice's count says which kind of
+analysis ran. It is the only case that can move the user's editor, briefly; see
+the section above for why that is unavoidable here.
 
 **Why case 10 scripts work AFTER the question.** It stops a run that has a
 question on screen, and the two steps below that question are there so a run that
@@ -96,34 +103,44 @@ The cost is the extra command, so `run-field.mjs` checks for the dependencies
 **first** and prints that line if they are missing — before it bundles anything
 and before it touches the demo repo.
 
-## This window publishes NO diagnostics — measured, twice
+## A language server only reports on a file the editor is SHOWING
 
-**`vscode.languages.getDiagnostics` receives nothing in the VS Code the harness
-launches.** Case 11 (D49av) is the one that needs it, so this is the limit that
-case lives with, and it was established by experiment rather than assumption:
+**Established by experiment after two failed attempts, and it is the reason case
+11's feature needs to touch the screen at all:**
 
-- A **TypeScript** file written to disk, opened as language id `typescript`, with
-  the built-in `typescript-language-features` extension **active** and **seven
-  `tsserver` processes running** — zero diagnostics, zero `onDidChangeDiagnostics`
-  events, with **and** without a valid `tsconfig.json`.
-- A **JSON** file with a syntax error — the same: zero. JSON support is a plain,
-  long-standing LSP client, so this is not a TypeScript quirk.
-- The API itself is **unchanged** in this build's bundled typings
-  (`getDiagnostics`, `onDidChangeDiagnostics` both present), so nothing moved.
+| What was done to a deliberately broken `.ts` file | Diagnostics |
+|---|---|
+| written to disk only | none |
+| `openTextDocument` (loaded, not shown) — waited 5 s | none |
+| `openTextDocument` + a valid `tsconfig.json` | none |
+| a broken `.json` instead, opened not shown | none |
+| **`showTextDocument` (preview, `preserveFocus`)** | **2 — a syntax error and a type error** |
 
-**So do not read a "not checked" line from case 11 as a Plato defect.** It means
-this window has no diagnostics to give. `tmp/diagprobe/` holds a throwaway
-extension that re-checks the question in about a minute if the window, the VS Code
-version or the profile ever changes: it writes a broken file, opens it, reads
-`getDiagnostics` and quits. It is scratch — `tmp/` is gitignored — and the method
-is what matters: **open a deliberately broken file and see whether anything comes
-back, before building anything on top of the answer.**
+So it is not the language, not the project, and not the API (this build's bundled
+typings still carry `getDiagnostics`/`onDidChangeDiagnostics` unchanged). **A
+merely-open document is not analysed here; a visible one is.** Measured while
+`typescript-language-features` was *active* with seven `tsserver` processes
+running, so "the server was not running" is ruled out.
 
-The consequence for the harness is the split in case 11: it **asserts** that Plato
-asked the editor and recorded one of its three answers (true in every window, and
-the property that stops silence being read as success), and it **reports** what
-the editor said. The stronger check — that a reported error reached the model —
-runs only when the editor actually reported something.
+**Two consequences to hold on to.**
+
+1. **The feature's quiet route is tried FIRST and only then the visible one**, so
+   a window whose servers answer on open — mainstream VS Code is expected to —
+   never has its editor disturbed for nothing. Trying the visible route first
+   would make the flash the normal case.
+2. **A file left in front breaks this harness.** The driver drives the Plato chat
+   webview, and a backgrounded webview is unreachable. A first attempt restored
+   the previously-active *text editor*, which is the wrong signal when the user
+   was looking at the chat: `activeTextEditor` can still answer with a stale text
+   editor, a file went back in front, and **every case after that one failed to
+   find the chat**. The fix names what must be restored — the host's panel is
+   re-revealed — rather than closing a tab and hoping VS Code picks the right
+   successor. The full suite is what caught it; case 11 passing alone did not.
+
+`tmp/diagprobe/` holds the throwaway extension that answered all of this in about
+a minute. It is scratch — `tmp/` is gitignored — and the lesson is the method:
+**before building on what an environment does, write the smallest thing that
+measures it.** Two harness runs were spent guessing first.
 
 ## Honest boundaries
 
