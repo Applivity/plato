@@ -65,6 +65,7 @@ Two rules keep the driver honest:
 | 8 read/run memory | the log names the files | the recap turn makes 0 tool calls |
 | 9 auto | no card anywhere | the edit landed — and it is on disk |
 | 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
+| 11 editor diagnostics | — (nothing is drawn; the block goes to the model) | a `diagnostics:` notice naming one of three states |
 
 **Why case 10 scripts work AFTER the question.** It stops a run that has a
 question on screen, and the two steps below that question are there so a run that
@@ -94,6 +95,35 @@ workspace root and ignoring this manifest entirely.
 The cost is the extra command, so `run-field.mjs` checks for the dependencies
 **first** and prints that line if they are missing — before it bundles anything
 and before it touches the demo repo.
+
+## This window publishes NO diagnostics — measured, twice
+
+**`vscode.languages.getDiagnostics` receives nothing in the VS Code the harness
+launches.** Case 11 (D49av) is the one that needs it, so this is the limit that
+case lives with, and it was established by experiment rather than assumption:
+
+- A **TypeScript** file written to disk, opened as language id `typescript`, with
+  the built-in `typescript-language-features` extension **active** and **seven
+  `tsserver` processes running** — zero diagnostics, zero `onDidChangeDiagnostics`
+  events, with **and** without a valid `tsconfig.json`.
+- A **JSON** file with a syntax error — the same: zero. JSON support is a plain,
+  long-standing LSP client, so this is not a TypeScript quirk.
+- The API itself is **unchanged** in this build's bundled typings
+  (`getDiagnostics`, `onDidChangeDiagnostics` both present), so nothing moved.
+
+**So do not read a "not checked" line from case 11 as a Plato defect.** It means
+this window has no diagnostics to give. `tmp/diagprobe/` holds a throwaway
+extension that re-checks the question in about a minute if the window, the VS Code
+version or the profile ever changes: it writes a broken file, opens it, reads
+`getDiagnostics` and quits. It is scratch — `tmp/` is gitignored — and the method
+is what matters: **open a deliberately broken file and see whether anything comes
+back, before building anything on top of the answer.**
+
+The consequence for the harness is the split in case 11: it **asserts** that Plato
+asked the editor and recorded one of its three answers (true in every window, and
+the property that stops silence being read as success), and it **reports** what
+the editor said. The stronger check — that a reported error reached the model —
+runs only when the editor actually reported something.
 
 ## Honest boundaries
 

@@ -1291,3 +1291,195 @@ describe('a run is not bounded by a turn count (D49ab)', () => {
     expect(r.finalText).not.toContain('turn cap');
   });
 });
+
+/**
+ * D49av. The host gets one chance to add to a SUCCESSFUL write's result.
+ *
+ * This is how the editor's verdict on a file reaches the model in the same turn
+ * — Plato writes, learns only that the write succeeded, and would otherwise have
+ * no idea it just broke the code. Core stays ignorant of diagnostics: it appends
+ * a non-empty string the host returns and knows nothing more.
+ *
+ * A failed write, a non-write, or a host that throws or returns nothing must all
+ * leave the result EXACTLY as it was.
+ */
+describe('the host may add to a write result (D49av)', () => {
+  /** The text of the last tool result the model was handed. */
+  function lastToolResult(req: TurnRequest): string {
+    // Scan backwards rather than reading the final message: the loop keeps
+    // appending to the conversation after the request is made.
+    for (let i = req.messages.length - 1; i >= 0; i -= 1) {
+      for (const b of req.messages[i]?.content ?? []) {
+        if (b.type === 'tool_result') return b.content;
+      }
+    }
+    return '';
+  }
+
+  function capturing(turns: TurnResponse[]): {
+    p: ChatProvider;
+    requests: TurnRequest[];
+  } {
+    const requests: TurnRequest[] = [];
+    let i = 0;
+    return {
+      requests,
+      p: {
+        id: 'anthropic',
+        async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+          // SNAPSHOT the messages. The loop hands over its live array and keeps
+          // mutating it, so a stored reference ends up showing later turns — the
+          // first version of this helper read the final assistant message and
+          // reported every tool result as empty.
+          requests.push({
+            ...req,
+            messages: req.messages.map((m) => ({
+              ...m,
+              content: m.content.map((b) => ({ ...b })),
+            })),
+          });
+          const t = turns[i];
+          i += 1;
+          if (t === undefined) throw new Error('unexpected extra turn');
+          return t;
+        },
+      },
+    };
+  }
+
+  const callTurn = (tool: string, input: Record<string, unknown>): TurnResponse => ({
+    content: [{ type: 'tool_use', id: 't1', name: tool, input }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  });
+  const done: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+
+  /** A throwaway workspace, so a real write never lands in the repo. */
+  function ws(): string {
+    return mkdtempSync(join(tmpdir(), 'plato-diag-'));
+  }
+
+  it('appends what the host returns, keeping what the tool said', async () => {
+    const root = ws();
+    const { p, requests } = capturing([
+      callTurn('write_file', { path: 'a.ts', content: 'x' }),
+      done,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      afterToolResult: () => Promise.resolve('EDITOR SAYS: 2 errors'),
+    });
+    const told = lastToolResult(requests[1]!);
+    expect(told).toContain('EDITOR SAYS: 2 errors');
+    // Appended, never substituted: the tool's own account must survive, or the
+    // model loses the fact that the file was created at all.
+    expect(told).toContain('created a.ts');
+  });
+
+  it('hands the host the tool, its arguments, and the run signal', async () => {
+    const root = ws();
+    const seen: { tool: string; path: unknown; aborted: boolean }[] = [];
+    const { p } = capturing([
+      callTurn('write_file', { path: 'b.ts', content: 'y' }),
+      done,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      afterToolResult: (e) => {
+        seen.push({
+          tool: e.tool,
+          path: e.args['path'],
+          aborted: e.signal.aborted,
+        });
+        return Promise.resolve(undefined);
+      },
+    });
+    expect(seen).toEqual([{ tool: 'write_file', path: 'b.ts', aborted: false }]);
+  });
+
+  it('does not ask about a read, which changes nothing', async () => {
+    const root = ws();
+    writeFileSync(join(root, 'r.ts'), 'const a = 1;\n');
+    let asked = 0;
+    const { p, requests } = capturing([
+      callTurn('read_file', { path: 'r.ts' }),
+      done,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      afterToolResult: () => {
+        asked += 1;
+        return Promise.resolve('SHOULD NOT APPEAR');
+      },
+    });
+    expect(asked).toBe(0);
+    expect(lastToolResult(requests[1]!)).not.toContain('SHOULD NOT APPEAR');
+  });
+
+  it('does not ask about a write that FAILED', async () => {
+    // A failed write is not a change, so there is nothing to ask about — and the
+    // result must not gain a block that reads like a verdict on code that was
+    // never written.
+    const root = ws();
+    let asked = 0;
+    const { p, requests } = capturing([
+      callTurn('write_file', { path: 'c.ts' }), // no content -> the tool fails
+      done,
+    ]);
+    const r = await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      afterToolResult: () => {
+        asked += 1;
+        return Promise.resolve('SHOULD NOT APPEAR');
+      },
+    });
+    expect(asked).toBe(0);
+    expect(r.reason).toBe('complete');
+    expect(lastToolResult(requests[1]!)).not.toContain('SHOULD NOT APPEAR');
+  });
+
+  it('appends nothing when the host returns nothing', async () => {
+    const root = ws();
+    const { p, requests } = capturing([
+      callTurn('write_file', { path: 'd.ts', content: 'z' }),
+      done,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      // '' is what "nothing to report" looks like, and it must leave the result
+      // byte-identical rather than adding a blank separator.
+      afterToolResult: () => Promise.resolve(''),
+    });
+    expect(lastToolResult(requests[1]!)).toBe('created d.ts');
+  });
+
+  it('survives a host that throws — a diagnostics fault must not fail a run', async () => {
+    const root = ws();
+    const { p, requests } = capturing([
+      callTurn('write_file', { path: 'e.ts', content: 'q' }),
+      done,
+    ]);
+    const r = await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      afterToolResult: () => Promise.reject(new Error('editor exploded')),
+    });
+    expect(r.reason).toBe('complete');
+    expect(lastToolResult(requests[1]!)).toBe('created e.ts');
+  });
+});

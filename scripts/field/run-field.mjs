@@ -26,8 +26,15 @@
  *   FIELD_CASES=1,2 node scripts/field/run-field.mjs
  */
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+/**
+ * Files the harness itself writes into the demo repo. Removed after every run,
+ * whether it passed or not — an untracked leftover does not appear in a diff, so
+ * nothing else would ever notice it.
+ */
+const SCRATCH_FILES = ['probe-diagnostics.ts'];
 
 import { DATE_HELPER, DEMO_REPO, VIEW_MODEL } from './cases.mjs';
 import { runsDirFor } from './verdict.mjs';
@@ -175,6 +182,16 @@ try {
   });
 } finally {
   stub?.kill();
+  // D49av: case 11 writes a probe file into the workspace. It must not linger:
+  // `git diff --stat` below shows TRACKED changes only, so an untracked leftover
+  // is invisible, and the next run would then be writing over its own debris.
+  for (const name of SCRATCH_FILES) {
+    const p = resolve(DEMO_REPO, name);
+    if (existsSync(p)) {
+      rmSync(p, { force: true });
+      say(`removed the harness's own scratch file ${name}`);
+    }
+  }
   const diff = sh('git', ['-C', DEMO_REPO, 'diff', '--stat']).stdout.trim();
   say('what the harness changed in the demo repo (nothing is committed or pushed)');
   console.log(diff.length > 0 ? diff : '  (no changes)');

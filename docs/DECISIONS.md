@@ -3207,6 +3207,74 @@ suite exits 1.
 
 ---
 
+**D49av — Plato is told what the editor thinks of a file it just changed (Tier C item 1 —
+2026-09-26/27).**
+
+**The rule that shapes it: the ABSENCE of diagnostics is not evidence of correctness.**
+`vscode.languages.getDiagnostics(uri)` answers `[]` both for a file that is clean and for a file no
+language server has ever looked at. Treating those as one fact is the only design that would make
+this feature **harmful**: on the first write to a file the editor has not opened, every pre-existing
+error in it would look newly introduced and the agent would be sent to fix things nobody asked
+about. So the host records one of **three** states — `clean`, `found N`, `not analysed` — and a
+**timeout is `not analysed`, never `clean`.** This is the same law as D49aq's, one level down.
+
+**What ships.** After a file write succeeds, the host asks the editor about the files that call
+changed, keeps only errors **new since the write**, and appends a compact block to the tool result,
+so the model learns in the **same turn** that it broke something. Founder's decisions: always on
+with **no setting**; **errors only**; only the files Plato changed; only errors **new**.
+
+**Three design points that carry it, each falsified by reverting it:**
+
+1. **Two diagnostics are "the same error" by `source + message`, never by position.** An edit shifts
+   every line below it, so a positional key would report every pre-existing error as new after
+   every single write.
+2. **The difference is counted per key, not compared as sets.** A file that already had one
+   `cannot find symbol` and gains a second has identical sets — a set difference drops the new one.
+   Same fault as a check that cannot fail, in six lines.
+3. **`unknown` reports nothing at all.** An existing file no server has ever analysed licenses no
+   comparison.
+
+Plus: the hook is **only for a successful write**, a throw from the host is swallowed (diagnostics
+must never fail a run), and the block **says "new or changed since your edit"** — never "you broke
+this", because an edit that rewrites the message on a pre-existing error legitimately reads as new.
+The prompt gains one line making the block an **OBSERVATION** and saying pre-existing errors are
+**not the model's to fix**, which is what stops the feature becoming a licence for scope creep.
+
+**The measured limit, which is the honest headline.** End-to-end verification is **BLOCKED**, and
+the reason is environmental, not architectural. **The VS Code the field harness launches publishes
+no diagnostics to any extension.** Established by experiment:
+
+- a broken `.ts` file opened as language id `typescript`, with `typescript-language-features`
+  **active** and **tsserver processes running** → zero diagnostics, zero events, with **and**
+  without a valid `tsconfig.json`;
+- a broken `.json` file → the same zero, and JSON is a plain long-standing LSP client;
+- this build's bundled typings still carry `getDiagnostics`/`onDidChangeDiagnostics` unchanged, so
+  the API did not move.
+
+**What is therefore verified, and what is not.** Verified here: the seam, the three-state rule, the
+keying, the counted difference, the caps, the formatting and the prompt line — 28 unit tests, three
+of them falsified by reverting the rule they guard, on top of 608 green tests and 17 render suites.
+**Not verified end-to-end:** that a real editor's diagnostics reach a real model, in any window.
+That must be confirmed in a normal VS Code. **The failure mode is self-reporting, which is what
+makes shipping it defensible:** where the API yields nothing, Plato records *diagnostics: not
+checked* and appends nothing — it never reports a false "clean".
+
+**Two things tried and one kept.** `openTextDocument` after the write is **kept**: a language server
+only knows about files in a project it loaded or files the editor has opened, and a file Plato
+writes behind VS Code's back is neither, so without it the feature would miss its commonest case.
+It is a reasoned addition, **unverified end-to-end here** like the rest. An adaptive two-cap wait
+(3 s for a session's first look, to cover a server's cold start) was **written and removed**: in a
+window that publishes nothing it spent three seconds per write to learn nothing, and the measured
+cold start is under a second. The remaining cost of being wrong is small and self-explaining — a
+first write whose server is still booting says "not checked", and the next write gets an answer.
+
+**The harness's own lesson, again.** Two runs were spent before instrumenting, and both would have
+been avoided by asking the environment the question first. `tmp/diagprobe/` is the throwaway
+extension that finally answered it, and the method is recorded in `scripts/field/README.md`:
+**before building on an environment assumption, write the smallest thing that measures it.**
+
+---
+
 **D49au — an ignore rule must not be able to swallow source, and the deny-list had never been in the
 repository (D15 secret audit — 2026-09-25).**
 

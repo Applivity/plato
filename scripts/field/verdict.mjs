@@ -276,6 +276,30 @@ const RULES = {
     },
   ],
 
+  // 11 — the editor's verdict on a file Plato just wrote reaches the model
+  // (D49av), and the record never lets silence pass for success.
+  //
+  // The second check is the one the case exists for. "The editor reported
+  // nothing" and "the editor was never reached" are the same absence in every
+  // naive reading, and the whole design turns on telling them apart — so the
+  // transcript is required to carry a POSITIVE report, not merely the absence of
+  // one. A window with no language server fails this on purpose: the feature does
+  // not work there, and the case should say so rather than pass quietly.
+  11: (a) => [
+    {
+      name: 'the write completed',
+      ok: a.phasesFor('write_file').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('write_file')),
+    },
+    {
+      name: 'the host recorded what the editor said, so silence is not read as success',
+      ok: a.notices.some((t) => t.startsWith('diagnostics:')),
+      detail:
+        a.notices.filter((t) => t.startsWith('diagnostics:')).join(' | ') ||
+        'no diagnostics notice at all',
+    },
+  ],
+
   // 10 — Stop, pressed while a question is on screen (D49as).
   //
   // The transcript's job here is to say the run really STOPPED, and to show that

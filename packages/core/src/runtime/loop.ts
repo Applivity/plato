@@ -16,7 +16,7 @@ import type {
   ReasoningConfig,
   ToolResultBlock,
 } from '../providers/types.js';
-import { decideWithArgs } from './modes.js';
+import { decideWithArgs, isWriteTool } from './modes.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
@@ -246,6 +246,24 @@ export interface LoopOptions {
    * and legacy callbacks above are bridged onto it.
    */
   bus?: AgentBus;
+  /**
+   * D49av: one chance to add to the result of a SUCCESSFUL write, from the host.
+   *
+   * The host uses it to append what the editor's language servers say about the
+   * files just changed, so the model learns in the same turn that it broke
+   * something. Core knows nothing about diagnostics — it only knows that the host
+   * may have something to add, and it appends a non-empty answer verbatim.
+   *
+   * Called only for a write tool that succeeded. A throw is swallowed, because a
+   * host-side problem must never fail a run. `signal` is the run's abort signal so
+   * a host that waits can give up when the user presses Stop.
+   */
+  afterToolResult?: (event: {
+    tool: string;
+    args: ToolArgs;
+    ok: boolean;
+    signal: AbortSignal;
+  }) => Promise<string | undefined>;
   /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
   controller?: RunController;
   /** Bound provider adapter (D25b). Replaces the old apiKey field. */
@@ -942,10 +960,30 @@ async function runLoop(
         ok: outcome.ok,
         args,
       });
+      // D49av: the host gets one chance to add to what the model is told about a
+      // successful write — how else would Plato learn that the editor reports it
+      // just broke the file? Only writes, only on success, and a failure here is
+      // swallowed: a diagnostics problem must never fail a run.
+      let content = outcome.output;
+      if (outcome.ok && isWriteTool(name) && opts.afterToolResult) {
+        try {
+          const suffix = await opts.afterToolResult({
+            tool: name,
+            args,
+            ok: outcome.ok,
+            signal: ctrl.signal,
+          });
+          if (typeof suffix === 'string' && suffix.length > 0) {
+            content = `${content}\n\n${suffix}`;
+          }
+        } catch {
+          /* best effort — see the comment above */
+        }
+      }
       results.push({
         type: 'tool_result',
         toolUseId: call.id,
-        content: outcome.output,
+        content,
         isError: !outcome.ok,
       });
     }

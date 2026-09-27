@@ -45,6 +45,7 @@ import {
   emitDuoConfig,
   isSecretPath,
   isWriteTool,
+  formatDiagnostics,
   writePathsOf,
   loadProjectFile,
   loadImageAttachment,
@@ -64,6 +65,11 @@ import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
 import type { DuoPhilosopher } from '@applivity/plato-core';
 import type { ApprovalRequest, Mode, ImageMime } from '@applivity/plato-core';
+import {
+  EditorDiagnostics,
+  describeDiagLook,
+  type DiagSnapshot,
+} from './diagnostics.js';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -445,6 +451,15 @@ class ChatHost {
   private homeWatchers: vscode.FileSystemWatcher[] = [];
   /** D47: ms of the last home-file write — swallows our own watcher echoes. */
   private lastHomeWrite = 0;
+  /**
+   * D49av: the editor's own view of the files Plato writes. One per chat panel,
+   * because it remembers which files a language server has ever reported on —
+   * "nobody has looked" is not "nothing is wrong", and only a subscription that
+   * outlives a single run can tell them apart.
+   */
+  private readonly editorDiag = new EditorDiagnostics();
+  /** D49av: what was known before the write in flight — see `onToolEvent`. */
+  private pendingDiag: DiagSnapshot | null = null;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -2068,6 +2083,7 @@ class ChatHost {
    * stays persisted, so reopening the panel continues the conversation.
    */
   async dispose(): Promise<void> {
+    this.editorDiag.dispose();
     for (const w of this.homeWatchers) {
       w.dispose();
     }
@@ -2673,6 +2689,12 @@ class ChatHost {
     // D49aq: the approval paths report on this bus (see `approval-card`), so
     // hold it for the run. Set before the loop starts and nulled in the finally.
     this.runBus = bus;
+    // D49av: the loop mints the runId, and the diagnostics notice needs it. The
+    // bus delivers synchronously, so it is set long before the first write.
+    let runId = '';
+    bus.on((e) => {
+      if (e.type === 'run-started') runId = e.runId;
+    });
     const writer = new TranscriptWriter(
       join(this.homePlatoDir(), 'runs', this.projectKey(root)),
       { task, root },
@@ -3028,6 +3050,15 @@ class ChatHost {
           if (e.phase === 'done') {
             toolsUsed += 1;
           }
+          // D49av: what the editor knew about the file BEFORE this write. Taken
+          // here, on the event immediately before the executor runs, so nothing
+          // can move underneath it — the loop's own `requested` fires before the
+          // user is even asked on the `ask` path, which could be a minute earlier.
+          // One slot is enough: the loop runs a batch of tool calls strictly one
+          // at a time, `allowed` then `done` per call, in order.
+          if (e.phase === 'allowed' && isWriteTool(e.tool)) {
+            this.pendingDiag = this.editorDiag.snapshot(root, e.tool, e.args);
+          }
           void this.panel.webview.postMessage({
             type: 'tool',
             tool: e.tool,
@@ -3073,6 +3104,24 @@ class ChatHost {
               });
             }
           }
+        },
+        // D49av: the editor's verdict on a file Plato just changed, appended to
+        // the result so the model learns in the SAME turn that it broke
+        // something. `collect` never throws and returns `undefined`-equivalent
+        // states, so a window with no language server simply appends nothing.
+        afterToolResult: async (e) => {
+          const snap = this.pendingDiag;
+          this.pendingDiag = null;
+          if (snap === null) return undefined;
+          const result = await this.editorDiag.collect(snap, e.signal);
+          // The notice is the RECORD: it says whether the editor was asked and
+          // what it said. Without it, "the server found nothing" and "the server
+          // was never reached" look identical in a transcript — and silence that
+          // cannot be told from success is this codebase's oldest lesson.
+          bus.emit({ type: 'notice', runId, text: describeDiagLook(result, snap) });
+          if (result.kind !== 'found') return undefined;
+          const block = formatDiagnostics(result.diagnostics, { root });
+          return block.length > 0 ? block : undefined;
         },
       });
       // D49j: a run cancelled mid-stream leaves text in the preview that never

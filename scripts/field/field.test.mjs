@@ -230,6 +230,48 @@ describe('Plato field tests — real VS Code', function () {
           }
           notes.push(`cancel: card-dismissed=${!stillOpen} says-cancelled=${/cancelled/i.test(screen)}`);
         }
+        if (c.n === 11) {
+          // D49av. Two assertions and one report, and the split is deliberate.
+          //
+          // ASSERTED, because it is about Plato and holds in every window: the
+          // host asked the editor and wrote down one of the three known answers.
+          // Silence here is the fault the whole design is against — an absent
+          // report would mean nobody could tell "nothing is wrong" from "nobody
+          // looked".
+          const notices = events
+            .filter((e) => e.type === 'notice')
+            .map((e) => String(e.text ?? ''));
+          const said = notices.find((t) => t.startsWith('diagnostics:'));
+          if (said === undefined) {
+            notes.push('DIAGNOSTICS: the host never recorded what the editor thought of the file it wrote');
+          } else if (!/^diagnostics: (\d+ new error|none new|not checked)/.test(said)) {
+            notes.push(`DIAGNOSTICS: the report is not one of the three known states: ${said}`);
+          } else {
+            notes.push(`editor said: ${said}`);
+          }
+          // ASSERTED ONLY WHERE IT CAN BE. If the editor reported an error, it
+          // must have reached the model — that is the feature. Demanding it in a
+          // window that publishes no diagnostics would assert the environment
+          // rather than Plato, and would leave a case that fails forever for a
+          // reason that is not a defect.
+          const reported = said !== undefined && /^diagnostics: \d+ new error/.test(said);
+          if (reported) {
+            const log = await stubLog();
+            const told = log.log.some((r) =>
+              (r.toolResults ?? []).some((t) =>
+                String(t.head ?? '').includes('The editor reports'),
+              ),
+            );
+            if (!told) {
+              notes.push('DIAGNOSTICS: the editor reported errors and they never reached the model');
+            } else {
+              notes.push('model was told what the editor reported');
+            }
+          } else {
+            // REPORTED, not asserted — see the README's note on this window.
+            notes.push('note: this window published no diagnostics, so the model told nothing (not a pass, not a failure)');
+          }
+        }
         if (run.expectOnDisk) {
           const p = join(DEMO_REPO, run.expectOnDisk.file);
           const body = readFileSync(p, 'utf8');
@@ -246,7 +288,7 @@ describe('Plato field tests — real VS Code', function () {
           const told = log.log.some((r) =>
             (r.toolResults ?? []).some((t) => t.head.toLowerCase().includes(run.expectModelTold.toLowerCase())),
           );
-          if (!told) notes.push(`MODEL: the refusal never reached the model (looked for "${run.expectModelTold}")`);
+          if (!told) notes.push(`MODEL: the expected text never reached the model (looked for "${run.expectModelTold}")`);
           else notes.push(`model was told: "${run.expectModelTold}"`);
         }
 
@@ -268,7 +310,7 @@ describe('Plato field tests — real VS Code', function () {
           if (!chk.ok) notes.push(`TRANSCRIPT: ${chk.name} [${chk.detail}]`);
         }
 
-        const failures = notes.filter((n) => /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|LOG|DISK|TRANSCRIPT|TICKS|CANCEL):/.test(n));
+        const failures = notes.filter((n) => /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS):/.test(n));
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes) console.log(`    ${n}`);
         if (failures.length > 0) {

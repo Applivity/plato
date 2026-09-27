@@ -21,7 +21,22 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-26)
+## Current state (verified 2026-09-27)
+
+- **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
+  successful write it collects the language servers' errors for the files that call changed, keeps
+  the ones **new since the write**, and appends them to the tool result — so the model learns in the
+  same turn that it broke something. **The rule that shapes it: the ABSENCE of diagnostics is not
+  evidence of correctness.** `getDiagnostics` answers `[]` for a clean file *and* for one no server
+  has ever looked at, so the host records one of three states (clean / found N / **not analysed**), a
+  timeout counts as not analysed, and it never appends on a guess. **Its end-to-end proof is BLOCKED
+  and the reason is the test window, not the design:** the VS Code the field harness launches
+  publishes **no diagnostics to any extension** — measured with a throwaway probe extension, with
+  the TypeScript extension active and tsserver running, with and without a `tsconfig.json`, and with
+  JSON as a second language. **So confirm this in a normal VS Code before trusting it**: write a
+  file with a deliberate error and look for a `diagnostics:` line in the run record; `not checked`
+  there means that window's servers said nothing either. `scripts/field/README.md` carries the
+  experiment and the method.
 
 - **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
   `.gitignore` carried a bare `secrets.*`, meant for local secret files, and it matched
@@ -781,9 +796,12 @@ above. **Do not pick them up as a session's work while Plato is still being buil
 
 **Tier C — capability, in the order I would argue for. Each needs a decision.**
 
-8. **LSP diagnostics after an edit.** The biggest *quality* lever a coding agent can
-   have and the one Plato lacks entirely: the agent currently cannot tell that it
-   broke a file. **If one capability item is picked, this is it.**
+8. ~~**LSP diagnostics after an edit.**~~ **BUILT (D49av, 2026-09-27) — with one
+   end-to-end verification outstanding.** The host now tells the model what the
+   editor reports about the files it just changed, keeping only errors new since
+   the write. **What is not proven: that a real editor's diagnostics reach a real
+   model, in any window** — the harness's VS Code publishes none to any extension
+   (measured), so that must be confirmed in a normal VS Code. See "Current state".
 9. **`web_search`** — deferred (D49p) because it needs a backend decision, and the
    convenient option has a trap: Anthropic's server-side search runs inside the API
    call, so **no approval card can fire for it**. Needs either a key in

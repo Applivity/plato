@@ -262,3 +262,32 @@ describe('the worker prompt requires per-claim evidence (D49ae)', () => {
     );
   });
 });
+
+/**
+ * D49av. The diagnostics block in a tool result is only worth appending if the
+ * model treats it as evidence rather than background noise — and only if it does
+ * NOT treat it as a licence to go and fix pre-existing problems nobody asked
+ * about. Both halves are asserted, because either one alone is a defect: a prompt
+ * that ignores the block wastes the feature, and a prompt that says "fix every
+ * error you are shown" turns it into scope creep on any repo with legacy errors.
+ */
+describe('the worker prompt says what to do with the editor’s errors (D49av)', () => {
+  it('makes them an observation, not an opinion', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('that is an OBSERVATION');
+    expect(DEFAULT_PLATO_BODY).toContain('came from the language server');
+  });
+
+  it('says pre-existing errors are not the model’s to fix', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('not yours to fix');
+    expect(DEFAULT_PLATO_BODY).toContain('change nothing');
+  });
+
+  it('refuses to read silence as verification', () => {
+    // The whole feature exists because Plato cannot tell whether it broke
+    // something. A prompt that let an absent diagnostics block mean "verified"
+    // would rebuild the exact gap in the one place it costs most.
+    expect(DEFAULT_PLATO_BODY).toContain(
+      'it never means the change is verified',
+    );
+  });
+});

@@ -366,4 +366,50 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 11,
+    title: 'The editor reports what Plato broke in a file it just wrote',
+    // D49av. Plato writes a file and learns only that the write succeeded; on a
+    // machine with no compiler that is no feedback at all. The host now asks the
+    // editor's language servers what they think of the files just changed.
+    //
+    // The probe is a TypeScript file ON PURPOSE, and it carries TWO errors ON
+    // PURPOSE. The harness's VS Code has no language extensions installed, so the
+    // only server available is the built-in TypeScript one — and whether it fully
+    // analyses a loose `.ts` file in a folder with no tsconfig is contested. So:
+    // the SYNTAX error is caught even by a degraded syntax-only server, and the
+    // TYPE error is only caught by a full one. **The notice's count says which** —
+    // 2 means full analysis, 1 means syntax only, and "not checked" means neither.
+    runs: [
+      {
+        mode: 'auto',
+        prompt:
+          'Create a file called probe-diagnostics.ts in the workspace root with exactly these two lines of TypeScript.',
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'write_file',
+                args: {
+                  path: 'probe-diagnostics.ts',
+                  // `overwrite` is harmless on a file that does not exist and is
+                  // what makes a second run work if the launcher's cleanup failed.
+                  overwrite: true,
+                  content:
+                    'const n: number = "not a number";\n' + 'const broken = ;\n',
+                },
+              },
+            ],
+          },
+          { text: 'Created the file.' },
+        ],
+        cards: [],
+        // Deliberately NO `expectModelTold`. Whether the model can be told at all
+        // depends on the window publishing diagnostics, which is not something
+        // this repo controls — see the README's note. The model-told check lives
+        // in field.test.mjs and runs only when the editor actually reported
+        // something, so the case asserts Plato and not the environment.
+      },
+    ],
+  },
 ];
