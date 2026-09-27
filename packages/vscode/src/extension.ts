@@ -47,6 +47,7 @@ import {
   isWriteTool,
   formatDiagnostics,
   stuckCard,
+  type StuckCard,
   type StuckRequest,
   writePathsOf,
   loadProjectFile,
@@ -378,7 +379,7 @@ type Entry =
    * click on an old card is harmless: the host ignores an answer when nothing is
    * pending.
    */
-  | { k: 'stuck-open'; title: string; lines: string[] }
+  | ({ k: 'stuck-open' } & StuckCard)
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -3353,14 +3354,12 @@ class ChatHost {
     req: StuckRequest,
   ): Promise<{ action: 'continue' | 'stop'; guidance?: string }> {
     const card = stuckCard(req);
-    this.push({ k: 'stuck-open', title: card.title, lines: card.lines });
+    this.push({ k: 'stuck-open', ...card });
     return new Promise((resolve) => {
       this.pendingStuck = resolve;
-      void this.panel.webview.postMessage({
-        type: 'stuck',
-        title: card.title,
-        lines: card.lines,
-      });
+      // The card's own wording goes over the wire verbatim, so the live card and
+      // a reloaded one cannot drift apart.
+      void this.panel.webview.postMessage({ type: 'stuck', ...card });
     });
   }
 

@@ -224,6 +224,16 @@ export function chatHtml(): string {
   .card .stuck-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
                       color:var(--pl-muted); }
   .card .stuck-line:first-of-type { padding-top:8px; }
+  /* The call itself, set apart so "which call" is answerable at a glance. */
+  .card .stuck-call { margin:6px 10px 0; padding:5px 8px;
+                      background:var(--vscode-textCodeBlock-background,
+                                     rgba(128,128,128,.09));
+                      font-family:var(--vscode-editor-font-family, monospace);
+                      font-size:11.5px; overflow-wrap:anywhere; }
+  /* The way out is the one line in full foreground: everything else explains,
+     this one tells the user what to do. */
+  .card .stuck-help { padding:8px 10px 0; font-size:12.5px; line-height:1.5;
+                      color:var(--vscode-editor-foreground); }
   .card .stuck-input { margin:8px 10px 0; padding:4px 8px;
                        width:calc(100% - 20px); box-sizing:border-box;
                        background:var(--vscode-input-background);
@@ -4531,16 +4541,24 @@ export function chatHtml(): string {
     card.className = 'card stuck-card';
 
     const h = document.createElement('h3');
-    h.textContent = String(m.title || 'Plato looks stuck');
+    h.textContent = String(m.title || 'Plato is stuck');
     card.appendChild(h);
 
-    const lines = Array.isArray(m.lines) ? m.lines : [];
-    for (const line of lines) {
-      const p = document.createElement('div');
-      p.className = 'stuck-line';
-      p.textContent = String(line);
-      card.appendChild(p);
-    }
+    // Four parts, in this order: what happened, the specific call, where it got
+    // to, and — last, where it is read just before deciding — what the user can
+    // do about it. Every part is a text node, so nothing the model wrote can
+    // become markup.
+    const part = (cls, value) => {
+      if (typeof value !== 'string' || value.length === 0) return;
+      const d = document.createElement('div');
+      d.className = cls;
+      d.textContent = value;
+      card.appendChild(d);
+    };
+    part('stuck-line', m.lead);
+    part('stuck-call', m.call);
+    part('stuck-line', m.detail);
+    part('stuck-help', m.help);
 
     const box = document.createElement('input');
     box.type = 'text';

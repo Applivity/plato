@@ -155,6 +155,10 @@ describe('Plato field tests — real VS Code', function () {
           // card with no answer parks the run, so it is always dealt with here —
           // declared or not.
           stuckStop: run.stuckStop === true,
+          // D49aw: case 13 answers the card with "keep going" AND guidance —
+          // the path a person reaches for first, which no real window had
+          // exercised.
+          stuckGuidance: run.stuckGuidance ?? '',
           question: run.question ? async () => {
             // Test 6's own ask: pick two options, jump to another tab, come back,
             // and check the picks survived the round trip. Every outcome below is
@@ -249,20 +253,65 @@ describe('Plato field tests — real VS Code', function () {
           if (stillOpen) {
             notes.push('STUCK: the card is still WAITING FOR AN ANSWER after the run ended');
           }
-          // What the user is told. "Stopped" alone would leave them guessing;
-          // the run must say it was repeating itself and what it was repeating.
-          if (!/repeat/i.test(screen)) {
-            notes.push('STUCK: the run does not say it was repeating itself, so nothing explains the stop');
+          // What the user is told, and the founder's requirement is the middle
+          // one: a card that explains the problem but not the way out is a dead
+          // end. These read the REAL copy, which no other suite does — core pins
+          // the wording and the render suite renders a fixture, so this is the
+          // only place the two are proved to meet.
+          if (!/stuck/i.test(screen)) {
+            notes.push('STUCK: the run never says Plato was stuck, so nothing explains the stop');
           }
           if (!/the same step/.test(screen)) {
             notes.push('STUCK: the card/notice does not name which call was repeating');
+          }
+          if (!/Tell Plato what to do instead/.test(screen)) {
+            notes.push('STUCK: the card does not tell the user what they can do about it');
+          }
+          if (!/Nothing was lost/.test(screen)) {
+            notes.push('STUCK: the closing line does not tell the user anything is recoverable');
           }
           // `awaiting-answer`, NOT "dismissed": the answered card deliberately
           // STAYS on screen as the record of what was asked, exactly as an
           // approval card does. Calling that "dismissed" would print true while
           // the card is plainly visible in the screenshot — the kind of label
           // that reads as success and hides the thing it names.
-          notes.push(`stuck: card-seen=${field.stuckSeen} awaiting-answer=${stillOpen} names-the-call=${/the same step/.test(screen)}`);
+          notes.push(`stuck: card-seen=${field.stuckSeen} awaiting-answer=${stillOpen} names-the-call=${/the same step/.test(screen)} says-what-to-do=${/Tell Plato what to do instead/.test(screen)}`);
+        }
+        if (c.n === 13) {
+          // D49aw: the run was NOT stopped. The card appeared, the user said
+          // keep going with a reason, and the run finished normally.
+          if (!field.stuckSeen) {
+            notes.push('STUCK: no stuck card was ever detected, so "keep going" was never exercised');
+          }
+          const stillOpen = await field.stuckOpen();
+          if (stillOpen) {
+            notes.push('STUCK: the card is still WAITING FOR AN ANSWER after the run ended');
+          }
+          // The user's own words must reach Plato — and the chat is where the
+          // user checks that they did.
+          if (!screen.includes('That step is already recorded')) {
+            notes.push('GUIDANCE: what the user typed into the card never reached the conversation');
+          }
+          notes.push(`keep-going: card-seen=${field.stuckSeen} awaiting-answer=${stillOpen} guidance-in-log=${screen.includes('That step is already recorded')}`);
+        }
+        if (c.n === 14) {
+          // D49aw: the second trigger. The calls all differ, so repetition
+          // detection CANNOT fire here — if the card appears, it is because
+          // turns that all fail are counted.
+          if (!field.stuckSeen) {
+            notes.push('STUCK: no card appeared for five turns of failures, so the no-progress trigger never fired');
+          }
+          const stillOpen = await field.stuckOpen();
+          if (stillOpen) {
+            notes.push('STUCK: the card is still WAITING FOR AN ANSWER after the run ended');
+          }
+          if (!/turns in a row/i.test(screen)) {
+            notes.push('STUCK: the run does not say turns in a row failed, so nothing explains the stop');
+          }
+          if (!/Tell Plato what to do instead/.test(screen)) {
+            notes.push('STUCK: the card does not tell the user what they can do about it');
+          }
+          notes.push(`no-progress: card-seen=${field.stuckSeen} awaiting-answer=${stillOpen} turns-named=${/turns in a row/i.test(screen)}`);
         }
         if (c.n === 11) {
           // D49av. Two assertions and one report, and the split is deliberate.

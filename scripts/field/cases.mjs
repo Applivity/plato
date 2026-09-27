@@ -453,4 +453,62 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 13,
+    title: '"Keep going" resumes the run, and the user\'s own words reach Plato',
+    // D49aw. Case 12 proves the run STOPS. This proves the other answer works,
+    // and it is the one a person reaches for first: "keep going, but do this
+    // instead". Nobody had clicked that button in a real window — only in the
+    // render suite, which renders a fixture and never touches the host.
+    //
+    // The script is case 12's: five identical turns, then a step to finish with.
+    // The difference is what the driver does at the card.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Keep working until the task is done.',
+        steps: [
+          ...Array.from({ length: 5 }, () => ({
+            calls: [
+              {
+                tool: 'todo_write',
+                args: {
+                  todos: [{ content: 'the same step', status: 'in_progress' }],
+                },
+              },
+            ],
+          })),
+          { text: 'Everything is done.' },
+        ],
+        cards: [],
+        stuckGuidance: 'That step is already recorded — stop updating the plan and finish.',
+      },
+    ],
+  },
+  {
+    n: 14,
+    title: 'Turns that all FAIL are caught too, not only repeated ones',
+    // D49aw's second trigger, and it had no end-to-end case at all — only unit
+    // tests. A model can also get stuck by trying different things that all
+    // fail, which repetition detection cannot see by construction.
+    //
+    // The calls are DELIBERATELY DIFFERENT read_file paths, so the repetition
+    // trigger cannot fire: this case measures the no-progress trigger and
+    // nothing else. Reads need no approval in any mode and touch nothing, so
+    // the case measures the guard rather than a gate or the filesystem.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Find the file and read it.',
+        steps: [
+          ...Array.from({ length: 5 }, (_, i) => ({
+            calls: [{ tool: 'read_file', args: { path: `does-not-exist-${i + 1}.txt` } }],
+          })),
+          { text: 'I could not find it.' },
+        ],
+        cards: [],
+        stuckStop: true,
+      },
+    ],
+  },
 ];

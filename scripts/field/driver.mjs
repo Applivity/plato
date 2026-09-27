@@ -247,13 +247,18 @@ export class Field {
    * click an approval card's buttons — which in `edit` mode may be sitting in
    * the same conversation.
    */
-  async answerStuck(which) {
+  async answerStuck(which, guidance = '') {
     const label = which === 'stop' ? 'Stop' : 'Keep going';
+    if (guidance.length > 0) {
+      // Typed the way a person types it, into the card's own box.
+      const box = await this.driver.findElement(By.css('.card.stuck-card .stuck-input'));
+      await box.sendKeys(guidance);
+    }
     const xpath =
       `//div[contains(@class,'stuck-card')]//button[normalize-space(text())='${label}']`;
     const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
     await this.clickElement(btn);
-    this.log(`  answered the stuck card: ${label}`);
+    this.log(`  answered the stuck card: ${label}${guidance ? ' with guidance' : ''}`);
     await this.driver.sleep(SETTLE_MS);
   }
 
@@ -321,7 +326,7 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '' } = {}) {
     const started = Date.now();
     let step = 0;
     let finished = null;
@@ -385,6 +390,11 @@ export class Field {
         if (stuckStop) {
           this.log('  the run is stuck — pressing Stop on the card');
           await this.answerStuck('stop');
+        } else if (stuckGuidance.length > 0) {
+          // The case under test: the user says keep going AND says what to do
+          // differently, which is the fastest unstick there is.
+          this.log('  the run is stuck — answering "keep going" with guidance');
+          await this.answerStuck('continue', stuckGuidance);
         } else {
           this.log('  UNEXPECTED stuck card — telling it to continue so the run can finish');
           await this.answerStuck('continue');

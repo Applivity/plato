@@ -37,6 +37,8 @@
  */
 
 import { digestToolCall } from './chatlog.js';
+import { parseTodos } from '../tools/todo.js';
+import { pathArgsOf } from '../security/paths.js';
 
 /** Consecutive repeats that earn the model a nudge. Matches Cline's CLI. */
 export const STUCK_NUDGE_AT = 3;
@@ -157,8 +159,7 @@ export class StuckWatch {
     }
 
     if (rec.outcome === 'ok') {
-      const digest = digestOf(rec);
-      this.lastSuccess = digest;
+      this.lastSuccess = describeCall(rec.tool, rec.args);
       this.turnSuccesses += 1;
     } else if (rec.outcome === 'failed') {
       this.turnFailures += 1;
@@ -279,14 +280,77 @@ export class StuckWatch {
   }
 }
 
-/** `shell: pnpm build` — the call in one line a person can read. */
-export function describeCall(tool: string, args: Record<string, unknown>): string {
-  const digest = digestToolCall(tool, args);
-  return digest.length > 0 ? `${tool}: ${digest}` : tool;
+/** How long a single quoted argument may be before it is clipped. */
+const MAX_ARG = 80;
+
+function clip(s: string, max = MAX_ARG): string {
+  const one = s.replace(/\s+/g, ' ').trim();
+  return one.length > max ? one.slice(0, max - 1) + '…' : one;
 }
 
-function digestOf(rec: StuckCall): string {
-  return describeCall(rec.tool, rec.args);
+/** The tools a person would describe as an action on a file. */
+const FILE_VERB: Record<string, string> = {
+  read_file: 'reading',
+  write_file: 'writing',
+  apply_diff: 'editing',
+  apply_patch: 'editing',
+};
+
+/**
+ * The call as a PERSON reads it — `running pnpm build`, `reading src/DateHelper.java`.
+ *
+ * **Deliberately NOT `digestToolCall`.** That is the LOG's vocabulary: it is
+ * written for a fold and for the next run's model, and it renders as
+ * `todo_write: 1 item, 0 done, in progress: …`. Shown to a user that is machine
+ * noise, and the founder's review said so. This leads with the verb instead,
+ * because the verb is the part a person recognises. An unknown tool falls back
+ * to the digest, which beats a bare name.
+ */
+export function describeCall(tool: string, args: Record<string, unknown>): string {
+  const verb = FILE_VERB[tool];
+  if (verb !== undefined) {
+    const path = pathArgsOf(tool, args)[0];
+    return path !== undefined ? `${verb} ${clip(path)}` : `${verb} a file`;
+  }
+  const one = (key: string, max = MAX_ARG): string =>
+    typeof args[key] === 'string' ? clip(String(args[key]), max) : '';
+  switch (tool) {
+    case 'shell': {
+      const cmd = one('command');
+      return cmd.length > 0 ? `running ${cmd}` : 'running a command';
+    }
+    case 'grep': {
+      const pat = one('pattern', 50);
+      return pat.length > 0 ? `searching for ${pat}` : 'searching the code';
+    }
+    case 'glob': {
+      const pat = one('pattern', 50);
+      return pat.length > 0 ? `finding files matching ${pat}` : 'finding files';
+    }
+    case 'list_dir':
+      return 'listing a folder';
+    case 'git': {
+      const v = one('verb', 20);
+      return v.length > 0 ? `running git ${v}` : 'running git';
+    }
+    case 'web_fetch': {
+      const url = one('url');
+      return url.length > 0 ? `fetching ${url}` : 'fetching a page';
+    }
+    case 'ask_user':
+      return 'asking you a question';
+    case 'todo_write': {
+      const parsed = parseTodos(args['todos']);
+      const now = 'todos' in parsed ? parsed.todos.find((t) => t.status === 'in_progress') : undefined;
+      return now !== undefined && now.content.length > 0
+        ? `updating its plan (${clip(now.content, 60)})`
+        : 'updating its plan';
+    }
+    default: {
+      const digest = digestToolCall(tool, args);
+      return digest.length > 0 ? `${tool} (${digest})` : tool;
+    }
+  }
 }
 
 function times(n: number): string {
@@ -321,60 +385,97 @@ export function nudgeText(req: StuckRequest): string {
 
 function lastWorked(req: StuckRequest): string {
   return req.lastSuccess.length > 0
-    ? `The last call that worked was ${req.lastSuccess}.`
+    ? `The last thing that worked was ${req.lastSuccess}.`
     : 'Nothing has worked yet in this run.';
 }
 
-/** The line the run record carries when the model has been nudged. */
+/**
+ * The line the user reads when the model has been nudged.
+ *
+ * This line exists so the pause is never a surprise, so it must say the two
+ * things a surprise costs: what is happening, and WHAT HAPPENS NEXT. The
+ * previous wording — "It has been asked to try something else" — was passive and
+ * told the user nothing they could act on; the founder's review called it vague
+ * and he was right.
+ */
 export function nudgeNote(req: StuckRequest): string {
+  const next =
+    'It has been told to try something different, and if that does not work it will stop and ask you.';
   if (req.kind === 'repeat') {
-    return `Plato has made the same call ${times(req.count)} (${req.call}). It has been asked to try something else.`;
+    return `Plato is stuck on the same call — ${req.call}, ${times(req.count)} so far. ${next}`;
   }
-  return `${req.count} turns in a row have failed. Plato has been asked to try something else.`;
+  return `${req.count} turns in a row have failed. ${next}`;
 }
 
-/** The card, as wording. The shell renders it; the sentences live here so they are testable. */
-export function stuckCard(req: StuckRequest): { title: string; lines: string[] } {
+/**
+ * The card, as wording. The shell renders it; the sentences live here so they
+ * are testable.
+ *
+ * Four parts, and the last one is the point: `lead` says what happened, `call`
+ * is the specific thing, `detail` is where it got to, and **`help` tells the
+ * user what they can do now**. A card that only describes the problem leaves
+ * the user with no way out, which is the failure the founder flagged.
+ */
+export interface StuckCard {
+  title: string;
+  /** What happened, in one sentence a person reads. */
+  lead: string;
+  /** The repeated call, shown on its own line. Absent for no-progress. */
+  call?: string;
+  /** Where it got to. Absent for repetition, which is not about progress. */
+  detail?: string;
+  /** What the user can do about it. Always present. */
+  help: string;
+}
+
+/** The same closing advice on every card, so the options are never a guess. */
+const HELP =
+  'Tell Plato what to do instead, or press Stop and rephrase your request.';
+
+export function stuckCard(req: StuckRequest): StuckCard {
   if (req.kind === 'repeat') {
     return {
-      title: 'Plato is repeating itself',
-      lines: [
-        `It has made this same call ${times(req.count)} in a row — ${req.call} — and got the same result every time.`,
-        'Running it again will not change anything.',
-      ],
+      title: 'Plato is stuck',
+      lead: `It has made the same call ${times(req.count)} and got the same answer every time:`,
+      ...(req.call !== undefined ? { call: req.call } : {}),
+      // Says the SO WHAT without pretending to know why: repeating a call whose
+      // answer has not changed can only produce that answer again.
+      help: `Repeating it will only give the same answer. ${HELP}`,
     };
   }
   return {
     title: `${req.count} turns in a row have failed`,
-    lines: [
-      `The last ${req.count} turns all failed — ${req.failures} call${plural(
-        req.failures ?? 1,
-      )}, none of them worked.`,
-      lastWorked(req),
-    ],
+    lead: `Nothing has worked in the last ${req.count} turns — ${req.failures} call${plural(
+      req.failures ?? 1,
+    )}, and none of them succeeded.`,
+    detail: lastWorked(req),
+    help: `Trying the same things again will not help. ${HELP}`,
   };
 }
 
 /** The record line raised with the card, so the wait is never invisible. */
 export function askNote(req: StuckRequest): string {
   if (req.kind === 'repeat') {
-    return `Plato is repeating itself — ${req.call}, ${times(req.count)}. Waiting for you.`;
+    return `Plato is stuck on the same call — ${req.call}, ${times(req.count)} — and is waiting for you.`;
   }
-  return `${req.count} turns in a row have failed. Waiting for you.`;
+  return `${req.count} turns in a row have failed. Plato is waiting for you.`;
 }
 
 /**
  * How the run explains itself when the user chose to stop, or when there was
- * nobody to ask. Never "the same call repeated 5 times" — that says nothing
- * about what Plato was doing.
+ * nobody to ask.
+ *
+ * It closes the loop the card opened: the run says what happened **and what the
+ * user can do next**, because this line is the last thing they read. The old
+ * wording ended on a machine digest — "the same call 5 times (todo_write: 1 item,
+ * 0 done, in progress: …)" — which is log vocabulary in a person's closing line.
  */
 export function stuckStopNote(req: StuckRequest): string {
+  const next = 'Nothing was lost — tell Plato what to do differently, or rephrase your request.';
   if (req.kind === 'repeat') {
-    return `Stopped: Plato made the same call ${times(req.count)} in a row (${req.call}) and got the same result every time.`;
+    return `Stopped — Plato was stuck on the same call (${req.call}) and kept getting the same answer. ${next}`;
   }
-  return `Stopped: ${req.count} turns in a row failed — ${req.failures} call${plural(
-    req.failures ?? 1,
-  )}, none of them worked. ${lastWorked(req)}`;
+  return `Stopped — the last ${req.count} turns all failed. ${lastWorked(req)} ${next}`;
 }
 
 /** What the model is told when the user answers "keep going". */

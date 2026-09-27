@@ -1577,10 +1577,13 @@ describe('a stuck run is bounded by repetition, not by turns (D49aw)', () => {
     expect(shown).toContain('You have now made this exact call 3 times in a row');
     // The call is named by its digest, so the model (and the record) can see
     // WHICH call it is and what it was doing.
-    expect(shown).toContain('in progress: the same step');
+    expect(shown).toContain('updating its plan (the same step)');
     expect(shown).toContain('Change your approach');
-    // Never silent: the run record says the model was nudged.
-    expect(notices.join('\n')).toContain('asked to try something else');
+    // Never silent, and never a dead end: the line the USER sees names the call
+    // and says what happens next, rather than "it has been asked to try
+    // something else", which tells them nothing.
+    expect(notices.join('\n')).toContain('Plato is stuck on the same call');
+    expect(notices.join('\n')).toContain('stop and ask you');
   });
 
   it('asks the user at the fifth, and hands their answer to the model', async () => {
@@ -1594,7 +1597,8 @@ describe('a stuck run is bounded by repetition, not by turns (D49aw)', () => {
         return { action: 'continue', guidance: 'the lockfile is the problem' };
       },
     });
-    expect(asked).toEqual(['todo_write: 1 item, 0 done, in progress: the same step']);
+    // Human words, not the log digest — this is the string the user reads.
+    expect(asked).toEqual(['updating its plan (the same step)']);
     expect(r.reason).toBe('complete');
     expect(served()).toBe(6);
     // Both the fact of the question AND the user's own words reach the model.
@@ -1612,9 +1616,9 @@ describe('a stuck run is bounded by repetition, not by turns (D49aw)', () => {
     });
     expect(r.reason).toBe('stuck');
     expect(served()).toBe(5);
-    expect(r.stuckNote).toContain('todo_write');
-    expect(r.stuckNote).toContain('5 times in a row');
-    expect(r.stuckNote).toContain('the same step');
+    // Names what Plato was doing, in words a person reads, AND what to do next.
+    expect(r.stuckNote).toContain('updating its plan (the same step)');
+    expect(r.stuckNote).toContain('Nothing was lost');
   });
 
   it('a run with NO way to ask stops rather than pretending it asked', async () => {

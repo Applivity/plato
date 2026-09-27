@@ -3269,13 +3269,53 @@ second time. Neither is a problem (the detector counts matching repeats, so it t
 later), but both mean **the detector can never fire on a write's first repeat**, which is exactly the
 kind of detail that produces a guard that works in tests and never fires in practice.
 
-**The messaging is part of the decision, not decoration.** The founder's review was that "the same
-call repeated 5 times with the same result" is *vague*, and he is right. Every sentence names the
-call — `Plato has made the same call 3 times (shell: pnpm build)`, `Stopped: Plato made the same call
-5 times in a row (todo_write: 1 item, 0 done, in progress: the same step)` — reusing `digestToolCall`
-so the wording stays one line and stays honest. The no-progress card also says **what last worked**
-(`The last call that worked was write_file: src/DateHelper.java.`, or `Nothing has worked yet in this
-run.`), because that is what tells a person how far it had got.
+**The messaging is part of the decision, not decoration — and it took TWO passes.** The founder first
+rejected *"the same call repeated 5 times with the same result"* as vague. The rewrite that followed
+named the call but was **still wrong, and he caught it again**: *"we really need to improve our
+communication, make it effective and let user know what else can they do"*. He was pointing at two
+real faults, and the second one is the deeper.
+
+1. **The copy described what Plato did to itself.** *"It has been asked to try something else"* is
+   passive and tells the user nothing; *"Running it again will not change anything"* is a negative
+   with no direction. Both are true and both are dead ends.
+2. **Nothing said what the USER could do next.** That is the fault the whole feature is supposed to
+   avoid — the run has stopped, and a card that only explains the problem leaves the person exactly
+   where the founder said they must never be left.
+
+**So every user-facing line now answers two questions: what happened, and what you can do about it.**
+The card has four parts — `lead` (what happened), `call` (the specific thing, set apart on its own
+line), `detail` (where it got to) and **`help` (the way out, always present)**:
+
+```
+It has made the same call 5 times and got the same answer every time:
+  updating its plan (the same step)
+Repeating it will only give the same answer. Tell Plato what to do
+instead, or press Stop and rephrase your request.
+```
+
+The closing line closes the loop the card opened, ending on what the user can do rather than on a
+machine digest — the old version ended `(todo_write: 1 item, 0 done, in progress: …)`, which is the
+LOG's vocabulary in a person's last sentence: *"Stopped — Plato was stuck on the same call (…) and
+kept getting the same answer. Nothing was lost — tell Plato what to do differently, or rephrase your
+request."* And the nudge line says **what happens next** rather than what was done, so the coming
+pause is never a surprise.
+
+**`describeCall` was written for this and is deliberately NOT `digestToolCall`.** The digest is the
+log's vocabulary, built for folds and for the next run's model; it renders as `todo_write: 1 item,
+0 done, in progress: …`, which is noise in front of a person. The user-facing phrase leads with the
+verb — `running pnpm build`, `reading src/DateHelper.java`, `updating its plan (the same step)` — and
+an unknown tool falls back to the digest rather than to a bare name. The no-progress card says what
+last worked in the same human words, because that is what tells a person how far it had got.
+
+**The copy now has tests in two places, and they prove different halves.** `stuck.test.ts` owns the
+WORDING (`THE CARD SAYS WHAT TO DO — every card, both kinds`, and `never leaves the so-what to the
+user's imagination`), and **field case 12 owns the real string end to end** — it greps the screen of a
+running VS Code for `Tell Plato what to do instead` and `Nothing was lost`, which no other suite can
+do. The render suite only proves the field is *drawn*; its checks were renamed from `IT SAYS WHAT THE
+USER CAN DO` to `the way out is drawn on the card` once a falsification showed a vague `help` string
+still passed it — the wording is core's to get right, and saying otherwise in a check name is the
+kind of overclaim this repo hunts. **Falsified:** reverting `help` to `Try something else.` fails two
+core tests.
 
 **The card, and the escape hatches — this was the founder's other condition, and it is the one that
 shaped the UI.** `auto` means "no card for every write", NOT "nobody is watching"; this is the only
@@ -3315,15 +3355,22 @@ trip costs nothing. The card at five is rare by construction.
    "is a card open" has to mean "is anything still demanding a reply". The card is now marked
    `answered` and the harness looks for `.card.stuck-card:not(.answered)`.
 
-**Verified.** `tsc` clean. **638 core tests / 37 files**, of which 25 are the counting rules
-(`stuck.test.ts`) and 5 pin the loop seam. **18 render suites / 401 assertions**, of which 22 are the
-card. **Field case 12 passes end to end** in the harness's real VS Code: the card appears, it names
-the call (`names-the-call=true`), Stop ends the run, the transcript carries `reason: stuck`, and the
-card is not left waiting. **Falsified in both directions:** removing the result from the repeat key
-fails the "test suite after an edit" test; removing the decline exclusion fails the declines test;
-removing the reset-on-success fails two reset tests; deleting the replay case fails the reload
-assertions; dropping the guidance from the answer fails the "carries what the user typed" assertion;
-and neutering the ask in the loop fails field case 12 with `reason: complete` instead of `stuck`.
+**Verified.** `tsc` clean. **648 core tests / 37 files**, of which 35 are the counting rules and the
+wording (`stuck.test.ts`) and 5 pin the loop seam. **18 render suites / 411 assertions**, of which 32
+are the card. **All fourteen field cases pass** in the harness's real VS Code, run in one pass against
+this build — including the three faces of this bound: **12** (the card appears, names the call, says
+what to do, Stop ends the run, `reason: stuck`), **13** (the card is answered "keep going" with typed
+guidance, and the run finishes `complete` with the user's words in the conversation), and **14** (five
+turns of *different* failing calls raise the card, so the no-progress trigger is proved on its own).
+
+**Falsified in both directions, seven times:** removing the result from the repeat key fails the "test
+suite after an edit" test; removing the decline exclusion fails the declines test; removing the
+reset-on-success fails two reset tests; deleting the replay case fails the reload assertions; dropping
+the guidance from the answer fails the "carries what the user typed" assertion; neutering the ask in
+the loop fails field case 12 with `reason: complete` instead of `stuck`; and reverting the card's way
+out to `Try something else.` fails two core wording tests. The screenshots of cases 12, 13 and 14 were
+read rather than trusted — which is how the answered card's `dismissed=true` label was found to be
+describing the opposite of what is on screen.
 
 **One existing test had to change, and that is a finding rather than a nuisance.** `loop.test.ts`'s
 "keeps working past 40 turns" (which pins D49ab) issued the *same* `read_file` call 55 times with

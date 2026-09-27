@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   askNote,
   continueText,
+  describeCall,
   nudgeText,
   nudgeNote,
   stuckCard,
@@ -204,7 +205,7 @@ describe('no-progress — turns in which nothing succeeded', () => {
       failures: 5,
       lastSuccess: 'write_file: src/DateHelper.java',
     };
-    expect(stuckCard(req).lines[1]).toContain('write_file: src/DateHelper.java');
+    expect(stuckCard(req).detail).toContain('write_file');
   });
 });
 
@@ -256,36 +257,75 @@ describe('the user answers', () => {
   });
 });
 
-describe('the wording', () => {
-  it('never says "the same call repeated" — it names what Plato was doing', () => {
-    const note = stuckStopNote({
-      kind: 'repeat',
-      count: 5,
-      call: 'shell: pnpm build',
-      lastSuccess: '',
-    });
-    expect(note).toContain('shell: pnpm build');
-    expect(note).toContain('5 times in a row');
-    expect(stuckCard({ kind: 'repeat', count: 5, call: 'shell: pnpm build', lastSuccess: '' }).title)
-      .toBe('Plato is repeating itself');
+/**
+ * D49aw, second pass. The founder read the first copy and said it was **vague
+ * and left the user with no way out** — "It has been asked to try something
+ * else" and "Running it again will not change anything" describe what Plato did
+ * to itself and stop there. He was right.
+ *
+ * **The rule these pin: every user-facing line says what happened AND what the
+ * user can do about it.** A message that only reports a problem is a dead end.
+ */
+describe('the wording — and it always leaves the user a way out', () => {
+  const repeat = { kind: 'repeat' as const, count: 5, call: 'running pnpm build', lastSuccess: '' };
+
+  it('the card names the call the way a person would say it', () => {
+    const card = stuckCard(repeat);
+    expect(card.title).toBe('Plato is stuck');
+    expect(card.call).toBe('running pnpm build');
+    expect(card.lead).toContain('5 times');
   });
 
-  it('says what last worked, so the user can see how far it got', () => {
+  it('THE CARD SAYS WHAT TO DO — every card, both kinds', () => {
+    for (const req of [
+      repeat,
+      { kind: 'no-progress' as const, count: 5, failures: 9, lastSuccess: 'writing src/a.ts' },
+    ]) {
+      const help = stuckCard(req).help;
+      expect(help).toContain('Tell Plato what to do instead');
+      expect(help).toContain('Stop');
+    }
+  });
+
+  it('never leaves the so-what to the user\'s imagination', () => {
+    // The old line was "Running it again will not change anything" — a negative
+    // with no direction. It now also says what to do.
+    const help = stuckCard(repeat).help;
+    expect(help).toContain('only give the same answer');
+    expect(help).toContain('Tell Plato what to do instead');
+  });
+
+  it('the closing line says nothing was lost, because that is the worry', () => {
+    const note = stuckStopNote(repeat);
+    expect(note).toContain('running pnpm build');
+    expect(note).toContain('Nothing was lost');
+    expect(note).toContain('rephrase your request');
+  });
+
+  it('the nudge line says what happens NEXT, so the pause is not a surprise', () => {
+    const note = nudgeNote(repeat);
+    expect(note).toContain('running pnpm build');
+    expect(note).toContain('5 times so far');
+    expect(note).toContain('stop and ask you');
+    // and not the passive wording that was rejected
+    expect(note).not.toContain('It has been asked to try something else');
+  });
+
+  it('says what last worked, in human words, so the user can see how far it got', () => {
     const card = stuckCard({
       kind: 'no-progress',
       count: 5,
       failures: 9,
-      lastSuccess: 'write_file: src/DateHelper.java',
+      lastSuccess: 'writing src/DateHelper.java',
     });
     expect(card.title).toBe('5 turns in a row have failed');
-    expect(card.lines[0]).toContain('9 calls');
-    expect(card.lines[1]).toContain('src/DateHelper.java');
+    expect(card.lead).toContain('9 calls');
+    expect(card.detail).toContain('writing src/DateHelper.java');
   });
 
   it('says so plainly when nothing has ever worked', () => {
-    expect(
-      stuckCard({ kind: 'no-progress', count: 5, failures: 3, lastSuccess: '' }).lines[1],
-    ).toBe('Nothing has worked yet in this run.');
+    const card = stuckCard({ kind: 'no-progress', count: 5, failures: 3, lastSuccess: '' });
+    expect(card.detail).toBe('Nothing has worked yet in this run.');
     expect(stuckStopNote({ kind: 'no-progress', count: 5, failures: 3, lastSuccess: '' })).toContain(
       'Nothing has worked yet in this run.',
     );
@@ -293,26 +333,61 @@ describe('the wording', () => {
 
   it('gets singular right', () => {
     expect(
-      stuckCard({ kind: 'no-progress', count: 5, failures: 1, lastSuccess: '' }).lines[0],
+      stuckCard({ kind: 'no-progress', count: 5, failures: 1, lastSuccess: '' }).lead,
     ).toContain('1 call,');
   });
 
   it('hands the user guidance to the model when they say keep going', () => {
-    const text = continueText(
-      { kind: 'repeat', count: 5, call: 'shell: pnpm build', lastSuccess: '' },
-      'the lockfile is the problem',
-    );
+    const text = continueText(repeat, 'the lockfile is the problem');
     expect(text).toContain('the lockfile is the problem');
-    expect(text).toContain('shell: pnpm build');
+    expect(text).toContain('running pnpm build');
   });
 
   it('the record lines say the wait is happening', () => {
-    expect(askNote({ kind: 'repeat', count: 5, call: 'shell: pnpm build', lastSuccess: '' })).toContain(
-      'Waiting for you',
-    );
+    expect(askNote(repeat)).toContain('waiting for you');
     expect(nudgeNote({ kind: 'no-progress', count: 3, lastSuccess: '' })).toContain(
-      'asked to try something else',
+      'stop and ask you',
     );
+  });
+});
+
+/**
+ * D49aw. The call in words a person recognises.
+ *
+ * `digestToolCall` is the LOG's vocabulary — `todo_write: 1 item, 0 done, in
+ * progress: …` — and it was wrong in front of a user. This leads with the verb.
+ */
+describe('the call, in human words', () => {
+  it('names the command for a shell call', () => {
+    expect(describeCall('shell', { command: 'pnpm build' })).toBe('running pnpm build');
+  });
+
+  it('names the file for a read and a write', () => {
+    expect(describeCall('read_file', { path: 'src/a.ts' })).toBe('reading src/a.ts');
+    expect(describeCall('write_file', { path: 'src/b.java', content: 'x' })).toBe('writing src/b.java');
+  });
+
+  it('names the step in hand for a plan update — never the log digest', () => {
+    const phrase = describeCall('todo_write', {
+      todos: [{ content: 'the same step', status: 'in_progress' }],
+    });
+    expect(phrase).toBe('updating its plan (the same step)');
+    expect(phrase).not.toContain('1 item');
+  });
+
+  it('names the search, not the tool', () => {
+    expect(describeCall('grep', { pattern: 'ISO8601' })).toBe('searching for ISO8601');
+  });
+
+  it('clips a long command rather than spilling it into the card', () => {
+    const long = 'x'.repeat(300);
+    const phrase = describeCall('shell', { command: long });
+    expect(phrase.length).toBeLessThan(100);
+    expect(phrase).toContain('…');
+  });
+
+  it('falls back to the digest for a tool it does not know, never to a bare name', () => {
+    expect(describeCall('some_mcp_tool', { url: 'https://x.example/a' })).toContain('some_mcp_tool');
   });
 });
 

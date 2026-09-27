@@ -334,8 +334,8 @@ const RULES = {
   // call repeated 5 times" tells a reader nothing they can act on.
   12: (a) => [
     {
-      name: 'the model was told it was repeating itself, before anyone was asked',
-      ok: a.notices.some((t) => /same call .* times|turns in a row have failed/i.test(t)),
+      name: 'the model was told it was stuck, before anyone was asked',
+      ok: a.notices.some((t) => /stuck on the same call|turns in a row have failed/i.test(t)),
       detail: a.notices.join(' | ') || 'no notices at all',
     },
     {
@@ -344,10 +344,60 @@ const RULES = {
       detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
     },
     {
-      name: 'the stop note names what Plato was doing, not just that it repeated',
-      ok: a.notices.some((t) => /^Stopped: .*todo_write/.test(t)),
+      name: 'the stop note names what Plato was doing, and leaves the user a way out',
+      ok: a.notices.some((t) => /^Stopped/.test(t) && /updating its plan/.test(t) && /Nothing was lost/.test(t)),
       detail:
-        a.notices.filter((t) => t.startsWith('Stopped:')).join(' | ') || 'no stop note',
+        a.notices.filter((t) => t.startsWith('Stopped')).join(' | ') || 'no stop note',
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 13 — the user answers "keep going" (D49aw).
+  //
+  // The mirror of case 12, and the transcript has to say the run FINISHED: a
+  // product that raised the card and then stopped anyway would look identical on
+  // screen while ignoring the user's answer outright.
+  13: (a) => [
+    {
+      name: 'the run was stuck enough to be put to the user',
+      ok: a.notices.some((t) => /stuck on the same call/i.test(t)),
+      detail: a.notices.join(' | ') || 'no notices at all',
+    },
+    {
+      name: 'and it CONTINUED — the card is a question, not a stop',
+      ok: a.completed.some((e) => e.reason === 'complete'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 14 — turns that all fail, with no repetition to see (D49aw).
+  //
+  // Every call differs, so the repetition trigger cannot fire. A card here is
+  // therefore evidence of the SECOND trigger and nothing else.
+  14: (a) => [
+    {
+      name: 'the run said turns in a row had failed',
+      ok: a.notices.some((t) => /turns in a row have failed/i.test(t)),
+      detail: a.notices.join(' | ') || 'no notices at all',
+    },
+    {
+      name: 'the run ended as stuck',
+      ok: a.completed.some((e) => e.reason === 'stuck'),
+      detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+    },
+    {
+      name: 'the stop note says nothing has worked and leaves a way out',
+      ok: a.notices.some((t) => /^Stopped/.test(t) && /Nothing was lost/.test(t)),
+      detail: a.notices.filter((t) => t.startsWith('Stopped')).join(' | ') || 'no stop note',
     },
     {
       name: 'the run did not fail',

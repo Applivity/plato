@@ -1,13 +1,13 @@
-# Field tests — the twelve live checks, driven automatically
+# Field tests — the fourteen live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
 was written for a human to run by hand in VS Code. This directory runs them
-without a human. **Cases 10, 11 and 12 were added here** (the cancel path, the
-editor's diagnostics, and the repetition bound) — see the table below.
+without a human. **Cases 10–14 were added here** (the cancel path, the editor's
+diagnostics, and the three faces of the repetition bound) — see the table below.
 
 ```
-node scripts/field/run-field.mjs              # all twelve
+node scripts/field/run-field.mjs              # all fourteen
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -67,7 +67,9 @@ Two rules keep the driver honest:
 | 9 auto | no card anywhere | the edit landed — and it is on disk |
 | 10 cancel | the card is gone, and the run says "cancelled" | `run-completed` carries `reason: cancelled` |
 | 11 editor diagnostics | the chat is back in front afterwards | a `diagnostics:` notice naming one of three states |
-| 12 repetition bound | the card names the repeated call, and Stop ends the run | `run-completed` carries `reason: stuck` |
+| 12 repetition bound | the card names the repeated call, says what to do, and Stop ends the run | `run-completed` carries `reason: stuck` |
+| 13 keep going | the card is answered "keep going" and the run finishes | `run-completed` carries `reason: complete` |
+| 14 no-progress | turns that all FAIL raise the card too | a `turns in a row have failed` notice, then `reason: stuck` |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -79,6 +81,22 @@ nudge. The step AFTER the repeats is deliberately there — without it a build
 with no bound at all would end the run normally on the model's own next step and
 the case would pass while testing nothing, which is the toothless-check mistake
 case 10 was fixed for.
+
+**Cases 12, 13 and 14 are the same bound seen from three sides, and each covers
+something the others structurally cannot.** 12 proves the run STOPS and that the
+card names the call. **13 proves the card is a question and not a stop** — the
+driver answers "keep going" AND types what to do differently, and the run must
+then finish normally; a product that raised the card and stopped anyway would
+look identical on screen. **14 proves the SECOND trigger**, which repetition
+detection cannot see by construction: its five calls are deliberately *different*
+read paths, so nothing repeats and only "turns where nothing succeeded" can fire.
+
+13 and 14 exist because the first pass had no case for either — the keep-going
+button had only ever been clicked in the render suite, which renders a fixture
+and never touches the host, and the no-progress trigger had unit tests and no
+run. **The screen assertions for these cases read the REAL copy**, which no other
+suite does: core pins the wording and the render suite renders a fixture, so case
+12 is the only place the two are proved to meet.
 
 **Case 11 needs the editor, so it touches the screen.** It writes a deliberately
 broken TypeScript file and checks that what the editor says reaches the model.

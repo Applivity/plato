@@ -37,11 +37,15 @@ are now only in PROGRESS.
   alternating patterns (edit→build→edit→build is the normal cycle), an unchanged workspace, and
   paraphrased repeats. **Nothing ends a run on its own** — the model is nudged first, and only a
   repeat after that reaches the user, because a silent stop cannot be told apart from a finished
-  run. **The card names what Plato was doing** (via `digestToolCall`) and says **what last worked**;
-  every escape hatch is open — Keep going (with the user's own typed guidance), Stop, the composer's
-  Stop button, typing mid-run, switching modes — and answering "Keep going" exempts that one call
-  for the run so it cannot nag. **Verified end to end: field case 12**, and cases 1/2/10/12 green
-  together.
+  run. **Every user-facing line answers two questions: what happened, and what you can do about it.**
+  The card names the call in words a person reads (`describeCall`, deliberately NOT the log's
+  `digestToolCall`), says **what last worked**, and always ends on the way out — *"Tell Plato what to
+  do instead, or press Stop and rephrase your request."* The closing line adds *"Nothing was lost"*,
+  because that is the worry. Every escape hatch is open — Keep going (with the user's own typed
+  guidance), Stop, the composer's Stop button, typing mid-run, switching modes — and answering "Keep
+  going" exempts that one call for the run so it cannot nag. **Verified end to end by field cases 12,
+  13 and 14** — stop, keep-going-with-guidance, and the no-progress trigger respectively — and **all
+  fourteen scripted cases pass together**.
 
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
@@ -56,8 +60,8 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and the whole scripted suite passes** (eleven cases when this landed, twelve now that
-  D49aw added case 12). The notice says when a file had to be shown.
+  errors, and the whole scripted suite passes** — eleven cases when this landed, fourteen now. The
+  notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
 - **The secret deny-list had never been in the repository (D49au, found 2026-09-25).**
@@ -500,12 +504,12 @@ explicitly NOT work item 1 of anything.**
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **638** passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **648** passing
   vitest cases across **37** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Eighteen suites, **401 assertions**; see
+  unit tests + render suites. Eighteen suites, **411 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -699,8 +703,8 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 638/638 vitest in packages/core (37 files)
-3. `pnpm run render` — the real-DOM render suites, **18 suites / 401 assertions**
+2. `pnpm -r test` — 648/648 vitest in packages/core (37 files)
+3. `pnpm run render` — the real-DOM render suites, **18 suites / 411 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
