@@ -531,6 +531,51 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 19 — undo refuses a file the user edited (D49az).
+  //
+  // The transcript's share again is small and for the same reason: undo is not a
+  // run. What it CAN witness here is the second half of the case's claim — that
+  // the shell command really ran, so the report's "it cannot undo those" is
+  // about something that happened rather than a warning about nothing.
+  19: (a) => [
+    {
+      name: 'the shell command the report names really ran',
+      ok: a.phasesFor('shell').some((e) => e.phase === 'done'),
+      detail: summarise(a.phasesFor('shell')),
+    },
+    {
+      name: 'both writes completed, so one could be refused and one restored',
+      ok: a.phasesFor('write_file').filter((e) => e.phase === 'done').length === 2,
+      detail: summarise(a.phasesFor('write_file')),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 20 — the only file is refused, and no card is drawn (D49az).
+  //
+  // The rule holds for BOTH runs, and it has to: run 1 creates the file and run
+  // 2 edits it, so a check written for `apply_diff` alone passes on run 2 and
+  // fails on run 1 with "no events" — which reads as a broken feature and is
+  // really a rule pinned to one run of a two-run case.
+  20: (a) => [
+    {
+      name: 'the write the undo must refuse completed',
+      ok: ['write_file', 'apply_diff'].some((t) =>
+        a.phasesFor(t).some((e) => e.phase === 'done'),
+      ),
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
 };
 
 function summarise(events) {

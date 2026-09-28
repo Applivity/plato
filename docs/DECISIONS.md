@@ -3284,16 +3284,41 @@ compare that would break on Windows' case-insensitivity. Stored paths are POSIX 
 read, which `path.win32.join` normalises. `rename` over an existing file replaces on every platform
 Plato runs on. `~/.plato` appears only in user-facing prose, where it is correct everywhere.
 
-**Verified.** `undo.test.ts` (31) and `undoCopy.test.ts` (14) pin the store and the wording; five
+**Verified.** `undo.test.ts` (31) and `undoCopy.test.ts` (16) pin the store and the wording; five
 loop tests pin the seam (a write files a copy, a read files none, a denied write files none, no
-store files none, one patch files every file under one id); the `undo` render suite (38 assertions)
+store files none, one patch files every file under one id); the `undo` render suite (43 assertions)
 pins the card. **Falsified four times**, each reverted after the failure was seen: removing the
 fingerprint check fails both "refuses a file the user edited since" and "refuses to remove a created
 file the user has edited"; letting a corrupt index through **deletes the store's copies**; using
 `innerHTML` for a file name fails the markup assertion; and counting the plan's file total instead
-of what actually happened fails the "counts what ACTUALLY happened" assertion. **And once in a real
-window**: field case 18, in `auto`, creates a file and has it removed, edits a file and has the
-bytes come back byte for byte, then undoes the undo and gets the edit back.
+of what actually happened fails the "counts what ACTUALLY happened" assertion.
+
+**And three times in a real window**, all in `auto`. **Case 18** creates a file and has it removed,
+edits a file and has the bytes come back byte for byte, then undoes the undo and gets the edit back.
+**Case 19** writes the user's own edit from outside Plato between the run and the `/undo`, and the
+card must name the refused file **and say why, before the click**, while the other file is put back
+— and the report must name the `shell` command it cannot cover. **Case 20** edits the only file in
+the request, so nothing can be put back: there must be **no card at all**, and the file must survive
+byte for byte, because a refusal that still wrote something would be indistinguishable from success
+on screen.
+
+**The verification itself needed a repair, and that is recorded rather than glossed.** A full
+acceptance run reported *"M4 is NOT met"* and was wrong: one case threw a stale element setting the
+orchestration mode, so its own cleanup never ran, Settings stayed on screen and **covered the New
+Chat button** — and three cases that had never started were reported as failing. Fixed in the driver
+(retry the locate and the click; close a leftover Settings before each case), and — because the
+re-run stayed silent, so the repair never executed — **proven by a throwaway probe that put the
+failure in place on purpose**: `4/4` checks, and `2/4` with the fix neutered. See
+`scripts/field/README.md`; a fix that never ran is not a fix.
+
+**One bug was found by a photograph, and no assertion would have caught it.** Case 19's first run
+reported *"Partly undone. Plato put back 1 file of the 1 it was going to change."* — the wrong verb
+for a file that had just been **removed** from the tree, and a denominator counting only the files it
+meant to act on, so a request that also refused one read as a complete success under a headline
+saying "partly". Every substring the harness checked was present; the run PASSED. Looking at the
+screenshot is what found it. The undo block now takes one shot with the card up and one with the
+report on screen, and the sentence is rebuilt from two counts — what Plato did, with the verb each
+file actually got, and what it did not — pinned by two new tests in `undoCopy.test.ts`.
 
 **What it does not do, said here because the message says it too.** Terminal commands are outside
 undo — in `auto` a shell command runs unasked and Plato has no record of which files it touched — so

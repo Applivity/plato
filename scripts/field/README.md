@@ -1,4 +1,4 @@
-# Field tests — the eighteen live checks, driven automatically
+# Field tests — the twenty live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
@@ -17,7 +17,7 @@ node scripts/field/acceptance.mjs              # judge the last run only
 ```
 
 ```
-node scripts/field/run-field.mjs              # all eighteen
+node scripts/field/run-field.mjs              # all twenty
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -84,6 +84,8 @@ Two rules keep the driver honest:
 | 13 keep going | the card is answered "keep going" and the run finishes | `run-completed` carries `reason: complete` |
 | 14 no-progress | turns that all FAIL raise the card too | a `turns in a row have failed` notice, then `reason: stuck` |
 | 18 undo | the card names the files, and `/undo` is the only way in | a write completed with no card (`auto`) |
+| 19 undo refuses an edited file | the card names the refused file and says WHY, before the click; the other file is gone from the tree | the `shell` call the report names really ran; two writes completed |
+| 20 undo refuses the only file | **no card at all**; the file survives with the user's line intact | the edit that had to be refused completed |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -135,6 +137,40 @@ The probe files are created by THIS harness, so they are removed in the suite's
 through still leaves the demo repo as it found it. One of them is meant to be
 deleted by the feature under test, which is exactly the file a failed run would
 leave lying around.
+
+**Cases 19 and 20 are the refusal, and they are the reason the feature is safe.**
+D49ax's whole argument is that a file the user has edited since is REFUSED rather
+than overwritten — Kilo Code's reported bug, *"Restore checkpoint removed all the
+changes of mine also"*. A unit test can pin the hash comparison; only a real
+window can show that the refusal is **visible before the click** and that the
+file is genuinely left alone afterwards. So the user's edit is written by the
+HARNESS, between the run and the `/undo`, because nothing a scripted model can do
+produces it.
+
+They are two cases because the two outcomes are different products:
+
+- **19** — two files, one edited by the user. The card must show **both**: the
+  file that will be put back, and the one that will not, with the reason, before
+  anything is written. A refusal that arrives after the click, or as a silent
+  omission, is Kilo's bug wearing a nicer coat. It also carries a `shell` call in
+  the same request, because the report has to **name the commands undo cannot
+  cover** — the founder rejected a draft that said commands "are not affected"
+  and named none of them.
+- **20** — one file, edited by the user, so nothing at all can be put back. There
+  must be **no card**: a button whose only outcome is a refusal is worse than a
+  sentence. And the file must survive byte for byte, which is the actual safety
+  claim — a refusal that still wrote something would be indistinguishable from
+  success on screen.
+
+**Case 19's first run FAILED, and the failure was worth more than the pass.** The
+report read *"Partly undone. Plato put back 1 file of the 1 it was going to
+change."* — the wrong verb for a file that had just been REMOVED from the tree,
+and a denominator counting only the files it meant to act on, so a request that
+also refused one read as a complete success under a headline saying "partly". No
+assertion caught it and no test would have: every substring it checked was
+present. **A screenshot caught it**, which is the whole reason the undo block
+now takes one with the card up and one with the report on screen. The fix is in
+`undoCopy.ts` and pinned by `undoCopy.test.ts`.
 
 **Case 11 needs the editor, so it touches the screen.** It writes a deliberately
 broken TypeScript file and checks that what the editor says reaches the model.
@@ -381,6 +417,37 @@ ways out, and one of them should be taken:** teach the launcher to stash those
 files instead of discarding them, or keep the harness on its own branch and the
 trial work off it. Until one is chosen, **check `git diff` in the demo repo before
 a run, not after.**
+
+**One failed case can leave Settings open and take out every case after it.** A
+full acceptance run reported **"M4 is NOT met" and was wrong**. Case 17 threw a
+`StaleElementReferenceError` inside `setOrchestration` — the Settings panel
+repaints as it settles, replacing the mode card's node between being located and
+being clicked — so its `#sback` click never ran and **Settings stayed on screen**.
+Settings is a full-surface panel in the webview, so it covers the New Chat
+button, and cases 18, 19 and 20 each then failed at the FIRST line of their
+bodies with `ElementNotInteractableError`: three cases that had never started,
+reported as failures, under a clause that is actually met.
+
+Two fixes, and neither one weakens an assertion. `setOrchestration` now retries
+the **locate and the click together** for a stale or un-clickable node (the chip
+label read afterwards is still the only thing that decides the mode took).
+`newChat` calls `settleUi()` first, which closes Settings if a previous case left
+it open and sends Escape for any popover. **The remedy is deliberately not in
+`clickElement`**: that fallback fires only on `intercepted` on purpose, and
+swallowing `not interactable` would let a genuinely disabled New Chat button pass
+as a success. Cleaning up after a failure is not the same as hiding one.
+
+**The recovery was then PROVEN, not merely written, and proving it needed its own
+probe.** When the suite was re-run after the fix, both repairs stayed silent — the
+flake simply did not recur — so the repair itself never ran. A green run says
+nothing about code that did not execute, which is this directory's own rule about
+experiments coming back green. A throwaway probe therefore put the failure in
+place ON PURPOSE, through the same throwaway-probe method as the history page:
+open Settings, **prove it is open** (without that the probe proves nothing, since
+a closed Settings is where it starts), prove New Chat is unreachable, call
+`settleUi()`, prove both are fixed. It reported `4/4` — and **neutering the
+Settings branch made it `2/4`**, which is what makes the four meaningful. The
+probe is deleted; this paragraph is what remains of it.
 
 **Every step of a scripted scenario except the last must carry a tool call.** A
 narration-only step silently ends the run (that is the termination rule, D49ab),

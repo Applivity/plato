@@ -60,7 +60,13 @@ async function waitForUndoSettled(field, timeoutMs) {
  * failed run would leave lying around.
  */
 function clearUndoProbes() {
-  for (const name of ['PLATO_UNDO_A.txt', 'PLATO_UNDO_B.txt']) {
+  for (const name of [
+    'PLATO_UNDO_A.txt',
+    'PLATO_UNDO_B.txt',
+    'PLATO_UNDO_C.txt',
+    'PLATO_UNDO_D.txt',
+    'PLATO_UNDO_E.txt',
+  ]) {
     try {
       rmSync(join(DEMO_REPO, name), { force: true });
     } catch {
@@ -428,20 +434,48 @@ describe('Plato field tests — real VS Code', function () {
         // every one of them is a claim the feature is built on: that a copy was
         // taken, that the card names the files, and that the bytes come back.
         for (const check of run.undoAfter ?? []) {
+          // The user's OWN edit, written from outside Plato between the run and
+          // the /undo. Nothing a scripted model can do produces this, and it is
+          // the only thing that makes the fingerprint do any work.
+          for (const [file, content] of Object.entries(check.before ?? {})) {
+            writeFileSync(join(DEMO_REPO, file), content);
+            notes.push(`the user edited ${file} after Plato did`);
+          }
           await field.send('/undo');
-          const offered = await waitForUndo(field, 20000);
-          if (!offered) {
+          // A shorter wait when no card is expected: the point of that case is
+          // that NOTHING is drawn, and a 20 s poll would just make it slow.
+          const offered = await waitForUndo(field, check.card === false ? 5000 : 20000);
+          if (check.card === false) {
+            if (offered) notes.push('UNDO: a card was drawn when nothing could be put back');
+            else notes.push('undo: no card, as it should be — nothing could be put back');
+          } else if (!offered) {
             notes.push('UNDO: /undo offered nothing, so nothing could be put back');
-            continue;
           }
-          const cardText = await field.undoText();
-          notes.push(`undo card: ${cardText.replace(/\s+/g, ' ').slice(0, 140)}`);
-          if (check.names && !cardText.includes(check.names)) {
-            notes.push(`UNDO: the card did not name ${check.names}`);
+          if (offered) {
+            // Shot WITH the card on screen. A claim about what the user is shown
+            // is worth exactly as much as the picture of it, and the driver's
+            // own post-run shot is taken before /undo ever runs.
+            await field.shot(`${label}-undo-card`);
+            const cardText = await field.undoText();
+            notes.push(`undo card: ${cardText.replace(/\s+/g, ' ').slice(0, 220)}`);
+            if (check.names && !cardText.includes(check.names)) {
+              notes.push(`UNDO: the card did not name ${check.names}`);
+            }
+            // A refusal is only honest if it is on the card BEFORE the click AND
+            // says why. Kilo's bug is a refusal that arrives as a deletion.
+            if (check.refuses) {
+              if (!cardText.includes(check.refuses)) {
+                notes.push(`UNDO: the card did not name ${check.refuses} as not restorable`);
+              } else if (!/changed it after Plato did/.test(cardText)) {
+                notes.push('UNDO: the card named the file but never said WHY it was refused');
+              } else {
+                notes.push(`undo: the card refused ${check.refuses} and said why, before the click`);
+              }
+            }
+            await field.answerUndo(check.answer ?? 'confirm');
+            const settled = await waitForUndoSettled(field, 20000);
+            if (!settled) notes.push('UNDO: the card stayed open after the click, so the answer was not taken');
           }
-          await field.answerUndo('confirm');
-          const settled = await waitForUndoSettled(field, 20000);
-          if (!settled) notes.push('UNDO: the card stayed open after the click, so the answer was not taken');
           if (check.gone) {
             if (existsSync(join(DEMO_REPO, check.gone))) {
               notes.push(`UNDO: ${check.gone} is still on disk — a created file was not removed`);
@@ -454,10 +488,31 @@ describe('Plato field tests — real VS Code', function () {
               ? readFileSync(join(DEMO_REPO, file), 'utf8')
               : '(missing)';
             if (got !== want) {
-              notes.push(`UNDO: ${file} came back as ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
+              notes.push(`UNDO: ${file} reads ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
             } else {
-              notes.push(`undo: ${file} came back byte for byte`);
+              notes.push(`undo: ${file} is exactly as expected`);
             }
+          }
+          // The report is a chat row, so it is read off the screen after the
+          // reply settles. This is where the founder's rejected draft failed:
+          // it warned that commands "are not affected" and named none of them.
+          if (check.report) {
+            let said = '';
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+              said = await field.logText();
+              if (check.report.every((n) => said.includes(n))) break;
+              await field.driver.sleep(300);
+            }
+            for (const needle of check.report) {
+              if (!said.includes(needle)) notes.push(`UNDO: the report never said "${needle}"`);
+            }
+            if (check.report.every((n) => said.includes(n))) {
+              notes.push('undo report: names what happened and what it could not cover');
+            }
+            // And the report in frame, because the wording is the thing the
+            // founder rejected a draft of — a passing substring check is not the
+            // same as having read it.
+            await field.shot(`${label}-undo-report`);
           }
         }
 

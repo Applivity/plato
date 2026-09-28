@@ -25,7 +25,7 @@ are now only in PROGRESS.
 
 - **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
   acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
-  `node scripts/field/acceptance.mjs --run` across eighteen harness cases in real VS Code — the
+  `node scripts/field/acceptance.mjs --run` across twenty harness cases in real VS Code — the
   first time that test has ever been runnable, let alone run. **The secret audit is done (D49au).**
   Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
   against a later decision**, and the recorded "clause 4 is not automated" gap is **closed** by a
@@ -123,7 +123,7 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and the whole scripted suite passes** — eleven cases when this landed, eighteen now. The
+  errors, and the whole scripted suite passes** — eleven cases when this landed, twenty now. The
   notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
@@ -525,7 +525,7 @@ is still in development. They are now the **publish gate**, tracked at the end o
 order" below.
 
 1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 7 of 7 clauses pass.** One command
-   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (eighteen cases)
+   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (twenty cases)
    and judges each clause, exiting non-zero unless every one passes. Pass the `--run` flag or run the
    harness yourself first; the judge reads `tmp/field/last-manifest.json`. **Two witnesses per
    clause**, deliberately: the spec reports what it saw on **screen** and the judge recomputes the
@@ -593,7 +593,7 @@ explicitly NOT work item 1 of anything.**
   part of the check.
 - Validate the **ACCEPTANCE TEST** — M4's definition of done, and the repo's end-to-end
   check — with `node scripts/field/acceptance.mjs --run`. It packages a fresh VSIX, drives
-  all eighteen field cases through real VS Code, and judges the seven clauses (D49at),
+  all twenty field cases through real VS Code, and judges the seven clauses (D49at),
   exiting non-zero unless every one passes. `--run` inherits the launcher's **destructive
   demo-repo reset**; to judge a run you already did, drop the flag. Use `render:fast`-style
   judgement (`node scripts/field/verdict.mjs --case N --last 1`) when you want one case.
@@ -626,7 +626,7 @@ explicitly NOT work item 1 of anything.**
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
-- `scripts/field/` — the **live** checks: eighteen scripted cases driving a real
+- `scripts/field/` — the **live** checks: twenty scripted cases driving a real
   VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
   that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
   including the traps and the honest boundaries.
@@ -813,7 +813,7 @@ before any of it is trusted:**
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the eighteen live field cases it is built on, driven automatically in a real
+   done) AND the twenty live field cases it is built on, driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
    A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
@@ -907,7 +907,7 @@ executed, and the secret audit, which found a file the repository had never cont
 5. ~~**Restate the acceptance test.**~~ **DONE, RESTATED AND EXECUTED (D49at,
    2026-09-27).** Seven clauses, each naming its witness, replacing BLUEPRINT §4 —
    **and 7 of 7 now pass**, run by `node scripts/field/acceptance.mjs --run` over
-   eighteen harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
+   twenty harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
    harness case runs a **Duo** team and asserts the closing line reports the observer.
    Two other clauses were corrected while wiring it — one had no witness at all, and
    one was stale against a later decision. See D49at.

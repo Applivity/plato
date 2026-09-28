@@ -690,4 +690,99 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 19,
+    title: 'Undo refuses a file the user edited, puts back the rest, and names the commands',
+    // D49az. This is the case D49ax was really about: Kilo Code's bug was
+    // "Restore checkpoint removed all the changes of mine also", and the answer
+    // is that a file the user has touched since is REFUSED rather than
+    // overwritten.
+    //
+    // The user's edit is made by the HARNESS, from outside Plato, between the
+    // run and the /undo — because that is precisely what the fingerprint exists
+    // to notice, and no scripted model can produce it.
+    //
+    // Two files in one request so both halves are visible at once: one that CAN
+    // be put back and one that cannot, on the same card, before the click. And a
+    // shell command in the same request, because the report has to NAME the
+    // commands undo cannot cover — the founder rejected a draft that said
+    // "changes made by commands Plato ran are not affected" without naming one.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Change two files and run a command.',
+        steps: [
+          {
+            calls: [
+              { tool: 'write_file', args: { path: 'PLATO_UNDO_C.txt', content: 'plato made c\n' } },
+              { tool: 'shell', args: { command: 'echo plato-undo-probe' } },
+              { tool: 'write_file', args: { path: 'PLATO_UNDO_D.txt', content: 'plato made d\n' } },
+            ],
+          },
+          { text: 'Done both.' },
+        ],
+        cards: [],
+        undoAfter: [
+          {
+            names: 'PLATO_UNDO_C.txt',
+            refuses: 'PLATO_UNDO_D.txt',
+            card: true,
+            // The user's own edit, written after Plato's, from outside Plato.
+            before: { 'PLATO_UNDO_D.txt': 'plato made d\nthe user added this line\n' },
+            gone: 'PLATO_UNDO_C.txt',
+            text: { 'PLATO_UNDO_D.txt': 'plato made d\nthe user added this line\n' },
+            report: ['echo plato-undo-probe', 'cannot undo those'],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    n: 20,
+    title: 'Undo refuses the only file, and says so without drawing a card',
+    // D49az. The other side of case 19: when NOTHING can be put back, there is no
+    // card to draw — a button whose only outcome is a refusal is worse than a
+    // sentence. The file must also survive untouched, which is the actual safety
+    // claim: a refusal that still wrote something would be indistinguishable from
+    // success on screen.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Create the file for the refusal test.',
+        steps: [
+          {
+            calls: [
+              { tool: 'write_file', args: { path: 'PLATO_UNDO_E.txt', content: 'version one\n' } },
+            ],
+          },
+          { text: 'Created it.' },
+        ],
+        cards: [],
+      },
+      {
+        mode: 'auto',
+        prompt: 'Change it.',
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'apply_diff',
+                args: { path: 'PLATO_UNDO_E.txt', diffs: [{ search: 'version one', replace: 'version two' }] },
+              },
+            ],
+          },
+          { text: 'Changed it.' },
+        ],
+        cards: [],
+        undoAfter: [
+          {
+            card: false,
+            before: { 'PLATO_UNDO_E.txt': 'version two\nthe user added this line\n' },
+            text: { 'PLATO_UNDO_E.txt': 'version two\nthe user added this line\n' },
+            report: ['you changed it after Plato did'],
+          },
+        ],
+      },
+    ],
+  },
 ];

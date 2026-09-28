@@ -138,8 +138,42 @@ describe('undoResultText', () => {
     });
     const text = undoResultText(p, r, []);
     expect(text).toContain('Partly undone');
-    expect(text).toContain('2 files');
+    expect(text).toContain('put back the 2 files it edited');
+    // Both counts are present: what it did, and what it did not.
+    expect(text).toContain('could not undo 1 file');
     expect(text).toContain('c.ts was not put back');
+  });
+
+  it('never calls a REMOVED file "put back"', () => {
+    // The bug a screenshot caught in a real window: a request that created one
+    // file and refused another reported "put back 1 file of the 1 it was going
+    // to change" — the wrong verb for a file that is now gone from the tree,
+    // and a denominator that made a partial undo read as a complete one.
+    const p = plan({
+      restore: [target('made.ts', 'delete')],
+      refuse: [{ rel: 'kept.ts', why: 'edited', size: 10 }],
+    });
+    const r = result({ applied: [{ rel: 'made.ts', how: 'deleted' }] });
+    const text = undoResultText(p, r, []);
+    expect(text).toContain('removed 1 file it created');
+    expect(text).not.toContain('put back');
+    expect(text).toContain('could not undo 1 file');
+    expect(text).toContain('kept.ts');
+  });
+
+  it('says both verbs when a request both restored and removed', () => {
+    const p = plan({
+      restore: [target('a.ts'), target('made.ts', 'delete')],
+      refuse: [{ rel: 'kept.ts', why: 'edited', size: 10 }],
+    });
+    const r = result({
+      applied: [
+        { rel: 'a.ts', how: 'restored' },
+        { rel: 'made.ts', how: 'deleted' },
+      ],
+    });
+    const text = undoResultText(p, r, []);
+    expect(text).toContain('put back the file it edited and removed 1 file it created');
   });
 
   it('says a file was already back, rather than reporting a failure', () => {

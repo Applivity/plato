@@ -123,6 +123,9 @@ export class Field {
   }
 
   async newChat() {
+    // D49az: start from a clean surface, whatever the previous case left behind.
+    // See `settleUi` for the failing acceptance run that put this here.
+    await this.settleUi();
     await this.clickElement(await this.driver.findElement(By.id('new')));
     await this.driver.sleep(700);
     // The host asks before it discards a conversation. That dialog is VS Code's
@@ -197,25 +200,34 @@ export class Field {
     // repeatedly expecting it to cycle, which is why it never took.)
     await this.clearToasts();
     await this.clickElement(await this.driver.findElement(By.id('orchChip')));
-    const card = await this.driver.wait(
-      until.elementLocated(
-        By.xpath(
-          `//div[contains(@class,'modes')]//div[contains(@class,'mcard')]` +
-            `[.//div[contains(@class,'mtitle') and normalize-space(text())='${wanted}']]`,
-        ),
-      ),
-      10000,
+    const CARD = By.xpath(
+      `//div[contains(@class,'modes')]//div[contains(@class,'mcard')]` +
+        `[.//div[contains(@class,'mtitle') and normalize-space(text())='${wanted}']]`,
     );
-    await this.driver.executeScript('arguments[0].scrollIntoView({block:"center"})', card);
-    await this.driver.sleep(200);
-    try {
-      await card.click();
-    } catch {
-      // Safe HERE and only here: the chip's own label is the post-condition
-      // below, so a click that did nothing fails loudly instead of passing.
-      this.log('  the orchestration card was not clickable — dispatching it directly');
-      await this.driver.executeScript('arguments[0].click()', card);
+
+    // D49az: located-then-clicked is a RACE, and this is where it bit. The
+    // Settings panel repaints as it settles, replacing the mode card's node
+    // between the `wait` and the `click` — a StaleElementReferenceError that
+    // reads as a missing card. So the locate and the click are retried together,
+    // and only for a stale or un-clickable node: a card that is genuinely absent
+    // still fails, and the chip label below is the real post-condition either
+    // way. **Never let this loop be the thing that decides the mode took.**
+    let clicked = false;
+    for (let attempt = 0; attempt < 3 && !clicked; attempt += 1) {
+      try {
+        const card = await this.driver.wait(until.elementLocated(CARD), 10000);
+        await this.driver.executeScript('arguments[0].scrollIntoView({block:"center"})', card);
+        await this.driver.sleep(200);
+        await card.click();
+        clicked = true;
+      } catch (e) {
+        const msg = String(e?.message ?? e);
+        if (!/stale element|not clickable|not interactable|intercepted/i.test(msg)) throw e;
+        this.log(`  the orchestration card was not clickable — retrying (${msg.split('\n')[0]})`);
+        await this.driver.sleep(500);
+      }
     }
+    if (!clicked) throw new Error(`the ${wanted} card could not be clicked after 3 attempts`);
     await this.driver.sleep(SETTLE_MS);
     await this.clickElement(await this.driver.findElement(By.id('sback')));
     await this.driver.sleep(SETTLE_MS);
@@ -229,6 +241,50 @@ export class Field {
       throw new Error(`orchestration did not take: the chip reads "${now}", wanted ${target}`);
     }
     this.log(`  orchestration ${target}`);
+  }
+
+  /**
+   * D49az: leave the window where the NEXT case needs it, whatever the last one
+   * did.
+   *
+   * **This exists because a full acceptance run reported M4 as NOT met, and was
+   * wrong.** Case 17 threw a `StaleElementReferenceError` inside
+   * `setOrchestration` — the mode card was replaced by a repaint between being
+   * located and being clicked — so its `#sback` click never ran and **Settings
+   * was left open**. Settings is a full-surface panel in the webview, so it
+   * covers the New Chat button, and cases 18, 19 and 20 each then failed at the
+   * FIRST line of their bodies with `ElementNotInteractableError`. Three cases
+   * that had never started were reported as failing.
+   *
+   * Two lessons, and both are older than this feature. The first is the file's
+   * own: a fault reports as something else. The second is why the remedy is here
+   * rather than in `clickElement`: that fallback fires ONLY on "intercepted" on
+   * purpose, and swallowing "not interactable" would let a genuinely disabled
+   * New Chat button pass as success. **Closing what a previous failure left open
+   * is not hiding a failure** — this runs before anything a case asserts, and a
+   * case's own checks still fail loudly on their own account.
+   */
+  async settleUi() {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const back = await this.driver.findElements(By.id('sback'));
+      if (back.length === 0 || !(await back[0].isDisplayed())) break;
+      this.log('  a previous case left Settings open — closing it');
+      // Its own race, the same one that caused this: the back button can go
+      // stale between the look and the click. Two tries, then leave it to the
+      // case to fail loudly on its own account rather than reporting it here.
+      try {
+        await this.clickElement(back[0]);
+      } catch {
+        continue;
+      }
+      await this.driver.sleep(SETTLE_MS);
+    }
+    // Popovers (the mode picker, the slash menu, the question card's tabs) sit
+    // over the header too. The webview's own Escape handler closes any of them.
+    await this.driver.executeScript(
+      "document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))",
+    );
+    await this.driver.sleep(150);
   }
 
   /**

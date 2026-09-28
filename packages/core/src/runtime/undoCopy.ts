@@ -31,6 +31,15 @@ export function formatBytes(n: number): string {
 
 const files = (n: number): string => (n === 1 ? '1 file' : `${n} files`);
 
+/**
+ * The same count, definite. Files Plato edited are a known set, so they take
+ * "the" — *"put back the 3 files it edited"*, which is the wording D49ax settled
+ * on. A created file takes no article for the same reason D49ax's copy gives
+ * none: *"removed 1 file it created"* reads as a fact, not as a set the user is
+ * meant to recognise.
+ */
+const theFiles = (n: number): string => (n === 1 ? 'the file' : `the ${n} files`);
+
 /** The card's own content. Sent over the wire verbatim, so a reload matches. */
 export interface UndoCard {
   title: string;
@@ -112,7 +121,6 @@ export function undoResultText(
   const restored = result.applied.filter((a) => a.how === 'restored').length;
   const deleted = result.applied.filter((a) => a.how === 'deleted').length;
   const done = result.applied.length;
-  const total = plan.restore.length;
   // Everything that did not happen: refused up front, or failed at the write.
   const blocked = plan.refuse.length + result.failed.length;
   const parts: string[] = [];
@@ -126,9 +134,15 @@ export function undoResultText(
   } else if (blocked === 0) {
     parts.push(`Undone. ${describePut(restored, deleted)}`);
   } else {
+    // NOT "put back 1 of the 1 it was going to change", which this said first.
+    // Two things were wrong with that and a screenshot is what caught it: it
+    // called a REMOVED file "put back", and its denominator counted only the
+    // files it was going to act on — so a request that also refused one read as
+    // a complete success under a headline saying "partly". The two counts answer
+    // different questions and both belong: what Plato did, and what it did not.
     parts.push(
-      `Partly undone. Plato put back ${count(restored, deleted)} of the ${total} ` +
-        `it was going to change.`,
+      `Partly undone. Plato ${describeActions(restored, deleted)}, and could not ` +
+        `undo ${files(blocked)} — ${blocked === 1 ? 'the reason follows' : 'the reasons follow'}.`,
     );
   }
 
@@ -144,19 +158,24 @@ export function undoResultText(
   return parts.join('\n\n');
 }
 
-/** `put back the 3 files it edited`, and the removal case said as its own thing. */
-function describePut(restored: number, deleted: number): string {
-  if (restored === 0) return `Plato removed ${files(deleted)} it created.`;
-  const back = `Plato put back the ${files(restored)} it edited`;
-  return deleted === 0
-    ? `${back}.`
-    : `${back} and removed ${files(deleted)} it created.`;
+/**
+ * What Plato DID, with the verb each file actually got.
+ *
+ * A created file is removed, not put back, and saying the wrong verb about a
+ * file that is now gone from the tree is the sort of overclaim this codebase
+ * keeps removing. Both counts can be non-zero in one request, so the two halves
+ * are joined rather than chosen between.
+ */
+function describeActions(restored: number, deleted: number): string {
+  const parts: string[] = [];
+  if (restored > 0) parts.push(`put back ${theFiles(restored)} it edited`);
+  if (deleted > 0) parts.push(`removed ${files(deleted)} it created`);
+  return parts.join(' and ');
 }
 
-function count(restored: number, deleted: number): string {
-  if (restored === 0) return files(deleted);
-  if (deleted === 0) return files(restored);
-  return `${files(restored)} it edited`;
+/** The whole line when nothing was left undone. */
+function describePut(restored: number, deleted: number): string {
+  return `Plato ${describeActions(restored, deleted)}.`;
 }
 
 /**
