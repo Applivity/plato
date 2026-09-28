@@ -221,6 +221,19 @@ export function chatHtml(): string {
      run has not failed, it has stopped to ask. */
   .card.stuck-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
   .card.stuck-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  /* D49ax: the undo card. Not a warning and not an error — the user asked for
+     this — so it takes the focus colour, which is the accent VS Code already
+     uses for "this is the thing you are deciding about". */
+  .card.undo-card { border-left:2px solid var(--vscode-focusBorder,#007fd4); }
+  .card.undo-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  .card .undo-list { margin:8px 0 0; padding:0 10px; list-style:none; }
+  .card .undo-list li { padding:2px 0; font-size:12.5px; line-height:1.45;
+                        font-family:var(--vscode-editor-font-family, monospace);
+                        overflow-wrap:anywhere; }
+  /* What CANNOT be put back is in full foreground: it is the part the user has
+     to act on, and muting it would hide the one thing this card must not hide. */
+  .card .undo-cannot { padding:6px 10px 0; font-size:12.5px; line-height:1.5;
+                       color:var(--vscode-editor-foreground); }
   .card .stuck-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
                       color:var(--pl-muted); }
   .card .stuck-line:first-of-type { padding-top:8px; }
@@ -1334,6 +1347,8 @@ export function chatHtml(): string {
   let openQuestionCard = null;
   /** D49aw: the stuck card, so a cancel can take it away like any other card. */
   let openStuckCard = null;
+  /** D49ax: the undo card, taken away when the undo runs or is dismissed. */
+  let openUndoCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -4052,6 +4067,15 @@ export function chatHtml(): string {
       case 'stuck-done':
         dismissStuck();
         break;
+      // D49ax: /undo found something and is asking.
+      case 'undo':
+        showUndo(m);
+        refreshChip();
+        setStatus('waiting for you — put these files back?');
+        break;
+      case 'undo-done':
+        dismissUndo();
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -4115,6 +4139,10 @@ export function chatHtml(): string {
       // or the question disappears off the screen while the host waits for an
       // answer that can no longer be given.
       case 'stuck-open': showStuck(t); break;
+      // D49ax: the offer, rebuilt from the log. The plan behind it is made again
+      // when the button is clicked, so a rebuilt card is never a stale promise.
+      case 'undo-open': showUndo(t); break;
+      case 'undo-done': dismissUndo(); break;
       case 'card-done': cardDone(t); break;
       case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;
@@ -4679,6 +4707,107 @@ export function chatHtml(): string {
       openStuckCard = null;
       clearStatus();
     }
+  }
+
+  /**
+   * D49ax: what Plato can put back, and what it cannot.
+   *
+   * The refusals are shown on the SAME card as the offer, in full foreground,
+   * because they are the reason the user might not want to click: "2 of your 3
+   * files" is a different decision from "all 3", and finding that out afterwards
+   * is how the feature loses trust. Every string is a text node — the file names
+   * come from the user's own workspace and must never become markup.
+   */
+  function showUndo(m) {
+    flushToolBuffer();
+    const card = document.createElement('div');
+    card.className = 'card undo-card';
+
+    const h = document.createElement('h3');
+    h.textContent = String(m.title || 'Put back the files Plato changed?');
+    card.appendChild(h);
+
+    const list = document.createElement('ul');
+    list.className = 'undo-list';
+    for (const line of m.restore || []) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      list.appendChild(li);
+    }
+    card.appendChild(list);
+
+    for (const line of m.refuse || []) {
+      const d = document.createElement('div');
+      d.className = 'undo-cannot';
+      d.textContent = 'Not this one: ' + line;
+      card.appendChild(d);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    // The buttons are BUILT here and appended in one place below, so the order on
+    // screen is the order in this list. Appending as each is made put the
+    // secondary button first — the DOM order is what the user reads.
+    const answerButtons = [];
+    const answer = (label, extra, status, primary) => {
+      const b = document.createElement('button');
+      if (!primary) b.className = 'no';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        vsapi.postMessage(Object.assign({ type: 'undo-apply' }, extra));
+        card.classList.add('answered');
+        actions.remove();
+        openUndoCard = null;
+        setStatus(status);
+      });
+      answerButtons.push(b);
+    };
+    answer('Put these back', {}, 'putting the files back…', true);
+    // D49ax's second level, and it appears only when it would do something
+    // different: with one file in the request, "the last change" and "this
+    // request" are the same action, and a second button that does the same thing
+    // is a choice the user has to read for nothing.
+    if ((m.restore || []).length > 1) {
+      answer('Just the last change', { scope: 'last' }, 'putting the last change back…', false);
+    }
+    const cancel = document.createElement('button');
+    cancel.className = 'no';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      vsapi.postMessage({ type: 'undo-dismiss' });
+      card.classList.add('answered');
+      actions.remove();
+      openUndoCard = null;
+      clearStatus();
+    });
+    answerButtons.push(cancel);
+    for (const b of answerButtons) actions.appendChild(b);
+    card.appendChild(actions);
+
+    // Only the newest card stays live: two open undo cards would offer the same
+    // action twice, and the second click would find nothing left to undo.
+    if (openUndoCard) {
+      openUndoCard.classList.add('answered');
+      openUndoCard = null;
+    }
+    openUndoCard = card;
+    log.appendChild(card);
+    scroll();
+  }
+
+  /**
+   * The answer arrived. Marked ANSWERED and kept: like every other card here it
+   * is the record of what was asked, and a reload must not turn a spent card
+   * back into a live one.
+   */
+  function dismissUndo() {
+    if (openUndoCard) {
+      openUndoCard.classList.add('answered');
+      const actions = openUndoCard.querySelector('.actions');
+      if (actions) actions.remove();
+      openUndoCard = null;
+    }
+    clearStatus();
   }
 
   function cardDone(t) {

@@ -274,6 +274,13 @@ export class Field {
       const h = await this.driver.findElement(By.css('.card.stuck-card h3'));
       return { kind: 'stuck', heading: (await h.getText()).trim() };
     }
+    // D49ax: the undo offer, by class for the same reason — its heading is a
+    // sentence the product is free to reword, and a check that breaks when the
+    // wording improves fails for the wrong reason.
+    if ((await this.driver.findElements(By.css('.card.undo-card:not(.answered)'))).length > 0) {
+      const h = await this.driver.findElement(By.css('.card.undo-card h3'));
+      return { kind: 'undo', heading: (await h.getText()).trim() };
+    }
     for (const h of await this.driver.findElements(By.css('div.card h3'))) {
       const text = (await h.getText()).trim();
       if (/^Approve .+\?$/.test(text)) return { kind: 'approval', heading: text };
@@ -319,6 +326,37 @@ export class Field {
     const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
     await this.clickElement(btn);
     this.log(`  answered the stuck card: ${label}${guidance ? ' with guidance' : ''}`);
+    await this.driver.sleep(SETTLE_MS);
+  }
+
+  /** D49ax: is /undo offering to put files back right now? */
+  async undoOpen() {
+    return (await this.cardKind()).kind === 'undo';
+  }
+
+  /**
+   * D49ax: the undo offer's own text, so a case can assert what it NAMES — the
+   * files, and what it cannot put back. A card that says "3 files" and nothing
+   * else is the cryptic draft the founder rejected.
+   */
+  async undoText() {
+    const cards = await this.driver.findElements(By.css('.card.undo-card'));
+    if (cards.length === 0) return '';
+    return (await cards[cards.length - 1].getText()).trim();
+  }
+
+  /**
+   * D49ax: answers the undo offer the way a person does — the button INSIDE
+   * `.undo-card`, so this cannot click an approval card's button sitting in the
+   * same conversation.
+   */
+  async answerUndo(which) {
+    const label = which === 'cancel' ? 'Cancel' : 'Put these back';
+    const xpath =
+      `//div[contains(@class,'undo-card')]//button[normalize-space(text())='${label}']`;
+    const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
+    await this.clickElement(btn);
+    this.log(`  answered the undo card: ${label}`);
     await this.driver.sleep(SETTLE_MS);
   }
 

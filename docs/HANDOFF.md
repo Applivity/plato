@@ -25,7 +25,7 @@ are now only in PROGRESS.
 
 - **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
   acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
-  `node scripts/field/acceptance.mjs --run` across seventeen harness cases in real VS Code — the
+  `node scripts/field/acceptance.mjs --run` across eighteen harness cases in real VS Code — the
   first time that test has ever been runnable, let alone run. **The secret audit is done (D49au).**
   Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
   against a later decision**, and the recorded "clause 4 is not automated" gap is **closed** by a
@@ -33,24 +33,27 @@ are now only in PROGRESS.
   fail and the command exit 1. The trademark sweep and license decision remain the **publish gate**,
   not milestone work.
 
-- **Undo is Plato's own copies of what it replaced — decided, not yet built (D49ax, Tier C item 3).**
-  It was scoped as *"checkpoints / undo — large, and it changes what an approval means."* Both halves
-  were wrong in useful ways. **It is small:** the old bytes are already read at the write site for the
-  guard and the approval diff, so capture costs one disk write and no extra read. **And it does not
-  change what an approval means** — the write still happens as approved; what changes is what a
-  *mistake* costs. **No parallel history**: Plato stores the **old bytes and a fingerprint, never the
-  new bytes**, so the store is a record of what was replaced and can never become a second source of
-  truth about what a file currently is. A **fingerprint** (not the content) answers "has this file
-  changed since Plato wrote it", which is what lets an undo **refuse rather than clobber a file the
-  user has since edited** — Kilo Code's reported bug, closed by construction. **Two limits are stated
-  in the message, not hidden:** terminal commands are outside undo, because Plato has no record of
-  which files a command touches (Claude Code and Copilot share the hole and never mention it), and a
-  file the user has edited since is refused with the rest offered. **The editor's own local history
-  was measured in real VS Code and cannot be the mechanism** — see the next bullet. **The store is
-  bounded and sweeps itself**, which the founder asked for explicitly: 30 days, 200 MB per project,
-  the most recent 10 requests always kept, whole requests evicted oldest-first, and both **dead
-  projects** and **crash orphans** reclaimed at activation. Deletion is confined to the store and
-  verified to be. See D49ax.
+- **Undo is BUILT: Plato keeps its own copies of what it replaced, and /undo puts them back (D49az,
+  built 2026-09-28; decided in D49ax).** It was scoped as *"checkpoints / undo — large, and it
+  changes what an approval means."* Both halves were wrong in useful ways. **It is small:** the old
+  bytes are already read at the write site, so capture costs one disk write and no extra read. **And
+  it does not change what an approval means** — the write still happens as approved; what changes is
+  what a *mistake* costs. **No parallel history**: Plato stores the **old bytes and a fingerprint,
+  never the new bytes**, with a **fingerprint** (not the content) answering "has this file changed
+  since Plato wrote it" — which is what lets an undo **refuse rather than clobber a file the user has
+  since edited**, Kilo Code's reported bug closed by construction. **Three things the building of it
+  decided that D49ax had not**, and each is load-bearing: the copy is taken **at the executor, not at
+  the approval preview** (in `auto` no preview is built, so that would be the one mode with no undo);
+  the plan is **made again when the user clicks, never held from the card** (the user can edit a file
+  between reading the card and clicking it, and that is the same bug returning); and **a file Plato
+  created is undone by deleting it**, guarded by the same fingerprint and performed last, with the
+  card saying *"Plato created this one, so it is removed"* rather than "put back". **The store is
+  bounded and sweeps itself**: 30 days, 200 MB per project, the most recent 10 requests always kept,
+  whole requests evicted oldest-first, dead projects and crash orphans reclaimed at activation, and
+  **a corrupt index deletes nothing**. Deletion is confined to the store and verified to be. The
+  message names the files, the sizes, and **the terminal commands undo cannot cover**. See D49az.
+  **Verified in a real window, in `auto`:** case 18 has a created file removed, an edited file come
+  back byte for byte, and the undo of the undo return the edit.
 
 - **Old run transcripts are compressed, never deleted — the user decides what goes (D49ay, BUILT
   2026-09-28).** D49ax recorded that `~/.plato/runs/` grows without bound and called it *"the same
@@ -120,7 +123,7 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and the whole scripted suite passes** — eleven cases when this landed, seventeen now. The
+  errors, and the whole scripted suite passes** — eleven cases when this landed, eighteen now. The
   notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
@@ -522,7 +525,7 @@ is still in development. They are now the **publish gate**, tracked at the end o
 order" below.
 
 1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 7 of 7 clauses pass.** One command
-   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (seventeen cases)
+   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (eighteen cases)
    and judges each clause, exiting non-zero unless every one passes. Pass the `--run` flag or run the
    harness yourself first; the judge reads `tmp/field/last-manifest.json`. **Two witnesses per
    clause**, deliberately: the spec reports what it saw on **screen** and the judge recomputes the
@@ -577,12 +580,12 @@ explicitly NOT work item 1 of anything.**
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **663** passing
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **713** passing
   vitest cases across **38** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Eighteen suites, **425 assertions**; see
+  unit tests + render suites. Nineteen suites, **465 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -590,7 +593,7 @@ explicitly NOT work item 1 of anything.**
   part of the check.
 - Validate the **ACCEPTANCE TEST** — M4's definition of done, and the repo's end-to-end
   check — with `node scripts/field/acceptance.mjs --run`. It packages a fresh VSIX, drives
-  all seventeen field cases through real VS Code, and judges the seven clauses (D49at),
+  all eighteen field cases through real VS Code, and judges the seven clauses (D49at),
   exiting non-zero unless every one passes. `--run` inherits the launcher's **destructive
   demo-repo reset**; to judge a run you already did, drop the flag. Use `render:fast`-style
   judgement (`node scripts/field/verdict.mjs --case N --last 1`) when you want one case.
@@ -623,7 +626,7 @@ explicitly NOT work item 1 of anything.**
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
-- `scripts/field/` — the **live** checks: seventeen scripted cases driving a real
+- `scripts/field/` — the **live** checks: eighteen scripted cases driving a real
   VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
   that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
   including the traps and the honest boundaries.
@@ -795,8 +798,8 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 663/663 vitest in packages/core (38 files)
-3. `pnpm run render` — the real-DOM render suites, **18 suites / 425 assertions**
+2. `pnpm -r test` — 713/713 vitest in packages/core (40 files)
+3. `pnpm run render` — the real-DOM render suites, **19 suites / 465 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -810,7 +813,7 @@ before any of it is trusted:**
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the seventeen live field cases it is built on, driven automatically in a real
+   done) AND the eighteen live field cases it is built on, driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
    A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
@@ -904,7 +907,7 @@ executed, and the secret audit, which found a file the repository had never cont
 5. ~~**Restate the acceptance test.**~~ **DONE, RESTATED AND EXECUTED (D49at,
    2026-09-27).** Seven clauses, each naming its witness, replacing BLUEPRINT §4 —
    **and 7 of 7 now pass**, run by `node scripts/field/acceptance.mjs --run` over
-   seventeen harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
+   eighteen harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
    harness case runs a **Duo** team and asserts the closing line reports the observer.
    Two other clauses were corrected while wiring it — one had no witness at all, and
    one was stale against a later decision. See D49at.
@@ -937,21 +940,19 @@ above. **Do not pick them up as a session's work while Plato is still being buil
    convenient option has a trap: Anthropic's server-side search runs inside the API
    call, so **no approval card can fire for it**. Needs either a key in
    SecretStorage (Brave/Tavily) or an accepted exception to the egress rule.
-10. ~~**Checkpoints / undo.**~~ **DECIDED, NOT YET BUILT (D49ax, 2026-09-27).** Not
-    "checkpoints" — Plato keeps its **own copies of the files it replaced**, and
-    there is no parallel history. It turned out **small**: the old bytes are already
-    read at the write site for the guard and the approval diff, so capture is nearly
-    free. It does **not** change what an approval means; it changes what a *mistake*
-    costs. The editor's own local history was measured in real VS Code and **cannot**
-    be the mechanism — a direct disk write records nothing, the store keeps what the
-    editor *saved* rather than what it *found* (so the pre-Plato state is never
-    recoverable), rapid saves merge, and routing writes through the editor **commits
-    the user's unsaved work**. Two limits are named in the message rather than
-    hidden: terminal commands are outside undo, and a file the user has edited since
-    is refused rather than clobbered. **The store is bounded and sweeps itself**
-    (30 days / 200 MB per project / always keep the last 10 requests; dead projects
-    and crash orphans reclaimed at activation). Building it is the next piece of
-    work.
+10. ~~**Checkpoints / undo.**~~ **BUILT AND VERIFIED END TO END (D49az, 2026-09-28; decided
+    D49ax the day before).** Not "checkpoints" — Plato keeps its **own copies of the files it
+    replaced**, and there is no parallel history. It turned out **small**: the old bytes are already
+    read at the write site, so capture is nearly free. It does **not** change what an approval means;
+    it changes what a *mistake* costs. The copy is taken **at the executor**, which is the only place
+    `auto` reaches; the plan is **remade at the click**, because the user can edit between reading
+    the card and clicking it; and a **created file is undone by deleting it**, guarded and done last.
+    The editor's own local history was measured in real VS Code and **cannot** be the mechanism. Two
+    limits are named in the message rather than hidden: terminal commands are outside undo, and a
+    file the user has edited since is refused rather than clobbered. **The store is bounded and
+    sweeps itself** (30 days / 200 MB per project / always keep the last 10 requests; dead projects
+    and crash orphans reclaimed at activation; a corrupt index deletes nothing). **Field case 18
+    drives it in a real window**, in `auto`.
 11. ~~**Bound `auto` by repetition, not volume.**~~ **BUILT (D49aw, 2026-09-27) and verified
     end to end** — field cases 12 (Stop), 13 ("keep going" with guidance) and 14 (the
     no-progress trigger on its own). Two triggers (a repeated call with the same result;
@@ -975,16 +976,18 @@ allow/reject list (see the backlog).
 
 ## Queued next work (in priority order — pick up here)
 
-**The head of the queue is Tier C item 3 — undo (D49ax, decided 2026-09-27, NOT built).** It is the
-last capability item on the ordered list, it needs no further decision, and its design is complete:
-Plato keeps its own copies of the bytes it replaced, old bytes and a fingerprint and **never** the
-new bytes, with the store bounded and self-sweeping. Read D49ax before starting. Nothing else below
-is blocked on it, and nothing below is urgent.
+**Tier C is complete, so there is no head of the queue — what comes next is the founder's to
+choose.** The ordered capability list held three items and all three are built and verified: editor
+diagnostics (D49av), bounding `auto` by repetition (D49aw), and **undo (D49az, 2026-09-28)** — Plato
+keeps its own copies of the bytes it replaced, never the new bytes, with the store bounded and
+self-sweeping, driven in a real window by field case 18. **The list did not have a fourth item**, so
+nothing here is a queue any more; the sections below are the recorded backlog, and picking from it
+needs a decision rather than a handover.
 
-**Built since this section was written, so it is no longer queued:** **run transcripts are compressed
-after 15 days and deleted only by the user (D49ay, 2026-09-28)** — the History page deletes one run
-or all of them, the sweep never deletes on a timer, and **an aged run still opens with its summary
-and its full detail intact** (measured in a real window, not inferred).
+**Built since this section was written, so they are no longer queued:** undo itself (D49az), and
+**run transcripts compressed after 15 days and deleted only by the user (D49ay, 2026-09-28)** — the
+History page deletes one run or all of them, the sweep never deletes on a timer, and **an aged run
+still opens with its summary and its full detail intact** (measured in a real window, not inferred).
 
 **Then, what the 2026-09-23/24 repairs left open.** One of the three is now done
 and the other two were **measured and turned out not to be what the founder was
@@ -1124,7 +1127,7 @@ naming it plainly (D49ai).** **What remains is Phase 7, which is recorded-not-bu
 by design** — subagents, hooks, skills, notebooks — **each needs its own decision
 before it is built**, and the first of them amends the one-worker product lock
 (D45a-3). (Two items once listed here have since left it: **LSP diagnostics** was
-built — D49av — and **checkpoints/undo** is decided as **undo** — D49ax, and
+built — D49av — and **checkpoints/undo** is built as **undo** — decided D49ax, built D49az, and
 deliberately *not* "checkpoints".) So the plan is at its end: the next work is a
 chosen item, not the next phase. **`web_search` was deliberately deferred (D49p)**:
 it needs a backend decision, and the convenient option — Anthropic's server-side

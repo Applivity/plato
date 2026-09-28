@@ -68,7 +68,16 @@ import {
   runFilesIn,
   readRunText,
   sweepRuns,
+  // D49ax: undo is Plato's own copies of what it replaced.
+  applyUndo,
+  planUndo,
+  sweepDeadProjects,
+  sweepProject,
+  undoCard,
+  undoNothingText,
+  undoResultText,
 } from '@applivity/plato-core';
+import type { UndoCard, UndoPlan, UndoResult, UndoScope } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
 import type { DuoPhilosopher } from '@applivity/plato-core';
@@ -198,11 +207,37 @@ function fmtTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k tok` : `${n} tok`;
 }
 
+/**
+ * D46: Plato's own home folder, the same on every platform because `homedir()`
+ * and `join` are. On Windows that is `C:\Users\<name>\.plato` — no `~` is ever
+ * expanded by hand, and no path is built from a string with a separator in it.
+ */
+function homePlatoDir(): string {
+  return join(homedir(), '.plato');
+}
+
+/**
+ * D49ax: reclaim the undo stores of projects that no longer exist.
+ *
+ * Once per activation, off any path the user waits on. Nothing else would ever
+ * collect these: no window will open a deleted folder again to sweep its own
+ * store. Failing here costs a disk read and nothing else, so it never throws.
+ */
+function reclaimDeadProjects(): void {
+  try {
+    sweepDeadProjects(join(homePlatoDir(), 'undo'));
+  } catch {
+    // A missing or unreadable store folder is not an error.
+  }
+}
+
 export function activate(ctx: vscode.ExtensionContext): void {
   // One chat panel per window; re-running the command reveals it instead
   // of spawning a blank second one.
   let live: vscode.WebviewPanel | undefined;
   let host: ChatHost | undefined;
+
+  setTimeout(reclaimDeadProjects, 0);
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand(
@@ -388,6 +423,16 @@ type Entry =
    * pending.
    */
   | ({ k: 'stuck-open' } & StuckCard)
+  /**
+   * D49ax: /undo found something it could put back and is asking. Recorded for
+   * the same reason as the stuck card above — a reload must rebuild the question
+   * rather than lose it. The plan itself is NOT stored: it must be recomputed
+   * against the files as they are now, because the whole safety rule is that a
+   * file changed since Plato wrote it is refused.
+   */
+  | ({ k: 'undo-open' } & UndoCard)
+  /** D49ax: the undo ran and was reported. Closes the card on a reload too. */
+  | { k: 'undo-done' }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -1073,6 +1118,18 @@ class ChatHost {
           await this.runCommand(m.id);
           return;
         }
+        // D49ax: the undo card's two answers. No pending resolver is kept, so an
+        // answer to a card the host is no longer showing is inert rather than
+        // dangerous — the same rule the stuck card follows.
+        if (m.type === 'undo-apply') {
+          // D49ax's two levels: the whole request, or the single last write.
+          this.applyUndoNow(m.scope === 'last' ? 'last' : 'request');
+          return;
+        }
+        if (m.type === 'undo-dismiss') {
+          void this.panel.webview.postMessage({ type: 'undo-done' });
+          return;
+        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           // consume now
           const attach = this.pendingAttachments.splice(0);
@@ -1130,7 +1187,7 @@ class ChatHost {
 
   /** D46: Plato's own home folder (`~/.plato`) — personal state + config, never committed. */
   private homePlatoDir(): string {
-    return join(homedir(), '.plato');
+    return homePlatoDir();
   }
 
   /** D46: stable per-project key for invisible home state (transcripts). */
@@ -1446,6 +1503,104 @@ class ChatHost {
     if (id === 'system-prompt') {
       await this.openPlato('chat');
     }
+    if (id === 'undo') {
+      this.offerUndo();
+    }
+  }
+
+  /**
+   * D49ax: work out what can be put back, and ask.
+   *
+   * Nothing is undone here. This reads the store and the workspace, draws what
+   * the answer would be — including what it CANNOT do and why — and leaves the
+   * decision to a click. A refusal is never silent: a run that half-undoes and
+   * says nothing is how a user loses trust in the whole feature.
+   */
+  private offerUndo(): void {
+    const dir = this.undoDir();
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (dir === null || root === undefined) {
+      this.send('notice', 'Open a folder before using /undo.');
+      return;
+    }
+    const plan = planUndo(dir, root, 'request');
+    if (plan === null) {
+      this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: undoNothingText() });
+      this.send('notice', undoNothingText());
+      return;
+    }
+    const card = undoCard(plan);
+    if (card === null) {
+      // Everything was refused. Say so now rather than drawing a card whose only
+      // button would fail.
+      this.settleUndo(plan, { id: plan.id, applied: [], failed: [], redoId: null });
+      return;
+    }
+    // The row is written BEFORE the card is posted, so a reload rebuilds it —
+    // the same rule every other card in this panel follows.
+    this.push({ k: 'undo-open', ...card });
+    void this.panel.webview.postMessage({ type: 'undo', ...card });
+  }
+
+  /**
+   * The user confirmed. **The plan is made again, here, from the files as they
+   * are now.**
+   *
+   * Holding the plan from the card would be the obvious thing and it is Kilo
+   * Code's bug: the user reads the card, edits a file, clicks, and the old copy
+   * goes back over their work. The card is a description of a moment; the guard
+   * has to be evaluated at the moment the write happens. Anything that changed
+   * in between is refused, and the report says so.
+   */
+  private applyUndoNow(scope: UndoScope): void {
+    const dir = this.undoDir();
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (dir === null || root === undefined) return;
+    const plan = planUndo(dir, root, scope);
+    if (plan === null) {
+      this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: undoNothingText() });
+      this.send('notice', undoNothingText());
+      return;
+    }
+    this.settleUndo(plan, applyUndo(dir, root, plan));
+    // Housekeeping straight after: an undo writes its redo into the same store,
+    // so this is the moment its size is most likely to matter.
+    this.sweepTranscripts();
+  }
+
+  /** The report, shared by the two paths above so they cannot drift apart. */
+  private settleUndo(plan: UndoPlan, result: UndoResult): void {
+    const text = undoResultText(plan, result, this.lastRequestCommands());
+    this.push({ k: 'msg', cls: 'sys', who: 'Plato', text });
+    this.push({ k: 'undo-done' });
+    this.send('notice', text);
+    void this.panel.webview.postMessage({ type: 'undo-done' });
+  }
+
+  /**
+   * D49ax: the commands the last request ran, which undo cannot cover.
+   *
+   * Read from the log rather than remembered, so a reloaded window still names
+   * them: the log is the record of what happened, and a caveat that vanishes on
+   * reload is worse than no caveat. "The last request" is everything after the
+   * user's most recent message.
+   */
+  private lastRequestCommands(): string[] {
+    let start = 0;
+    for (let i = this.log.length - 1; i >= 0; i -= 1) {
+      const e = this.log[i];
+      if (e !== undefined && e.k === 'msg' && e.cls === 'you') {
+        start = i;
+        break;
+      }
+    }
+    const out: string[] = [];
+    for (const e of this.log.slice(start)) {
+      if (e.k === 'tool' && e.tool === 'shell' && e.digest !== undefined) {
+        out.push(e.digest);
+      }
+    }
+    return out;
   }
 
   /** /history: pick an archived chat and stage its transcript as context. */
@@ -2146,6 +2301,18 @@ class ChatHost {
   }
 
   /**
+   * D49ax: this project's undo store, beside the run records.
+   *
+   * One folder the user can open, inspect and delete by hand — an extension that
+   * quietly keeps a copy of their source on disk owes them that. Deleting it
+   * loses undo history and nothing else; Plato recreates it.
+   */
+  private undoDir(): string | null {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return root ? join(this.homePlatoDir(), 'undo', this.projectKey(root)) : null;
+  }
+
+  /**
    * D49ay: compress transcripts that have aged out, at the two moments that cost
    * the user nothing — when the panel opens, and when a run ends.
    *
@@ -2153,14 +2320,27 @@ class ChatHost {
    * model is being waited on. It never throws. `sweepRuns` is written not to,
    * and this is the belt for the braces, because housekeeping that can stop a
    * panel from opening is a worse bug than the disk usage it prevents.
+   *
+   * D49ax's undo store is swept on the same two occasions, and for the same
+   * reason: it is bounded either way, so there is never a moment when the user
+   * has to think about it.
    */
   sweepTranscripts(): void {
     const dir = this.runsDir();
-    if (!dir) return;
-    try {
-      sweepRuns(dir);
-    } catch {
-      // Nothing to do and nothing to say: the files are exactly as they were.
+    if (dir) {
+      try {
+        sweepRuns(dir);
+      } catch {
+        // Nothing to do and nothing to say: the files are exactly as they were.
+      }
+    }
+    const store = this.undoDir();
+    if (store) {
+      try {
+        sweepProject(store);
+      } catch {
+        // Same contract: housekeeping never fails the thing it is attached to.
+      }
     }
   }
 
@@ -3136,6 +3316,10 @@ class ChatHost {
         // D49aw: the repetition bound. It reaches the model first (a nudge in
         // the next turn) and only the user if that does not work.
         onStuckAsk: (req) => this.promptStuck(req),
+        // D49ax: keep what every write replaced, so the user can put it back.
+        // The loop files them under this run's id — that is what makes "undo
+        // everything from this request" one action instead of a file list.
+        ...(this.undoDir() ? { undoStore: { dir: this.undoDir()! } } : {}),
         onStuckNudge: (note) => {
           // The user hears about it BEFORE the card, so the pause is never a
           // surprise. Pushed as well as sent, because this is part of the run's

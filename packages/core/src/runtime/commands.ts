@@ -8,7 +8,7 @@
  * needs the run controller, the chat archive, a provider to summarise, and
  * the workspace file system.
  */
-export type SlashCommandId = 'compact' | 'history' | 'system-prompt';
+export type SlashCommandId = 'compact' | 'history' | 'system-prompt' | 'undo';
 
 export interface SlashCommand {
   id: SlashCommandId;
@@ -36,6 +36,14 @@ const COMMANDS: readonly SlashCommand[] = [
     label: 'System prompt',
     usage: '/system-prompt',
     blurb: 'Open PLATO.md — create it from the bundled default if you have none',
+  },
+  {
+    // D49ax. No icon and no card on its own: the user asks, and the answer is
+    // what Plato can put back. Nothing is ever undone without this command.
+    id: 'undo',
+    label: 'Undo',
+    usage: '/undo',
+    blurb: "Put back the files Plato changed in your last request",
   },
 ];
 

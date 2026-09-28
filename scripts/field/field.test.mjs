@@ -11,7 +11,7 @@
  * Run it with:  node scripts/field/run-field.mjs
  * One case only: FIELD_CASES=5 node scripts/field/run-field.mjs
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
@@ -28,6 +28,46 @@ const STUB = `http://127.0.0.1:${process.env['PLATO_STUB_PORT'] ?? 4599}`;
 // (EPERM: uv_cwd). Deriving our paths from the module keeps the harness
 // runnable from anywhere.
 const SHOTS = join(import.meta.dirname, '..', '..', 'tmp', 'field', 'shots');
+
+/**
+ * D49ax: the files case 18 creates. Polled rather than slept on — the host
+ * answers a slash command synchronously, but the webview repaints on its own
+ * schedule, and a fixed sleep is how a harness starts failing on a slow machine.
+ */
+async function waitForUndo(field, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await field.undoOpen()) return true;
+    await field.driver.sleep(200);
+  }
+  return false;
+}
+
+async function waitForUndoSettled(field, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await field.undoOpen())) return true;
+    await field.driver.sleep(200);
+  }
+  return false;
+}
+
+/**
+ * The undo probe files, removed whatever happened. They are created by THIS
+ * harness in the demo repo, so leaving them behind would be the harness
+ * dirtying the workspace it is supposed to be observing — and one of them is
+ * meant to be deleted by the feature under test, which is exactly the case a
+ * failed run would leave lying around.
+ */
+function clearUndoProbes() {
+  for (const name of ['PLATO_UNDO_A.txt', 'PLATO_UNDO_B.txt']) {
+    try {
+      rmSync(join(DEMO_REPO, name), { force: true });
+    } catch {
+      /* not there, which is the normal case */
+    }
+  }
+}
 
 /**
  * Every run this spec performs, in order, with the transcript it wrote.
@@ -382,6 +422,45 @@ describe('Plato field tests — real VS Code', function () {
           }
         }
 
+        // --- D49ax: what /undo does, driven the way a person drives it ------
+        //
+        // Failures here are FATAL (`UNDO:` is in the prefix list below), because
+        // every one of them is a claim the feature is built on: that a copy was
+        // taken, that the card names the files, and that the bytes come back.
+        for (const check of run.undoAfter ?? []) {
+          await field.send('/undo');
+          const offered = await waitForUndo(field, 20000);
+          if (!offered) {
+            notes.push('UNDO: /undo offered nothing, so nothing could be put back');
+            continue;
+          }
+          const cardText = await field.undoText();
+          notes.push(`undo card: ${cardText.replace(/\s+/g, ' ').slice(0, 140)}`);
+          if (check.names && !cardText.includes(check.names)) {
+            notes.push(`UNDO: the card did not name ${check.names}`);
+          }
+          await field.answerUndo('confirm');
+          const settled = await waitForUndoSettled(field, 20000);
+          if (!settled) notes.push('UNDO: the card stayed open after the click, so the answer was not taken');
+          if (check.gone) {
+            if (existsSync(join(DEMO_REPO, check.gone))) {
+              notes.push(`UNDO: ${check.gone} is still on disk — a created file was not removed`);
+            } else {
+              notes.push(`undo: ${check.gone} was removed`);
+            }
+          }
+          for (const [file, want] of Object.entries(check.text ?? {})) {
+            const got = existsSync(join(DEMO_REPO, file))
+              ? readFileSync(join(DEMO_REPO, file), 'utf8')
+              : '(missing)';
+            if (got !== want) {
+              notes.push(`UNDO: ${file} came back as ${JSON.stringify(got)}, not ${JSON.stringify(want)}`);
+            } else {
+              notes.push(`undo: ${file} came back byte for byte`);
+            }
+          }
+        }
+
         // --- what the MODEL was told ---------------------------------------
         if (run.expectModelTold) {
           const log = await stubLog();
@@ -446,7 +525,7 @@ describe('Plato field tests — real VS Code', function () {
         // 12-14 their teeth — could not fail the case. Found while wiring the
         // acceptance clauses; a note is not a check.
         const failures = notes.filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO):/.test(n),
         );
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes) console.log(`    ${n}`);
@@ -479,6 +558,10 @@ describe('Plato field tests — real VS Code', function () {
    * and which did not, rather than reporting nothing at all.
    */
   after(() => {
+    // D49ax: case 18 creates probe files in the demo repo. Cleared HERE rather
+    // than at the end of the case, so a case that fails half way through still
+    // leaves the workspace as it found it.
+    clearUndoProbes();
     mkdirSync(join(import.meta.dirname, '..', '..', 'tmp', 'field'), { recursive: true });
     writeFileSync(
       MANIFEST_PATH,

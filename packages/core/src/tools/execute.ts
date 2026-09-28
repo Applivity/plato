@@ -17,6 +17,7 @@ import { htmlToText, isPrivateHostname, isTextualContentType } from './web.js';
 import { parseTodos, renderTodos } from './todo.js';
 import type { ShellManager } from './background.js';
 import type { DiffBlock } from './diff.js';
+import type { WriteCapture } from '../runtime/undo.js';
 
 /** Injected so tests never touch the network; defaults to global fetch. */
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
@@ -40,6 +41,16 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** D49p: the HTTP client for `web_fetch`. Injected so tests stay offline. */
   fetchImpl?: FetchLike;
+  /**
+   * D49ax: where the undo copy of a write goes. The loop supplies it, because
+   * the loop owns the request id. Absent — as in most tests — no copy is kept
+   * and nothing else changes.
+   *
+   * The before bytes are already in hand here for the guard and the approval
+   * preview, so capturing costs one disk write and no extra read. That is the
+   * whole reason undo turned out to be small.
+   */
+  recordWrites?: (caps: WriteCapture[]) => void;
 }
 
 function fail(output: string): ToolOutcome {
@@ -80,11 +91,11 @@ export async function executeTool(
     case 'read_file':
       return readFileTool(root, args);
     case 'write_file':
-      return writeFileTool(root, args);
+      return writeFileTool(root, args, ctx);
     case 'apply_diff':
-      return applyDiffTool(root, args);
+      return applyDiffTool(root, args, ctx);
     case 'apply_patch':
-      return applyPatchTool(root, args);
+      return applyPatchTool(root, args, ctx);
     case 'shell':
       return shellTool(root, args, ctx);
     case 'bash_output':
@@ -195,7 +206,11 @@ async function readFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> 
   };
 }
 
-async function writeFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function writeFileTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const raw = argPath(args);
   const content = args['content'];
   if (raw.length === 0 || typeof content !== 'string') {
@@ -224,13 +239,21 @@ async function writeFileTool(root: string, args: ToolArgs): Promise<ToolOutcome>
   }
   try {
     await writeFile(abs, content, 'utf8');
-    return { ok: true, output: existing === null ? `created ${rel}` : `overwrote ${rel}` };
   } catch {
     return fail(`cannot write: ${rel}`);
   }
+  // Only after the write is on disk, so the store never holds a copy for a
+  // change that did not happen. `existing` is null on the create path, which is
+  // what makes the undo of a create a delete.
+  ctx.recordWrites?.([{ rel, kind: 'write', before: existing, after: content }]);
+  return { ok: true, output: existing === null ? `created ${rel}` : `overwrote ${rel}` };
 }
 
-async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function applyDiffTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const rawPath = argPath(args);
   if (rawPath.length === 0) return fail('missing path');
   const target = resolveTarget(root, rawPath);
@@ -252,6 +275,7 @@ async function applyDiffTool(root: string, args: ToolArgs): Promise<ToolOutcome>
     const { content, applied, noop } = applyBlocks(before, blocks);
     if (applied > 0) {
       await writeFile(abs, content, 'utf8');
+      ctx.recordWrites?.([{ rel, kind: 'write', before, after: content }]);
     }
     return {
       ok: true,
@@ -281,7 +305,11 @@ interface PlannedPatch {
  * this call already wrote, so the promise holds against something other than a
  * bad SEARCH.
  */
-async function applyPatchTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function applyPatchTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const rawPatches = args['patches'];
   if (!Array.isArray(rawPatches) || rawPatches.length === 0) {
     return fail('patches must be a non-empty array');
@@ -358,6 +386,12 @@ async function applyPatchTool(root: string, args: ToolArgs): Promise<ToolOutcome
     }
   }
 
+  // Recorded only now, after every write landed. A patch that failed part-way
+  // rolled itself back, so a copy for it would describe a change that is not on
+  // disk — and the same reason the whole call is all-or-nothing.
+  ctx.recordWrites?.(
+    changed.map((c) => ({ rel: c.rel, kind: 'write' as const, before: c.before, after: c.after })),
+  );
   return {
     ok: true,
     output:

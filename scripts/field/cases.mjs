@@ -617,4 +617,77 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 18,
+    title: 'Undo puts back what Plato changed — restores, removes, and redoes',
+    // D49ax, and the whole feature end to end in a real window: Plato keeps its
+    // own copy of what a write REPLACED, and /undo puts it back.
+    //
+    // Deliberately in `auto`, which is the only mode that proves the copy is
+    // taken at the EXECUTOR. The approval-card preview reads the file too, but
+    // `auto` builds no card — so a design that captured at the preview would
+    // pass in `edit` and store nothing here.
+    //
+    // Three runs, because the two halves of undo are different actions:
+    //   run 1 creates a file  -> undo REMOVES it (there was no before)
+    //   run 3 edits a file   -> undo restores the exact bytes
+    //   the third /undo      -> puts the edit back, because a restore is a write
+    //
+    // The refusals are not exercised here: a file the user edited since is
+    // refused in `undo.test.ts`, where the hash can be changed deliberately. What
+    // only a real window can show is that the copies are taken, the card names
+    // the files, and the bytes come back.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Create a probe file for the undo test.',
+        steps: [
+          {
+            calls: [
+              { tool: 'write_file', args: { path: 'PLATO_UNDO_A.txt', content: 'created by plato\n' } },
+            ],
+          },
+          { text: 'Created it.' },
+        ],
+        cards: [],
+        undoAfter: [{ names: 'PLATO_UNDO_A.txt', gone: 'PLATO_UNDO_A.txt' }],
+      },
+      {
+        mode: 'auto',
+        prompt: 'Create the second probe file.',
+        steps: [
+          {
+            calls: [
+              { tool: 'write_file', args: { path: 'PLATO_UNDO_B.txt', content: 'version one\n' } },
+            ],
+          },
+          { text: 'Created it.' },
+        ],
+        cards: [],
+      },
+      {
+        mode: 'auto',
+        prompt: 'Change the second probe file.',
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'apply_diff',
+                args: { path: 'PLATO_UNDO_B.txt', diffs: [{ search: 'version one', replace: 'version two' }] },
+              },
+            ],
+          },
+          { text: 'Changed it.' },
+        ],
+        cards: [],
+        undoAfter: [
+          { names: 'PLATO_UNDO_B.txt', text: { 'PLATO_UNDO_B.txt': 'version one\n' } },
+          // The last request is now the redo the previous undo wrote, so undoing
+          // it puts the edit back. This is the claim that redo is free: it was
+          // never built, it is what the mechanism already does.
+          { names: 'PLATO_UNDO_B.txt', text: { 'PLATO_UNDO_B.txt': 'version two\n' } },
+        ],
+      },
+    ],
+  },
 ];

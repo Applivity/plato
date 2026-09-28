@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgentLoop } from '../src/runtime/loop.js';
@@ -1494,6 +1494,144 @@ describe('the host may add to a write result (D49av)', () => {
     });
     expect(r.reason).toBe('complete');
     expect(lastToolResult(requests[1]!)).toBe('created e.ts');
+  });
+});
+
+/**
+ * D49ax. Undo copies are written at the executor, and the loop is what files
+ * them under the run's id — so this is the only place the two halves meet.
+ *
+ * The property that matters: a copy exists for what a write REPLACED, and for
+ * nothing else. A read keeps nothing, a write that never happened keeps nothing,
+ * and no store means nothing at all — the same shape as the diagnostics seam
+ * above, and for the same reason: the host owns the policy, core owns the hook.
+ */
+describe('a write keeps what it replaced (D49ax)', () => {
+  const callTurn = (tool: string, input: Record<string, unknown>): TurnResponse => ({
+    content: [{ type: 'tool_use', id: 't1', name: tool, input }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  });
+  const done: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+
+  const ws = (): string => mkdtempSync(join(tmpdir(), 'plato-undo-loop-'));
+  const store = (): string => mkdtempSync(join(tmpdir(), 'plato-undo-store-'));
+
+  /** The one request the store holds, or null when it holds none. */
+  function onlyRequest(dir: string): {
+    id: string;
+    files: { rel: string; existed: boolean; seq: number | null }[];
+  } | null {
+    if (!existsSync(join(dir, 'index.json'))) return null;
+    const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as {
+      requests: { id: string; files: { rel: string; existed: boolean; seq: number | null }[] }[];
+    };
+    expect(index.requests).toHaveLength(1);
+    return index.requests[0] ?? null;
+  }
+
+  it('files a write under the run, holding the bytes it replaced', async () => {
+    const root = ws();
+    const dir = store();
+    writeFileSync(join(root, 'a.ts'), 'one\n');
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: provider([
+        callTurn('write_file', { path: 'a.ts', content: 'two\n', overwrite: true }),
+        done,
+      ]),
+      undoStore: { dir },
+    });
+
+    const req = onlyRequest(dir)!;
+    expect(req.files[0]?.rel).toBe('a.ts');
+    expect(req.files[0]?.existed).toBe(true);
+    // The copy on disk is what the file held BEFORE the write.
+    const copy = readFileSync(join(dir, req.id, `${req.files[0]!.seq}.bin`), 'utf8');
+    expect(copy).toBe('one\n');
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('two\n');
+  });
+
+  it('keeps nothing for a read', async () => {
+    const root = ws();
+    const dir = store();
+    writeFileSync(join(root, 'a.ts'), 'one\n');
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: provider([callTurn('read_file', { path: 'a.ts' }), done]),
+      undoStore: { dir },
+    });
+
+    expect(existsSync(join(dir, 'index.json'))).toBe(false);
+  });
+
+  it('keeps nothing for a write the mode denied', async () => {
+    const root = ws();
+    const dir = store();
+    writeFileSync(join(root, 'a.ts'), 'one\n');
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      getMode: () => 'plan' as const, // plan denies every write
+      provider: provider([
+        callTurn('write_file', { path: 'a.ts', content: 'two\n', overwrite: true }),
+        done,
+      ]),
+      undoStore: { dir },
+    });
+
+    expect(existsSync(join(dir, 'index.json'))).toBe(false);
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('one\n');
+  });
+
+  it('keeps nothing when no store is configured', async () => {
+    const root = ws();
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: provider([
+        callTurn('write_file', { path: 'a.ts', content: 'x' }),
+        done,
+      ]),
+    });
+    expect(readFileSync(join(root, 'a.ts'), 'utf8')).toBe('x');
+  });
+
+  it('files every file of one request under one id', async () => {
+    const root = ws();
+    const dir = store();
+    writeFileSync(join(root, 'a.ts'), 'one\n');
+    writeFileSync(join(root, 'b.ts'), 'two\n');
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: provider([
+        callTurn('apply_patch', {
+          patches: [
+            { path: 'a.ts', diffs: [{ search: 'one', replace: 'ONE' }] },
+            { path: 'b.ts', diffs: [{ search: 'two', replace: 'TWO' }] },
+          ],
+        }),
+        done,
+      ]),
+      undoStore: { dir },
+    });
+
+    const index = JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')) as {
+      requests: { id: string; files: { rel: string }[] }[];
+    };
+    expect(index.requests).toHaveLength(1);
+    expect(index.requests[0]?.files.map((f) => f.rel)).toEqual(['a.ts', 'b.ts']);
   });
 });
 

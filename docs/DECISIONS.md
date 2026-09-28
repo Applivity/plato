@@ -1290,8 +1290,8 @@ reads it here, not in a plan file outside the repo.
    event was added.
 7. **Recorded, not built** — subagents, hooks, skills, notebook and PDF input.
    Each needs its own decision. (**LSP diagnostics after edits** was built —
-   D49av, 2026-09-27. **Checkpoints/undo** is decided as **undo**, deliberately
-   *not* checkpoints — D49ax, 2026-09-27.)
+   D49av, 2026-09-27. **Checkpoints/undo** is built as **undo**, deliberately
+   *not* checkpoints — decided D49ax, built D49az, 2026-09-28.)
 
 **The three forks, settled with the founder.**
 
@@ -3214,6 +3214,93 @@ suite exits 1.
 
 ---
 
+**D49az — undo is BUILT: the copy is taken at the executor, and the plan is made again when the
+user clicks (Tier C item 3, built 2026-09-28).**
+
+D49ax decided the shape. This is what was built from it, in three parts, plus **four places where
+building it changed the decision** — recorded because a silent deviation from a decided design is
+exactly what this repository keeps having to un-believe.
+
+**1. The capture is at the EXECUTOR, not at the approval preview, and that is not a detail.**
+D49ax said the old bytes are *"already read at the write site for the guard and the approval diff"*.
+Those are two different places and only one of them is always reached. `buildApprovalPreview`
+([loop.ts](../packages/core/src/runtime/loop.ts)) reads the file — but **`auto` builds no preview
+at all**, which is the mode where an undo matters most, because nothing else stands between the
+model and the disk. So the copy is taken inside the three write tools in
+[execute.ts](../packages/core/src/tools/execute.ts), each of which reads the previous content
+unconditionally, in every mode. **The proof is field case 18, which runs in `auto`**: a design that
+captured at the preview would store nothing there and the case would find nothing to put back.
+
+**2. The plan is made again when the user clicks, never held from the card.** This is the one
+place where the obvious implementation is the bug. The card names specific files and sizes; the
+tempting move is to keep that plan and apply it. But between reading the card and clicking it, the
+user can edit a file — and then the old copy goes back over their work. That is Kilo Code's
+reported bug, and it would be this feature's too. So `applyUndoNow` re-plans from the files as they
+are at that moment, and anything that changed in between is refused and reported. The card is a
+description of a moment; the guard has to be evaluated when the write happens.
+
+**3. A file Plato CREATED is undone by deleting it.** D49ax was silent on this, and it is the
+feature's one destructive action. Only `write_file` can create — `apply_diff` and `apply_patch` both
+refuse a missing file — and for a created file there is no before to put back, so "undo" means
+"remove it". That is not collateral damage: the file exists *because this request made it*, so
+removing it is what undoing the request means. It is still the case Cline's worst bug came from, so
+it is guarded the same way everything else is: the fingerprint is checked first, a file the user has
+edited since is refused, and deletes are performed LAST, after every restore has landed. The card
+says **"Plato created this one, so it is removed"** rather than "put back", because a click that
+deletes a file must not be described as a restore.
+
+**And the four smaller decisions building it forced.**
+
+- **A corrupt index is NOT rebuilt.** D49ax said reconcile should *"keep everything and rebuild the
+  index by walking"*. Walking cannot do that: the copies are named `<seq>.bin`, so a walk recovers
+  no path and no hash — it would fabricate entries naming files they cannot restore. So an
+  unreadable index keeps everything and **builds nothing**, and the store is swept again the next
+  time an index exists. The rule D49ax actually needed is intact and tested: **a corrupt index
+  deletes nothing.**
+- **`bytes` is the size of what was REPLACED, and only copied files count toward the cap.** The
+  first version counted stored bytes, which made the "too big to undo" message report the size the
+  file happens to be now instead of the size that could not be copied.
+- **"1.0 MB" was not the number.** `formatBytes` dropped the trailing `.0`, because *"above the 1.0
+  MB limit"* reads like a machine wrote it.
+- **Both of D49ax's two levels are reachable, and the second only when it differs.** "Just the last
+  change" appears on the card only when the request touched more than one file — with one file the
+  two actions are identical, and a second button that does the same thing is a choice the user has
+  to read for nothing.
+
+**The store, as built.** `~/.plato/undo/<project-key>/`, beside the run records: `index.json`, and
+one directory per request holding `<seq>.bin` copies. **No user path ever becomes a file name** —
+the copies are numbered and the index maps the number to the workspace-relative path, which is what
+makes the delete paths provable rather than merely careful: every removal is built from the store
+root and checked against it with the same `resolveInRoot` the file tools use. The index is written
+whole and renamed into place, because a half-written index is the one corruption this store cannot
+recover from.
+
+**Cross-platform, per the founder (2026-09-28: *"make sure the location like ~/.plato on
+mac/linux are proper when used in Windows"*).** One module-level `homePlatoDir()` uses `homedir()`
+and `join`, so Windows gets `C:\Users\<name>\.plato` with no `~` expanded by hand and no path built
+from a string containing a separator. Containment is `path.relative` + `isAbsolute`, which the
+existing `resolveInRoot` already had for the *different drive* case, rather than a string prefix
+compare that would break on Windows' case-insensitivity. Stored paths are POSIX and joined back on
+read, which `path.win32.join` normalises. `rename` over an existing file replaces on every platform
+Plato runs on. `~/.plato` appears only in user-facing prose, where it is correct everywhere.
+
+**Verified.** `undo.test.ts` (31) and `undoCopy.test.ts` (14) pin the store and the wording; five
+loop tests pin the seam (a write files a copy, a read files none, a denied write files none, no
+store files none, one patch files every file under one id); the `undo` render suite (38 assertions)
+pins the card. **Falsified four times**, each reverted after the failure was seen: removing the
+fingerprint check fails both "refuses a file the user edited since" and "refuses to remove a created
+file the user has edited"; letting a corrupt index through **deletes the store's copies**; using
+`innerHTML` for a file name fails the markup assertion; and counting the plan's file total instead
+of what actually happened fails the "counts what ACTUALLY happened" assertion. **And once in a real
+window**: field case 18, in `auto`, creates a file and has it removed, edits a file and has the
+bytes come back byte for byte, then undoes the undo and gets the edit back.
+
+**What it does not do, said here because the message says it too.** Terminal commands are outside
+undo — in `auto` a shell command runs unasked and Plato has no record of which files it touched — so
+the report **names the commands that ran** and says where to look instead.
+
+---
+
 **D49ay — old transcripts are compressed, never deleted; the user deletes, and only the user
 (2026-09-28).**
 
@@ -3503,6 +3590,11 @@ problem, which is exactly the kind of statement this repository keeps having to 
 
 **What it does not change.** The approval still means what it meant — the write happens as approved.
 What changes is the cost of being wrong, which was the point of the item.
+
+**BUILT the next day as D49az**, which also decides three things this entry left open: where the
+capture happens (the executor, not the approval preview), when the plan is made (at the click, not
+when the card is drawn), and what undoing a *created* file means (it is deleted). Read D49az with
+this entry, not instead of it.
 
 ---
 

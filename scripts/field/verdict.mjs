@@ -500,6 +500,37 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 18 — undo, driven from the real composer (D49ax).
+  //
+  // The transcript's share is deliberately small, and that is the honest split:
+  // the undo itself is NOT a run, so it writes no transcript at all. What the
+  // transcript can say is that there was something TO undo — a write that
+  // completed, in a mode with no card in front of it. Whether the bytes actually
+  // came back is asserted on disk in `field.test.mjs`, which is the only witness
+  // that can see it.
+  //
+  // All three runs must satisfy this: two create a file, one edits a file, and a
+  // rule written for one of them would pass while the other two did nothing.
+  18: (a) => [
+    {
+      name: 'a write completed, so the undo had something to act on',
+      ok: ['write_file', 'apply_diff', 'apply_patch'].some((t) =>
+        a.phasesFor(t).some((e) => e.phase === 'done'),
+      ),
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'auto put no card in front of it',
+      ok: a.approvals.length === 0,
+      detail: a.approvals.length === 0 ? 'no card' : `${a.approvals.length} card(s)`,
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
 };
 
 function summarise(events) {

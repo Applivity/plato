@@ -17,6 +17,7 @@ import type {
   ToolResultBlock,
 } from '../providers/types.js';
 import { decideWithArgs, isWriteTool } from './modes.js';
+import { recordWrites } from './undo.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
@@ -274,6 +275,15 @@ export interface LoopOptions {
     signal: AbortSignal;
   }) => Promise<string | undefined>;
   /**
+   * D49ax: where the undo copies go — a directory built by the shell, because
+   * only the shell knows the workspace's project key and where `~/.plato` is.
+   *
+   * The loop owns the REQUEST ID, so the loop is what binds the two: every write
+   * in one run is filed under that run's id, which is what lets undo offer
+   * "everything from this request" as one action. Absent, no copies are kept.
+   */
+  undoStore?: { dir: string };
+  /**
    * D49aw: put to the user when the run looks stuck — the same call returning
    * the same thing, or turns in which nothing succeeded. `continue` resumes and
    * anything in `guidance` is handed to the model; `stop` ends the run with the
@@ -436,6 +446,9 @@ async function runLoop(
   shells: ShellManager,
 ): Promise<LoopResult> {
   const ctrl = opts.controller ?? new RunController();
+  // D49ax: bound to this run's id below, so every write in one request is filed
+  // together and "undo everything from this request" is one action.
+  const undoStore = opts.undoStore;
 
   // Legacy shell callbacks ride the bus (D24a): one emission path.
   if (opts.onText) {
@@ -1018,6 +1031,9 @@ async function runLoop(
         return executeTool(opts.root, name, args, {
           shells,
           signal: ctrl.signal,
+          recordWrites: undoStore
+            ? (caps) => recordWrites(undoStore.dir, opts.root, runId, caps)
+            : undefined,
         });
       })();
       bus.emit({

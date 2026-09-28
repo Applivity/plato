@@ -1,4 +1,4 @@
-# Field tests — the seventeen live checks, driven automatically
+# Field tests — the eighteen live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
@@ -17,7 +17,7 @@ node scripts/field/acceptance.mjs              # judge the last run only
 ```
 
 ```
-node scripts/field/run-field.mjs              # all seventeen
+node scripts/field/run-field.mjs              # all eighteen
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -83,6 +83,7 @@ Two rules keep the driver honest:
 | 17 unfinished plan | the closing line says `N of M plan steps unfinished` | the plan was written and the run completed |
 | 13 keep going | the card is answered "keep going" and the run finishes | `run-completed` carries `reason: complete` |
 | 14 no-progress | turns that all FAIL raise the card too | a `turns in a row have failed` notice, then `reason: stuck` |
+| 18 undo | the card names the files, and `/undo` is the only way in | a write completed with no card (`auto`) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -110,6 +111,30 @@ and never touches the host, and the no-progress trigger had unit tests and no
 run. **The screen assertions for these cases read the REAL copy**, which no other
 suite does: core pins the wording and the render suite renders a fixture, so case
 12 is the only place the two are proved to meet.
+
+**Case 18 is the only case that drives a slash command, and it is in `auto` on
+purpose.** `/undo` is not a run — it writes no transcript — so this case's
+evidence is split deliberately: the transcript can only say there was something
+TO undo (a write completed, with no card in front of it), and **whether the bytes
+actually came back is asserted on disk**, by the spec, which is the only witness
+that can see it. Three runs in one case, because the halves of undo are different
+actions: **run 1 creates a file and undo REMOVES it** (a created file has no
+before, so removing it is what undoing means); **run 3 edits a file and undo puts
+the exact bytes back**; and the second `/undo` after run 3 **undoes the undo**,
+which is the claim that redo was never built — it is what the mechanism already
+does, because a restore is itself a write with a before.
+
+`auto` is not incidental. The approval-card preview also reads the file, and in
+`auto` **no preview is built** — so a design that captured the old bytes at the
+preview would store nothing here and the case would find nothing to put back.
+That is the failure this case exists to catch, and it is invisible in `edit` and
+`plan`, where a card is drawn.
+
+The probe files are created by THIS harness, so they are removed in the suite's
+`after` hook rather than at the end of the case — a case that fails half way
+through still leaves the demo repo as it found it. One of them is meant to be
+deleted by the feature under test, which is exactly the file a failed run would
+leave lying around.
 
 **Case 11 needs the editor, so it touches the screen.** It writes a deliberately
 broken TypeScript file and checks that what the editor says reaches the model.
@@ -274,6 +299,17 @@ because `vscode-extension-tester` resolves from here.
 - **The `vscode` API surface is real here, but the provider is not.** These runs
   prove the webview, the extension host, the gates and the transcript. They do
   not prove a real vendor endpoint — no test touches the network by design.
+- **`/undo` is not a run, so it has no transcript.** No case can witness an undo
+  in the transcript, because there is nothing there to witness: the command
+  writes no run. Case 18 therefore asserts on DISK, which is the stronger witness
+  anyway — "the bytes came back" cannot be true of a transcript.
+- **A multi-run case's printed notes accumulate.** `notes` is declared once per
+  CASE, not per run, so run 2's output repeats run 1's notes. Nothing is measured
+  wrongly — each run's own checks run against its own events, and a real failure
+  still fails the case — but the log reads as though run 2 did what run 1 did.
+  Seen while writing case 18, whose undo notes are per-run and so repeat visibly.
+  Not changed here: it is shared by cases 4, 5 and 8, and moving the declaration
+  into the loop changes reported output for all of them, which wants its own pass.
 
 ## Traps
 
