@@ -1288,8 +1288,10 @@ reads it here, not in a plan file outside the repo.
    The sketch also expected a new `AgentEvent` for todo state; it turned out to be
    unnecessary — the shell already receives every tool call's arguments — so no bus
    event was added.
-7. **Recorded, not built** — subagents, checkpoints/undo, LSP diagnostics after
-   edits, hooks, skills, notebook and PDF input. Each needs its own decision.
+7. **Recorded, not built** — subagents, hooks, skills, notebook and PDF input.
+   Each needs its own decision. (**LSP diagnostics after edits** was built —
+   D49av, 2026-09-27. **Checkpoints/undo** is decided as **undo**, deliberately
+   *not* checkpoints — D49ax, 2026-09-27.)
 
 **The three forks, settled with the founder.**
 
@@ -3209,6 +3211,184 @@ free-text row is the escape hatch.
 **Falsified, three reverts at once:** drawing a circle for every question, making a multi click
 replace instead of toggle, and forcing every question to be multi **fails 5 assertions** and the
 suite exits 1.
+
+---
+
+**D49ax — undo is Plato's own copies of what it replaced, not a parallel history; the store is
+bounded and cleans up after itself (Tier C item 3 — 2026-09-27).**
+
+Tier C item 3 was written down as *"checkpoints / undo — snapshot before a write. Large, and it
+changes what an approval means."* Both halves turned out to be wrong in useful ways: it is **not
+large** — the raw material is already in hand at the write site — and it does not change what an
+approval means, it changes what a **mistake** costs.
+
+**The founder's instinct was right, and the field agrees for a reason he did not name.** He said a
+parallel git-like system *"would be more harmful than good"*. Twelve agents were surveyed
+(2026-09-27). Four mechanisms ship, and nothing else:
+
+| Mechanism | Who |
+|---|---|
+| a separate hidden git repository | Cline, Roo Code, Kilo Code, Gemini CLI |
+| the user's own git repository | Aider — and only Aider |
+| per-file copies of the old content | Claude Code, Cursor |
+| the editor's own undo state | GitHub Copilot, Windsurf |
+
+OpenAI's Codex **removed** its undo, and the maintainer's reason (2026-01-07) is the sharpest
+argument in the survey: it caused *"pretty significant problems for many users — including those who
+didn't use the feature."*
+
+**Every reported failure has the same shape: the snapshot was bigger than the change.** Cline
+deleted untracked files outright — *"After trying restore snapshot all my files in workspace folder
+have been deleted"* (#1213) — and left `.git_disabled` directories corrupting real repositories
+(#9286). Roo Code, inside a dev container, leaked commits into the **wrong repository** because
+`GIT_DIR` was set (#4567). Kilo Code, verbatim: *"Restore checkpoint removed all the changes of mine
+also instead of changes done by KILO Code"* (#1670). Cursor's snapshot files grow with no limit.
+Copilot's rollback leaves empty files behind (#9391). A design that snapshots a whole workspace to
+protect one file makes every bug a whole-workspace bug. That is the argument against a parallel
+history, and it is not a matter of taste.
+
+**Measured in real VS Code 1.136.0, not assumed (2026-09-27).** A throwaway extension wrote one file
+straight to disk and another through the editor API; VS Code's own local-history store was then read
+off disk. Six findings, one of which overturned a fear recorded before the test:
+
+1. **A direct disk write creates no local-history entry at all** — and that is how Plato writes
+   today, so Plato's edits are invisible to the Timeline the user already has.
+2. **Local history keeps what the editor SAVED, never what it FOUND.** Routed through the editor,
+   entries appeared — but the earliest held the file *after* Plato's first save. The pre-Plato
+   content was nowhere in the store. It therefore **cannot undo Plato's first change to a file**,
+   which is the one most often wanted back.
+3. **Rapid saves merge.** `workbench.localHistory.mergeWindow` defaults to 10 s, and Plato's edits
+   land back to back, so they collapse and the intermediate state is lost. Two entries appeared only
+   with the window at 1 s and a 12 s gap between saves.
+4. **It is not readable anyway** — there is no extension API, and the entry was not on disk while the
+   window was open; it appeared only after the window closed.
+5. **The line-ending hazard did not reproduce.** With `files.eol` forced to `\n`, a CRLF file kept
+   CRLF through open → edit → save. `files.eol` governs new files, not existing ones. The fear
+   recorded before the test was wrong, and is recorded here as wrong.
+6. **But a worse hazard is real, and it was measured.** If the user has the file open with unsaved
+   typing, routing through the editor writes **their unsaved work to disk**: the buffer held the
+   user's line, the disk did not, Plato wrote through the editor and saved, and the saved file
+   contained both. A direct disk write leaves their buffer alone.
+
+So: **write to disk as now, and keep Plato's own copies.** The editor route buys a partial Timeline
+entry and costs a correctness bug. Local history is not the mechanism, and cannot be.
+
+**The design: the old bytes and a fingerprint — never the new bytes.** At each write, at the site
+that already reads the file's previous content for the guard and the approval diff, Plato copies
+those bytes aside. Storing only the *before* has two consequences that matter: half the storage, and
+the store can never become a second source of truth about what a file currently is. It is a record
+of what was **replaced**, not a parallel state — and a parallel history that can disagree with the
+repository is the disease, so this cannot catch it.
+
+**Because the new bytes are not stored, a fingerprint is.** *"Has this file changed since Plato wrote
+it?"* cannot be answered without knowing what Plato wrote, and storing it would recreate the second
+copy. A hash answers the question, proves the file untouched, cannot reconstruct anything, and
+cannot disagree with the repository about what a file is.
+
+**Redo is offered and costs nothing to provide.** A restore is itself a write with a before, so it
+enters the same store and the undo-of-an-undo falls out of the mechanism instead of being built.
+
+**Two limits, both stated in the message rather than hidden.**
+
+- **Terminal commands are not covered.** In `auto` a shell command runs without asking and Plato has
+  no record of which files a command touches, so `rm`, code generation, package installs and
+  formatters sit outside undo. Claude Code and Copilot share the hole and do not mention it. Plato
+  **names the commands that ran** and says it cannot undo them.
+- **A file the user has edited since is refused, not overwritten.** Kilo's bug, closed by
+  construction: the fingerprint is checked before restoring, and a mismatch stops the undo and
+  offers to restore the rest.
+
+**The messaging is part of the decision, not decoration.** The first draft was rejected as cryptic —
+chiefly *"Changes made by commands Plato ran are not affected"*, which named no command, said what
+did **not** happen instead of what might be wrong, and gave no next step. The rewrites name the
+files, the commands, the sizes and the limits, and end with what the user can do:
+
+```
+Undone. Plato put back the 3 files it edited.
+
+This request also ran pnpm install and ./gradlew build. Plato has no
+record of which files a command touches, so it cannot undo those.
+If something still looks wrong, that is where to look.
+
+Probe.ts was not undone. Plato found edits you made after Plato's, and
+putting the old copy back would have wiped them out.
+The other 2 files can still be undone.  [ Undo those 2 ]  [ Cancel ]
+
+Partly undone. Plato put back 2 of the 3 files it edited.
+build/output.bin is 4.2 MB, above the 1 MB limit Plato keeps undo copies
+up to, so it still has Plato's changes. Use git or your editor's own
+history to undo that one.
+```
+
+**Two numbers in the first draft were guesses, and both were replaced.**
+
+- **Per-file size limit: 1 MB, not the 256 KB first quoted** — that figure was borrowed from the
+  editor's own limit and was too cautious. The old bytes are **already in memory** at the write site
+  (the guard and the approval diff both read them), so a copy costs one disk write and no extra
+  read. 1 MB covers source files (1–50 KB), lockfiles and generated sources (100 KB–1 MB); above it
+  is almost always build output, which can be rebuilt — and that is what makes a cap acceptable at
+  all rather than "keep everything". The cap is **never silent**: the file is recorded as not
+  copied, and the user is told when they try to undo.
+- **No limit on the number of requests.** The first draft kept 20 and **that number was invented**,
+  loosely from Claude Code's 100-per-session. It is also the wrong shape: twenty small requests
+  might be 4 MB while twenty requests each snapshotting a lockfile could be gigabytes, so a count
+  does not control the thing that matters. The limits are **30 days** and **200 MB per project**,
+  with **the most recent 10 requests always kept** so that one heavy request cannot evict the
+  history someone is about to use. 200 MB is a **starting point to be measured against real runs,
+  not a finding.**
+
+**Cleanup is a requirement, not a follow-up** (founder, 2026-09-27: *"make sure Plato cleans up
+after itself properly after limits expire and does not let unbounded storage pile up"*). Storage
+that grows without bound is the complaint filed against Cursor. Four ways this store could leak,
+and what closes each:
+
+| Leak | Closed by |
+|---|---|
+| a project over its cap | evicting **whole requests**, oldest first |
+| requests past 30 days | the same sweep, by timestamp |
+| **a project the user deleted** — nothing would ever reclaim it | a dead-project sweep: each store records its project's real workspace path, and a folder whose path no longer exists is reclaimed whole |
+| **orphans from a crash mid-write** | a reconcile pass that drops any directory the index does not name |
+
+**An index file makes the cap cheap to enforce.** Each project's store carries a small index naming
+every request with its size and timestamp, so enforcing the cap is arithmetic on one small file
+rather than a walk of the whole store on every write. The write path appends and evicts from the
+oldest end while over the cap. The expensive work — reconcile, the dead-project sweep, the age
+limit — runs at **extension activation** and at the **end of a run**, both off the hot path.
+
+**A corrupt or missing index must not delete anything.** Reconcile deletes what the index does not
+name, so an unreadable index would name nothing and take the whole store with it. The rule is
+therefore: **reconcile deletes only when it has a valid index**; otherwise it keeps everything and
+rebuilds the index by walking.
+
+**Deletion is confined to the store, and that is the one dangerous line in the feature.** Cline's
+worst reported bug is a restore that deleted a user's workspace files. Every delete path is built
+from the store root and verified to be inside it; eviction drops **whole requests only**, never
+individual files, because a half-restorable request is worse than none. A test proves a path outside
+the store is refused.
+
+**The store is one folder, inspectable and deletable by hand** — beside the run records under
+`~/.plato/`, with a plain index at its root. Deleting it loses undo history and nothing else, and
+Plato recreates it. An extension that quietly holds a copy of the user's source on disk owes them a
+way to see it and throw it away.
+
+**Related finding, and the first version of this paragraph overstated it.** The run records under
+`~/.plato/runs/` have **no sweeper at all** either — that part holds. It was written here as "the
+same class of leak, already shipping", and **the measurement says otherwise**, so the claim is
+corrected rather than left standing: **285 runs occupy 1.4 MB**, a mean of **5 KB per run** and a
+largest of 116 KB, after weeks of development that include every harness run. At the measured mean,
+**50 runs a day for a year is 89 MB raw** — and JSONL of this shape compresses **9.2× on the largest
+transcript and 7.8× over the whole store**, so **6.4 MB gzipped**. That is not a leak. **The two
+stores are also not the same problem, and must not share a rule:** the undo store is *derived* data —
+a copy of something that still exists — so deleting it costs convenience and nothing else, while the
+run records are *primary* data that nothing else holds, so deleting them destroys the only record of
+what happened. **Hence compression, not deletion:** keep them, gzip anything older than a few days on
+the cold path, and carry a size backstop that at measured sizes would essentially never fire. This is
+recorded here as its **own open item** rather than folded into the undo policy above, because it is a
+different store with a different policy — it has not been decided. **The reclassified claim is the point:** "grows without bound" was true and still read as a
+problem, which is exactly the kind of statement this repository keeps having to un-believe.
+
+**What it does not change.** The approval still means what it meant — the write happens as approved.
+What changes is the cost of being wrong, which was the point of the item.
 
 ---
 

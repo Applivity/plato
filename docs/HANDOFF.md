@@ -33,6 +33,40 @@ are now only in PROGRESS.
   fail and the command exit 1. The trademark sweep and license decision remain the **publish gate**,
   not milestone work.
 
+- **Undo is Plato's own copies of what it replaced — decided, not yet built (D49ax, Tier C item 3).**
+  It was scoped as *"checkpoints / undo — large, and it changes what an approval means."* Both halves
+  were wrong in useful ways. **It is small:** the old bytes are already read at the write site for the
+  guard and the approval diff, so capture costs one disk write and no extra read. **And it does not
+  change what an approval means** — the write still happens as approved; what changes is what a
+  *mistake* costs. **No parallel history**: Plato stores the **old bytes and a fingerprint, never the
+  new bytes**, so the store is a record of what was replaced and can never become a second source of
+  truth about what a file currently is. A **fingerprint** (not the content) answers "has this file
+  changed since Plato wrote it", which is what lets an undo **refuse rather than clobber a file the
+  user has since edited** — Kilo Code's reported bug, closed by construction. **Two limits are stated
+  in the message, not hidden:** terminal commands are outside undo, because Plato has no record of
+  which files a command touches (Claude Code and Copilot share the hole and never mention it), and a
+  file the user has edited since is refused with the rest offered. **The editor's own local history
+  was measured in real VS Code and cannot be the mechanism** — see the next bullet. **The store is
+  bounded and sweeps itself**, which the founder asked for explicitly: 30 days, 200 MB per project,
+  the most recent 10 requests always kept, whole requests evicted oldest-first, and both **dead
+  projects** and **crash orphans** reclaimed at activation. Deletion is confined to the store and
+  verified to be. See D49ax.
+
+- **The editor's local history cannot undo Plato's work — measured, not assumed (2026-09-27).** A
+  throwaway extension in real VS Code 1.136.0 wrote one file directly to disk and another through
+  the editor API, and VS Code's own history store was then read off disk. **A direct disk write
+  records nothing at all** — and that is how Plato writes today, so Plato's edits are invisible to
+  the Timeline the user already has. Routed through the editor, entries appear, but **the store keeps
+  what the editor SAVED, never what it FOUND**: the earliest entry holds the file *after* Plato's
+  first save, so **the pre-Plato state is never in it** — and that is the state most often wanted
+  back. **Rapid saves merge** (the merge window defaults to 10 s, and Plato's edits are back to
+  back). There is **no extension API** for it, and the entry was not even on disk while the window
+  was open. The line-ending fear recorded before the test **did not reproduce** — a CRLF file kept
+  CRLF with `files.eol` forced to `\n`, because that setting governs new files, not existing ones.
+  But a worse hazard **is** real and was measured: with the file open and unsaved typing in it,
+  routing through the editor **writes the user's unsaved work to disk**. So Plato writes to disk as
+  before and keeps its own copies.
+
 - **A run is bounded by repetition, not by volume (D49aw, Tier C item 2).** The turn cap was deleted
   (D49ab) because it counted the wrong thing — it cut a *working* run at turn 40 after eleven
   approved writes — and nothing replaced it, so in `auto` nothing stopped a model that kept calling
@@ -882,8 +916,21 @@ above. **Do not pick them up as a session's work while Plato is still being buil
    convenient option has a trap: Anthropic's server-side search runs inside the API
    call, so **no approval card can fire for it**. Needs either a key in
    SecretStorage (Brave/Tavily) or an accepted exception to the egress rule.
-10. **Checkpoints / undo** — snapshot before a write. Large, and it changes what an
-    approval means.
+10. ~~**Checkpoints / undo.**~~ **DECIDED, NOT YET BUILT (D49ax, 2026-09-27).** Not
+    "checkpoints" — Plato keeps its **own copies of the files it replaced**, and
+    there is no parallel history. It turned out **small**: the old bytes are already
+    read at the write site for the guard and the approval diff, so capture is nearly
+    free. It does **not** change what an approval means; it changes what a *mistake*
+    costs. The editor's own local history was measured in real VS Code and **cannot**
+    be the mechanism — a direct disk write records nothing, the store keeps what the
+    editor *saved* rather than what it *found* (so the pre-Plato state is never
+    recoverable), rapid saves merge, and routing writes through the editor **commits
+    the user's unsaved work**. Two limits are named in the message rather than
+    hidden: terminal commands are outside undo, and a file the user has edited since
+    is refused rather than clobbered. **The store is bounded and sweeps itself**
+    (30 days / 200 MB per project / always keep the last 10 requests; dead projects
+    and crash orphans reclaimed at activation). Building it is the next piece of
+    work.
 11. ~~**Bound `auto` by repetition, not volume.**~~ **BUILT (D49aw, 2026-09-27) and verified
     end to end** — field cases 12 (Stop), 13 ("keep going" with guidance) and 14 (the
     no-progress trigger on its own). Two triggers (a repeated call with the same result;
@@ -1042,9 +1089,11 @@ the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phas
 Phase 6 opened by repairing a fault the phase did not anticipate: no tool enforced
 workspace containment (D49k), and a shell command could read a protected file by
 naming it plainly (D49ai).** **What remains is Phase 7, which is recorded-not-built
-by design** — subagents, checkpoints, LSP diagnostics, hooks, skills, notebooks —
-**each needs its own decision before it is built**, and the first of them amends the
-one-worker product lock (D45a-3). So the plan is at its end: the next work is a
+by design** — subagents, hooks, skills, notebooks — **each needs its own decision
+before it is built**, and the first of them amends the one-worker product lock
+(D45a-3). (Two items once listed here have since left it: **LSP diagnostics** was
+built — D49av — and **checkpoints/undo** is decided as **undo** — D49ax, and
+deliberately *not* "checkpoints".) So the plan is at its end: the next work is a
 chosen item, not the next phase. **`web_search` was deliberately deferred (D49p)**:
 it needs a backend decision, and the convenient option — Anthropic's server-side
 search — bypasses the approval card entirely. **D49q is closed as *not wanted***: `plato.net.allow`
