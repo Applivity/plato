@@ -926,7 +926,9 @@ and the **license decision (D19)** left M4 on 2026-09-25 (his call — "we are s
 dev"). They gate a *publish*, not a milestone, and they live under "The publish gate"
 above. **Do not pick them up as a session's work while Plato is still being built.**
 
-**Tier C — capability, in the order I would argue for. Each needs a decision.**
+**Tier C — capability, in the order I would argue for. Each needs a decision.
+ALL THREE ARE NOW BUILT AND VERIFIED (D49av, D49aw, D49az). Kept as the record of
+what it took.**
 
 8. ~~**LSP diagnostics after an edit.**~~ **BUILT AND VERIFIED END TO END (D49av,
    2026-09-27).** The host tells the model what the editor reports about the files it just
