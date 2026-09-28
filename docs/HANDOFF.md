@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-27)
+## Current state (verified 2026-09-28)
 
 - **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
   acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
@@ -488,12 +488,17 @@ are now only in PROGRESS.
 - Git identity: this machine is `ukhan <umair1808@gmail.com>`; commits in this
   repo use `git -c user.name='plato-dev' -c user.email='plato@local'`.
 
-## M4 closeout — what is actually left
+## M4 closeout — the stale blueprint clauses, and what closed them
 
-M4 is *not* done. Its definition of done is the acceptance test in BLUEPRINT §4,
-and **that test has not been run** — no run of it is recorded anywhere in the
-docs, and **it has gone stale: three of its five clauses no longer describe this
-product.**
+**This section is a DATED ANALYSIS (2026-09-25), not M4's current status — and its own opening
+paragraph had gone stale inside it, which is the defect this file keeps having to repair.** M4 is
+**DONE** (2026-09-27; re-verified 2026-09-28). What follows is why the blueprint's clauses had to
+change, kept because it is the record of that reasoning. **Read the "BOTH ARE DONE" passage
+immediately below for the outcome, and D49at for the detail.**
+
+As of 2026-09-25: M4 was *not* done. Its definition of done was the acceptance test in BLUEPRINT §4,
+and **that test had never been run** — no run of it was recorded anywhere in the docs — and **it had
+gone stale: three of its five clauses no longer described this product.**
 
 | BLUEPRINT §4 clause | Status |
 |---|---|
@@ -572,12 +577,12 @@ explicitly NOT work item 1 of anything.**
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **648** passing
-  vitest cases across **37** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **663** passing
+  vitest cases across **38** files in packages/core).
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Eighteen suites, **411 assertions**; see
+  unit tests + render suites. Eighteen suites, **425 assertions**; see
   `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
   since D49a a **failed assertion also fails the command**. That README also says
   how to **drive** a control (type into it, fire its real event, read back the
@@ -790,8 +795,8 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 648/648 vitest in packages/core (37 files)
-3. `pnpm run render` — the real-DOM render suites, **18 suites / 411 assertions**
+2. `pnpm -r test` — 663/663 vitest in packages/core (38 files)
+3. `pnpm run render` — the real-DOM render suites, **18 suites / 425 assertions**
    (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
    you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -970,7 +975,18 @@ allow/reject list (see the backlog).
 
 ## Queued next work (in priority order — pick up here)
 
-**First, what the 2026-09-23/24 repairs left open.** One of the three is now done
+**The head of the queue is Tier C item 3 — undo (D49ax, decided 2026-09-27, NOT built).** It is the
+last capability item on the ordered list, it needs no further decision, and its design is complete:
+Plato keeps its own copies of the bytes it replaced, old bytes and a fingerprint and **never** the
+new bytes, with the store bounded and self-sweeping. Read D49ax before starting. Nothing else below
+is blocked on it, and nothing below is urgent.
+
+**Built since this section was written, so it is no longer queued:** **run transcripts are compressed
+after 15 days and deleted only by the user (D49ay, 2026-09-28)** — the History page deletes one run
+or all of them, the sweep never deletes on a timer, and **an aged run still opens with its summary
+and its full detail intact** (measured in a real window, not inferred).
+
+**Then, what the 2026-09-23/24 repairs left open.** One of the three is now done
 and the other two were **measured and turned out not to be what the founder was
 seeing** — which is worth knowing before anyone spends a session on them.
 
