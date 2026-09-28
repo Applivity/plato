@@ -779,7 +779,7 @@ export const CASES = [
             card: false,
             before: { 'PLATO_UNDO_E.txt': 'version two\nthe user added this line\n' },
             text: { 'PLATO_UNDO_E.txt': 'version two\nthe user added this line\n' },
-            report: ['you changed it after Plato did'],
+            report: ['you edited it after Plato wrote it'],
           },
         ],
       },

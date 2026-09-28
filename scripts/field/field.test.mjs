@@ -466,7 +466,7 @@ describe('Plato field tests — real VS Code', function () {
             if (check.refuses) {
               if (!cardText.includes(check.refuses)) {
                 notes.push(`UNDO: the card did not name ${check.refuses} as not restorable`);
-              } else if (!/changed it after Plato did/.test(cardText)) {
+              } else if (!/you edited it after Plato wrote it/.test(cardText)) {
                 notes.push('UNDO: the card named the file but never said WHY it was refused');
               } else {
                 notes.push(`undo: the card refused ${check.refuses} and said why, before the click`);

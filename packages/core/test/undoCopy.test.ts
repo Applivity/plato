@@ -55,31 +55,31 @@ describe('formatBytes', () => {
 });
 
 describe('undoCard', () => {
-  it('lists what goes back, one file per line', () => {
-    const card = undoCard(
-      plan({ restore: [target('src/a.ts'), target('src/b.ts'), target('README.md')] }),
-    )!;
-    expect(card.title).toBe('Put back the 3 files from your last request?');
-    expect(card.restore).toEqual(['src/a.ts', 'src/b.ts', 'README.md']);
-    expect(card.refuse).toEqual([]);
-  });
-
-  it('says a created file is REMOVED, because that is what the click does', () => {
-    const card = undoCard(plan({ restore: [target('made.ts', 'delete')] }))!;
-    expect(card.title).toBe('Put back the file from your last request?');
-    expect(card.restore[0]).toContain('made.ts');
-    expect(card.restore[0]).toContain('removed');
-  });
-
-  it('shows the refusals on the same card, so the offer is never a surprise', () => {
+  it('separates what WILL happen from what will NOT', () => {
+    // The founder read one line of the first version — a single unlabelled list
+    // holding both kinds of row, under a button reading "Put these back" — and
+    // could not tell whether the refused file was included. Hence two lists.
     const card = undoCard(
       plan({
-        restore: [target('src/a.ts')],
+        restore: [target('src/a.ts'), target('src/b.ts')],
         refuse: [{ rel: 'Probe.ts', why: 'edited', size: 120 }],
       }),
     )!;
-    expect(card.refuse[0]).toContain('Probe.ts');
-    expect(card.refuse[0]).toContain('you changed it after Plato did');
+    expect(card.title).toBe('Undo your last request?');
+    expect(card.willChange).toHaveLength(2);
+    expect(card.willNotChange).toHaveLength(1);
+    // Every row names what happens TO THAT FILE, so no row needs the heading to
+    // be understood.
+    expect(card.willChange[0]).toContain('src/a.ts');
+    expect(card.willChange[0]).toContain('puts back the old copy');
+    expect(card.willNotChange[0]).toContain('Probe.ts');
+    expect(card.willNotChange[0]).toContain('you edited it after Plato wrote it');
+  });
+
+  it('says a created file is DELETED, because that is what the click does', () => {
+    const card = undoCard(plan({ restore: [target('made.ts', 'delete')] }))!;
+    expect(card.willChange[0]).toContain('made.ts');
+    expect(card.willChange[0]).toContain('deletes it');
   });
 
   it('names the size and the limit for a file that was too big to copy', () => {
@@ -89,17 +89,78 @@ describe('undoCard', () => {
         refuse: [{ rel: 'build/output.bin', why: 'too-big', size: 4404019 }],
       }),
     )!;
-    expect(card.refuse[0]).toContain('build/output.bin');
-    expect(card.refuse[0]).toContain('4.2 MB');
-    expect(card.refuse[0]).toContain('1 MB');
+    expect(card.willNotChange[0]).toContain('build/output.bin');
+    expect(card.willNotChange[0]).toContain('4.2 MB');
+    expect(card.willNotChange[0]).toContain('1 MB');
     // A refusal that leaves the user nowhere to go is the cryptic draft again.
-    expect(card.refuse[0]).toContain('git');
+    expect(card.willNotChange[0]).toContain('git');
   });
 
-  it('is null when there is nothing to put back', () => {
+  it('names an unreadable copy by its file, like every other row', () => {
+    const card = undoCard(
+      plan({
+        restore: [target('src/a.ts')],
+        refuse: [{ rel: 'src/b.ts', why: 'damaged', size: 10 }],
+      }),
+    )!;
+    expect(card.willNotChange[0]?.startsWith('src/b.ts')).toBe(true);
+  });
+
+  it('is null when there is nothing to change', () => {
     expect(
       undoCard(plan({ refuse: [{ rel: 'a.ts', why: 'edited', size: 1 }] })),
     ).toBeNull();
+  });
+});
+
+describe('the buttons say what the click does', () => {
+  it('names the verb and the count when the request is all restores', () => {
+    const card = undoCard(
+      plan({ restore: [target('a.ts'), target('b.ts')] }),
+    )!;
+    expect(card.confirm).toBe('Put back 2 files');
+  });
+
+  it('says DELETE when the click removes a file, not "put back"', () => {
+    const card = undoCard(plan({ restore: [target('made.ts', 'delete')] }))!;
+    expect(card.confirm).toBe('Delete 1 file');
+  });
+
+  it('names BOTH actions when the click does both', () => {
+    const card = undoCard(
+      plan({ restore: [target('a.ts'), target('b.ts'), target('made.ts', 'delete')] }),
+    )!;
+    expect(card.confirm).toBe('Put back 2, delete 1');
+  });
+
+  it('offers the narrower action ONLY when it differs, and NAMES the file', () => {
+    // "Just the last change" left the user to work out both the scope and the
+    // target. A label with the file in it cannot be misread.
+    const two = plan({ restore: [target('a.ts'), target('b.ts')] });
+    expect(undoCard(two, 'b.ts')!.onlyLast).toBe('Put back only b.ts');
+
+    // One file: the two actions are the same, so a second button is a choice the
+    // user has to read for nothing.
+    expect(undoCard(plan({ restore: [target('a.ts')] }), 'a.ts')!.onlyLast).toBeNull();
+
+    // The last write is a file with no copy, so undo will refuse it: a button
+    // naming it would do nothing at all.
+    const withRefusal = plan({
+      restore: [target('a.ts'), target('b.ts')],
+      refuse: [{ rel: 'c.ts', why: 'edited', size: 1 }],
+    });
+    expect(undoCard(withRefusal, 'c.ts')!.onlyLast).toBeNull();
+
+    // No target known: no button.
+    expect(undoCard(two, null)!.onlyLast).toBeNull();
+
+    // A created file is DELETED by the narrower action too, so its button says
+    // delete — naming the file without naming the effect is what the audit
+    // caught: "Only made.ts" could be read as "only this one" or as an exclusion.
+    const created = plan({
+      restore: [target('kept.ts'), target('made.ts', 'delete')],
+    });
+    expect(undoCard(created, 'made.ts')!.onlyLast).toBe('Delete only made.ts');
   });
 });
 
@@ -140,8 +201,8 @@ describe('undoResultText', () => {
     expect(text).toContain('Partly undone');
     expect(text).toContain('put back the 2 files it edited');
     // Both counts are present: what it did, and what it did not.
-    expect(text).toContain('could not undo 1 file');
-    expect(text).toContain('c.ts was not put back');
+    expect(text).toContain('and did not change 1 file:');
+    expect(text).toContain('c.ts');
   });
 
   it('never calls a REMOVED file "put back"', () => {
@@ -157,7 +218,7 @@ describe('undoResultText', () => {
     const text = undoResultText(p, r, []);
     expect(text).toContain('removed 1 file it created');
     expect(text).not.toContain('put back');
-    expect(text).toContain('could not undo 1 file');
+    expect(text).toContain('and did not change 1 file:');
     expect(text).toContain('kept.ts');
   });
 
@@ -189,7 +250,7 @@ describe('undoResultText', () => {
     });
     const r = result(); // nothing applied
     const text = undoResultText(p, r, []);
-    expect(text).toContain('Nothing was put back.');
+    expect(text).toContain('Undo did not change any file.');
     expect(text).toContain('b.ts');
     expect(text).not.toContain('Undone.');
   });

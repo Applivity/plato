@@ -3214,6 +3214,58 @@ suite exits 1.
 
 ---
 
+**D49ba — product copy is ASD-STE100, and a control states exactly what it does (founder,
+2026-09-28).**
+
+The founder read one line of the undo card and could not tell what the button would do:
+
+```
+Put back the file from your last request?
+  PLATO_UNDO_C.txt — Plato created this one, so it is removed
+  Not this one: PLATO_UNDO_D.txt — you changed it after Plato did. ...
+                                          [ Put these back ]   [ Cancel ]
+```
+
+*"What does put these back mean for us — put one file back, or put the edited file back too?"*
+Nothing in the card answered it. **Three faults, and they were all in the copy rather than in the
+behaviour:**
+
+- **The button did not say what it does.** "Put these back" left "these" to the reader, on a card
+  that listed **two different outcomes** — one file that would be deleted and one that would not be
+  touched.
+- **One list held both kinds of row with nothing to separate them.** A row saying what WILL happen
+  and a row saying what will NOT sat together under a shared heading that existed only in the
+  reader's head. The heading "Not this one" pointed at a file by position, not by name.
+- **Two sentences described the mechanism and left a word to be guessed at.** *"you changed it
+  after Plato did"* — after Plato **did what?** And *"Plato created this one, so it is removed"*
+  never says who removes it or that it is now gone from the tree.
+
+**The rule, for every string and every label from here on.**
+
+1. **A control states exactly what the click does.** Not a topic, not a reference — the action and
+   its object. `Delete 1 file`, not `Put these back`. Where the effect differs per item, the label
+   names both halves: `Put back 2, delete 1`.
+2. **What will happen and what will not are in separate, labelled groups.** A reader must never
+   have to work out which rows are which.
+3. **Every row names the file it is about.** No row depends on a heading or on a position in a list
+   to be understood.
+4. **ASD-STE100 Simplified Technical English.** Short sentences. Active voice with the actor named.
+   One idea per sentence. The same term for the same thing every time — *undo*, everywhere, never
+   alternating with *revert* or *roll back*. The approved vocabulary, not a synonym hunt.
+5. **Say the situation, not the mechanism.** *"you edited it after Plato wrote it. Undo would erase
+   your edits"* — not *"the fingerprint does not match"* and not *"you changed it after Plato did"*.
+
+**The same standard applies to existing copy, not only to new copy.** That is the founder's
+instruction — *"note down this for future and existing messaging and label"* — and it is why the
+undo status line was fixed in the same pass: it read *"waiting for you — put these files back?"*,
+which asked the reader **which** files at the moment the card was saying one of them would not be.
+
+**What this does not license.** Rewriting every string in the product in one sweep. Each change to
+copy is a change to what the user is told, and a batch nobody reviews is how a wrong sentence gets
+shipped. The audited list goes to the founder, who decides what changes and when.
+
+---
+
 **D49az — undo is BUILT: the copy is taken at the executor, and the plan is made again when the
 user clicks (Tier C item 3, built 2026-09-28).**
 

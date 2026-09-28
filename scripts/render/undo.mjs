@@ -36,19 +36,30 @@ const posted = (p) => p.evaluate(() => window.__posted);
 /** The card as the host sends it — these strings come from core via the host. */
 const OFFER = {
   type: 'undo',
-  title: 'Put back the 3 files from your last request?',
-  restore: ['src/a.ts', 'src/b.ts', 'Probe.ts'],
-  refuse: [],
+  title: 'Undo your last request?',
+  willChange: [
+    'src/a.ts — Plato changed this file. Undo puts back the old copy.',
+    'src/b.ts — Plato changed this file. Undo puts back the old copy.',
+    'PLATO_UNDO_C.txt — Plato made this file. Undo deletes it.',
+  ],
+  willNotChange: [],
+  confirm: 'Put back 2, delete 1',
+  onlyLast: 'Put back only src/b.ts',
 };
 
 const WITH_REFUSAL = {
   type: 'undo',
-  title: 'Put back the 3 files from your last request?',
-  restore: ['src/a.ts', 'src/b.ts'],
-  refuse: [
-    'Probe.ts — you changed it after Plato did. Putting the old copy back would wipe out your work, so Plato left it alone.',
-    "build/output.bin is 4.2 MB, above the 1 MB limit Plato keeps undo copies up to. Use git or your editor's own history for this one.",
+  title: 'Undo your last request?',
+  willChange: [
+    'src/a.ts — Plato changed this file. Undo puts back the old copy.',
+    'src/b.ts — Plato changed this file. Undo puts back the old copy.',
   ],
+  willNotChange: [
+    'Probe.ts — you edited it after Plato wrote it. Undo would erase your edits.',
+    "build/output.bin is 4.2 MB. Plato saves an undo copy only up to 1 MB. Use git or your editor's own history for this file.",
+  ],
+  confirm: 'Put back 2 files',
+  onlyLast: null,
 };
 
 // A. The offer names every file, and offers the two honest answers.
@@ -58,16 +69,18 @@ const WITH_REFUSAL = {
   await p.waitForTimeout(250);
   const t = await card(p);
   check('the undo card is drawn', t.length > 0, t);
-  check('it says how many files', /3 files/.test(t), t);
-  check('and it names each one', /src\/a\.ts/.test(t) && /Probe\.ts/.test(t), t);
+  check('it names each file', /src\/a\.ts/.test(t) && /PLATO_UNDO_C\.txt/.test(t), t);
+  check('and each row says what happens to THAT file', /deletes it/.test(t), t);
   const b = await buttons(p);
-  // Three files in this fixture, so the narrower undo is offered too — see I.
-  check('it offers every answer', b.join('|') === 'Put these back|Just the last change|Cancel', b);
-  // The list is its own element, so a long path wraps inside it rather than
-  // pushing the card sideways.
+  // The primary label states the ACTION, not "these" — the ambiguity the founder
+  // read. The narrower one NAMES its file, so scope and target are both on it.
+  check('the primary button states the action',
+    b[0] === 'Put back 2, delete 1', b);
+  check('the narrower button names its file', b[1] === 'Put back only src/b.ts', b);
+  check('and Cancel is last', b[2] === 'Cancel', b);
   const items = await p.evaluate(() => [...document.querySelectorAll('.card.undo-card .undo-list li')]
     .map((li) => li.textContent));
-  check('every file has its own row', items.join('|') === 'src/a.ts|src/b.ts|Probe.ts', items);
+  check('every file has its own row', items.length === 3, items);
   checkPageClean(p, 'undo card');
   await p.close();
 }
@@ -81,12 +94,18 @@ const WITH_REFUSAL = {
   await p.waitForTimeout(250);
   const t = await card(p);
   check('the refusal is on the card too', /Probe\.ts/.test(t), t);
-  check('it says why, in plain words', /you changed it after Plato did/.test(t), t);
+  check('it says why, in plain words', /you edited it after Plato wrote it/.test(t), t);
   check('and it names the size and the limit', /4\.2 MB/.test(t) && /1 MB/.test(t), t);
   check('and it says where else to go', /git/.test(t), t);
-  const lines = await p.evaluate(() => [...document.querySelectorAll('.card.undo-card .undo-cannot')]
+  // THE POINT OF THE REWRITE: the two outcomes are under separate headings, so
+  // "will this be put back?" is answered by the card's own labels.
+  const headings = await p.evaluate(() => [...document.querySelectorAll('.card.undo-card .undo-heading')]
+    .map((x) => x.textContent));
+  check('the two outcomes have headings of their own',
+    headings.join('|') === 'Plato will undo:|Plato will not undo:', headings);
+  const cannot = await p.evaluate(() => [...document.querySelectorAll('.card.undo-card .undo-cannot li')]
     .length);
-  check('each refusal is set apart from the offer', lines === 2, String(lines));
+  check('and the refused rows sit under the second one', cannot === 2, String(cannot));
   checkPageClean(p, 'undo card with refusals');
   await p.close();
 }
@@ -97,9 +116,11 @@ const WITH_REFUSAL = {
   const p = await page(900, S());
   await post(p, {
     type: 'undo',
-    title: 'Put back the file from your last request?',
-    restore: ['<img src=x onerror="window.__xss=1">.ts'],
-    refuse: [],
+    title: 'Undo your last request?',
+    willChange: ['<img src=x onerror="window.__xss=1">.ts — Plato made this file. Undo deletes it.'],
+    willNotChange: [],
+    confirm: 'Delete 1 file',
+    onlyLast: null,
   });
   await p.waitForTimeout(250);
   check('a file name is drawn as text, never as markup', await p.evaluate(
@@ -110,7 +131,7 @@ const WITH_REFUSAL = {
   await p.close();
 }
 
-// D. "Put these back" posts the apply, and the card stops taking answers. Both
+// D. The primary button posts the apply, and the card stops taking answers. Both
 //    halves matter: without the first nothing happens, and without the second a
 //    second click offers an undo that has already run.
 {
@@ -120,7 +141,7 @@ const WITH_REFUSAL = {
   await p.evaluate(() => window.__posted.length = 0);
   await p.evaluate(() => {
     [...document.querySelectorAll('.card.undo-card button')]
-      .find((b) => b.textContent === 'Put these back').click();
+      .find((b) => b.textContent === 'Put back 2, delete 1').click();
   });
   await p.waitForTimeout(200);
   const all = await posted(p);
@@ -178,7 +199,7 @@ const WITH_REFUSAL = {
   check('a reload rebuilds the offer', t.length > 0, t);
   check('and it still names the files', /src\/a\.ts/.test(t), t);
   check('and it is still answerable',
-    (await buttons(p)).join('|') === 'Put these back|Just the last change|Cancel', await buttons(p));
+    (await buttons(p)).join('|') === 'Put back 2, delete 1|Put back only src/b.ts|Cancel', await buttons(p));
   checkPageClean(p, 'reload');
   await p.close();
 }
@@ -216,10 +237,17 @@ const WITH_REFUSAL = {
 //    has to read for nothing.
 {
   const p = await page(900, S());
-  await post(p, { type: 'undo', title: 'Put back the file from your last request?', restore: ['only.ts'], refuse: [] });
+  await post(p, {
+    type: 'undo',
+    title: 'Undo your last request?',
+    willChange: ['only.ts — Plato changed this file. Undo puts back the old copy.'],
+    willNotChange: [],
+    confirm: 'Put back 1 file',
+    onlyLast: null, // the host sends null when the narrower action is the same one
+  });
   await p.waitForTimeout(220);
   const b = await buttons(p);
-  check('one file means no second button', b.join('|') === 'Put these back|Cancel', b);
+  check('one file means no second button', b.join('|') === 'Put back 1 file|Cancel', b);
   checkPageClean(p, 'single file');
   await p.close();
 }
@@ -228,12 +256,12 @@ const WITH_REFUSAL = {
   await post(p, OFFER);
   await p.waitForTimeout(220);
   const b = await buttons(p);
-  check('several files offer the narrower undo too',
-    b.join('|') === 'Put these back|Just the last change|Cancel', b);
+  check('and it names the file it would act on',
+    b.join('|') === 'Put back 2, delete 1|Put back only src/b.ts|Cancel', b);
   await p.evaluate(() => window.__posted.length = 0);
   await p.evaluate(() => {
     [...document.querySelectorAll('.card.undo-card button')]
-      .find((x) => x.textContent === 'Just the last change').click();
+      .find((x) => x.textContent === 'Put back only src/b.ts').click();
   });
   await p.waitForTimeout(200);
   const all = await posted(p);

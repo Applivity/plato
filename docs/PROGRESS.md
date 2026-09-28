@@ -130,6 +130,32 @@ One combined workstream, per founder decision 2026-08-25:
 
 ## Deferred / backlog (do not lose these)
 
+- **The existing-copy audit — the founder's call on what to change (D49ba, 2026-09-28).** The rule
+  is recorded (product copy is ASD-STE100; a control states exactly what it does; what will NOT
+  happen sits under its own heading), and the undo flow was rewritten to it. The rest of the product
+  has not been swept, deliberately: every change to copy changes what the user is told, and a batch
+  nobody reviews is how a wrong sentence ships. **The audit found 12 further strings with the same
+  class of fault, ranked by how badly they mislead.** The four worth doing first, all on surfaces a
+  user reads on the common path:
+  1. **`packages/vscode/src/webview.ts` — the approval card's heading reads `Approve write_file?` /
+     `Approve apply_diff?` / `Approve shell?`** — an internal tool token where the situation belongs.
+     *"Let Plato edit src/a.ts?"* / *"Let Plato run this command?"* names what the user is deciding.
+     **This is the most-read string in the product and the strongest candidate.**
+  2. **`guardText` in the same file** — *"guard stopped write_file — it named a protected file"*:
+     "guard" is internal and both pronouns have no antecedent. *"Plato did not run write_file. That
+     file is protected."*
+  3. **The session-approval notices** (`extension.ts`) — *"write_file auto-approved (session
+     approval)"* names an internal key as the subject and never says the user will stop being asked.
+     *"Plato will not ask again before editing a.ts this session."*
+  4. **The stuck card's "Keep going"** (`webview.ts`) — names no effect; it resumes the run AND
+     exempts the repeated call. *"Continue — do not ask about this call again."*
+  The remaining eight are smaller: `undo.ts`'s internal failure reasons rendered into the report,
+  the orchestration chip's `title`, raw tool names in the collapsed tool line and `setStatus`,
+  *"so it no longer remembers that part of the conversation"* (ambiguous "it"), the `/compact` blurb
+  (*"now, or at the next safe point"* — the reader must guess which), and *"Every Plato run is
+  transcribed to ~/.plato/runs/ automatically"*. **Do not change these without his answer** — items
+  1 and 4 in particular are product judgement, not proofreading. Each string above is quoted as it
+  stands in the file named beside it, so the list is checkable from the code alone.
 - **A per-project command allow/reject list — DEFERRED by the founder (2026-09-24).** The
   follow-up offered for the remaining prompt: `npm test`, `./gradlew`, `node` and every run script
   still ask in `edit` (a build file executes arbitrary code, so it cannot be granted from the

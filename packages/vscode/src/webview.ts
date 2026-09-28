@@ -232,8 +232,12 @@ export function chatHtml(): string {
                         overflow-wrap:anywhere; }
   /* What CANNOT be put back is in full foreground: it is the part the user has
      to act on, and muting it would hide the one thing this card must not hide. */
-  .card .undo-cannot { padding:6px 10px 0; font-size:12.5px; line-height:1.5;
-                       color:var(--vscode-editor-foreground); }
+  .card .undo-heading { padding:8px 10px 0; font-size:11px; font-weight:600;
+                        letter-spacing:.04em; text-transform:uppercase;
+                        color:var(--pl-muted); }
+  /* What will NOT be undone is in full foreground: it is the part the user has
+     to act on, and muting it would hide the one thing this card must not hide. */
+  .card .undo-cannot li { color:var(--vscode-editor-foreground); }
   .card .stuck-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
                       color:var(--pl-muted); }
   .card .stuck-line:first-of-type { padding-top:8px; }
@@ -4062,7 +4066,9 @@ export function chatHtml(): string {
         flushToolBuffer();
         showStuck(m);
         refreshChip();
-        setStatus('waiting for you — Plato is repeating itself');
+        // D49ba: the card's own title is the plain statement; the status line said
+        // what Plato was doing to itself.
+        setStatus('waiting for you — Plato is stuck');
         break;
       case 'stuck-done':
         dismissStuck();
@@ -4071,7 +4077,10 @@ export function chatHtml(): string {
       case 'undo':
         showUndo(m);
         refreshChip();
-        setStatus('waiting for you — put these files back?');
+        // The same fault as the button, in the status line: "put these files
+        // back?" asked the reader which files, at the moment the card says one
+        // of them will NOT be. The title is the unambiguous version.
+        setStatus('waiting for you — undo your last request?');
         break;
       case 'undo-done':
         dismissUndo();
@@ -4724,24 +4733,32 @@ export function chatHtml(): string {
     card.className = 'card undo-card';
 
     const h = document.createElement('h3');
-    h.textContent = String(m.title || 'Put back the files Plato changed?');
+    h.textContent = String(m.title || 'Undo your last request?');
     card.appendChild(h);
 
-    const list = document.createElement('ul');
-    list.className = 'undo-list';
-    for (const line of m.restore || []) {
-      const li = document.createElement('li');
-      li.textContent = line;
-      list.appendChild(li);
-    }
-    card.appendChild(list);
-
-    for (const line of m.refuse || []) {
-      const d = document.createElement('div');
-      d.className = 'undo-cannot';
-      d.textContent = 'Not this one: ' + line;
-      card.appendChild(d);
-    }
+    // Two LABELLED lists. The first version drew one list in which some rows said
+    // what would happen and some said what would not, with nothing to tell them
+    // apart — and the founder read it and could not tell whether the refused file
+    // was included. A heading per outcome removes the question.
+    const group = (heading, rows, cls) => {
+      if (!rows || rows.length === 0) return;
+      const label = document.createElement('div');
+      label.className = 'undo-heading';
+      label.textContent = heading;
+      card.appendChild(label);
+      const list = document.createElement('ul');
+      list.className = cls;
+      for (const line of rows) {
+        const li = document.createElement('li');
+        // Every string is a text node: a file name is the user's own data, and a
+        // repo can hold a file whose NAME is markup.
+        li.textContent = line;
+        list.appendChild(li);
+      }
+      card.appendChild(list);
+    };
+    group('Plato will undo:', m.willChange, 'undo-list');
+    group('Plato will not undo:', m.willNotChange, 'undo-list undo-cannot');
 
     const actions = document.createElement('div');
     actions.className = 'actions';
@@ -4762,13 +4779,15 @@ export function chatHtml(): string {
       });
       answerButtons.push(b);
     };
-    answer('Put these back', {}, 'putting the files back…', true);
-    // D49ax's second level, and it appears only when it would do something
-    // different: with one file in the request, "the last change" and "this
-    // request" are the same action, and a second button that does the same thing
-    // is a choice the user has to read for nothing.
-    if ((m.restore || []).length > 1) {
-      answer('Just the last change', { scope: 'last' }, 'putting the last change back…', false);
+    // The label comes from core and states the action: "Put back 2 files",
+    // "Delete 1 file", "Put back 2, delete 1". A bare "Put these back" left the
+    // reader to decide which of the listed files "these" meant.
+    answer(String(m.confirm || 'Undo'), {}, 'undoing the last request…', true);
+    // D49ax's second level, which the host offers only when it would act on a
+    // DIFFERENT set — and it names the file, so the scope and the target are both
+    // on the button.
+    if (typeof m.onlyLast === 'string' && m.onlyLast.length > 0) {
+      answer(m.onlyLast, { scope: 'last' }, 'undoing the last file change…', false);
     }
     const cancel = document.createElement('button');
     cancel.className = 'no';

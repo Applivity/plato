@@ -407,13 +407,51 @@ export class Field {
    * same conversation.
    */
   async answerUndo(which) {
-    const label = which === 'cancel' ? 'Cancel' : 'Put these back';
-    const xpath =
-      `//div[contains(@class,'undo-card')]//button[normalize-space(text())='${label}']`;
-    const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
-    await this.clickElement(btn);
+    // The PRIMARY button is found by POSITION, not by its words. Its label is
+    // built by core and says what the click does — "Put back 2 files", "Delete
+    // 1 file", "Put back 2, delete 1" — so matching a string here would pin the
+    // harness to one wording and, worse, fail as "the button is missing" the
+    // moment the copy improves. That is exactly what happened when the wording
+    // was fixed: the case failed on a button that was on screen the whole time.
+    //
+    // Cancel and the narrower action ARE found by their words, because those two
+    // are fixed: "Cancel", and "Only <file>".
+    const btns = await this.driver.wait(
+      async () => {
+        const found = await this.driver.findElements(By.css('.card.undo-card button'));
+        return found.length > 0 ? found : false;
+      },
+      15000,
+    );
+    let target;
+    if (which === 'cancel') target = await this.buttonByText(btns, 'Cancel');
+    else if (which === 'only') target = await this.buttonStartingWith(btns, 'Only ');
+    else target = btns[0];
+    if (target === undefined) {
+      throw new Error(
+        `no undo button matched "${which}" — the card reads: ${await this.undoText()}`,
+      );
+    }
+    // Read the label BEFORE the click: answering removes the button from the
+    // card and the log line, so reading it afterwards is a stale reference.
+    const label = (await target.getText()).trim();
+    await this.clickElement(target);
     this.log(`  answered the undo card: ${label}`);
     await this.driver.sleep(SETTLE_MS);
+  }
+
+  async buttonByText(btns, text) {
+    for (const b of btns) {
+      if ((await b.getText()).trim() === text) return b;
+    }
+    return undefined;
+  }
+
+  async buttonStartingWith(btns, prefix) {
+    for (const b of btns) {
+      if ((await b.getText()).trim().startsWith(prefix)) return b;
+    }
+    return undefined;
   }
 
   /**

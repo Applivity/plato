@@ -32,7 +32,7 @@ export function formatBytes(n: number): string {
 const files = (n: number): string => (n === 1 ? '1 file' : `${n} files`);
 
 /**
- * The same count, definite. Files Plato edited are a known set, so they take
+ * The same count, definite. Files Plato changed are a known set, so they take
  * "the" — *"put back the 3 files it edited"*, which is the wording D49ax settled
  * on. A created file takes no article for the same reason D49ax's copy gives
  * none: *"removed 1 file it created"* reads as a fact, not as a set the user is
@@ -40,60 +40,117 @@ const files = (n: number): string => (n === 1 ? '1 file' : `${n} files`);
  */
 const theFiles = (n: number): string => (n === 1 ? 'the file' : `the ${n} files`);
 
-/** The card's own content. Sent over the wire verbatim, so a reload matches. */
+/**
+ * The card's own content. Sent over the wire verbatim, so a reload matches.
+ *
+ * **Two lists, not one, and the split is the point.** The first version drew one
+ * list of rows in which some said what WOULD happen and some said what would NOT,
+ * with no labels to tell them apart, and its button said "Put these back" —
+ * which of "these" it meant was left to the reader. The founder read one line of
+ * it and could not tell whether the refused file was included. So: a heading per
+ * outcome, every row naming what happens to that file, and a button that states
+ * the action the click performs.
+ */
 export interface UndoCard {
   title: string;
-  /** What will be put back, one line each, in the order it will happen. */
-  restore: string[];
-  /** What cannot be, and why — already in plain words. */
-  refuse: string[];
+  /** Files the click WILL change, one row each, each row naming its outcome. */
+  willChange: string[];
+  /** Files the click will NOT change, one row each, with the reason. */
+  willNotChange: string[];
+  /** The primary button: exactly what the click does. */
+  confirm: string;
+  /**
+   * The narrower action's label — it names the ONE file, so it cannot be read as
+   * the whole request. Null when it would do the same thing as `confirm`.
+   */
+  onlyLast: string | null;
 }
 
 /**
- * The card, or null when there is nothing to put back.
+ * The card, or null when there is nothing to change.
  *
- * A file Plato created is undone by REMOVING it, and the line says so — the user
- * is about to lose a file from their tree, and "put back" would be a lie about
- * what the click does.
+ * A file Plato created is undone by REMOVING it, and the row says so: the user is
+ * about to lose a file from their tree, and "put back" would be a false
+ * description of what the click does.
+ *
+ * `lastRestorable` is the file the narrower action would act on, when that differs
+ * from the whole request. Passing it in lets the second button NAME the file
+ * rather than say "just the last change", which left the user to work out both
+ * the scope and the target.
  */
-export function undoCard(plan: UndoPlan): UndoCard | null {
+export function undoCard(
+  plan: UndoPlan,
+  lastRestorable: string | null = null,
+): UndoCard | null {
   const restores = plan.restore.filter((t) => t.action === 'restore');
   const deletes = plan.restore.filter((t) => t.action === 'delete');
   if (plan.restore.length === 0) return null;
 
-  const title =
-    plan.restore.length === 1
-      ? 'Put back the file from your last request?'
-      : `Put back the ${files(plan.restore.length)} from your last request?`;
-
-  const lines: string[] = restores.map((t) => t.rel);
+  const rows: string[] = restores.map(
+    (t) => `${t.rel} — Plato changed this file. Undo puts back the old copy.`,
+  );
   for (const t of deletes) {
-    lines.push(`${t.rel} — Plato created this one, so it is removed`);
+    rows.push(`${t.rel} — Plato made this file. Undo deletes it.`);
   }
+
+  // Whether the narrower action is worth offering: it must act on a DIFFERENT set
+  // from the whole request, and that file must still be restorable. A file with no
+  // copy is refused, so a button naming it would do nothing.
+  const only = plan.restore.find((t) => t.rel === lastRestorable);
+  const onlyLast =
+    plan.restore.length > 1 && only !== undefined
+      ? `${only.action === 'delete' ? 'Delete' : 'Put back'} only ${only.rel}`
+      : null;
+
   return {
-    title,
-    restore: lines,
-    refuse: plan.refuse.map((r) => refuseLine(r.rel, r.why, r.size)),
+    title: 'Undo your last request?',
+    willChange: rows,
+    willNotChange: plan.refuse.map((r) => refuseLine(r.rel, r.why, r.size)),
+    confirm: undoButtonLabel(plan),
+    onlyLast,
   };
 }
 
+/**
+ * The primary button's label: what the click DOES, in the fewest clear words.
+ *
+ * A bare "Undo" would be accurate and unhelpful — the user is deciding whether to
+ * lose a file from their tree, and that decision needs the verb. Each branch
+ * names the action, and the mixed case names both so neither half is hidden.
+ */
+export function undoButtonLabel(plan: UndoPlan): string {
+  const restores = plan.restore.filter((t) => t.action === 'restore').length;
+  const deletes = plan.restore.filter((t) => t.action === 'delete').length;
+  if (deletes === 0) return `Put back ${files(restores)}`;
+  if (restores === 0) return `Delete ${files(deletes)}`;
+  return `Put back ${restores}, delete ${deletes}`;
+}
+
+/**
+ * Why one file will not be changed.
+ *
+ * Short sentences, active voice, one idea each, and the same words for the same
+ * thing every time — the founder's instruction (2026-09-28) is ASD-STE100 for
+ * product copy, and the sentence this replaced failed it twice: *"you changed it
+ * after Plato did"* left "did" to be guessed at, and *"Plato's copy of it cannot
+ * be read back"* described the mechanism instead of the situation.
+ */
 function refuseLine(rel: string, why: 'edited' | 'too-big' | 'damaged', size: number): string {
   switch (why) {
     case 'edited':
       return (
-        `${rel} — you changed it after Plato did. Putting the old copy back ` +
-        `would wipe out your work, so Plato left it alone.`
+        `${rel} — you edited it after Plato wrote it. Undo would erase your edits.`
       );
     case 'too-big':
       return (
-        `${rel} is ${formatBytes(size)}, above the ${formatBytes(UNDO_MAX_FILE_BYTES)} ` +
-        `limit Plato keeps undo copies up to. Use git or your editor's own ` +
-        `history for this one.`
+        `${rel} is ${formatBytes(size)}. Plato saves an undo copy only up to ` +
+        `${formatBytes(UNDO_MAX_FILE_BYTES)}. Use git or your editor's own ` +
+        `history for this file.`
       );
     default:
       return (
-        `${rel} — Plato's copy of it cannot be read back, so it cannot be put ` +
-        `back safely. Use git or your editor's own history for this one.`
+        `${rel} — Plato cannot read the saved copy. Use git or your editor's ` +
+        `own history for this file.`
       );
   }
 }
@@ -128,8 +185,8 @@ export function undoResultText(
   if (done === 0) {
     parts.push(
       blocked === 0 && plan.alreadyThere.length > 0
-        ? 'Those files are already back to how they were.'
-        : 'Nothing was put back.',
+        ? 'The files are already back to how they were.'
+        : 'Undo did not change any file.',
     );
   } else if (blocked === 0) {
     parts.push(`Undone. ${describePut(restored, deleted)}`);
@@ -141,8 +198,8 @@ export function undoResultText(
     // a complete success under a headline saying "partly". The two counts answer
     // different questions and both belong: what Plato did, and what it did not.
     parts.push(
-      `Partly undone. Plato ${describeActions(restored, deleted)}, and could not ` +
-        `undo ${files(blocked)} — ${blocked === 1 ? 'the reason follows' : 'the reasons follow'}.`,
+      `Partly undone. Plato ${describeActions(restored, deleted)}, and did not ` +
+        `change ${files(blocked)}:`,
     );
   }
 
@@ -150,7 +207,7 @@ export function undoResultText(
     parts.push(refuseLine(r.rel, r.why, r.size));
   }
   for (const f of result.failed) {
-    parts.push(`${f.rel} was not put back — ${f.why}.`);
+    parts.push(`${f.rel} — ${f.why}. Undo did not change this file.`);
   }
 
   const commandsLine = describeCommands(commands);

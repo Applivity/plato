@@ -1529,7 +1529,12 @@ class ChatHost {
       this.send('notice', undoNothingText());
       return;
     }
-    const card = undoCard(plan);
+    // D49az: the narrower action's target, so its button can NAME the file.
+    // "Just the last change" made the user work out both the scope and which file
+    // it meant; a label with the path in it cannot be misread.
+    const last = planUndo(dir, root, 'last');
+    const lastRel = last !== null && last.restore.length === 1 ? last.restore[0]!.rel : null;
+    const card = undoCard(plan, lastRel);
     if (card === null) {
       // Everything was refused. Say so now rather than drawing a card whose only
       // button would fail.
