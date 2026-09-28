@@ -3299,11 +3299,31 @@ page listed both, and clicking a run's delete **armed without deleting on the fi
 removed only that file on the second**; and delete-all armed, said *"Delete all 2?"*, and removed
 the rest. That probe is deleted; its method is recorded in `scripts/field/README.md`.
 
-**The acceptance suite was NOT run, and the reason matters.** `run-field.mjs` resets the two demo
-files it owns (`DateHelper.java`, `SubmissionsViewModel.java`) on a `plato-field-test` branch, and
-**`SubmissionsViewModel.java` currently carries uncommitted founder work on that branch.** Running
-it would have destroyed that work silently. It was not run, and nothing here depends on it: the
-change touches the history page and the runs directory, neither of which any field case exercises.
+**Aged runs still open — measured, because the JOIN was the untested part.** The retention tests
+prove the reader gunzips and the render suite proves the detail view draws events, but neither proves
+the two are connected, and that connection is the whole of the user's question: does a 15-day-old
+conversation still load? A second throwaway probe seeded an aged transcript **with real events**, let
+the sweep compress it, and then drove the History page with the mouse.
+
+- The list showed the run **with its title, its turn count, its token total and its cost** — every
+  one of which can only come from the gunzipped bytes, so the summary is being read out of the
+  compressed file rather than out of the name.
+- Clicking it opened the detail view showing **the task line, the reply text, the tool row and the
+  closing line** — the transcript's actual content, again available only after decompression.
+
+So to the user an aged, compressed run is indistinguishable from a fresh one. **The first version of
+that probe asserted the list would say "complete" and failed** — the list renders a reason only when
+it is `failed`, which is its long-standing shape and nothing to do with compression. The assertion
+was mine and was wrong; the code was right, and it is recorded here because a probe's own bug reads
+exactly like a product bug.
+
+**The acceptance suite was then run, and it still passes with this change in the build.** It had been
+held back because `run-field.mjs` resets `DateHelper.java` and `SubmissionsViewModel.java` on a
+`plato-field-test` branch and the latter carried uncommitted founder work. The founder waived that
+(*"we don't care about changes in demo repo"*), so it ran: **all seventeen cases pass and 7 of 7
+clauses pass**, identical to the result before this work — which is what shows the retention change
+disturbs nothing else. No field case exercises the history page, so the two probes above remain its
+only end-to-end witness, and they are why this feature is not shipped on unit tests alone.
 
 ---
 
