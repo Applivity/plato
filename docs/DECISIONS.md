@@ -3214,6 +3214,99 @@ suite exits 1.
 
 ---
 
+**D49ay — old transcripts are compressed, never deleted; the user deletes, and only the user
+(2026-09-28).**
+
+D49ax recorded that the run records under `~/.plato/runs/` grow without bound and called it *"the
+same class of leak, already shipping"*. **That was wrong, and the measurement is what corrected
+it** — see D49ax's own paragraph, rewritten in place. The founder's instruction followed: *compress
+conversations older than 15 days, and let the user delete all history items or individual ones.*
+
+**Why this store gets compression and the undo store gets a window.** They hold different KINDS of
+data, and one policy for both would be wrong.
+
+- An **undo copy is DERIVED**. It duplicates a file that still exists; the repository holds the
+  truth. Dropping one costs convenience and nothing else, so a short window is right.
+- A **transcript is PRIMARY**. Nothing else holds it. Dropping one destroys the only record of what
+  a run did. There is no second copy to fall back on, so deleting on a timer would be a quiet loss
+  with no recovery — and a 30-day rule borrowed from the undo store would have done exactly that.
+
+**The growth rate was measured before anything was decided.** 285 runs occupy 1.4 MB: a mean of
+**5 KB per run**, largest 116 KB, after weeks of work that include every harness run. At that mean,
+**50 runs a day for a year is 89 MB raw and 6.4 MB gzipped** — the compression ratio measured on a
+real transcript is **9.2x**, and 7.8x over the whole store. So compression is not a compromise; it
+removes the problem, and it costs nothing that has any value.
+
+**Two rules the code exists to enforce**, both in `packages/core/src/runtime/retention.ts`:
+
+1. **Verify before removing the only copy.** The gzip is written, read back, decompressed and
+   compared **byte-for-byte**; the original is unlinked only after that comparison passes. A
+   mismatch deletes the bad copy and leaves the original where it was. There is no path in the
+   module that removes a transcript without a proven readable replacement.
+2. **Never throw.** The sweep runs when the panel opens and when a run ends. A sweep that could
+   fail a run, or stop the panel from opening, would be a worse bug than the disk usage it prevents.
+   A file that cannot be compressed is left exactly as it was and reported, not retried forever.
+
+**The third rule is about the delete paths, and it is the dangerous one.** `retention.ts` never
+deletes on a schedule; the only deletions are the user pressing a button. So the name arrives from
+the webview, and `isRunFileName` accepts only the shapes the writer produces — a `/`, a `\` or any
+`..` is refused, and the `..` check is separate from the character class because `..jsonl` satisfies
+it. Every unlink is `join(runsDir, name)` on a name that passed that gate, so it can only ever point
+inside the runs directory. The sweep's own deletion is confined the same way: it deletes only the
+file it just proved it had copied.
+
+**What compression does not do.** It does not touch a run inside the window, it never re-compresses
+a `.gz` (so no `.jsonl.gz.gz`), and it is idempotent. Age comes from the leading date in the file
+name — which the writer builds from `toISOString()`, so it is UTC — with mtime as a fallback for a
+name the writer did not produce. Day granularity is all a 15-day rule needs.
+
+**The UI, and the two rules it keeps.** The Controls live on the History page's Runs section: one
+delete per run, and one for all of them. Both reuse the two-step idiom D47j established for deleting
+a provider — the first click arms and fills red, the second performs, and it disarms on blur or
+after six seconds — because a native confirm dialog blocks the whole webview. `armDanger` is that
+idiom extracted into one function, so the two destructive controls cannot drift apart.
+
+- **No control is drawn when there is nothing to delete.** A request that recorded no runs shows no
+  delete-all button; an empty list shows no per-row deletes. A control that cannot do anything is
+  noise, and the founder's standing condition on every new affordance is that it must not become an
+  annoyance.
+- **A delete never doubles as "open".** The run card opens the run on click, so the delete button
+  stops propagation. Without it, deleting a run would also open it — verified by removing the line
+  and watching three assertions fail.
+
+**Deliberately NOT built: a size backstop.** D49ay's own analysis proposed a hard cap (200 MB per
+project) that would evict the oldest runs. It is not here, for two reasons. At the measured sizes it
+would essentially never fire, so it would be complexity that no evidence supports; and a cap is a
+form of automatic deletion, which is exactly what this decision refuses for primary data. If real
+use ever shows the store growing to where it matters, compression has already bought the room to
+decide it then, with numbers.
+
+**Verified, and one thing not verified.** `pnpm -r test` **663/663** (38 files, was 648/37) with 15
+new tests; `pnpm run render` **18 suites / 425 assertions** (was 411) all pass; `tsc -b --force`
+clean. **Six falsifications, each reverted:** the age window 15→1 fails 3 tests; the `..` guard
+removed fails the traversal test; allowing a `.gz` as a sweep source fails 3 (including the
+idempotence test); removing the webview's `stopPropagation` fails 3 render assertions; drawing
+delete-all with no runs fails 1; and the earlier wrong test fixture — a run dated 8 days back
+expected to compress — was **my error, not the code's**, and is recorded because the boundary test
+is what caught it.
+
+**And the wiring was proved in a real window, not just in tests.** A throwaway probe (same method as
+D49av's) installed the freshly packaged VSIX into the harness's VS Code, opened the panel against a
+**scratch workspace** — never the demo repo — seeded one aged transcript and one fresh one, and then
+drove the real History page with the mouse. All three assertions passed: the aged transcript was
+compressed at panel open and round-tripped byte-for-byte while the fresh one was left alone; the
+page listed both, and clicking a run's delete **armed without deleting on the first click and
+removed only that file on the second**; and delete-all armed, said *"Delete all 2?"*, and removed
+the rest. That probe is deleted; its method is recorded in `scripts/field/README.md`.
+
+**The acceptance suite was NOT run, and the reason matters.** `run-field.mjs` resets the two demo
+files it owns (`DateHelper.java`, `SubmissionsViewModel.java`) on a `plato-field-test` branch, and
+**`SubmissionsViewModel.java` currently carries uncommitted founder work on that branch.** Running
+it would have destroyed that work silently. It was not run, and nothing here depends on it: the
+change touches the history page and the runs directory, neither of which any field case exercises.
+
+---
+
 **D49ax — undo is Plato's own copies of what it replaced, not a parallel history; the store is
 bounded and cleans up after itself (Tier C item 3 — 2026-09-27).**
 
@@ -3382,9 +3475,10 @@ stores are also not the same problem, and must not share a rule:** the undo stor
 a copy of something that still exists — so deleting it costs convenience and nothing else, while the
 run records are *primary* data that nothing else holds, so deleting them destroys the only record of
 what happened. **Hence compression, not deletion:** keep them, gzip anything older than a few days on
-the cold path, and carry a size backstop that at measured sizes would essentially never fire. This is
-recorded here as its **own open item** rather than folded into the undo policy above, because it is a
-different store with a different policy — it has not been decided. **The reclassified claim is the point:** "grows without bound" was true and still read as a
+the cold path, and carry a size backstop that at measured sizes would essentially never fire. This is not folded into the
+undo policy above, because it is a different store with a different policy. **It was decided and
+built the next day as D49ay** — compressed after 15 days, never deleted on a timer, and the user
+deletes any run or all of them. **The reclassified claim is the point:** "grows without bound" was true and still read as a
 problem, which is exactly the kind of statement this repository keeps having to un-believe.
 
 **What it does not change.** The approval still means what it meant — the write happens as approved.

@@ -63,6 +63,11 @@ import {
   ROLE_MAX_CHARS,
   colorHex,
   describeError,
+  // D49ay: transcripts are compressed when old and deleted only on request.
+  isRunFileName,
+  runFilesIn,
+  readRunText,
+  sweepRuns,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
@@ -75,7 +80,7 @@ import {
 } from './diagnostics.js';
 import { chatHtml } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
-import { readdirSync, readFileSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
@@ -304,6 +309,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
       live = panel;
       panel.webview.html = chatHtml();
       host = new ChatHost(panel, ctx);
+      // D49ay: housekeeping, once per window. Compresses any transcript that has
+      // aged out; never deletes one.
+      host.sweepTranscripts();
     }),
   );
 
@@ -639,45 +647,21 @@ class ChatHost {
           return;
         }
         if (m.type === 'openHistory') {
-          const chats: {
-            id: string;
-            title: string;
-            ts: string;
-            count: number;
-            current?: boolean;
-          }[] = this.sessions().map((s) => ({
-            id: s.id,
-            title: s.title,
-            ts: s.ts,
-            count: s.log.filter((e) => e.k === 'msg').length,
-          }));
-          // D42: the live conversation is the first History entry so the
-          // page is never empty while a chat is open.
-          const curMsgs = this.log.filter((e) => e.k === 'msg').length;
-          if (curMsgs > 0) {
-            const first = this.log.find(
-              (e) => e.k === 'msg' && e.cls === 'you',
-            );
-            chats.unshift({
-              id: '__current__',
-              title:
-                this.chatTitle ||
-                ((first && first.k === 'msg' ? first.text : '') || 'Chat')
-                  .slice(0, 80),
-              ts: new Date().toISOString(),
-              count: curMsgs,
-              current: true,
-            });
-          }
-          void this.panel.webview.postMessage({
-            type: 'history',
-            runs: this.listRuns(),
-            chats,
-          });
+          this.sendHistory();
           return;
         }
         if (m.type === 'openRun' && typeof m.file === 'string') {
           this.openRun(m.file);
+          return;
+        }
+        // D49ay: the only two ways a transcript is ever removed, and both are
+        // the user asking. The sweep compresses and never deletes.
+        if (m.type === 'deleteRun' && typeof m.file === 'string') {
+          this.deleteRun(m.file);
+          return;
+        }
+        if (m.type === 'deleteAllRuns') {
+          this.deleteAllRuns();
           return;
         }
         if (m.type === 'resumeChat' && typeof m.id === 'string') {
@@ -2161,21 +2145,117 @@ class ChatHost {
     return root ? join(this.homePlatoDir(), 'runs', this.projectKey(root)) : null;
   }
 
+  /**
+   * D49ay: compress transcripts that have aged out, at the two moments that cost
+   * the user nothing — when the panel opens, and when a run ends.
+   *
+   * The work is off the hot path by construction: nothing here runs while a
+   * model is being waited on. It never throws. `sweepRuns` is written not to,
+   * and this is the belt for the braces, because housekeeping that can stop a
+   * panel from opening is a worse bug than the disk usage it prevents.
+   */
+  sweepTranscripts(): void {
+    const dir = this.runsDir();
+    if (!dir) return;
+    try {
+      sweepRuns(dir);
+    } catch {
+      // Nothing to do and nothing to say: the files are exactly as they were.
+    }
+  }
+
+  /**
+   * D49ay: delete one transcript, or all of them.
+   *
+   * These are the ONLY two paths in Plato that remove a transcript, and both are
+   * the user asking. The automatic sweep compresses instead, because a
+   * transcript is the only record of what a run did — see `retention.ts`.
+   *
+   * `file` arrives from the webview, so it is validated by the same rule that
+   * governs reading one. No separator and no `..` survives `isRunFileName`, so
+   * the unlink can only ever name a file inside the runs directory.
+   */
+  private deleteRun(file: string): void {
+    const dir = this.runsDir();
+    if (!dir || !isRunFileName(file)) {
+      this.send('error', 'Bad run file.');
+      return;
+    }
+    try {
+      rmSync(join(dir, file), { force: true });
+    } catch (e) {
+      this.send(
+        'error',
+        'Could not delete run: ' + (e instanceof Error ? e.message : 'error'),
+      );
+    }
+    this.sendHistory();
+  }
+
+  private deleteAllRuns(): void {
+    const dir = this.runsDir();
+    if (!dir) return;
+    // `runFilesIn` returns only names that passed the same validation, so every
+    // path here is inside `dir`. A file that will not delete does not stop the
+    // rest — the user asked for all of them gone.
+    for (const f of runFilesIn(dir)) {
+      try {
+        rmSync(join(dir, f), { force: true });
+      } catch {
+        // Leave it and carry on; the list that follows shows what remains.
+      }
+    }
+    this.sendHistory();
+  }
+
+  /** The History page's payload. Sent on open, and re-sent after a deletion. */
+  private sendHistory(): void {
+    const chats: {
+      id: string;
+      title: string;
+      ts: string;
+      count: number;
+      current?: boolean;
+    }[] = this.sessions().map((s) => ({
+      id: s.id,
+      title: s.title,
+      ts: s.ts,
+      count: s.log.filter((e) => e.k === 'msg').length,
+    }));
+    // D42: the live conversation is the first History entry so the
+    // page is never empty while a chat is open.
+    const curMsgs = this.log.filter((e) => e.k === 'msg').length;
+    if (curMsgs > 0) {
+      const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
+      chats.unshift({
+        id: '__current__',
+        title:
+          this.chatTitle ||
+          ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
+        ts: new Date().toISOString(),
+        count: curMsgs,
+        current: true,
+      });
+    }
+    void this.panel.webview.postMessage({
+      type: 'history',
+      runs: this.listRuns(),
+      chats,
+    });
+  }
+
   private listRuns(): Record<string, unknown>[] {
     const dir = this.runsDir();
     if (!dir) {
       return [];
     }
-    let files: string[] = [];
-    try {
-      files = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort().reverse();
-    } catch {
-      return [];
-    }
+    // D49ay: `runFilesIn` returns plain and compressed runs in one newest-first
+    // list, so a compressed transcript is still a transcript to the user.
+    const files = runFilesIn(dir);
     const runs: Record<string, unknown>[] = [];
     for (const f of files) {
       try {
-        const lines = readFileSync(join(dir, f), 'utf8')
+        const lines = readRunText(dir, f)
           .split('\n')
           .filter((l) => l.trim().length > 0);
         const header = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;
@@ -2206,7 +2286,7 @@ class ChatHost {
   }
 
   private openRun(file: string): void {
-    if (!/^[A-Za-z0-9._-]+\.jsonl$/.test(file) || file.includes('..')) {
+    if (!isRunFileName(file)) {
       this.send('error', 'Bad run file.');
       return;
     }
@@ -2215,7 +2295,7 @@ class ChatHost {
       return;
     }
     try {
-      const lines = readFileSync(join(dir, file), 'utf8')
+      const lines = readRunText(dir, file)
         .split('\n')
         .filter((l) => l.trim().length > 0);
       const events = lines
@@ -3215,6 +3295,9 @@ class ChatHost {
       }
       const unfinished = unfinishedPlanNote(lastPlan);
       if (unfinished !== '') endNotes.push(unfinished);
+      // D49ay: the run is over and nobody is waiting, so this is the other free
+      // moment to age out transcripts.
+      this.sweepTranscripts();
       this.send('done', {
         note: endNotes.join(' · '),
         secs: Math.max(1, Math.round((Date.now() - started) / 1000)),

@@ -307,10 +307,20 @@ export function chatHtml(): string {
                                    height:100vh; }
   #hibody { flex:1; overflow-y:auto; padding:12px 14px; }
   .runitem { border:1px solid var(--pl-border); border-radius:6px;
-             padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+             padding:8px 10px; margin-bottom:8px; cursor:pointer;
+             position:relative; }
   .runitem:hover { border-color:var(--pl-accent); }
-  .runitem .rt { font-weight:600; font-size:12px; word-break:break-word; }
+  .runitem .rt { font-weight:600; font-size:12px; word-break:break-word;
+                 padding-right:26px; }
   .runitem .rm { font-size:11px; color:var(--pl-muted); margin-top:2px; }
+  /* D49ay: the per-run delete sits in the card's corner instead of the text
+     flow, so the title and meta keep the layout they already had. */
+  .runitem .rdel { position:absolute; top:5px; right:5px; }
+  /* The Runs heading carries the action for the whole list, so heading and
+     button share a line. */
+  .runhead { display:flex; align-items:center; justify-content:space-between;
+             gap:8px; }
+  .runhead h4 { margin:0; }
   .hlabel { padding:8px 12px 6px; }
   header.shead { padding:18px 24px 14px; gap:8px; border-bottom:1px solid var(--pl-border);
                   display:flex; align-items:baseline; }
@@ -2025,7 +2035,21 @@ export function chatHtml(): string {
       hbody.appendChild(sec);
     }
     const sec2 = el('div', 'sec');
-    sec2.appendChild(el('h4', null, 'Runs'));
+    const rhead = el('div', 'runhead');
+    rhead.appendChild(el('h4', null, 'Runs'));
+    if (hRuns.length > 0) {
+      // D49ay: the user's own call, and the only way a transcript is ever
+      // removed automatically or otherwise. It asks once before doing it.
+      const delAll = armDanger(
+        'Delete all',
+        'Delete all ' + hRuns.length + '?',
+        () => vsapi.postMessage({ type: 'deleteAllRuns' }),
+      );
+      delAll.setAttribute('aria-label',
+        'Delete all ' + hRuns.length + ' saved runs (asks once to confirm)');
+      rhead.appendChild(delAll);
+    }
+    sec2.appendChild(rhead);
     if (hRuns.length === 0) {
       sec2.appendChild(el(
         'div',
@@ -2046,6 +2070,13 @@ export function chatHtml(): string {
           r.costUsd > 0 ? '\u2248$' + Number(r.costUsd).toFixed(4) : '',
         ].filter(Boolean).join(' \u00b7 ');
         item.appendChild(el('div', 'rm', meta));
+        // D49ay: one run, one click, one confirmation. The glyph keeps its size
+        // when armed \u2014 the filled red state is the signal, not new text.
+        const del = armDanger('\u00d7', null, () =>
+          vsapi.postMessage({ type: 'deleteRun', file: r.file }));
+        del.classList.add('rdel');
+        del.setAttribute('aria-label', 'Delete this run (asks once to confirm)');
+        item.appendChild(del);
         item.addEventListener('click', () => {
           vsapi.postMessage({ type: 'openRun', file: r.file });
         });
@@ -2154,6 +2185,43 @@ export function chatHtml(): string {
     const b = el('button', cls, label);
     b.type = 'button'; // never submit an enclosing form (0.4.2 bug)
     b.addEventListener('click', fn);
+    return b;
+  }
+  /**
+   * D49ay: a destructive action that asks once. Extracted from the provider
+   * Delete (D47j) because deleting a run needs the same protection and a second
+   * hand-written copy of this is how the two drift.
+   *
+   * A native confirm dialog is not used: it blocks the whole webview. The first
+   * click arms the button and fills it red, the second performs the action, and
+   * it disarms on blur or after six seconds. confirmLabel is optional — a
+   * glyph button keeps its glyph and signals the armed state by colour alone,
+   * because swapping its text would break the icon sizing (the D47j lesson).
+   */
+  function armDanger(label, confirmLabel, fn) {
+    const b = sbtn(label, () => undefined, 'danger');
+    let armed = false;
+    let timer = null;
+    const disarm = () => {
+      armed = false;
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (confirmLabel) { b.textContent = label; }
+      b.classList.remove('is-armed');
+    };
+    b.addEventListener('click', (e) => {
+      // The run card underneath opens the run on click; a delete is not that.
+      e.stopPropagation();
+      if (!armed) {
+        armed = true;
+        if (confirmLabel) { b.textContent = confirmLabel; }
+        b.classList.add('is-armed');
+        timer = setTimeout(disarm, 6000);
+        return;
+      }
+      disarm();
+      fn();
+    });
+    b.addEventListener('blur', disarm);
     return b;
   }
   function sel(options, value) {

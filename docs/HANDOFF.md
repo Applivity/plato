@@ -52,6 +52,22 @@ are now only in PROGRESS.
   projects** and **crash orphans** reclaimed at activation. Deletion is confined to the store and
   verified to be. See D49ax.
 
+- **Old run transcripts are compressed, never deleted — the user decides what goes (D49ay, BUILT
+  2026-09-28).** D49ax recorded that `~/.plato/runs/` grows without bound and called it *"the same
+  class of leak, already shipping"*. **The measurement says otherwise and that claim was corrected
+  in place:** 285 runs occupy **1.4 MB**, a mean of **5 KB per run**, and at that mean 50 runs a day
+  for a year is 89 MB raw and **6.4 MB gzipped** (9.2× measured). So: transcripts older than **15
+  days** are gzipped at panel open and at run end, and the History page lets the user **delete one
+  run or all of them**. **The two stores get different policies because they hold different kinds
+  of data** — an undo copy is *derived* (a file that still exists is the truth, so dropping it costs
+  convenience), a transcript is *primary* (nothing else holds it, so a timer would destroy the only
+  record of what a run did). **Two rules the module enforces:** the gzip is read back, gunzipped and
+  **compared byte-for-byte** before the original is unlinked, and the sweep **never throws**, because
+  it runs where a failure could block the panel opening. **The delete paths are the dangerous ones**
+  and are the user's alone: `isRunFileName` refuses `/`, `\` and `..`, so every unlink is confined
+  to the runs directory. **No destructive control is drawn when there is nothing to delete**, and a
+  delete never doubles as "open the run". See D49ay.
+
 - **The editor's local history cannot undo Plato's work — measured, not assumed (2026-09-27).** A
   throwaway extension in real VS Code 1.136.0 wrote one file directly to disk and another through
   the editor API, and VS Code's own history store was then read off disk. **A direct disk write

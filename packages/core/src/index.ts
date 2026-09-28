@@ -19,6 +19,7 @@ export * from './runtime/commands.js';
 export * from './runtime/bus.js';
 export * from './runtime/cost.js';
 export * from './runtime/transcript.js';
+export * from './runtime/retention.js';
 export * from './runtime/context.js';
 export * from './runtime/chatlog.js';
 export * from './runtime/diagnostics.js';

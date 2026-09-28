@@ -235,6 +235,31 @@ a minute. It is scratch — `tmp/` is gitignored — and the lesson is the metho
 **before building on what an environment does, write the smallest thing that
 measures it.** Two harness runs were spent guessing first.
 
+### Driving a page the field cases do not cover
+
+D49ay's history page — compress aged transcripts, delete one run, delete all —
+is reached by no field case, so it was verified with the same throwaway method:
+a probe **spec** run through `ExTester` against a **scratch workspace**, never
+the demo repo. Three things about the shape are worth reusing.
+
+- **Use a scratch workspace, and compute its project key the same way the
+  extension does** — `sha1(workspacePath).slice(0, 8)`. That gives the probe its
+  own `~/.plato/runs/<key>/`, so seeding a transcript is safe and **delete-all
+  can only ever reach files the probe created**. Pointing it at the demo repo
+  would have put the founder's real run history behind a "delete all" button.
+- **The key must be derived from the path the window ACTUALLY opened.** The first
+  version hardcoded one path while the runner created the workspace somewhere
+  else, so the seeds went to a directory the extension never looked in and the
+  sweep correctly compressed nothing. The failure reads as "the feature is
+  broken" and is entirely the harness's.
+- **`new WebView()` after the panel is open, not before.** Constructed first, the
+  object does not match the panel that appears and `switchToFrame()` times out
+  with *"webview iframe was not found"* — the same error a genuinely unopened
+  panel gives.
+
+The probe itself is deleted; the spec that ran it lived in this directory only
+because `vscode-extension-tester` resolves from here.
+
 ## Honest boundaries
 
 - **Model judgement is out of scope.** With a scripted model, test 6's
