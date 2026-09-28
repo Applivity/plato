@@ -385,7 +385,7 @@ export function applyUndo(
   for (const t of ordered) {
     const rel = resolveInRoot(workspaceRoot, t.rel);
     if (rel === null) {
-      result.failed.push({ rel: t.rel, why: 'outside the workspace' });
+      result.failed.push({ rel: t.rel, why: 'Plato cannot reach this file.' });
       continue;
     }
     const abs = join(workspaceRoot, rel);
@@ -406,7 +406,7 @@ export function applyUndo(
       const bin =
         t.seq === null ? null : readBytes(join(dir, plan.id, `${t.seq}.bin`));
       if (bin === null || sha1Hex(bin) !== t.beforeHash) {
-        result.failed.push({ rel: t.rel, why: 'the copy could not be read back' });
+        result.failed.push({ rel: t.rel, why: 'Plato cannot read the saved copy.' });
         continue;
       }
       writeFileSync(abs, bin);
@@ -420,7 +420,7 @@ export function applyUndo(
       });
       result.applied.push({ rel: t.rel, how: 'restored' });
     } catch {
-      result.failed.push({ rel: t.rel, why: 'the write failed' });
+      result.failed.push({ rel: t.rel, why: 'Plato could not write to it.' });
     }
   }
 

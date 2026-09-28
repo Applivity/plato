@@ -265,12 +265,18 @@ describe('Plato field tests — real VS Code', function () {
           // detected asserted nothing at all and the case still reported PASS.
           notes.push('QUESTION: no question card was ever detected, so nothing about it was exercised');
         }
-        if (run.cards.length === 0 && /^Approve .+\?$/m.test(screen)) {
+        // D49ba: asked of the DOM, not of the text. The screen scrape used to
+        // match the card's sentence, which meant a copy change could report an
+        // "unexpected card" for a card that was not there — or miss one that was.
+        if (run.cards.length === 0 && (await field.openCard()) !== null) {
           notes.push('CARDS: an approval card is visible on screen when none was expected');
         }
         if (c.n === 5) {
           // The notice is DOM-only evidence: it never reaches the transcript.
-          const noticed = /Session-approved future edits to .*DateHelper\.java/.test(screen);
+          // The notice carries the FULL workspace-relative path, so the match
+          // needs the gap — dropping it is how this assertion failed on a
+          // notice that was on screen the whole time.
+          const noticed = /Plato will not ask again before editing .*DateHelper\.java/.test(screen);
           if (!noticed) notes.push('NOTICE: the session-approval notice for DateHelper.java was not on screen');
         }
         if (c.n === 7) {

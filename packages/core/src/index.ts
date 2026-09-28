@@ -22,6 +22,8 @@ export * from './runtime/transcript.js';
 export * from './runtime/retention.js';
 export * from './runtime/undo.js';
 export * from './runtime/undoCopy.js';
+export * from './runtime/approvalCopy.js';
+export * from './runtime/toolWords.js';
 export * from './runtime/context.js';
 export * from './runtime/chatlog.js';
 export * from './runtime/diagnostics.js';

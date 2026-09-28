@@ -1215,7 +1215,7 @@ export function chatHtml(): string {
     </span>
     <input id="chatTitleInput" hidden spellcheck="false" />
     <span class="hstatus-spacer"></span>
-    <button id="orchChip" class="orch-chip" title="Orchestration mode — click to change">&#9679; solo</button>
+    <button id="orchChip" class="orch-chip" title="Who works on this task — click to change">&#9679; solo</button>
     <button id="new" title="Start a new chat (clears this conversation)">＋ new</button>
   </div>
 </header>
@@ -2073,7 +2073,7 @@ export function chatHtml(): string {
       sec2.appendChild(el(
         'div',
         'note',
-        'No runs recorded yet. Every Plato run is transcribed to ~/.plato/runs/ automatically.',
+        'No runs recorded yet. Plato saves the record of every run in ~/.plato/runs/.',
       ));
     } else {
       for (const r of hRuns) {
@@ -3598,6 +3598,14 @@ export function chatHtml(): string {
   slashPop.dataset.trigger = 'q';
   slashPop.setAttribute('role', 'listbox');
   let slashCommands = [];       // slash-meta rows from the host
+  // D49ba: tool names in the words a user reads. Populated by the host at ready
+  // (tool-words); the fallback is generic on purpose, so a tool this view has
+  // never heard of reads as "a tool call" rather than as its identifier.
+  let toolWords = {};
+  function wordsFor(tool) {
+    return toolWords[tool] || toolWords._generic
+      || { noun: 'the tool call', doing: 'using a tool', counted: 'tool calls' };
+  }
   let slashRows = [];           // rendered rows for keyboard cycling
   let slashActiveIdx = -1;
   let slashRendered = null;     // key last rendered (t'/'b' + filter)
@@ -3841,8 +3849,11 @@ export function chatHtml(): string {
     }
     toolBuffer = [];
     summaryCounts = counts;
+    // D49ba: "12 files read \u00b7 2 commands run" rather than "read_file x 12 \u00b7
+    // shell x 2". The count moves behind the words, which is how a person says
+    // it aloud.
     const parts = Array.from(counts.entries())
-      .map((p) => p[0] + ' \u00d7 ' + p[1]);
+      .map((p) => p[1] + ' ' + wordsFor(String(p[0])).counted);
     const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
     const text = total + (total === 1 ? ' tool call \u00b7 ' : ' tool calls \u00b7 ')
       + parts.join(' \u00b7 ');
@@ -3958,6 +3969,7 @@ export function chatHtml(): string {
       case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
       case 'run': showRun(m); break;
       case 'title': setTitle(String(m.text || '')); break;
+      case 'tool-words': toolWords = m.words || {}; break;
       case 'slash-meta': slashCommands = m.commands || []; break;
       case 'proj-files': {
         // D45a-2: empty-composer answer — noRoot or a present rule file hides
@@ -4042,7 +4054,8 @@ export function chatHtml(): string {
           scheduleToolFlush();
         }
         refreshChip();
-        setStatus('using ' + m.tool);
+        // D49ba: "running a command", not "using shell".
+        setStatus(wordsFor(String(m.tool)).doing);
         break;
       case 'approval':
         flushToolBuffer();
@@ -4243,7 +4256,7 @@ export function chatHtml(): string {
       const body = document.createElement('div');
       body.className = 'cc-body';
       body.textContent = 'This included Plato’s summary of the earlier work, '
-        + 'so it no longer remembers that part of the conversation.';
+        + 'so Plato no longer remembers that part of the conversation.';
       div.appendChild(body);
     }
     log.appendChild(div);
@@ -4255,12 +4268,18 @@ export function chatHtml(): string {
    * rebuilt one, so a reload cannot tell a different story than the run did.
    */
   function guardText(tool, reason) {
-    const why = reason === 'secret'
-      ? 'it named a protected file'
-      : (reason === 'containment'
-        ? 'the path is outside the workspace'
-        : 'the guard refused it');
-    return 'guard stopped ' + String(tool) + ' — ' + why;
+    // D49ba. The old line read "guard stopped write_file — it named a protected
+    // file": an internal tool name as the subject, the word "guard" (which the
+    // user has never met), and an "it" with no antecedent. Short sentences now:
+    // what did not happen, and why.
+    const what = wordsFor(String(tool)).noun;
+    if (reason === 'secret') {
+      return 'Plato did not run ' + what + '. That file is protected.';
+    }
+    if (reason === 'containment') {
+      return 'Plato did not run ' + what + '. That path is outside the workspace.';
+    }
+    return 'Plato did not run ' + what + '.';
   }
 
   function addMsg(cls, who, text, asHtml) {
@@ -4347,10 +4366,17 @@ export function chatHtml(): string {
     if (el) { el.removeAttribute('id'); }
     streaming = false;
     const card = document.createElement('div');
-    card.className = 'card';
+    // D49ba: the card carries its own class and its tool as DATA. Every reader
+    // that used to find this card by parsing its heading — the field driver most
+    // of all — now keys off the class, so the copy is free to improve without
+    // breaking a test that was really asserting a sentence.
+    card.className = 'card approval-card';
+    card.dataset.tool = String(m.tool || '');
 
     const h = document.createElement('h3');
-    h.textContent = 'Approve ' + m.tool + '?';
+    // Sent ready to draw, from core. The fallback keeps a card legible if an
+    // older host ever posts without it.
+    h.textContent = String(m.heading || 'Let Plato do this?');
     card.appendChild(h);
 
     const pre = document.createElement('pre');
@@ -4359,14 +4385,15 @@ export function chatHtml(): string {
 
     const actions = document.createElement('div');
     actions.className = 'actions';
-    // D49p: an approval covers one host, so the card says which. "Approve all
-    // web_fetch" would read as covering every future host, which is exactly
-    // what it must not do.
-    const what = typeof m.host === 'string' && m.host ? m.host : m.tool;
+    // D49p: a host-scoped approval must name the host, because it covers that
+    // host and no other. Core builds the label for that reason — and it now
+    // says the ACTION ("Allow every edit this session") rather than naming an
+    // internal tool where a request with no host used to read
+    // "Approve all requests to write_file this session".
     const yes = document.createElement('button');
     yes.textContent = 'Allow once';
     const all = document.createElement('button');
-    all.textContent = 'Approve all requests to ' + what + ' this session';
+    all.textContent = String(m.allowAll || 'Allow every request this session');
     all.className = 'all';
     const no = document.createElement('button');
     no.className = 'no';
@@ -4374,10 +4401,23 @@ export function chatHtml(): string {
     yes.addEventListener('click', () => decide(true));
     all.addEventListener('click', () => decideAll());
     no.addEventListener('click', () => decide(false));
+    /**
+     * D49ba: an answered card is MARKED answered, and that is load-bearing.
+     * Anything looking for a card to answer — the field driver above all — finds
+     * it by the approval-card class minus the answered class. A spent card left
+     * unmarked reads as live, and a case would then answer a settled question.
+     */
+    function spent(text) {
+      actions.remove();
+      card.classList.add('answered');
+      h.textContent = text;
+    }
     function decide(v) {
       vsapi.postMessage({ type: 'approve', value: v ? 'yes' : 'no' });
-      actions.remove();
-      h.textContent = h.textContent.replace('?', v ? ' — allowed' : ' — denied');
+      // All three answered headings arrive ready-made. This used to be a string
+      // replace here, which silently did nothing if the heading ever stopped
+      // ending in a question mark — leaving a spent card reading like a live one.
+      spent(String(v ? (m.headingAllowed || 'Allowed') : (m.headingDenied || 'Denied')));
       addMsg('you', 'You', v ? '[allowed]' : '[denied]');
     }
     function decideAll() {
@@ -4386,9 +4426,8 @@ export function chatHtml(): string {
         tool: m.tool,
         sessionKey: m.sessionKey,
       });
-      actions.remove();
-      h.textContent = h.textContent.replace('?', ' — approved for session');
-      addMsg('you', 'You', '[approved all requests to ' + what + ' this session]');
+      spent(String(m.headingSession || 'Allowed for the rest of this session'));
+      addMsg('you', 'You', '[allowed for the rest of this session]');
     }
     actions.appendChild(yes);
     actions.appendChild(all);

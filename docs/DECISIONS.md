@@ -3260,9 +3260,60 @@ instruction — *"note down this for future and existing messaging and label"* �
 undo status line was fixed in the same pass: it read *"waiting for you — put these files back?"*,
 which asked the reader **which** files at the moment the card was saying one of them would not be.
 
-**What this does not license.** Rewriting every string in the product in one sweep. Each change to
-copy is a change to what the user is told, and a batch nobody reviews is how a wrong sentence gets
-shipped. The audited list goes to the founder, who decides what changes and when.
+**What this does not license.** Rewriting every string in the product unasked. Each change to copy is
+a change to what the user is told, and a batch nobody reviews is how a wrong sentence gets shipped.
+The audit went to the founder; **he said convert all of it** (*"doesn't hurt, does it?"*), and it
+did hurt in one specific way worth recording: see "the copy is a contract" below.
+
+**The sweep, and the one structural change it needed.** Eleven more strings now follow the rule:
+
+| Where | Was | Is |
+|---|---|---|
+| the approval card's heading | `Approve write_file?` | `Let Plato write src/a.ts?` |
+| its session button | `Approve all requests to write_file this session` | `Allow every edit this session` |
+| the guard line | `guard stopped write_file — it named a protected file` | `Plato did not run the write. That file is protected.` |
+| the activity row | `read_file × 12 · shell × 2` | `12 files read · 2 commands run` |
+| the progress line | `using shell` | `running a command` |
+| session approvals ×3 | `write_file auto-approved (session approval)` | `Plato did not ask — you already allowed this for the session.` |
+| `/compact` blurb | `Condense the conversation — now, or at the next safe point` | `Condense the conversation. Runs now if Plato is idle, otherwise at the next safe point.` |
+| the orchestration chip | `Orchestration mode — click to change` | `Who works on this task — click to change` |
+| the empty history | `Every Plato run is transcribed to ~/.plato/runs/ automatically.` | `Plato saves the record of every run in ~/.plato/runs/.` |
+| the compaction note | `so it no longer remembers that part` | `so Plato no longer remembers that part` |
+| undo's write failures | `src/a.ts — the write failed.` | `src/a.ts — Plato could not write to it.` |
+
+Three of those are not string edits but structure, and each is what makes the rule holdable:
+
+- **The approval card is found by its CLASS and its tool by `data-tool`, never by parsing its
+  heading.** The field harness used to detect every approval card with `/^Approve .+\?$/` and read the
+  tool out of the heading with a string replace. **That is why the sweep "hurts": the copy was a
+  contract.** A reworded heading would have broken twenty field cases at once, and the failure would
+  have read as a product regression. The contract is now a class and a data attribute — stable things.
+- **`approvalHeading` and `approvalAllowAll` live in core**, and the render suite builds its fixtures
+  by CALLING them rather than pasting strings, so those suites assert the product's wording instead
+  of the harness's memory of it.
+- **One tool-word table in core, three forms per tool** (`the command` / `running a command` /
+  `commands run`), posted to the view like the slash menu. The three places that named tools by
+  identifier now share it, so a tool added later falls back to a generic phrase instead of printing
+  its identifier — pinned by a test that asserts no entry contains its own key.
+
+**Two places the audit's suggestion was not taken, and why.**
+
+- **"Keep going" keeps its two words.** The audit proposed *"Continue — do not ask about this call
+  again"*, which puts two ideas in one label and breaks the same rule it is enforcing. The button
+  states its action; the card now says the rest: *"Keep going resumes the run, and Plato will not ask
+  about this same call again."* That second sentence is on **repeat cards only** — a no-progress card
+  has no single call to exempt, so it would be false there.
+- **The three session-approval notices were simplified, not noun-ified.** The audit wanted each to
+  name its subject via a per-tool noun; that is a second table that must stay in step with the first.
+  The notice's actual job is to answer *"why was there no card?"*, and the call it is about is named
+  on the row directly below it. Two sentences, no table.
+
+**A bug the sweep introduced, found by the render suite within the hour.** Rewriting the approval
+card's answered state, two things broke that no copy review would have caught: `decideAll` referenced
+a variable deleted in the same edit (a `ReferenceError` on every "allow every … this session"), and
+**neither handler marked the card answered** — which would have left a spent card reading as live,
+exactly the failure the field driver's `:not(.answered)` selector exists to prevent. Both are fixed,
+and the render suite now asserts the answered state and the class directly.
 
 ---
 

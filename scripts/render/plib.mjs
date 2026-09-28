@@ -1,5 +1,20 @@
 import { prepareHtml, resolvePlaywright, TMP_DIR, join, readFileSync } from './harness.mjs';
 
+// D49ba: the view is a plain script with no imports, so the tool-word table and
+// the approval copy reach it from the HOST — which, in these suites, is this
+// file. They are imported from core's BUILT output rather than restated, because
+// a second copy of a table is the fault the table exists to fix. `tsc -b` runs
+// before every render run, so the built output is current.
+const core = await import('../../packages/core/dist/src/index.js');
+export const toolWordsForView = core.toolWordsForView;
+export const approvalHeading = core.approvalHeading;
+export const approvalAllowAll = core.approvalAllowAll;
+export const approvalAnswered = core.approvalAnswered;
+export const approvalAnsweredSession = core.approvalAnsweredSession;
+
+/** The message the host sends at ready. Every suite that draws tool words needs it. */
+export const TOOL_WORDS_MSG = { type: 'tool-words', words: core.toolWordsForView() };
+
 const { chromium } = await import(resolvePlaywright());
 
 // One build per RUN. run.mjs prepares once, up front, and exports

@@ -23,7 +23,9 @@ const COMMANDS: readonly SlashCommand[] = [
     id: 'compact',
     label: 'Compact',
     usage: '/compact',
-    blurb: 'Condense the conversation — now, or at the next safe point',
+    // D49ba: "now, or at the next safe point" left the reader to work out
+    // which one would happen. Name both, in the order they are tried.
+    blurb: 'Condense the conversation. Runs now if Plato is idle, otherwise at the next safe point.',
   },
   {
     id: 'history',

@@ -991,13 +991,14 @@ needs a decision rather than a handover.
 History page deletes one run or all of them, the sweep never deletes on a timer, and **an aged run
 still opens with its summary and its full detail intact** (measured in a real window, not inferred).
 
-**Waiting on the founder, and it is a decision rather than work: the existing-copy audit (D49ba).**
-Product copy is now ASD-STE100 and a control must state exactly what it does; the undo flow was
-rewritten to that standard, and an audit found **twelve more strings with the same class of fault**
-elsewhere in the product — the worst being the approval card's heading, `Approve write_file?`, which
-shows an internal tool name where the situation belongs. The list, ranked, is under PROGRESS →
-"Deferred / backlog". **Do not sweep them unasked**: each change alters what the user is told, and
-the top ones are product judgement.
+**Product copy is ASD-STE100, and the whole product now follows it (D49ba, 2026-09-28).** A control
+states exactly what it does; what will NOT happen sits under its own heading; no string prints an
+internal tool name — the approval card asks *"Let Plato edit src/a.ts?"* rather than *"Approve
+apply_diff?"*, and a single tool-word table in core serves the guard line, the progress line and the
+activity row. **The sweep's real lesson is that the copy was a CONTRACT:** the field harness found
+every approval card by matching `Approve <tool>?`, so a reworded heading would have failed twenty
+cases and read as a product regression. It is now found by a class and a `data-tool` attribute.
+Anything added from here answers to the same rule — see D49ba before writing a user-facing string.
 
 **Then, what the 2026-09-23/24 repairs left open.** One of the three is now done
 and the other two were **measured and turned out not to be what the founder was

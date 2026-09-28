@@ -1,4 +1,4 @@
-import { check, page, finish, checkPageClean } from './plib.mjs';
+import { check, page, finish, checkPageClean, TOOL_WORDS_MSG } from './plib.mjs';
 
 /**
  * D49aq: a refusal is readable.
@@ -28,6 +28,18 @@ const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
   new MessageEvent('message', { data: x }),
 ), msg);
 
+/**
+ * D49ba: the view holds no tool words of its own — the host sends them at ready,
+ * so a suite that draws a guard line or an activity row must send them first.
+ * Without this the line reads "Plato did not run the tool call", which is the
+ * generic fallback and would make these assertions test nothing.
+ */
+const open = async (w) => {
+  const p = await page(w);
+  await post(p, TOOL_WORDS_MSG);
+  return p;
+};
+
 const replay = async (p, log) => {
   await post(p, { type: 'restore', log, hasConnections: true, title: '' });
   await p.waitForTimeout(260);
@@ -41,7 +53,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 
 // A. Each guard names itself.
 {
-  const p = await page(760);
+  const p = await open(760);
   await showRun(p, [
     { type: 'tool-event', tool: 'shell', phase: 'refused', reason: 'secret' },
     { type: 'tool-event', tool: 'write_file', phase: 'refused', reason: 'containment' },
@@ -57,7 +69,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 
 // B. The reason is a word, never the argument.
 {
-  const p = await page(760);
+  const p = await open(760);
   await showRun(p, [
     {
       type: 'tool-event',
@@ -78,7 +90,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 
 // C. A refusal does not disturb the ordinary phases around it.
 {
-  const p = await page(760);
+  const p = await open(760);
   await showRun(p, [
     { type: 'tool-event', tool: 'read_file', phase: 'done', ok: true },
     { type: 'tool-event', tool: 'shell', phase: 'refused', reason: 'secret' },
@@ -101,16 +113,20 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 // message shape and the drawing of it, so a revert to an args-less event (which
 // loop.test.ts guards from the other side) cannot pass unnoticed here either.
 {
-  const p = await page(760);
+  const p = await open(760);
   await post(p, { type: 'tool', tool: 'shell', phase: 'refused', reason: 'secret' });
   await post(p, { type: 'tool', tool: 'write_file', phase: 'refused', reason: 'containment' });
   await p.waitForTimeout(160);
   const lines = (await guardLines(p)).join('\n');
   check('a refusal is drawn in the live conversation', lines.length > 0, lines);
-  check('the live line names the secret guard',
-    /shell — it named a protected file/.test(lines), lines);
-  check('the live line names containment',
-    /write_file — the path is outside the workspace/.test(lines), lines);
+  // D49ba: no tool identifier, no "guard", no bare "it". The line says what did
+  // not happen and why, in the user's words.
+  check('the live line says what did not happen, in plain words',
+    /Plato did not run the command\. That file is protected\./.test(lines), lines);
+  check('and the containment one names the other reason',
+    /Plato did not run the write\. That path is outside the workspace\./.test(lines), lines);
+  check('and neither prints an internal tool name',
+    !/shell|write_file/.test(lines), lines);
   checkPageClean(p, 'live guard line');
   await p.close();
 }
@@ -122,7 +138,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 // the guard stopped, and the guard's line would sit under a summary it does not
 // belong to.
 {
-  const p = await page(760);
+  const p = await open(760);
   await post(p, { type: 'tool', tool: 'read_file', phase: 'done', ok: true });
   await post(p, { type: 'tool', tool: 'shell', phase: 'refused', reason: 'secret' });
   await post(p, { type: 'tool', tool: 'grep', phase: 'done', ok: true });
@@ -131,9 +147,9 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
   const summary = await p.evaluate(() => [...document.querySelectorAll('.msg.tool-summary')]
     .map((e) => e.textContent).join('\n'));
   check('the refusal is still drawn between two allowed calls',
-    /shell — it named a protected file/.test(guard), guard);
+    /Plato did not run the command\. That file is protected\./.test(guard), guard);
   check('and the refused call is NOT counted among the tools that ran',
-    !/3 tools/.test(summary), summary);
+    !/3 tool calls/.test(summary), summary);
   checkPageClean(p, 'chain broken');
   await p.close();
 }
@@ -143,7 +159,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
 // One wording, two paths. A second rendering that described the refusal
 // differently would mean the record depends on when you looked at it.
 {
-  const p = await page(760);
+  const p = await open(760);
   await replay(p, [
     { k: 'msg', cls: 'you', who: 'You', text: 'do the thing' },
     { k: 'tool', tool: 'read_file', phase: 'done' },
@@ -153,7 +169,7 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
   const guard = (await guardLines(p)).join('\n');
   check('a refusal survives a reload as its own line', guard.length > 0, guard);
   check('and it says what the live line said',
-    /shell — it named a protected file/.test(guard), guard);
+    /Plato did not run the command\. That file is protected\./.test(guard), guard);
   checkPageClean(p, 'reloaded guard line');
   await p.close();
 }

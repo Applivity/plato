@@ -432,6 +432,20 @@ export interface StuckCard {
 const HELP =
   'Tell Plato what to do instead, or press Stop and rephrase your request.';
 
+/**
+ * D49ba: the half of "Keep going" that the button cannot carry.
+ *
+ * Answering it does TWO things — it resumes the run, and it exempts that one
+ * call for the rest of the run, so Plato never asks about it again. A control
+ * states what it does, but a label holding two ideas is a label nobody reads, so
+ * the button keeps its two words and the card says the rest.
+ *
+ * **Repeat cards only.** On a no-progress card there is no single call to
+ * exempt, so this sentence would be false there.
+ */
+const HELP_EXEMPT =
+  'Keep going resumes the run, and Plato will not ask about this same call again.';
+
 export function stuckCard(req: StuckRequest): StuckCard {
   if (req.kind === 'repeat') {
     return {
@@ -440,7 +454,7 @@ export function stuckCard(req: StuckRequest): StuckCard {
       ...(req.call !== undefined ? { call: req.call } : {}),
       // Says the SO WHAT without pretending to know why: repeating a call whose
       // answer has not changed can only produce that answer again.
-      help: `Repeating it will only give the same answer. ${HELP}`,
+      help: `Repeating it will only give the same answer. ${HELP} ${HELP_EXEMPT}`,
     };
   }
   return {

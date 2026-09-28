@@ -337,9 +337,24 @@ export class Field {
       const h = await this.driver.findElement(By.css('.card.undo-card h3'));
       return { kind: 'undo', heading: (await h.getText()).trim() };
     }
+    // D49ba: the approval card is found by its CLASS and its DATA, never by
+    // parsing its heading. The heading is now a sentence core writes — "Let Plato
+    // edit src/a.ts?" — and a harness that matched its words would fail the day
+    // the copy improved, which is exactly what happened while the undo copy was
+    // being rewritten. `data-tool` is there for the same reason: the card names
+    // the tool as DATA and the user as a SITUATION, and only one of those is a
+    // stable thing to assert on.
+    const cards = await this.driver.findElements(By.css('.card.approval-card:not(.answered)'));
+    if (cards.length > 0) {
+      const h = await cards[0].findElement(By.css('h3'));
+      return {
+        kind: 'approval',
+        heading: (await h.getText()).trim(),
+        tool: (await cards[0].getAttribute('data-tool')) ?? '',
+      };
+    }
     for (const h of await this.driver.findElements(By.css('div.card h3'))) {
       const text = (await h.getText()).trim();
-      if (/^Approve .+\?$/.test(text)) return { kind: 'approval', heading: text };
       if (/^Plato has (a question|a few questions)$/.test(text)) {
         return { kind: 'question', heading: text };
       }
@@ -351,6 +366,12 @@ export class Field {
   async openCard() {
     const { kind, heading } = await this.cardKind();
     return kind === 'approval' ? heading : null;
+  }
+
+  /** The same, with the tool the card is about — read from the card's own data. */
+  async openCardInfo() {
+    const info = await this.cardKind();
+    return info.kind === 'approval' ? info : null;
   }
 
   /** Is the model waiting on a question card right now? */
@@ -608,9 +629,9 @@ export class Field {
       }
 
       if (finished === null) {
-        const heading = await this.openCard();
-        if (heading !== null) {
-          const tool = heading.replace(/^Approve /, '').replace(/\?$/, '');
+        const open = await this.openCardInfo();
+        if (open !== null) {
+          const tool = open.tool;
           // `plan: 'all'` approves every card. The real-model pass needs this: a
           // real agent doing real work asks for far more than a hand-written list
           // allows, and an exceeded list does not merely stop approving — it

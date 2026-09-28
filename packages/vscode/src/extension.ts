@@ -68,6 +68,13 @@ import {
   runFilesIn,
   readRunText,
   sweepRuns,
+  // D49ba: what an approval card says — the situation, not the tool's name.
+  approvalAllowAll,
+  approvalAnswered,
+  approvalAnsweredSession,
+  approvalHeading,
+  // D49ba: what a tool is called where the user reads about it.
+  toolWordsForView,
   // D49ax: undo is Plato's own copies of what it replaced.
   applyUndo,
   planUndo,
@@ -414,7 +421,12 @@ type Entry =
       /** D49as: set only on phase 'refused' — which guard stopped the call. */
       reason?: RefusalReason;
     }
-  | { k: 'card-open'; tool: string; preview: string }
+  /**
+   * D49ba: `heading` and `allowAll` are the card's own words, built in core.
+   * They travel with the row so a reloaded card reads the same as the live
+   * one — and so nothing downstream has to compose copy from a tool name.
+   */
+  | { k: 'card-open'; tool: string; preview: string; heading?: string; allowAll?: string }
   /**
    * D49aw: a stuck run asked the user. Recorded so a reload rebuilds the card —
    * without this the question would vanish from the screen while the run was
@@ -615,7 +627,10 @@ class ChatHost {
           const resolve = this.pendingApproval;
           this.pendingApproval = null;
           resolve?.(true);
-          this.send('notice', `${key} approved for this session`);
+          // D49ba: the key is internal ("web_fetch:example.com") and "approved"
+          // had no actor. The notice's real job is to answer "why was there no
+          // card?" — and the call it is about is named on the row right below it.
+          this.send('notice', 'Plato will not ask about this again this session.');
           return;
         }
         if (m.type === 'newChat') {
@@ -1175,6 +1190,12 @@ class ChatHost {
   // ---- D44a/D44c: paperclip attachment + real slash commands ------------
 
   private postSlashMeta(): void {
+    // D49ba: the tool-word table travels with the menu, for the same reason — the
+    // view is a plain script with no imports, and one table beats two.
+    void this.panel.webview.postMessage({
+      type: 'tool-words',
+      words: toolWordsForView(),
+    });
     void this.panel.webview.postMessage({
       type: 'slash-meta',
       commands: slashMenu(),
@@ -3589,7 +3610,10 @@ class ChatHost {
           this.sessionWrites.add(p);
         }
         if (paths.length > 0) {
-          this.send('notice', `Session-approved future edits to ${paths.join(', ')}`);
+          // D49ba: passive, no actor, and "future edits" never said that Plato
+          // stops asking. The path list stays, because it is the one part the
+          // user needs.
+          this.send('notice', `Plato will not ask again before editing ${paths.join(', ')}.`);
         }
       }
       return ok;
@@ -3639,16 +3663,24 @@ class ChatHost {
     const key = this.approvalKey(req);
     // Check if this tool (and host) is already approved for this session
     if (this.sessionApprovals.has(key)) {
-      this.send('notice', `${key} auto-approved (session approval)`);
+      // Same fault as the notice below: an internal key as the subject, and no
+      // actor. What the user needs to know is why no card appeared.
+      this.send('notice', 'Plato did not ask — you already allowed this for the session.');
       this.noteApproval('session-approval', req);
       return Promise.resolve(true);
     }
     this.noteApproval('shown', req);
 
+    // D49ba: the copy goes into the log row as well as the wire, so a reloaded
+    // card is rebuilt with the same heading the user first read.
+    const heading = approvalHeading(req.tool, req.args);
+    const allowAll = approvalAllowAll(req.tool, req.host);
     this.push({
       k: 'card-open',
       tool: req.tool,
       preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
+      heading,
+      allowAll,
     });
     return new Promise((resolve) => {
       this.pendingApproval = resolve;
@@ -3656,6 +3688,14 @@ class ChatHost {
         type: 'approval',
         tool: req.tool,
         sessionKey: key,
+        // D49ba: the copy is built in core, where it is unit-tested, and sent
+        // ready to draw. The view used to compose it from `tool`, which is how
+        // the card came to read "Approve apply_diff?".
+        heading,
+        allowAll,
+        headingAllowed: approvalAnswered(heading, true),
+        headingDenied: approvalAnswered(heading, false),
+        headingSession: approvalAnsweredSession(heading),
         ...(req.host !== undefined ? { host: req.host } : {}),
         preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
       });

@@ -206,8 +206,12 @@ export function undoResultText(
   for (const r of plan.refuse) {
     parts.push(refuseLine(r.rel, r.why, r.size));
   }
+  // D49ba: the reason is a sentence with an actor now ("Plato could not write to
+  // it"), not a mechanism in the passive ("the write failed"). The trailing
+  // sentence this used to add — "Undo did not change this file." — was saying
+  // again what the headline already counted.
   for (const f of result.failed) {
-    parts.push(`${f.rel} — ${f.why}. Undo did not change this file.`);
+    parts.push(`${f.rel} — ${f.why}`);
   }
 
   const commandsLine = describeCommands(commands);
