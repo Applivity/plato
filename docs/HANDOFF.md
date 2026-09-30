@@ -23,9 +23,62 @@ are now only in PROGRESS.
 
 ## Current state (verified 2026-09-28)
 
+- **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
+  (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
+  in every mode, with no way out. Now **a text config file reads with every value replaced by
+  `«masked:NAME»`**: the keys, the comments and the line structure survive, and the model never
+  holds a value it could move. **Five rules carry it** — D49bb has the fourteen-agent survey, the
+  measurements and the four falsifications:
+  1. **It fails closed.** A file whose lines cannot ALL be accounted for is refused, not passed
+     through — a keystore, a private key and a one-line blob all land here, because a multi-line
+     value masked on its first line would leak the rest.
+  2. **Every tool result is scrubbed** of any value the session has seen. This closes the hole
+     masking alone leaves open: materialise the value into an unprotected file, then read it back.
+  3. **A write un-masks**, and a diff is applied against the **masked** view — the model wrote its
+     SEARCH string against what it was shown. Without this, an ordinary "add one key" edit destroys
+     every secret in the file.
+  4. **A placeholder with no known value is refused**, not written: writing it through produces a
+     config that looks right and authenticates nothing.
+  5. **A commented-out value is masked too.** `# API_KEY=sk-live-…` is what people leave behind when
+     they comment a key out to test something, and the first version passed it through.
+  **`shell` is the one place the old refusal stays** — a command's output cannot be masked before
+  Plato has seen the values — and the message says what to do instead. **The list is the owner's
+  now:** `plato.secrets.protect` adds names, `plato.secrets.allow` takes exact paths off, a refusal
+  names the setting that would allow it, and the secret map is **in memory only**. **The three
+  follow-ups D49bb left open are all built (D49bc, 2026-09-28)** — see the next bullet.
+  `scripts/field/README.md` carries the harness traps this found.
+
+- **The three things D49bb left open are BUILT (D49bc, 2026-09-28).** D49bb named them, left their
+  shape recorded, and did not build them; the founder's instruction was *"build all 3 recommendations
+  and let's close this for good."* D49bc has the reasoning and the falsifications.
+  1. **A protected file Plato cannot mask is OFFERED, and the answer splits by CAUSE.** An **opaque**
+     file — a `.jks`, a keystore — **stays refused and no card is drawn**, because showing it is
+     useless *and* its whole content is the secret. **Text** the masker merely cannot parse — a JSON
+     blob on one line, an INI with sections — **gets a card**: *"Show this protected file in full?"*
+     **Plato tells them apart with a UTF-8 decode**, so the split is deterministic. The card states
+     **the cost** (*every value in this file goes into this conversation*) as its own field, so a
+     reordering of the wording cannot move the emphasis off it, and names the setting that allows the
+     file permanently. **Two buttons, no "always"** — the permanent answer is a setting, not a
+     decision taken once inside a dialog. **It is raised in every mode, `auto` included**, on D49aw's
+     precedent, and the answer is remembered **once per file per session**.
+  2. **The secret map is seeded from the workspace at run start.** `cat *.properties` in `auto` was
+     D49bb's largest hole: the scrub only knows what the session has **seen**, so a command reaching
+     a protected file **indirectly** printed a value nothing hid. `seedVault` reads the workspace's
+     protected text files through the **same masker** at run start, closing the **class**. **The cost
+     is recorded rather than hidden: Plato reads the user's secrets into memory at every run start** —
+     never to disk, never to a model, gone with the session. **It does not close `cat
+     ~/.aws/credentials`**, which is outside the workspace.
+  3. **The Protected files section is in the panel** (D45c), two lists that deliberately do not look
+     alike: **names** match the last path segment and allow `*` at the ends; **allowed files** are
+     exact paths and take no wildcard, because a wildcard exception would unprotect silently. **The
+     built-in names are shown and cannot be removed** — the deliberate way to unprotect one file is a
+     path, where the user can see which file they meant. **An entry that could never match is refused
+     with the reason**, and the store stays VS Code settings so the panel and `settings.json` cannot
+     disagree.
+
 - **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
   acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
-  `node scripts/field/acceptance.mjs --run` across twenty harness cases in real VS Code — the
+  `node scripts/field/acceptance.mjs --run` across every scripted case in real VS Code — the
   first time that test has ever been runnable, let alone run. **The secret audit is done (D49au).**
   Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
   against a later decision**, and the recorded "clause 4 is not automated" gap is **closed** by a
@@ -123,7 +176,7 @@ are now only in PROGRESS.
   shows the file as a preview tab and puts the view back **by name** (the chat panel is re-revealed;
   restoring "the last text editor" is the wrong signal and once left a file in front, which broke
   every later field case). **Verified end to end: case 11 has the model told about two deliberate
-  errors, and the whole scripted suite passes** — eleven cases when this landed, twenty now. The
+  errors, and the whole scripted suite passes** — eleven cases when this landed, the whole suite now. The
   notice says when a file had to be shown.
   `scripts/field/README.md` carries the measurements.
 
@@ -144,10 +197,11 @@ are now only in PROGRESS.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **M5.0 / D49ao + D49an + D49am + D49al + D49ak + D49aj** (read-only commands in
-  `plan` and `edit`; small question cards; multi-select; three modes; the question tabs) on
-  top of **D49ah + D49ai** — Phases 0–6 of the agent capability plan are **complete**
-  (roadmap in DECISIONS **D49**). Push stays with the founder. Working tree clean.
+- HEAD = **D49bb + D49ba + D49az** — a protected file now reads with its values masked (D49bb),
+  the whole product moved to Simplified Technical English (D49ba), and **undo shipped** (D49az:
+  Plato keeps its own copies of what it replaced). On top of **D49av** (editor diagnostics) and
+  **D49aw** (a run bounded by repetition), so **Tier C is complete** and Phases 0–6 of the agent
+  capability plan are done (roadmap in DECISIONS **D49**). Push stays with the founder.
 - **A read-only shell command runs with no approval card — in `plan` and `edit` (D49an,
   D49ao).** In `plan` that is a change of character, not just convenience: **plan is no
   longer "runs nothing", it is "changes nothing"** — no write tool, and a command the
@@ -174,22 +228,13 @@ are now only in PROGRESS.
   recognise is refused outright (D49ao). **`auto` fetches without asking** — the founder's call, amending D49p. **Any doc or comment that still
   lists four modes is stale**; the two architecture documents keep their bodies verbatim
   by design (D48) and carry superseded-map rows instead.
-- **2026-09-23/24 was a long run of real-use repairs, driven by the founder running
-  Plato on an external Android repo (the trial ground — see "Trial runs" below).
-  In order: `D49r` compaction could strand tool results; `D49s` an empty turn was
-  sent to the wire; `D49t` the model's advertised context window reached the run;
-  `D49u` **the environment was choosing Plato's endpoint and lending it a
-  credential** (a security fix); `D49v`/`D49w` the Settings bounce and the invented
-  16,384 output ceiling; `D49x`/`D49y` a deselected model was still the model to
-  run, and the answer box grows to three lines; `D49z` the model tick boxes are
-  gone, so every fetched model is eligible; `D49aa` **the chat log is append-only
-  and compaction is a request, not a deletion** (the founder's scrollback was being
-  erased); `D49ab` **the turn cap is deleted**; `D49ac`/`D49af` reply readability;
-  `D49ad` thematic breaks; `D49ae` per-claim evidence in the worker prompt;
-  `D49ag` **the log now records what a tool DID, not only that one ran** — the
-  fold and the cross-run request were both blind to 80.8% of a run.**
-  **The two that changed the product's shape are D49aa and D49ab** — read those
-  first if you are picking this up cold.
+- **The 2026-09-23/24 repairs are history, and PROGRESS is their home (D49r–D49ag).** They were a
+  long run of real-use faults found by running Plato on the trial ground below, and this file used
+  to narrate all of them — which is the duplication D48 exists to stop. **Two changed the product's
+  shape and are worth reading first if you are picking this up cold: D49aa — the chat log is
+  append-only and compaction is a request, not a deletion — and D49ab, which deleted the turn cap**
+  (its replacement is D49aw, in "Current state"). The traps those repairs left behind are recorded
+  where they belong, under "Critical gotchas".
 - **A protected file was readable by naming it plainly in a shell command (D49ai).**
   `isSecretPath` matches a whole string after taking its **basename**, so
   `cat app/keystore.properties` was refused while **`cat keystore.properties` ran** — and
@@ -510,7 +555,7 @@ gone stale: three of its five clauses no longer described this product.**
 | "the observer intervenes at least once meaningfully" | **STALE as written** — it measures chattiness, so a philosopher who correctly stays quiet fails it. Assert the observer path is LIVE and its activity reported; do not require an intervention |
 | "stays within its budget cap" | **VOID** — D49h built a budget cap and removed it the same day as unrequested, and D49ab deleted the turn cap. The clause contradicts a recorded decision |
 | "`./gradlew` verification passes" | **NOT RUNNABLE HERE — dropped by the founder's decision (2026-09-24)**, see below |
-| secrets never reach a model | **stands**, and D49ai (2026-09-24) closed a hole in it |
+| secrets never reach a model | **stands, and was sharpened twice.** **D49bb (2026-09-28):** the file now reads with its values masked, so it is the **value** that never reaches a model. **D49bc (2026-09-28):** the values DO reach a model when the user answers a card that states the cost — so the clause is *"only through a card the user answered"*, because "never" would pass by forbidding the card that replaced the refusal. D49ai (2026-09-24) closed a hole in the name check |
 
 **The founder's decision (2026-09-24): drop the build clause for now**, and record the
 toolchain as the prerequisite it is. **Verified that day: this machine has no JDK, NO Android
@@ -521,11 +566,11 @@ platform.** Until then the test verifies a change by reading, and says so.
 
 **M4 is now TWO things (restated 2026-09-25), and BOTH ARE DONE (2026-09-27).** The trademark sweep
 (D16) and the license decision (D19) **left M4** — they gate a *publish*, not a milestone, and Plato
-is still in development. They are now the **publish gate**, tracked at the end of "Recommended
-order" below.
+is still in development. They are now the **publish gate** — see its own section below, and
+"Open work" for everything else that is not done.
 
 1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 7 of 7 clauses pass.** One command
-   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (twenty cases)
+   runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (every scripted case)
    and judges each clause, exiting non-zero unless every one passes. Pass the `--run` flag or run the
    harness yourself first; the judge reads `tmp/field/last-manifest.json`. **Two witnesses per
    clause**, deliberately: the spec reports what it saw on **screen** and the judge recomputes the
@@ -580,20 +625,21 @@ explicitly NOT work item 1 of anything.**
   bundles a JBR) is the only local way to run it. Do not offer `./gradlew` as a
   verification step without saying this.
 - Validate the whole repo with:
-  `pnpm exec tsc -b --force` then `pnpm -r test` (expect **713** passing
-  vitest cases across **38** files in packages/core).
+  `pnpm exec tsc -b --force` then `pnpm -r test` — the unit tests, in packages/core.
 - Validate the **UI** separately with the render suites (they need a headless
   browser, so they are not part of `pnpm test`): `pnpm run render` (builds first)
   or `pnpm run render:fast` (reuses the bundle). `pnpm run verify` runs build +
-  unit tests + render suites. Nineteen suites, **465 assertions**; see
-  `scripts/render/README.md` — every suite fails on ANY uncaught page error, and
-  since D49a a **failed assertion also fails the command**. That README also says
-  how to **drive** a control (type into it, fire its real event, read back the
-  message it posted) rather than only rendering it, and why the screenshot is
-  part of the check.
+  unit tests + render suites. See `scripts/render/README.md` — every suite fails on
+  ANY uncaught page error, and since D49a a **failed assertion also fails the
+  command**. That README also says how to **drive** a control (type into it, fire
+  its real event, read back the message it posted) rather than only rendering it,
+  and why the screenshot is part of the check.
+  **The counts live in one place — "Verification loop" below — and these two
+  commands print them. Do not copy them into a second place: four copies that
+  disagreed is how this file last went stale.**
 - Validate the **ACCEPTANCE TEST** — M4's definition of done, and the repo's end-to-end
   check — with `node scripts/field/acceptance.mjs --run`. It packages a fresh VSIX, drives
-  all twenty field cases through real VS Code, and judges the seven clauses (D49at),
+  every field case through real VS Code, and judges the seven clauses (D49at),
   exiting non-zero unless every one passes. `--run` inherits the launcher's **destructive
   demo-repo reset**; to judge a run you already did, drop the flag. Use `render:fast`-style
   judgement (`node scripts/field/verdict.mjs --case N --last 1`) when you want one case.
@@ -622,11 +668,11 @@ explicitly NOT work item 1 of anything.**
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`). Eighteen
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`): twenty-one
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught.
-- `scripts/field/` — the **live** checks: twenty scripted cases driving a real
+- `scripts/field/` — the **live** checks: the scripted cases driving a real
   VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
   that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
   including the traps and the honest boundaries.
@@ -795,13 +841,26 @@ before any of it is trusted:**
     the old one — that is what `streaming.test.ts` and `scripts/smoke-stream.mjs`
     exist for.
 
+14. **Never keep a second hand-written list of which tools are writes (D49am).**
+    The shell used to answer "is this a write?" with its own hardcoded pair
+    (`write_file`, `apply_diff`) while the mode table also classified `apply_patch`
+    as a write — so a multi-file patch raised an approval card on **every** call,
+    even for files already approved that session. **The fix was to delete the second
+    list, not to extend it:** `isWriteTool` derives from `TOOL_KIND`, and
+    `writePathsOf` gives the files a write would change. Both live in **core**, where
+    they can be tested — the shell has no unit tests, which is why the bug could live
+    there. **A `shell` call is deliberately NOT remembered**: it asks every time, with
+    the card's "allow every … this session" as the way to widen it.
+
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — 713/713 vitest in packages/core (40 files)
-3. `pnpm run render` — the real-DOM render suites, **19 suites / 465 assertions**
-   (or `render:fast` to reuse the bundle). Add an assertion here for any UI defect
-   you fix, and prove it falsifiable.
+2. `pnpm -r test` — the unit tests. **Current: 806 in packages/core across 45 files**
+   (verified 2026-09-28). This is the only place in this file that carries the count;
+   update it here when it moves.
+3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 554
+   assertions** (verified 2026-09-28), or `render:fast` to reuse the bundle. Add an
+   assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
    a local stub. See "Environment prerequisites".
@@ -813,7 +872,7 @@ before any of it is trusted:**
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the twenty live field cases it is built on, driven automatically in a real
+   done) AND the **23** live field cases it is built on, driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
    A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
@@ -872,331 +931,92 @@ gaps are what the repairs answer.)
   plan steps unfinished*. Test 7's fourteen-minute run that completed zero steps is
   the case this exists for.
 
-## Recommended order (2026-09-25)
+## Open work — nothing here is queued; each item needs a decision
 
-Written because the queued list below had grown into a pile rather than an order.
-**Tier A is small and finishes the loop we are already in; Tier B closes M4; Tier C
-is capability work, and every item in it needs a decision before it is built.**
+**Tier C is complete, so there is no head of the queue.** The ordered capability list held three
+items and all three are built and verified end to end: editor diagnostics (D49av), bounding `auto`
+by repetition (D49aw), and **undo (D49az)**. Phases 0–6 of the M5 plan are done, and **Phase 7 is
+recorded-not-built by design** — subagents, hooks, skills and notebooks each need their own
+decision first. **What follows is the recorded backlog, and picking from it needs a decision
+rather than a handover.** Each item is named once here so the list is visible in one place;
+**PROGRESS → "Deferred / backlog (do not lose these)" carries the detail**, and closed items are
+in PROGRESS's change log and in DECISIONS. **The three tiers that got here — A (D49as), B (M4
+closeout: D49at, D49au) and C (D49av, D49aw, D49az) — are complete, and this file used to restate
+all three of their records, which is the duplication D48 exists to stop.**
 
-**Tier A — finish what the field harness opened. DONE (D49as), all three in one
-pass.** Written 2026-09-25 and closed the same day.
+**Waiting on the founder:**
 
-1. ~~**A cancel case in the harness.**~~ **DONE AND RUN — field case 10, PASSED
-   2026-09-26.** Presses Stop with a question card on screen; the transcript ends
-   `cancelled`, the card is gone, and the window says cancelled. The scripted step
-   after the question never ran, which is what distinguishes a stop from an ending.
-2. ~~**Show a refusal in the live chat log.**~~ **DONE.** It was not a webview gap:
-   `onToolEvent` forwards only events carrying `args`, and the refusal carried none.
-   The event now carries them, and the line names the guard.
-3. ~~**Say when a run ends with unfinished work.**~~ **DONE.** `unfinishedPlanNote`
-   in core; the closing line reads *N of M plan steps unfinished*.
-4. ~~**The three trial-repo decisions the founder owes.**~~ **DROPPED at the founder's
-   direction (2026-09-27): *"drop the trial repo decision — we are building Plato, not
-   fixing bugs for production."*** The `Integer.parseInt(formatter.format(...))` change and
-   the `URLDecoder` defect at `SubmissionsViewModel.java:144` are **not Plato's work and are
-   no longer tracked as open items here**; the proving ground is a place to exercise Plato,
-   not a codebase under maintenance. **Do not re-open them as a session's task.**
-   The one thing worth keeping from the item is the **process hazard, which is real
-   regardless**: the launcher's `git checkout --` on a `plato-field-test-*` branch discards
-   hand edits to those two files silently — see the trap in `scripts/field/README.md`.
+1. **A taint rule for secret *materialisation*.** **PARTLY ANSWERED by D49bb, and deliberately not
+   built as a taint tracker.** The idea was to catch **a value READ from a sensitive source reaching
+   a new sink**. What shipped instead is stronger where it counts and simpler: the value never
+   enters the model's context at all (it is masked at the read), and every tool result is scrubbed
+   of any value the session has seen — so there is nothing to track, because the model never holds
+   the thing that would move. **What remains genuinely open is the sink rule for a value that
+   arrives by a route masking cannot cover** — a command that reads a file indirectly (`tar`, a
+   script), or content the user pastes. Shape detection was rejected with a reason in D49bb: it
+   needs a model or a regex zoo, it is wrong in both directions, and the pasted case is already the
+   user's own act. **Do not re-propose a read-time or write-time taint reject** — D49bb's whole
+   point is that the access is not the dangerous act. **The nearest thing to a live case is recorded
+   in D49bc:** the map now knows values from files the model never read, so a model that has read a
+   protected file masked can name a placeholder and have the value written elsewhere without ever
+   seeing it. Pre-dates seeding and unchanged by it — it is this sink rule, not a new hole.
+2. **`web_search`** — deferred (D49p) because it needs a backend decision, and the convenient
+   option has a trap: Anthropic's server-side search runs inside the API call, so **no approval
+   card can fire for it**. Needs either a key in SecretStorage (Brave/Tavily) or an accepted
+   exception to the egress rule.
+3. **Subagents / `task`** — deferred, and it **amends the one-worker lock (D45a-3)**, so it needs
+   an explicit amendment in the open rather than a slip-in.
+4. **Ordering the model list** — drag or arrows, so the user controls picker priority.
+   Founder-requested and deliberately held back as a capability rather than a repair; four
+   unsettled points are in the backlog, **read them before building**.
+5. **The D47c–n sign-off**, then the `personas.ts` role prompts that D47d records as possibly too
+   weak for real agentic flow. The checklist is in the backlog and wants a **narrow** panel width,
+   which is where the D47g Role-box clip and the D47h overflow lived.
 
-**Tier B — M4 closeout. One writing task and one audit. BOTH DONE (2026-09-27) — M4 IS
-CLOSED.** Kept here as the record of what it took: the acceptance test restated and then
-executed, and the secret audit, which found a file the repository had never contained.
+**Smaller, each already scoped:**
 
-5. ~~**Restate the acceptance test.**~~ **DONE, RESTATED AND EXECUTED (D49at,
-   2026-09-27).** Seven clauses, each naming its witness, replacing BLUEPRINT §4 —
-   **and 7 of 7 now pass**, run by `node scripts/field/acceptance.mjs --run` over
-   twenty harness cases in real VS Code. **Clause 4 is no longer a manual gap**: a
-   harness case runs a **Duo** team and asserts the closing line reports the observer.
-   Two other clauses were corrected while wiring it — one had no witness at all, and
-   one was stale against a later decision. See D49at.
-6. ~~**Secret audit (D15).**~~ **DONE (D49au) — and it found something serious.**
-   **`packages/core/src/security/secrets.ts` had never been committed**: `.gitignore`'s
-   bare `secrets.*` matched the deny-list's own implementation, so **a fresh clone
-   could not build** and the most safety-critical file in the product had no history
-   or review. Fixed, and **the founder staged both files on 2026-09-26** — they are
-   tracked from the next commit, so a clone builds. Every other surface came back
-   clean — see D49au, and the two residuals it records (the
-   VSIX ships full source with no `.vscodeignore`; the real pass reads a key file
-   from the Desktop).
+- **Two residues left by the seeding and the reveal card (D49bc) — the boundaries, not a to-do
+  list.** The seeding is built and closed the indirect read (`cat *.properties` in `auto`); what it
+  does not reach is worth stating anyway:
+  - **Anything outside the workspace: `cat ~/.aws/credentials`.** Plato cannot pre-read it, and
+    containment deliberately does not cover `shell`, so **`auto` plus arbitrary commands stays
+    best-effort for anything outside the project.**
+  - **A file the user chose to show in full is not in the map.** A blob the masker could not parse
+    has no values to enumerate, and guessing at them is the one thing that would put a value in the
+    map the masker refused — so the revealed values stay outside the scrub for the session, and the
+    notice in the file says the one rule that keeps them in place.
 
-**Then, and not as a tier of work: the publish gate.** The **trademark sweep (D16)**
-and the **license decision (D19)** left M4 on 2026-09-25 (his call — "we are still in
-dev"). They gate a *publish*, not a milestone, and they live under "The publish gate"
-above. **Do not pick them up as a session's work while Plato is still being built.**
+- **An unknown model's context window floors at 8,192**, so the compaction guard fires at ~6.5k
+  tokens. **A real defect**, unlike the percentage question that was closed as not-a-defect.
+- **The quote-splice hole in the secret check** — `cat key'store'.properties` names no deny-listed
+  file and is not refused. D49aq's shell tokenizer produces the real filename and could close it in
+  one line, but that changes the secret check for every tool, so it is a decision, not a slip-in.
+- **The fold's cadence constants are named *pairs* while counting messages**, so a fold fires on
+  roughly 13 exchanges rather than 26 — recorded, not changed; the numbers are a behavioural
+  decision and want the founder.
+- **Trim old tool OUTPUT before summarising** — worth doing only for a model with a small or
+  unknown window; measured, and it is not what the founder was seeing.
+- **An end-of-run account of what the model did** — the founder's idea, the thing that makes
+  folding stop feeling like theft. Not yet scoped.
+- **Plato never reads a reasoning model's thinking tokens** — recorded, and the tokens are billed
+  as output and then discarded. **Do not build a thinking display without the founder.**
+- **Chat-log interleaving** — separating narration from the delivered answer needs **host-side
+  reply segmentation**, not styling; the host streams one cumulative markdown blob per turn.
+- **Mermaid fences render as labelled code blocks** and want their own decision (bundling a ~1MB
+  renderer against the zero-dependency doctrine).
+- **History run-detail view**, and three small wins: title regenerate, title-call token metering.
+- **Deferred by decision (D46):** a per-project council override, and moving conversation history
+  to `~/.plato/history/` (it is in VS Code `workspaceState` today).
 
-**Tier C — capability, in the order I would argue for. Each needs a decision.
-ALL THREE ARE NOW BUILT AND VERIFIED (D49av, D49aw, D49az). Kept as the record of
-what it took.**
+**Not work at all, and deliberately last:** the **publish gate** — the trademark sweep (D16) and
+the license decision (D19). They gate a public release, not a milestone. See "The publish gate"
+above.
 
-8. ~~**LSP diagnostics after an edit.**~~ **BUILT AND VERIFIED END TO END (D49av,
-   2026-09-27).** The host tells the model what the editor reports about the files it just
-   changed, keeping only errors new since the write. **The mechanism was measured, not
-   assumed: a language server only reports on a file the editor is SHOWING.** An earlier
-   claim here — that the harness's VS Code "publishes no diagnostics to any extension" —
-   was **wrong** and was withdrawn: it publishes none for a file that is not being shown.
-   Collection is therefore quiet-first, and the file is shown only if that fails. See
-   "Current state" and D49av.
-9. **`web_search`** — deferred (D49p) because it needs a backend decision, and the
-   convenient option has a trap: Anthropic's server-side search runs inside the API
-   call, so **no approval card can fire for it**. Needs either a key in
-   SecretStorage (Brave/Tavily) or an accepted exception to the egress rule.
-10. ~~**Checkpoints / undo.**~~ **BUILT AND VERIFIED END TO END (D49az, 2026-09-28; decided
-    D49ax the day before).** Not "checkpoints" — Plato keeps its **own copies of the files it
-    replaced**, and there is no parallel history. It turned out **small**: the old bytes are already
-    read at the write site, so capture is nearly free. It does **not** change what an approval means;
-    it changes what a *mistake* costs. The copy is taken **at the executor**, which is the only place
-    `auto` reaches; the plan is **remade at the click**, because the user can edit between reading
-    the card and clicking it; and a **created file is undone by deleting it**, guarded and done last.
-    The editor's own local history was measured in real VS Code and **cannot** be the mechanism. Two
-    limits are named in the message rather than hidden: terminal commands are outside undo, and a
-    file the user has edited since is refused rather than clobbered. **The store is bounded and
-    sweeps itself** (30 days / 200 MB per project / always keep the last 10 requests; dead projects
-    and crash orphans reclaimed at activation; a corrupt index deletes nothing). **Field case 18
-    drives it in a real window**, in `auto`.
-11. ~~**Bound `auto` by repetition, not volume.**~~ **BUILT (D49aw, 2026-09-27) and verified
-    end to end** — field cases 12 (Stop), 13 ("keep going" with guidance) and 14 (the
-    no-progress trigger on its own). Two triggers (a repeated call with the same result;
-    turns where nothing succeeded), a nudge at 3 and a card at 5, and the user decides. The
-    failure mode was the repeated identical call, exactly as predicted here.
-12. **The two guard proposals** that survived the guard note: a **taint rule** for
-    secret materialisation, and **founder-owned protected names** with a visible
-    expiring override. Both need a DECISIONS entry first.
-13. **Smaller, each already scoped:** ordering the model list; an end-of-run report
-    of what the model did; closing the quote-splice hole in the secret check (one
-    line, but it changes every tool); the fold's cadence constants being named
-    *pairs* while counting messages; trimming old tool output for small/unknown
-    windows; and **discovery of an unknown model window** (it floors at 8,192, so
-    the compaction guard fires at ~6.5k tokens — a real defect, unlike the
-    percentage question that was closed as not-a-defect).
-14. **Subagents / `task`** — deferred, and it **amends the one-worker lock
-    (D45a-3)**, so it needs an explicit amendment rather than a slip-in.
-
-**Do not reopen without answering the recorded objection:** the per-project command
-allow/reject list (see the backlog).
-
-## Queued next work (in priority order — pick up here)
-
-**Tier C is complete, so there is no head of the queue — what comes next is the founder's to
-choose.** The ordered capability list held three items and all three are built and verified: editor
-diagnostics (D49av), bounding `auto` by repetition (D49aw), and **undo (D49az, 2026-09-28)** — Plato
-keeps its own copies of the bytes it replaced, never the new bytes, with the store bounded and
-self-sweeping, driven in a real window by field case 18. **The list did not have a fourth item**, so
-nothing here is a queue any more; the sections below are the recorded backlog, and picking from it
-needs a decision rather than a handover.
-
-**Built since this section was written, so they are no longer queued:** undo itself (D49az), and
-**run transcripts compressed after 15 days and deleted only by the user (D49ay, 2026-09-28)** — the
-History page deletes one run or all of them, the sweep never deletes on a timer, and **an aged run
-still opens with its summary and its full detail intact** (measured in a real window, not inferred).
-
-**Product copy is ASD-STE100, and the whole product now follows it (D49ba, 2026-09-28).** A control
-states exactly what it does; what will NOT happen sits under its own heading; no string prints an
-internal tool name — the approval card asks *"Let Plato edit src/a.ts?"* rather than *"Approve
-apply_diff?"*, and a single tool-word table in core serves the guard line, the progress line and the
-activity row. **The sweep's real lesson is that the copy was a CONTRACT:** the field harness found
-every approval card by matching `Approve <tool>?`, so a reworded heading would have failed twenty
-cases and read as a product regression. It is now found by a class and a `data-tool` attribute.
-Anything added from here answers to the same rule — see D49ba before writing a user-facing string.
-
-**Then, what the 2026-09-23/24 repairs left open.** One of the three is now done
-and the other two were **measured and turned out not to be what the founder was
-seeing** — which is worth knowing before anyone spends a session on them.
-
-1. ~~**Compaction cannot see tool activity**~~ — **DONE (D49ag, 2026-09-24).** The
-   log's tool row was `{tool, phase}`, so both readers of the log saw *that* work
-   happened and never what it was. A tool row now carries a **digest** — the
-   salient argument per tool, never the result — the fold summarises the span in
-   log order, and the cross-run request carries the tail's digests too. **The
-   number to remember: on a real 78-turn run, tool results were 80.8% of the final
-   request and the fold could see 0% of them.**
-2. **Trim old tool OUTPUT before summarising anything.** Still worth doing for a
-   model with a **small or unknown** window (Claude Code and Codex run a cheap snip
-   first). **Measured, and it is not what the founder was seeing:** his runs end
-   around **11%** of his window and his transcript holds **zero
-   `context-compacted` events**, so the guard never trips and there is no
-   summarising to avoid. Do not spend a session on this believing it explains a
-   fold he complained about.
-3. ~~**The compaction threshold should be an absolute token window**~~ — **CLOSED
-   as NOT a defect (2026-09-24).** The premise was a previous session's note copying
-   Claude Code, and **it was wrong.** `shouldAutoCompact` is
-   `estimated >= window * threshold`, default **0.8**, clamped `[0.5, 0.95]`, and the
-   slider already says *"80% of context"* — **nothing is hardcoded**, and a percentage
-   **scales with the model** (256k trips at 204,800; 512k at 409,600). **The 800,000
-   figure was 80% of the founder's own reported window, not a constant**, and reading
-   it back as one is the mistake this line exists to stop. The real defect here is
-   **discovery**, not the unit: an unknown window falls to 8,192 — see the catalog
-   backlog entry.
-   **Related and unmeasured:** the fold's cadence constants (`AUTO_FOLD_AT = 26`,
-   `KEEP_AFTER_FOLD = 12`) are called *pairs* in the code and in this doc, but
-   `tailPairs` counts **message rows** — so the fold fires on ~13 exchanges, twice
-   as often as the names suggest. Recorded, not changed.
-
-**Also open from that work, smaller:**
-
-- ~~**How to bound `auto` now that no turn cap exists (D49ab).**~~ **CLOSED — BUILT as D49aw
-  (2026-09-27), and its shape was predicted correctly here: a repetition detector, not a step
-  count.** Two triggers (a repeated call *with the same result*, and turns where nothing
-  succeeded), nudge at 3 and card at 5, reset on any success, and the user is asked rather than
-  the run being aborted. The research that settled it is in D49aw — Cline ships 3/5 on exactly
-  that signal, and no shipping agent kills a stuck run silently. **Still worth keeping:** do not
-  re-propose a step count or a `$/turns` budget (D49h), and `duo`/`academy` remain the structural
-  answer for an unattended run, since the nudge rides the observer's own channel.
-- **Ordering the model list** — drag or arrows, so the user controls picker
-  priority. Founder-requested and deliberately held back as a capability rather
-  than a repair. Four unsettled points are in the backlog; **read them before
-  building**, especially that drag has no keyboard path and is hard to drive from
-  the render harness.
-- **The model should report what it did at the end of a run** — the user-facing
-  account, which is what makes folding stop feeling like theft. Founder's idea,
-  not yet scoped.
-- **Plato never reads a reasoning model's thinking tokens.** Recorded in the
-  backlog. **Do not build a thinking display without the founder.**
-- **A taint rule for secret *materialisation*.** Withheld from the decision log
-  until now. Plato's secret check is a **name** check — it refuses tool arguments
-  that name a protected file. The stronger idea, which came out of watching a
-  real guard behave against a real agent: **a value READ from a sensitive source
-  reaching a new sink** is the thing to catch — copying it somewhere new, printing
-  it, or sending it out — where reading it to use it is ordinary. A deterministic
-  version needs no model: track which tool results came from a sensitive path and
-  refuse a later write, a shell command that emits it, or egress whose content
-  derives from one. **Needs a DECISIONS entry before it is built**, and it is the
-  interesting engineering rather than the urgent part.
-- **The founder owns the protected-name policy.** Today `SECRET_DENYLIST` is a
-  fixed list in `security/secrets.ts`. The proposal: make the set
-  **owner-configurable**, name the defaults in the UI rather than only in code,
-  give a refusal an explicit, visible, **expiring** per-session allowance (the way
-  `web_fetch` approvals already work, keyed `tool:host`), and have the refusal text
-  itself say how the human can permit it — so nobody has to read source to learn
-  why they are blocked. Small, and it is what turns a hard-coded prohibition into
-  a boundary with a gate.
-- **Close the quote-splice hole in the secret check, or decide not to.** `mentionsSecretPath`
-  is a text scan, so `cat key'store'.properties` names no deny-listed file and is
-  not refused — `secrets.ts` records the limit itself. **D49aq's shell tokenizer
-  produces the real filename and could close it in one line**, but that changes the
-  secret check for every tool, so it was left as a decision rather than taken
-  silently.
-
-**Three items the founder raised on 2026-09-24 — all three settled, and one of them was a
-contract change.** The full analysis is in the PROGRESS backlog and DECISIONS; the short
-form:
-
-- ~~**Numbered tabs on the questions panel**~~ — **DONE (D49aj, 2026-09-24).** Plus the
-  answer he asked for, which is *no change needed*: the card **does** have a Back button
-  and it **does** restore a prior answer, pinned by a render suite since D49y.
-- ~~**Multi-select questions (checkboxes)**~~ — **DONE (D49al, 2026-09-24).** Built rather
-  than only answered, on his reasoning: *"a model can reason to ask a multiple choice
-  answer, so we should support checkboxes."* A question carries an optional `multiple`
-  flag; the answer stays one string per question.
-- ~~**Simplifying the action model**~~ — **DONE (D49ak, 2026-09-24).** `act` is gone;
-  `edit` absorbed it. **The mode table is now three rows: `plan` reads and does not
-  touch; `edit` reads freely, asks for a write and remembers the yes per file for the
-  session, and asks for every command; `auto` asks nothing** — including `web_fetch`,
-  which **no longer asks in `auto`** (this amends D49p; the cost is recorded in
-  D49ak). **`plan` was left with no shell at first, and that part of his proposal was not
-  built as stated** — "run scripts but change no project files" is not enforceable by
-  reading a command, because a host classifies a *tool* and not a *command*. **It is now
-  built in the one form that IS enforceable: a read-only allowlist, so `plan` and `edit`
-  both run read-only commands unasked (D49an, D49ao).** **Read D49ak and D49ao before
-  touching the mode table** — two architecture documents state the opposite of what now
-  ships, and their bodies stay verbatim with a superseded-map row instead.
-- **A write is remembered per file — and `apply_patch` now is too (D49am).** The shell used
-  to answer "is this a write?" with **its own hardcoded pair** (`write_file`,
-  `apply_diff`), while the mode table classified `apply_patch` as a write when it landed
-  (D49l). **The two lists disagreed, so a multi-file patch raised an approval card on every
-  call** even for files already approved that session — the nagging the memory exists to
-  stop. **The fix was to delete the second list, not to extend it:** `isWriteTool` derives
-  from `TOOL_KIND` now, and `writePathsOf` gives the files a write would change (one path,
-  or every path in a patch). The rule: ask unless **all** are approved, remember **all** on
-  a yes, drop a malformed entry rather than store an empty path. **Both are in core, where
-  they can be tested — the shell has no unit tests, which is why the bug could live there.**
-  **A `shell` call is deliberately NOT remembered**: it asks every time, with the card's
-  "approve all for this session" as the way to widen it.
-
-**Live verification: no longer outstanding (2026-09-25).** Six changes were previously verified by
-unit tests and render suites only — the question tabs, the three-mode merge, multi-select questions,
-the 3-option/4-question caps, the `apply_patch` session memory, and the read-only shell allowance in
-`plan` and `edit`. **All six have now been exercised in a real VS Code**: the nine live checks run
-themselves (`scripts/field/`, D49ap) and pass, and a real-model pass covers the judgement half. The
-two that mattered most are covered — **the secret guard refuses a shell command naming a protected
-file with NO card**, and **a read-only command runs with no card while `./gradlew` still asks**.
-`tmp/plato-field-test.html` remains the by-hand checklist, but it is now a convenience rather than
-the only route; **`tmp/` is gitignored, so it is not the record** — `scripts/field/` is.
-
-**A note on how to read a run transcript, because the meaning of one line changed (D49aq).**
-`approval-requested` means an ask was RAISED, never that a card was DRAWN — in `edit` the per-file
-session memory answers without drawing one. **`approval-card` is the line that says which happened**
-(`via: shown | session-memory | session-approval`). A `refused` tool-event means the pre-flight
-guard stopped the call, and it names the guard (secret or containment).
-
-**Then the active plan.** **The M5 agent capability plan. Read DECISIONS D49 for
-the roadmap — do not restate it here.** **Phases 0–6 are DONE.** **Both Phase 3 and
-Phase 6 opened by repairing a fault the phase did not anticipate: no tool enforced
-workspace containment (D49k), and a shell command could read a protected file by
-naming it plainly (D49ai).** **What remains is Phase 7, which is recorded-not-built
-by design** — subagents, hooks, skills, notebooks — **each needs its own decision
-before it is built**, and the first of them amends the one-worker product lock
-(D45a-3). (Two items once listed here have since left it: **LSP diagnostics** was
-built — D49av — and **checkpoints/undo** is built as **undo** — decided D49ax, built D49az, and
-deliberately *not* "checkpoints".) So the plan is at its end: the next work is a
-chosen item, not the next phase. **`web_search` was deliberately deferred (D49p)**:
-it needs a backend decision, and the convenient option — Anthropic's server-side
-search — bypasses the approval card entirely. **D49q is closed as *not wanted***: `plato.net.allow`
-and `plato.net.deny` were deleted on 2026-09-21 rather than given a UI, because
-`web_fetch` always asks and an allow list could therefore only ever subtract.
-
-**Two items in this plan were built and then removed on a founder challenge —
-read before rebuilding either.** **D49h**, a run budget, and **the domain
-allow/deny lists**. Both were plan items nobody had asked for and neither repaired
-a demonstrated fault. The pattern is recorded in DECISIONS D49: a plan's items are
-not all the same kind, so separate what *repairs a demonstrated fault* from what
-*adds a capability*, and say which is which.
-
-**Subagents are deliberately deferred and must not be added without
-amending the one-worker lock (D45a-3) in the open.**
-
-The items below predate that plan and remain open:
-
-0. **Founder sign-off on D47c–n** (all committed and pushed as of `136564b`).
-   Check Academy at a **narrow** panel
-   width — that is where the D47g Role-box clip and the D47h overflow lived — and
-   confirm: Academy shows only philosophers; changing `Plato's model` **sticks**
-   and stays in sync with the composer; Powers = pause/cancel; the council is
-   pre-filled `Lyceum`; a starter council seeds Aristotle + Pythagoras; the `✕`
-   is drawn on every card and disabled at 2; the Role counter reads `n / 1000`;
-   the mode cards stack to ONE column when narrow; in Providers the section stays
-   OPEN across **Set key**, **Refresh models** and **Add connection**, with the
-   key entered inline; the Academy mode card reads `Plato + a council of
-   philosophers.` with no file path (D47m); and the History empty Runs note reads
-   `~/.plato/runs/` (D47n).
-   **Then settle the `personas.ts` role prompts** (recorded in D47d as possibly
-   too weak for real agentic flow).
-1. **Chat-log message rendering.** Markdown, code blocks, the
-   "done in 26s · 11 tool calls · 66.7k tok" footer, and the labelled
-   tool-summary chip already ship (core `renderMarkdown` + `.md-*` CSS +
-   the done line + the D47c chip). What remains is *interleaving* — see the
-   deferred note below.
-2. **History run-detail view.** Friendlier rendering of a run's
-   transcript (turns, tool calls, costs), instead of the raw file.
-3. **Small wins:** title regenerate affordance (hover rename → add
-   regenerate), title-call token metering into run costs.
-
-> **Deferred / backlog — the full list lives in PROGRESS →
-> "Deferred / backlog (do not lose these)",** with dates and the resolved items.
-> Two of them matter for planning, and both are bigger than they look:
-> - **Interleaved tool-call cards in the live log** need **host-side reply
->   segmentation** (a new segmented `md` contract), not styling — the host
->   streams one cumulative markdown blob per turn, so tool summaries land below
->   the whole reply. The History run-detail view is the cheaper place to get
->   correct ordering first.
-> - **Mermaid fences render as labelled code blocks.** Needs its own decision:
->   bundling a ~1MB renderer breaks the zero-dependency doctrine and adds an SVG
->   XSS surface inside the escape-first webview.
->
-> Deferred by decision (see DECISIONS D46): per-project council override
-> ("discussion later" — v1 is one global council) and moving convo history to
-> `~/.plato/history/` (it is in VS Code `workspaceState` today).
+**Do not reopen without answering the recorded objection:** the per-project command allow/reject
+list. A list that covers most of a project's commands invites the belief that it covers all of
+them, and the gaps are invisible. The honest alternatives if it bites: leave it (`auto` already
+runs everything unasked), or grant one command shape at a time as a named, narrow decision like
+the read-only allowlist (D49an).
 
 ## Ground rules for any agent working here
 

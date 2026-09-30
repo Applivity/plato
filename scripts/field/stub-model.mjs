@@ -135,12 +135,25 @@ const server = createServer(async (req, res) => {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   // Tool results are the model's view of what Plato DID — for a refusal, the
   // only witness there is (the loop emits no bus event for a pre-flight
-  // refusal, so the transcript stays silent). Truncated hard, and safe to
-  // truncate because the secret guard is exactly what stops a protected file's
-  // contents from ever reaching a tool result in the first place.
+  // refusal, so the transcript stays silent).
+  //
+  // D49bb: a protected file's contents DO reach a tool result now — masked — so
+  // the old 120-char truncation was too short to witness anything. Two changes,
+  // both driven by a check that actually failed:
+  //
+  // * the head is 4,000 chars, enough for a config file end to end. It was 400,
+  //   and case 1 read `local.properties`, whose placeholder sits on line 12
+  //   after ten comment lines — so a MASKED read looked identical to an
+  //   unmasked one from the head alone.
+  // * `masked` says whether a placeholder appears ANYWHERE in the result, which
+  //   does not depend on where in the file it falls. A large file still has its
+  //   placeholder beyond the window; the boolean does not.
   const toolResults = messages
     .filter((m) => m && m.role === 'tool')
-    .map((m) => ({ len: String(m.content ?? '').length, head: String(m.content ?? '').slice(0, 120) }));
+    .map((m) => {
+      const text = String(m.content ?? '');
+      return { len: text.length, head: text.slice(0, 4000), masked: text.includes('«masked:') };
+    });
   log.push({
     at: new Date().toISOString(),
     model: body.model,

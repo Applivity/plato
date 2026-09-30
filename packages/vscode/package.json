@@ -80,6 +80,18 @@
           "minimum": 0.5,
           "maximum": 0.95,
           "description": "D44d: fraction of the model's context window at which auto-compaction triggers (0.5–0.95, default 0.8). Compaction is always auto at this threshold; /compact (or the ring's Compact-now) forces it on demand."
+        },
+        "plato.secrets.protect": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "D49bb: extra file names to protect, on top of the built-in list (`keystore.properties`, `local.properties`, `.env*`, `*.keystore`, `*.jks`, `secrets.*`). A name matches the file's last path segment, and `*` is allowed at the start or the end (`*.pem`). Plato never sends a protected file's values to a model: it shows the file with each value replaced by a placeholder."
+        },
+        "plato.secrets.allow": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "D49bb: exact workspace-relative paths to take OFF the protected list, so Plato shows them in full. Use this for a file that matches a built-in name but holds no secret in this project, for example `local.properties` or `.env.example`. One path per entry, from the workspace root."
         }
       }
     },

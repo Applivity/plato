@@ -101,6 +101,16 @@ export function analyse(events) {
     failed: of('run-failed'),
     /** Approval cards for one tool. */
     cardsFor: (tool) => of('approval-requested').filter((e) => e.tool === tool),
+    /**
+     * Calls of one tool that SUCCEEDED.
+     *
+     * D49bc: `phase === 'done'` is not enough, and the difference matters for
+     * every rule that reads "the call was not refused". A tool the EXECUTOR
+     * refused — a protected file, a bad path, a failed write — also comes back
+     * with phase 'done'; only `ok` separates it from a call that worked. A rule
+     * written on the phase alone passes a run in which the call failed.
+     */
+    doneFor: (tool) => of('tool-event').filter((e) => e.tool === tool && e.ok === true),
     /** Every tool-event for one tool, in order. */
     phasesFor: (tool) => of('tool-event').filter((e) => e.tool === tool),
     /** Tool calls made in the final turn — test 8's whole claim. */
@@ -125,6 +135,12 @@ const RULES = {
   // the file. That the refusal REACHED the model is checked against the scripted
   // model's own record (`expectModelTold` in the case, read by the spec), which
   // is the only witness to it.
+  //
+  // D49bb split the two halves of this case. The rule used to read "no shell OR
+  // READ call ran to completion", and that is now WRONG for the second run: a
+  // protected file reads, masked. Only the shell keeps the refusal — its output
+  // cannot be masked before Plato has seen the values — so the rule names the
+  // shell alone. The read's half is witnessed by `expectModelTold: '«masked:'`.
   1: (a) => [
     {
       name: 'no approval card was raised for a protected-file call',
@@ -132,8 +148,8 @@ const RULES = {
       detail: `${a.approvals.length} card(s)`,
     },
     {
-      name: 'no shell or read call ran to completion',
-      ok: !a.toolEvents.some((e) => (e.tool === 'shell' || e.tool === 'read_file') && (e.phase === 'done' || e.phase === 'allowed')),
+      name: 'no shell call ran to completion',
+      ok: !a.toolEvents.some((e) => e.tool === 'shell' && (e.phase === 'done' || e.phase === 'allowed')),
       detail: summarise(a.toolEvents),
     },
     {
@@ -568,6 +584,78 @@ const RULES = {
       ok: ['write_file', 'apply_diff'].some((t) =>
         a.phasesFor(t).some((e) => e.phase === 'done'),
       ),
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+  // D49bb. The transcript cannot see a masked value — tool results are not
+  // recorded — so the rule asserts the two things it CAN see: the read of a
+  // protected file was NOT refused, and the write that followed completed. The
+  // value-level claims are the spec's, on the screen and on the disk.
+  21: (a) => [
+    {
+      name: 'the protected file was read, not refused',
+      ok: a.doneFor('read_file').length > 0,
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'no call was refused by the secret guard',
+      ok: !a.toolEvents.some((e) => e.phase === 'refused'),
+      detail: summarise(a.toolEvents.filter((e) => e.phase === 'refused')),
+    },
+    {
+      name: 'the write that followed completed',
+      ok: a.phasesFor('apply_diff').some((e) => e.phase === 'done'),
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+  // D49bc. A protected file the masker cannot parse is OFFERED rather than
+  // refused. The transcript sees the two halves that live there: the read was
+  // not stopped by the secret guard, and it completed. Whether the model was
+  // then shown the value — and whether the card said what the click costs — is
+  // the spec's claim, on the stub's log and on the card.
+  22: (a) => [
+    {
+      name: 'the unmaskable file was read, not refused',
+      ok: a.doneFor('read_file').length > 0,
+      detail: summarise(a.toolEvents),
+    },
+    {
+      // BOTH reads completed. The second is the session memory: an answer that
+      // was not remembered would ask again, and a user who has answered once
+      // must not be asked the same question twice in one run.
+      name: 'the second read completed too, without a second question',
+      ok: a.doneFor('read_file').length === 2,
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'no call was refused by the secret guard',
+      ok: !a.toolEvents.some((e) => e.phase === 'refused'),
+      detail: summarise(a.toolEvents.filter((e) => e.phase === 'refused')),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+  // D49bc, the other half. The value was reached INDIRECTLY by a shell command,
+  // so the transcript cannot show the masking — that happens on the stub's log.
+  // What the transcript must show is the part that could go wrong here: the call
+  // ran (the token scan cannot see a glob) and the run did not fail.
+  23: (a) => [
+    {
+      name: 'the indirect command was allowed to run, and it worked',
+      ok: a.doneFor('shell').length > 0,
       detail: summarise(a.toolEvents),
     },
     {

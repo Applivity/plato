@@ -33,11 +33,25 @@ const MAX_FILES = 2000;
  * paths relative to `root`, so `list_dir { path: 'src' }` yields `src/a.ts` —
  * the same form every other tool takes as input. The caller is responsible for
  * resolving and containing `subpath` before passing it.
+ *
+ * `includeSecret` (D49bc) is the ONE caller that wants the protected names back:
+ * seeding the session's secret map needs to find the files this walker exists to
+ * hide from a model. Every other caller keeps the default, because the listing
+ * feeds prompts and tool output.
  */
-export function listWorkspaceFiles(root: string, subpath = ''): string[] {
+export function listWorkspaceFiles(
+  root: string,
+  subpath = '',
+  opts: { includeSecret?: boolean } = {},
+): string[] {
   const out: string[] = [];
   try {
-    walk(subpath.length > 0 ? join(root, subpath) : root, subpath, out);
+    walk(
+      subpath.length > 0 ? join(root, subpath) : root,
+      subpath,
+      out,
+      opts.includeSecret === true,
+    );
   } catch {
     return [];
   }
@@ -45,7 +59,12 @@ export function listWorkspaceFiles(root: string, subpath = ''): string[] {
 }
 
 
-function walk(absDir: string, relDir: string, out: string[]): void {
+function walk(
+  absDir: string,
+  relDir: string,
+  out: string[],
+  includeSecret: boolean,
+): void {
   let entries;
   try {
     entries = readdirSync(absDir, { withFileTypes: true });
@@ -58,7 +77,7 @@ function walk(absDir: string, relDir: string, out: string[]): void {
       return;
     }
     const rel = relDir === '' ? e.name : `${relDir}/${e.name}`;
-    if (isSecretPath(rel)) {
+    if (!includeSecret && isSecretPath(rel)) {
       continue;
     }
     if (e.isDirectory()) {
@@ -75,6 +94,6 @@ function walk(absDir: string, relDir: string, out: string[]): void {
     if (out.length >= MAX_FILES) {
       return;
     }
-    walk(join(absDir, d), relDir === '' ? d : `${relDir}/${d}`, out);
+    walk(join(absDir, d), relDir === '' ? d : `${relDir}/${d}`, out, includeSecret);
   }
 }

@@ -3317,6 +3317,256 @@ and the render suite now asserts the answered state and the class directly.
 
 ---
 
+**D49bb — a protected file can be READ, with its values masked; the secret is guarded where it
+MOVES, not where it is named (founder, 2026-09-28).**
+
+The deny-list refused any call whose arguments named a protected file, in every mode, with no way
+out. The founder challenged it in one sentence: *"it don't waant plato refusal to become annoyance
+for user, Plato can warn but must not outright reject"* — his example being a user who pastes a key
+into the chat and asks Plato to write it into a config file. **That example does not describe the
+shipped product, and measuring it first is what made the rest of this decision precise:** the write
+it describes is **allowed today**, because the guard looks for a file NAME and a pasted key is a
+VALUE. But the instinct was right, and the measurement says why — **the refusal fires on the ACCESS,
+and the access is not the dangerous act.** Moving the secret somewhere new is.
+
+**Fourteen agents were surveyed before deciding, and the field does not agree with itself.**
+
+| Agent | Reading `.env`, default | Escape |
+|---|---|---|
+| Continue.dev | refuses hard — *"is not allowed because it is a security concern"* | none |
+| Zed | refuses — `private_files` defaults to `**/.env*`, `**/*.pem`, `**/*.key` | edit the setting |
+| Roo Code | refuses, against the user's own `.rooignore` | `!` negation |
+| Kilo Code | refuses by permission rule — **and leaked anyway** (`.env.local` was read) | edit the rules |
+| Gemini CLI | **excludes `.env` by default** — `SYSTEM_FILE_EXCLUDES = ['**/.DS_Store', '**/.env']` | `.geminiignore`, policy rule |
+| Cursor | blocks its own file tools; not the terminal or MCP — *"complete protection isn't guaranteed"* | `.cursorignore` `!` |
+| GitHub Copilot | never refuses; silently withholds the file from suggestions | admin setting only |
+| Windsurf | index-only; no documented read block | config |
+| Cline | **does not block**, and is REMOVING `.clineignore` | opt-in plugin |
+| Aider | never blocks an explicitly named file; `/read` always works | — |
+| OpenHands | **never blocks** — classifies risk and at worst asks; reading is LOW risk | confirm threshold |
+| Claude Code | **no built-in credential deny list** — *"only the files and variables you list are restricted"* | deny/ask rules |
+| Codex CLI | no `.env` handling; the sandbox bounds writes and network, not names | approval policy |
+
+**Three findings decided it.**
+
+1. **Name-based blocking is being abandoned, and the maintainers say why.** Cline is removing its
+   ignore file *"to avoid creating a false sense of security"*, and says the plugin that replaces it
+   *"should not be treated as a security boundary"*. Cursor: *"complete protection isn't guaranteed
+   due to LLM unpredictability."* Kilo's block **failed in the field** — a `.env.local` read went
+   through anyway. **And Plato has this exact history: `cat keystore.properties` ran (D49ai).** A
+   name check is a claim about protection that the shell walks around.
+2. **It is annoying in a documented way.** Continue had to relax patterns that were blocking
+   legitimate files called `tokens.py` and `credentials.go`. Roo users complained that files they
+   wanted were unreachable and could not even be mentioned. Aider nags about `.env` at every start.
+3. **Not one product detects a secret VALUE.** Every mechanism above guards a name, so the founder's
+   pasted-key case is guarded by nobody, and the published guidance for that threat is enforcement at
+   the **sink**, not a name check. The one prior art worth copying is **Claude Code's sandbox `mask`
+   mode**: the command is shown a placeholder and the real value is substituted only on the way out
+   to an allowed host. The tool keeps working, the secret never enters the model's hands, and the
+   user is not interrupted at all.
+
+**The decision — the read is allowed and the value is never handed over.**
+
+1. **Reading a protected file is ALLOWED.** A text config file comes back **masked**: every value is
+   replaced by a placeholder, and the keys, line structure and comments survive. The model learns
+   what configuration exists without ever holding a secret.
+2. **The placeholder is `«masked:NAME»`.** It names its own key, so the real value can be restored
+   per key, and it is detectable — which is what makes the sink check possible without knowing the
+   value.
+3. **Masking FAILS CLOSED.** If a protected file yields no maskable value — a keystore, a private
+   key, a binary, a one-line blob — the read is **refused**, with a reason and an alternative. A
+   masking step that silently returns the original text is worse than the refusal it replaced.
+   **And a COMMENTED-OUT value is still a value**: `# API_KEY=sk-live-…` is what people leave
+   behind when they comment a key out to test something, so a masker that passes comment lines
+   through hands over the key while the file still reads as protected. The first version did
+   exactly that and passed every test in its own file — the trap was found by asking what the
+   comment branch does, which is the reason that branch now has a test.
+4. **Every tool result is scrubbed** through the run's secret map before it reaches the model, so a
+   value that arrives by another route (a `shell` command's output, a file copied somewhere else)
+   comes back as its placeholder. The model cannot read a secret back out of a place it moved it to.
+5. **A write un-masks.** A write whose content carries a placeholder has the real value restored
+   before it lands, and a diff is applied against the MASKED view of the file so that untouched
+   secrets survive. **This is not optional and it is not a follow-up:** masking a read without
+   restoring the write turns an ordinary "add one key" edit into the destruction of every secret in
+   the file. The two halves ship together.
+6. **No new approval card for reading.** With the value withheld there is nothing to approve — the
+   interruption was the cost and it is now unnecessary. Every *sink* already has a gate in the modes
+   that have gates: a write asks in `edit`, a command asks in `edit`, egress asks in `edit` and
+   always in `auto`. `plan` writes nothing at all.
+7. **The protected list becomes the owner's** — the built-in defaults stay, a user may add their own
+   names and take a default off, and the list is visible in Settings rather than only in source.
+   This is the escape the refusal never had.
+
+**What is deliberately NOT built.** Value **shape** detection (a pasted key that "looks like" a
+key) is out of scope: it needs a model or a regex zoo, it is wrong in both directions, and the
+pasted-key case it would cover is **already allowed and already harmless** — the user put it there.
+The **taint/IFC** literature (provenance labels enforced at the sink) is where this design points,
+but labels that survive arbitrary text in a prompt are research, not a feature; masking the value
+sidesteps the whole problem by never giving the model the value to move.
+
+**Recorded limits.** A command can read a file indirectly (`tar`, a recursive grep, a script), and
+the scrub only knows values it has seen, so the shell path is **best effort** — the same limit D49ai
+already records. **The sharper form, found while reviewing this decision: in `auto`, where `shell`
+runs unasked, `cat *.properties` prints a protected file that was never read through `read_file`,
+so its value is not in the map and nothing hides it.** Pre-existing rather than a regression (the old
+name check could not see `*.properties` either), and closable by seeding the map from the workspace
+at run start — see HANDOFF → "Open work". **And even that does not close the case outside the
+workspace:** `cat ~/.aws/credentials` names nothing Plato can pre-read, and containment deliberately
+does not cover `shell`, so **`auto` plus arbitrary commands stays best-effort for anything outside
+the project.** Masking hides values, not the *existence* of a file or its key names.
+
+**Three things this decision does NOT settle, each recorded with its reason in HANDOFF → "Open
+work" so they are not re-derived:** the **in-panel Settings section** the owner's list is owed under
+D45c, and the shape it should take (names are patterns, exceptions are **exact paths and never
+wildcards**, because a wildcard exception unprotects silently); a **card for the file Plato cannot
+mask, split by cause** — opaque (a keystore) stays a refusal, text the masker could not read becomes
+a session-scoped card; and **seeding the secret map from the workspace at run start**, which closes
+the indirect-read class above. **ALL THREE ARE BUILT — see D49bc immediately below**, which also
+records the two places the building changed the design: the card's cost is its own field, and the
+seeded map accepts a placeholder the model never read.
+
+**D49bc — the three things D49bb left open are BUILT: the owner's panel, the card for a file Plato
+cannot mask, and the secret map seeded at run start (founder, 2026-09-28).**
+
+D49bb named three open items and left each with its shape recorded but unbuilt. The founder's
+instruction was *"build all 3 recommendations and let's close this for good"*, so this entry records
+what was built, what was deliberately not, and what the build measured. **Every item was reshaped by
+building it** — the two that changed most are the card's copy and the seeding's notice, and both
+changes came from writing the thing rather than from thinking about it.
+
+**1. The card for a file Plato cannot mask — split by CAUSE, not by file.**
+
+D49bb left this as one case: *"Plato cannot mask this file"*, answered with a refusal and a pointer
+to `plato.secrets.allow`. Building it made the split obvious, and the split is the whole decision:
+
+- **Opaque content — a `.jks`, a `.p12`, a keystore: stays a refusal, and no card is drawn.**
+  Showing it is useless *and* the whole content is the secret, so a card would offer a bad deal
+  behind a reasonable-looking button. This is the "false sense of security" Cline removed its ignore
+  file over, and a card is exactly how it comes back.
+- **Text the masker cannot parse — a JSON blob on one line, an INI with sections: a CARD.**
+  *"Show this protected file in full?"* The only reason for the refusal is the masker's own limits,
+  the content is plausibly useful, and the alternative is the dead end the founder objected to.
+
+**Plato tells them apart with a UTF-8 decode**, so the split is deterministic: no model, no guess, no
+regex zoo. `isPlainText` decodes with `fatal: true` — a *lossy* decode turns every bad byte into
+U+FFFD and would call a `.jks` text, which is why this is a decode and not a search for the
+replacement character. A NUL byte is rejected too: UTF-8 permits one, no config file Plato masks
+holds one, and binaries are full of them.
+
+**The card's copy is the decision, not the dressing.** Three things had to be on it, and one of them
+is why the card exists at all:
+
+- **The cost, as its own field.** *"If you show it, every value in this file goes into this
+  conversation. Plato cannot hide the values afterwards."* It is a **separate field in `RevealCard`**
+  rather than one row among the prose, so the view can give it weight **and so a reordering of the
+  wording cannot silently move the emphasis off it.** A security prompt that reveals its cost after
+  the click is the dishonest kind.
+- **The way out, named.** *"To allow this file in every session, add it to the plato.secrets.allow
+  setting."* Nobody should click yes for want of a setting they were never told about.
+- **Two buttons and no third.** There is deliberately no "always" button: the permanent answer is a
+  setting the user can read and change in the panel, not a security decision taken once inside a
+  dialog. That is also why the panel section (item 2) had to ship with it.
+
+**The card is raised in EVERY mode, including `auto`.** `auto` means "no card for every write", not
+"no question may ever be asked" — the precedent is D49aw's stuck card, which `auto` also raises. The
+alternative here is a refusal with no way through, which is precisely what the founder rejected. The
+answer is remembered **per file, for the session**, so the second read of the same file never asks
+again; that is the difference between a question and a nuisance, and the field case asserts the count
+is exactly one.
+
+**A file the user shows is not a file Plato unmasked.** Nothing remembers its values — a blob the
+masker could not parse cannot be enumerated, and guessing at its values is the one thing that would
+put a secret in the map the masker refused. **So the revealed file's values are outside the scrub for
+the session, and that is a recorded limit, not an oversight.** The notice appended to the file says
+the one rule that keeps them in place: *do not write a value from this file into another file.*
+
+**2. Seeding the secret map at run start — D49bb's largest hole, closed for the class.**
+
+`cat *.properties` in `auto` is the whole problem in one line. The scrub hides a value the session
+has **seen**; a command reaches a protected file **indirectly**; and the name check cannot see it
+either, because the token scan splits on `*`. `seedVault` reads the workspace's protected text files
+through the **same masker** at run start and registers their values, so from then on any tool result
+carrying one of them comes back as its placeholder whatever route it took. It closes the **class**
+rather than the example.
+
+**The cost was weighed and recorded, because it is real: Plato reads the user's secrets into memory
+at every run start.** Never to disk, never to a model, and the map dies with the session — the same
+containment the vault already had. A file the masker cannot account for is skipped rather than
+guessed at, so seeding cannot put a value in the map that masking would have refused.
+
+**A limit this does NOT close, stated rather than implied: `cat ~/.aws/credentials`.** That file is
+outside the workspace, so Plato cannot pre-read it, and containment deliberately does not cover
+`shell`. **`auto` plus arbitrary commands stays best-effort for anything outside the project.**
+
+**One interaction worth naming, because it is a cost of seeding.** The vault now knows values from
+files the model never read, and `materialise` accepts any placeholder the vault knows — so a model
+that has read a protected file masked can write its placeholder into another file and have the real
+value written there, without ever seeing it. **This is not new: it already worked that way the moment
+a file was read, and seeding widens which values it applies to, not the class.** It is the sink rule
+HANDOFF → "Open work" item 1 records as deliberately unbuilt, and it is not fixed here.
+
+**3. The owner's panel — the list is theirs, and the asymmetry is the security property.**
+
+`plato.secrets.protect` and `plato.secrets.allow` shipped in D49bb, and D45c obliges every knob to be
+discoverable in the panel. The section was settled in discussion and built as settled:
+
+- **Rows, not CSV.** A comma is a storage format leaking into a UI: a filename can contain one, and a
+  list cannot be read at a glance. Each row carries its own Remove.
+- **Two lists that must not look alike, because they are different kinds of thing.** *Protected names*
+  match the file's **last path segment** anywhere in the project and allow `*` at the start or the
+  end. *Allowed files* are **exact workspace-relative paths and take no wildcards at all.** **The
+  asymmetry is the security property:** a wildcard exception (`allow *.env`) would silently unprotect
+  everything matching it and nothing on screen would say so, while an exact path is a decision the
+  user can see. Each list's help text says so in the user's own terms.
+- **The built-in names are shown and cannot be removed.** They appear, so the user can see what is
+  protected without reading a document, and they carry a `built in` tag where the Remove button would
+  be — **a row that is deliberately locked must say so, or it reads as broken.** Removing `.env`
+  everywhere is a silent hole, so it stays awkward on purpose: a project that keeps no secrets in
+  `.env` lists its `.env` paths instead.
+- **An entry that could never match is REFUSED, with the reason.** `isSecretPath` compares the last
+  path segment, so `app/config/*.jks` would protect nothing and nothing on screen would say so.
+  `protectNameError` and `allowPathError` live in core beside the matcher, which is the only place
+  that can say what a name must look like.
+- **The store stays VS Code settings**, written at Global scope the way the composer writes
+  `plato.model`. The panel and a hand-edited `settings.json` cannot disagree, and a workspace override
+  still wins for anyone who wants one.
+
+**What was deliberately NOT built.** No third button on the reveal card (above). No wildcard on the
+allow list (above). **No toggle for seeding**: it is on whenever a vault exists, so there is no state
+where the map is half-filled and the user cannot tell which. And no "remember this file forever" in
+the card — that is the setting, and the setting is in the panel where it can be read.
+
+**Verified by building it, and the falsifications are the record.** `isPlainText` forced to `true`
+fails the two split tests; `seedVault`'s `remember` removed fails three (two in core, one through the
+loop); every unmaskable file treated as opaque fails four. **Each was reverted and re-run green.**
+Field cases 22 and 23 witness the two halves against real VS Code: the card drawn exactly once in
+`auto` and stating its cost, and `cat .en*` printing no value because the map was seeded. **Clause 3
+of D49at was RESTATED** — see the clause table below — because "a protected file's values never reach
+a model" stopped being true by design the moment the card existed.
+
+**Two defects in the VERIFICATION were found by falsifying it, and both are the same species as the
+things they check.** Falsifying case 22 (the shell's reveal answer forced to `false`) failed the case
+for the right reason — and showed that **the transcript rule would have passed anyway**: it asked for
+a `read_file` at phase `done`, and a read the EXECUTOR refused also ends at phase `done`, so only
+`ok` separates a call that worked from one that failed. `analyse` now carries `doneFor(tool)`, and
+cases 1, 21, 22 and 23 use it. **Second:** case 22's "no card was drawn" note was written with a
+`REVEAL:` prefix that was **not in the fatal-prefix list**, so a run in which no card appeared at all
+would still have PASSED — the identical defect `scripts/field/README.md` already records for the
+stuck cases ("a note is not a check"), made again one decision later. `REVEAL` is fatal now, and
+falsifying the seeding proves the case's teeth: with `seedVault` disabled, case 23 fails with
+`SECRET: the real value reached the model` and prints the value it saw.
+
+**Files:** `packages/core/src/security/mask.ts` (`isPlainText`), `packages/core/src/runtime/seedVault.ts`
+(new), `packages/core/src/runtime/secretCopy.ts` (`revealCard`, `revealedFileNotice`,
+`declinedRevealRefusal`), `packages/core/src/security/secrets.ts` (`protectNameError`,
+`allowPathError`), `packages/core/src/tools/execute.ts` (`secretBase`), `packages/core/src/tools/files.ts`
+(`includeSecret`), `packages/core/src/runtime/loop.ts` (the seed, and the `revealProtected` seam),
+`packages/vscode/src/extension.ts`, `packages/vscode/src/webview.ts`. **Tests:**
+`packages/core/test/secretReveal.test.ts` (17), two in `packages/core/test/loop.test.ts`.
+**Render:** `scripts/render/reveal.mjs`, `scripts/render/secrets.mjs`. **Field:** cases 22 and 23.
+
+---
+
 **D49az — undo is BUILT: the copy is taken at the executor, and the plan is made again when the
 user clicks (Tier C item 3, built 2026-09-28).**
 
@@ -4107,7 +4357,7 @@ unfalsifiable.**
 |---|---|---|
 | 1 | **A real change lands.** Given a task naming a small defect or feature, Plato edits **1–3 files** and the edit is on disk. | The demo repo's `git diff` after the run. |
 | 2 | **The gates hold, per mode.** In `edit` a write raises a card and the run waits; in `plan` the same write is refused with **no** card and the model is told why; in `auto` the write lands with **no card anywhere**. | Screen **and** transcript (`approval-requested` says an ask was raised; `approval-card` says one was drawn). |
-| 3 | **A protected file never reaches a model.** A tool call or command naming a deny-listed file is refused **before any read**, with no card. | The `refused` tool-event with its reason; **"no read ran"** (verdict rule 2), which is the stronger form of "the content was never in a request"; the guard line on screen (D49as). |
+| 3 | **A protected file never reaches a model.** A tool call or command naming a deny-listed file is refused **before any read**, with no card. | The `refused` tool-event with its reason; **"no read ran"** (verdict rule 2), which is the stronger form of "the content was never in a request"; the guard line on screen (D49as). | **RESTATED by D49bb (2026-09-28):** a protected file now READS, with its values masked — what never reaches a model is the **value**. A command that NAMES a protected file is still refused. **RESTATED AGAIN by D49bc (2026-09-28): the values now reach a model when the USER says so** — a file the masker cannot parse is shown in full behind a card that states the cost. The clause reads *"a protected file's values reach a model only through a card the user answered"*, and the witness for that half is the card and its cost line (case 22). **"Never" would have made the clause pass by forbidding the card that replaced the refusal**, which is the dead end D49bb exists to remove.
 | 4 | **The observer path is LIVE in Duo, and its activity is reported.** **It does NOT require an intervention.** | The run's closing line. **Not yet automated** — see the gap below. |
 | 5 | **The run's account of itself is honest.** A run that ends with unfinished plan steps says so; a refusal is visible; a cancel says cancelled. **No clause asserts a cap** — there is no turn cap (D49ab) and no budget cap (D49h). | The closing line and the log (D49aq, D49as). |
 | 6 | **Nothing leaves the machine unasked — wherever a user is in the loop.** In `plan` and `edit`, `web_fetch` asks and the card shows the exact URL. **In `auto` it does not ask: D49ak amended D49p** (the founder's decision, 2026-09-24), so the clause is stated as the product now behaves. | Case 15 in `edit`: the card in the transcript **and** the URL on screen. The `auto` half is `modes.test.ts` — `decide('web_fetch','auto') === 'allow'`. |
@@ -4205,7 +4455,8 @@ their bodies verbatim per D48; this entry is the map.
 
 **How to apply.**
 - **M4 closeout = restate the acceptance test → run it through the harness → secret audit.** Nothing
-  else. HANDOFF → "M4 closeout — what is actually left" carries the clause-by-clause state.
+  else. **BOTH ARE DONE (D49at, D49au, 2026-09-27).** HANDOFF → "M4 closeout — the stale blueprint
+  clauses, and what closed them" carries the clause-by-clause record.
 - **The secret audit stays in M4 and stays scoped to Plato's own artifacts** — repo history,
   VSIX/npm contents, transcripts, docs, screenshots. Not the proving ground, whose git hygiene is
   the founder's business.

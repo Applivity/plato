@@ -226,6 +226,17 @@ export function chatHtml(): string {
      uses for "this is the thing you are deciding about". */
   .card.undo-card { border-left:2px solid var(--vscode-focusBorder,#007fd4); }
   .card.undo-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  /* D49bc: the reveal card. A warning colour, because this one asks the user to
+     accept a consequence — the values go into the conversation — rather than to
+     confirm an action they asked for. */
+  .card.reveal-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
+  .card.reveal-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  .card .reveal-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
+                       color:var(--vscode-editor-foreground); }
+  .card .reveal-line:first-of-type { padding-top:8px; }
+  /* The cost of the click, in the same full-foreground treatment the undo card
+     gives what it cannot put back: the one line the user must not miss. */
+  .card .reveal-cost { font-weight:600; }
   .card .undo-list { margin:8px 0 0; padding:0 10px; list-style:none; }
   .card .undo-list li { padding:2px 0; font-size:12.5px; line-height:1.45;
                         font-family:var(--vscode-editor-font-family, monospace);
@@ -388,6 +399,31 @@ export function chatHtml(): string {
   .secbody input[type=range] { padding:0; height:6px; }
   .secbody .liveval { font-size:11.5px; color:var(--pl-muted);
                      min-width:80px; text-align:right; font-variant-numeric:tabular-nums; }
+  /* D49bc: one labelled block per list, inside a section body. */
+  .secbody .pblock + .pblock { margin-top:18px; }
+  .secbody .slabel { font-size:11px; font-weight:600; letter-spacing:.04em;
+                     text-transform:uppercase; color:var(--pl-muted);
+                     margin:0 0 6px; }
+  /* D49bc: the two protected-file lists. Rows, not a comma-separated string:
+     a file name can contain a comma, and a row can carry its own Remove. Each
+     row is one object — same edges, same baseline, same inner padding — so the
+     eye reads the list rather than reconstructing it. */
+  .secbody .plist { margin:0 0 10px; padding:0; list-style:none;
+                    border:1px solid var(--pl-border); border-radius:8px;
+                    overflow:hidden; }
+  .secbody .plist:empty { display:none; }
+  .secbody .plist-row { display:flex; align-items:center; gap:10px;
+                        padding:7px 10px; font-size:12.5px;
+                        font-family:var(--vscode-editor-font-family, monospace);
+                        overflow-wrap:anywhere; }
+  .secbody .plist-row + .plist-row { border-top:1px solid var(--pl-border); }
+  .secbody .plist-name { flex:1 1 auto; min-width:0; }
+  /* A built-in name cannot be removed, and the tag says so where the Remove
+     button would be rather than leaving the row looking subtly broken. */
+  .secbody .plist-tag { flex:0 0 auto; font-size:10.5px; letter-spacing:.03em;
+                        text-transform:uppercase; color:var(--pl-muted);
+                        font-family:var(--vscode-font-family, sans-serif); }
+  .secbody .plist-row button { flex:0 0 auto; }
   /* Mode picker cards. D47h: auto-fit, not a fixed 3-column grid — at a narrow
      editor column (~290px of content) three fixed columns gave each card ~62px
      of text, so the descriptions crammed and were clipped. auto-fit collapses
@@ -1353,6 +1389,8 @@ export function chatHtml(): string {
   let openStuckCard = null;
   /** D49ax: the undo card, taken away when the undo runs or is dismissed. */
   let openUndoCard = null;
+  /** D49bc: the reveal card — the file Plato cannot mask, offered in full. */
+  let openRevealCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -3448,6 +3486,94 @@ export function chatHtml(): string {
     // (D47j: no ctxBody.appendChild(ctxBlock) here — ctxBlock IS ctxBody, so
     // that appendChild threw the same "contains the parent" error.)
 
+    // ---- 4. Protected files (D49bc, collapsed) ----
+    //
+    // D45c: the panel is where a user finds what they can change, and until now
+    // this list existed only in settings.json. Two lists that must NOT look
+    // alike, because they are different kinds of thing — that asymmetry is the
+    // security property, not a style choice, and the help text under each one
+    // says so in the user's own terms.
+    const secrets = d.secrets || { builtin: [], extra: [], allow: [] };
+    const secRec = document.createElement('details');
+    secRec.className = 'sec';
+    secRec.setAttribute('data-sec', 'secrets');
+    secRec.appendChild(el('summary', null,
+      'Protected files  —  ' + ((secrets.builtin || []).length
+        + (secrets.extra || []).length) + ' protected'));
+    const recBody = el('div', 'secbody');
+    secRec.appendChild(recBody);
+    wrap.appendChild(secRec);
+    recBody.appendChild(el('p', 'shelp',
+      'Plato does not send the values in these files to a model. It shows the file with each value replaced by a placeholder, so a model reads the keys and the comments and none of the values. Plato reads these files when a run starts, so a command cannot print a value into the conversation either. The values stay in memory and are never sent to a model.'));
+
+    // One renderer for both lists, because they differ only in what they hold:
+    // a name matches, a path is exact.
+    const listBlock = (label, help, rows, removeType, placeholder, addLabel, addType) => {
+      const block = el('div', 'pblock');
+      block.appendChild(el('div', 'slabel', label));
+      block.appendChild(el('p', 'shelp', help));
+      const ul = el('ul', 'plist');
+      for (const row of rows) {
+        const li = el('li', 'plist-row');
+        // Every value is a text node: a file name is the user's own data.
+        li.appendChild(el('span', 'plist-name', String(row.value)));
+        if (row.locked) {
+          li.appendChild(el('span', 'plist-tag', 'built in'));
+        } else {
+          const rm = sbtn('Remove', () => {
+            vsapi.postMessage({ type: removeType, value: row.value });
+          }, 'secondary');
+          rm.setAttribute('aria-label', 'Remove ' + row.value);
+          li.appendChild(rm);
+        }
+        ul.appendChild(li);
+      }
+      block.appendChild(ul);
+      if (rows.length === 0) block.appendChild(el('div', 'note', 'None.'));
+      const row = el('div', 'row');
+      const input = el('input');
+      input.type = 'text';
+      input.className = 'ctl';
+      input.placeholder = placeholder;
+      input.setAttribute('aria-label', addLabel);
+      const add = sbtn(addLabel, () => {
+        const v = input.value.trim();
+        if (v.length === 0) { return; }
+        vsapi.postMessage({ type: addType, value: v });
+        input.value = '';
+      }, 'secondary');
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); add.click(); }
+      });
+      row.appendChild(input);
+      row.appendChild(add);
+      block.appendChild(row);
+      return block;
+    };
+
+    recBody.appendChild(listBlock(
+      'Protected names',
+      'A name matches the last part of a file path anywhere in the project, so it covers files in every folder. A "*" is allowed at the start or the end.',
+      [
+        ...(secrets.builtin || []).map((v) => ({ value: v, locked: true })),
+        ...(secrets.extra || []).map((v) => ({ value: v, locked: false })),
+      ],
+      'secrets-remove-name',
+      'File name, for example *.pem',
+      'Add name',
+      'secrets-add-name',
+    ));
+
+    recBody.appendChild(listBlock(
+      'Shown in full',
+      'An exact path from the workspace root. Plato shows this file in full, because it holds no secret in this project. A "*" is not allowed here: a wildcard would unprotect every file that matches it, and nothing on this screen would say so.',
+      (secrets.allow || []).map((v) => ({ value: v, locked: false })),
+      'secrets-remove-allow',
+      'Path from the workspace root, for example local.properties',
+      'Add file',
+      'secrets-add-allow',
+    ));
+
     // D47j/D47k: restore what the user had open, then their scroll position, so
     // a re-render caused by an action is invisible. Keyed by the stable
     // data-sec id, never the summary text (which carries a live count).
@@ -4098,6 +4224,17 @@ export function chatHtml(): string {
       case 'undo-done':
         dismissUndo();
         break;
+      // D49bc: the file is protected and Plato cannot mask it, so the values
+      // would go into the conversation. The user decides, and the card says what
+      // the click costs before they do.
+      case 'reveal':
+        showReveal(m);
+        refreshChip();
+        setStatus('waiting for you — show a protected file in full?');
+        break;
+      case 'reveal-done':
+        dismissReveal();
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -4165,6 +4302,10 @@ export function chatHtml(): string {
       // when the button is clicked, so a rebuilt card is never a stale promise.
       case 'undo-open': showUndo(t); break;
       case 'undo-done': dismissUndo(); break;
+      // D49bc: rebuilt from the log, so a reload while the host waits for the
+      // answer leaves the user a card they can still answer.
+      case 'reveal-open': showReveal(t); break;
+      case 'reveal-done': dismissReveal(); break;
       case 'card-done': cardDone(t); break;
       case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;
@@ -4864,6 +5005,82 @@ export function chatHtml(): string {
       const actions = openUndoCard.querySelector('.actions');
       if (actions) actions.remove();
       openUndoCard = null;
+    }
+    clearStatus();
+  }
+
+  /**
+   * D49bc: the file Plato cannot mask.
+   *
+   * Two buttons and no third. There is no "show it always" here on purpose: the
+   * permanent answer is a SETTING, and a card that rewrote a setting would be a
+   * security decision taken in a dialog the user reads once. The card names the
+   * setting instead.
+   *
+   * Every line is a text node — a file name is the user's own data, and a repo
+   * can hold a file whose name is markup.
+   */
+  function showReveal(m) {
+    flushToolBuffer();
+    const card = document.createElement('div');
+    card.className = 'card reveal-card';
+
+    const h = document.createElement('h3');
+    h.textContent = String(m.title || 'Show this protected file in full?');
+    card.appendChild(h);
+
+    const lines = Array.isArray(m.lines) ? m.lines : [];
+    for (const line of lines) {
+      const d = document.createElement('div');
+      d.className = 'reveal-line';
+      d.textContent = String(line);
+      card.appendChild(d);
+    }
+    // The cost is its own field, not one row among the others, so it keeps the
+    // weight wherever core chooses to put the sentence.
+    const cost = document.createElement('div');
+    cost.className = 'reveal-line reveal-cost';
+    cost.textContent = String(m.cost || '');
+    card.appendChild(cost);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const answer = (label, allow, status, primary) => {
+      const b = document.createElement('button');
+      if (!primary) b.className = 'no';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'reveal-answer', allow });
+        card.classList.add('answered');
+        actions.remove();
+        if (openRevealCard === card) openRevealCard = null;
+        setStatus(status);
+      });
+      return b;
+    };
+    actions.appendChild(answer(String(m.confirm || 'Show it this session'), true,
+      'showing the file in full…', true));
+    actions.appendChild(answer(String(m.cancel || 'Cancel'), false, '', false));
+    card.appendChild(actions);
+
+    // Only the newest card stays live, the rule every card here follows: two
+    // live cards would ask the same question twice.
+    if (openRevealCard) {
+      openRevealCard.classList.add('answered');
+      openRevealCard = null;
+    }
+    openRevealCard = card;
+    log.appendChild(card);
+    scroll();
+  }
+
+  /** The run moved on. Marked ANSWERED and kept as the record of what was asked. */
+  function dismissReveal() {
+    if (openRevealCard) {
+      openRevealCard.classList.add('answered');
+      const actions = openRevealCard.querySelector('.actions');
+      if (actions) actions.remove();
+      openRevealCard = null;
     }
     clearStatus();
   }

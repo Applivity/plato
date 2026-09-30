@@ -10,6 +10,20 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveInRoot } from '../security/paths.js';
 import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
+import {
+  hasPlaceholder,
+  isPlainText,
+  maskText,
+  placeholdersIn,
+  type SecretVault,
+} from '../security/mask.js';
+import {
+  declinedRevealRefusal,
+  maskedFileNotice,
+  revealedFileNotice,
+  unmaskableRefusal,
+  unknownPlaceholderRefusal,
+} from '../runtime/secretCopy.js';
 import { listWorkspaceFiles } from './files.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
 import { matchGlob } from './glob.js';
@@ -51,6 +65,29 @@ export interface ToolContext {
    * whole reason undo turned out to be small.
    */
   recordWrites?: (caps: WriteCapture[]) => void;
+  /**
+   * D49bb: the session's secret map. Present, a protected file is READABLE and
+   * its values are replaced by placeholders, and every tool result is scrubbed
+   * of any value the map has seen. Absent — as in most tests — a protected
+   * path is still refused the old way, so this is additive and nothing that
+   * does not supply a vault changes behaviour.
+   */
+  vault?: SecretVault;
+  /**
+   * D49bc: the ask for a protected file Plato cannot mask.
+   *
+   * Masking covers a file of `KEY=value` lines. A keystore or a one-line JSON
+   * blob is not that, and until now the result was a refusal with no way through
+   * but a setting — the "no way out" the founder objected to. The answer splits
+   * by CAUSE: an opaque file stays refused, because showing it is useless AND
+   * the whole content is the secret, while TEXT the masker merely cannot parse
+   * is shown if the user says so.
+   *
+   * Core asks and the shell answers, so the session memory of that answer lives
+   * where every other session memory does. Absent — as in most tests — the file
+   * is refused as it was before, which keeps this additive.
+   */
+  revealProtected?: (rel: string) => Promise<boolean>;
 }
 
 function fail(output: string): ToolOutcome {
@@ -74,11 +111,86 @@ function argId(args: ToolArgs): string | null {
 function resolveTarget(
   root: string,
   raw: string,
-): { abs: string; rel: string } | { err: string } {
+  opts: { allowSecret?: boolean } = {},
+): { abs: string; rel: string; secret: boolean } | { err: string } {
   const rel = resolveInRoot(root, raw);
   if (rel === null) return { err: `path is outside the workspace: ${raw}` };
-  if (isSecretPath(rel)) return { err: 'protected file' };
-  return { abs: join(root, rel), rel };
+  const secret = isSecretPath(rel);
+  // D49bb: `allowSecret` is set by the tools that can MASK what they return. A
+  // tool that cannot mask a protected file (anything that writes it straight
+  // through) keeps the refusal, so the allow is per tool and not global.
+  if (secret && opts.allowSecret !== true) return { err: 'protected file' };
+  return { abs: join(root, rel), rel, secret };
+}
+
+/**
+ * D49bb: put real values back before content is written.
+ *
+ * A write is the only place a placeholder can be resolved into a secret, so this
+ * runs on every write path. It refuses when a placeholder is one the vault has
+ * never seen: writing it through would put the literal text `«masked:API_KEY»`
+ * into the file — a config that looks right and authenticates nothing.
+ */
+function materialise(
+  content: string,
+  vault: SecretVault | undefined,
+): { text: string } | { err: string } {
+  if (!hasPlaceholder(content)) return { text: content };
+  const placeholders = placeholdersIn(content);
+  if (vault === undefined) return { err: unknownPlaceholderRefusal(placeholders.join(', ')) };
+  const unknown = vault.unknownPlaceholders(content);
+  if (unknown.length > 0) return { err: unknownPlaceholderRefusal(unknown.join(', ')) };
+  return { text: vault.unmask(content) };
+}
+
+/**
+ * D49bb/D49bc: the text a file tool may work on for a PROTECTED file.
+ *
+ * One function because two callers deciding this separately is how the read path
+ * and the write path drift — and the drift destroys secrets: mask a read without
+ * un-masking the write and an ordinary "add one key" edit deletes every value in
+ * the file. Three outcomes, and all three are needed:
+ *
+ * - **masked** — the normal case. `work` is the masked text, `pairs` are what
+ *   the map must remember so the values can be restored and scrubbed.
+ * - **shown** — the user chose to show this file in full for the session. `work`
+ *   is the raw text, and a write against it is NOT un-masked, because there are
+ *   no placeholders in it.
+ * - **refused** — opaque content, or the user said no.
+ *
+ * `raw` is the file as it is on disk in every case, because the write paths need
+ * it for the undo copy and for a rollback, and a masked text there would record
+ * a change the user never made.
+ */
+type SecretBase =
+  | { raw: string; work: string; pairs: Array<[string, string]>; shown: boolean }
+  | { err: string };
+
+async function secretBase(
+  abs: string,
+  rel: string,
+  ctx: ToolContext,
+): Promise<SecretBase> {
+  let buf: Buffer;
+  try {
+    buf = await readFile(abs);
+  } catch {
+    return { err: `cannot read: ${rel}` };
+  }
+  const raw = buf.toString('utf8');
+  const plain = isPlainText(buf);
+  const masked = plain ? maskText(raw) : null;
+  if (masked !== null) {
+    return { raw, work: masked.masked, pairs: masked.pairs, shown: false };
+  }
+  // D49bc: the split. An opaque file is refused and never offered, because a card
+  // for it would hand over the whole secret behind a reasonable-looking button.
+  if (!plain || ctx.revealProtected === undefined) {
+    return { err: unmaskableRefusal(rel, 'KEY=value') };
+  }
+  const allowed = await ctx.revealProtected(rel);
+  if (!allowed) return { err: declinedRevealRefusal(rel) };
+  return { raw, work: raw, pairs: [], shown: true };
 }
 
 export async function executeTool(
@@ -87,9 +199,24 @@ export async function executeTool(
   args: ToolArgs,
   ctx: ToolContext = {},
 ): Promise<ToolOutcome> {
+  const outcome = await dispatch(root, name, args, ctx);
+  // D49bb: the last thing that happens to any tool result. A value that reached
+  // the output by a route the masker did not cover — a command's stdout, a file
+  // the secret was copied into earlier — comes back as its placeholder here, so
+  // the model cannot read a secret back out of a place it moved it to.
+  if (ctx.vault === undefined) return outcome;
+  return { ...outcome, output: ctx.vault.scrub(outcome.output) };
+}
+
+async function dispatch(
+  root: string,
+  name: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   switch (name) {
     case 'read_file':
-      return readFileTool(root, args);
+      return readFileTool(root, args, ctx);
     case 'write_file':
       return writeFileTool(root, args, ctx);
     case 'apply_diff':
@@ -136,12 +263,30 @@ function readInt(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : null;
 }
 
-async function readFileTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function readFileTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const raw = argPath(args);
   if (raw.length === 0) return fail('missing path');
-  const target = resolveTarget(root, raw);
+  const target = resolveTarget(root, raw, { allowSecret: ctx.vault !== undefined });
   if ('err' in target) return fail(target.err);
-  const { abs, rel } = target;
+  const { abs, rel, secret } = target;
+
+  // D49bb: a protected file is readable, and its values are not. The mask runs
+  // before the read window below, because the window is a byte-count on text the
+  // model is allowed to see — and for a protected file that text is the masked
+  // one. A file the masker cannot account for is refused, or — when it is text
+  // the user has chosen to show (D49bc) — returned in full with a notice.
+  if (secret) {
+    const base = await secretBase(abs, rel, ctx);
+    if ('err' in base) return fail(base.err);
+    if (base.shown) return { ok: true, output: base.work + revealedFileNotice(rel) };
+    ctx.vault?.remember(base.pairs);
+    return { ok: true, output: base.work + maskedFileNotice(base.pairs.length) };
+  }
+
   let text: string;
   try {
     text = await readFile(abs, 'utf8');
@@ -216,10 +361,16 @@ async function writeFileTool(
   if (raw.length === 0 || typeof content !== 'string') {
     return fail('missing path or content');
   }
-  const target = resolveTarget(root, raw);
+  // A write to a protected file is allowed, and the owner keeps their secrets:
+  // the model writes the placeholder back and `materialise` restores the value.
+  const target = resolveTarget(root, raw, { allowSecret: ctx.vault !== undefined });
   if ('err' in target) return fail(target.err);
   const { abs, rel } = target;
   const overwrite = args['overwrite'] === true;
+
+  const real = materialise(content, ctx.vault);
+  if ('err' in real) return fail(real.err);
+  const body = real.text;
 
   // D49b: an existing EMPTY file is always writable. No other tool could reach
   // one — apply_diff rejects an empty SEARCH (diff.ts) — so an empty file used
@@ -238,14 +389,14 @@ async function writeFileTool(
     );
   }
   try {
-    await writeFile(abs, content, 'utf8');
+    await writeFile(abs, body, 'utf8');
   } catch {
     return fail(`cannot write: ${rel}`);
   }
   // Only after the write is on disk, so the store never holds a copy for a
   // change that did not happen. `existing` is null on the create path, which is
   // what makes the undo of a create a delete.
-  ctx.recordWrites?.([{ rel, kind: 'write', before: existing, after: content }]);
+  ctx.recordWrites?.([{ rel, kind: 'write', before: existing, after: body }]);
   return { ok: true, output: existing === null ? `created ${rel}` : `overwrote ${rel}` };
 }
 
@@ -256,30 +407,50 @@ async function applyDiffTool(
 ): Promise<ToolOutcome> {
   const rawPath = argPath(args);
   if (rawPath.length === 0) return fail('missing path');
-  const target = resolveTarget(root, rawPath);
+  const target = resolveTarget(root, rawPath, { allowSecret: ctx.vault !== undefined });
   if ('err' in target) return fail(target.err);
-  const { abs, rel } = target;
+  const { abs, rel, secret } = target;
   let blocks: DiffBlock[];
   try {
     blocks = parseDiffBlocks(args['diffs']);
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'bad diffs');
   }
+  // D49bb: the model wrote its SEARCH strings against the MASKED view, so the
+  // blocks must be applied to the masked view too — otherwise every SEARCH
+  // fails, or worse, matches something else. The real `before` is what the undo
+  // store records; neither the masked text nor the un-masked result outlives
+  // this function.
   let before: string;
-  try {
-    before = await readFile(abs, 'utf8');
-  } catch {
-    return fail(`cannot read: ${rel}`);
+  let base: string;
+  let shown = false;
+  if (secret) {
+    const s = await secretBase(abs, rel, ctx);
+    if ('err' in s) return fail(s.err);
+    ctx.vault?.remember(s.pairs);
+    before = s.raw;
+    base = s.work;
+    shown = s.shown;
+  } else {
+    try {
+      before = await readFile(abs, 'utf8');
+    } catch {
+      return fail(`cannot read: ${rel}`);
+    }
+    base = before;
   }
   try {
-    const { content, applied, noop } = applyBlocks(before, blocks);
-    if (applied > 0) {
+    const applied = applyBlocks(base, blocks);
+    let content = applied.content;
+    if (applied.applied > 0 && !shown && ctx.vault !== undefined) content = ctx.vault.unmask(content);
+    const { applied: count, noop } = applied;
+    if (count > 0) {
       await writeFile(abs, content, 'utf8');
       ctx.recordWrites?.([{ rel, kind: 'write', before, after: content }]);
     }
     return {
       ok: true,
-      output: `applied ${applied} block(s), no-op ${noop}`,
+      output: `applied ${count} block(s), no-op ${noop}`,
     };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'apply_diff failed');
@@ -324,9 +495,9 @@ async function applyPatchTool(
     ) as Record<string, unknown>;
     const rawPath = typeof rec['path'] === 'string' ? rec['path'] : '';
     if (rawPath.length === 0) return fail('each patch needs a path');
-    const target = resolveTarget(root, rawPath);
+    const target = resolveTarget(root, rawPath, { allowSecret: ctx.vault !== undefined });
     if ('err' in target) return fail(target.err);
-    const { abs, rel } = target;
+    const { abs, rel, secret } = target;
 
     // Two patches for one file would apply in an order the caller cannot see.
     if (seen.has(abs)) return fail(`${rel} appears twice in one patch`);
@@ -340,15 +511,39 @@ async function applyPatchTool(
     }
 
     let before: string;
-    try {
-      before = await readFile(abs, 'utf8');
-    } catch {
-      return fail(`cannot read: ${rel}`);
+    let base: string;
+    let shown = false;
+    if (secret) {
+      // D49bb: same rule as apply_diff — the blocks were written against the
+      // masked view, so they are applied to it, and the undo copy keeps the real
+      // text.
+      const s = await secretBase(abs, rel, ctx);
+      if ('err' in s) return fail(s.err);
+      ctx.vault?.remember(s.pairs);
+      before = s.raw;
+      base = s.work;
+      shown = s.shown;
+    } else {
+      try {
+        before = await readFile(abs, 'utf8');
+      } catch {
+        return fail(`cannot read: ${rel}`);
+      }
+      base = before;
     }
 
     try {
-      const { content, applied, noop } = applyBlocks(before, blocks);
-      planned.push({ abs, rel, before, after: content, applied, noop });
+      const applied = applyBlocks(base, blocks);
+      let content = applied.content;
+      if (applied.applied > 0 && !shown && ctx.vault !== undefined) content = ctx.vault.unmask(content);
+      planned.push({
+        abs,
+        rel,
+        before,
+        after: content,
+        applied: applied.applied,
+        noop: applied.noop,
+      });
     } catch (e) {
       // Name the file. With several in flight, a bare "SEARCH not found" does
       // not tell the model which one it got wrong.

@@ -66,6 +66,7 @@ function clearUndoProbes() {
     'PLATO_UNDO_C.txt',
     'PLATO_UNDO_D.txt',
     'PLATO_UNDO_E.txt',
+    '.env.plato-probe',
   ]) {
     try {
       rmSync(join(DEMO_REPO, name), { force: true });
@@ -105,6 +106,24 @@ async function setScript(steps, needles = []) {
 /** What the model was actually asked — the harness's second witness. */
 async function stubLog() {
   return (await fetch(`${STUB}/__log`)).json();
+}
+
+/**
+ * The heads of every tool result the model received, for a failing MODEL check.
+ *
+ * Truncated again and quoted, because this text goes into a console line — and
+ * the heads are already masked or refusals by construction. Reading a red check
+ * is the only thing this exists for.
+ */
+function headsSeen(log) {
+  const heads = [];
+  for (const r of log.log ?? []) {
+    for (const t of r.toolResults ?? []) {
+      const h = String(t.head ?? '').replace(/\s+/g, ' ').trim();
+      if (h.length > 0) heads.push(JSON.stringify(h.slice(0, 80)));
+    }
+  }
+  return heads.length === 0 ? 'no tool results at all' : heads.slice(-3).join(' | ');
 }
 
 /**
@@ -192,6 +211,12 @@ describe('Plato field tests — real VS Code', function () {
 
       for (const [i, run] of c.runs.entries()) {
         const label = c.runs.length > 1 ? `case-${c.n}-run${i + 1}-${run.mode}` : `case-${c.n}-${run.mode}`;
+        // `notes` belongs to the CASE — several checks are about the case as a
+        // whole — but each run prints its own. Without this mark, run 2 reprints
+        // run 1's notes and it reads as though run 2 failed twice. It cost a
+        // misdiagnosis: a note saying "model was told: refused" appearing under
+        // the masked-read run looked like the wrong case definition had loaded.
+        const mark = notes.length;
         await setScript(run.steps);
         await field.setMode(run.mode);
         // D49at clause 4: set orchestration EXPLICITLY before every run, not only
@@ -200,6 +225,15 @@ describe('Plato field tests — real VS Code', function () {
         // run asserted to be solo with a philosopher in it is a case that no
         // longer measures what it says.
         await field.setOrchestration(run.orchestration ?? 'solo');
+
+        // D49bb: files the HARNESS owns, written from outside Plato before the
+        // run starts. A protected file has to exist before the model can ask for
+        // it, and the harness writing it is also what keeps a real secret out of
+        // the test: the value here is deliberately fake.
+        for (const [file, content] of Object.entries(run.seed ?? {})) {
+          writeFileSync(join(DEMO_REPO, file), content);
+          notes.push(`seeded ${file}`);
+        }
 
         const before = await field.send(run.prompt);
         const events = await field.waitRunEnd(before, {
@@ -222,6 +256,10 @@ describe('Plato field tests — real VS Code', function () {
           // the path a person reaches for first, which no real window had
           // exercised.
           stuckGuidance: run.stuckGuidance ?? '',
+          // D49bc: the protected file Plato cannot mask. A case that expects the
+          // card declares how the user answers it; a case that does not gets the
+          // safe answer so the run can finish.
+          revealAnswer: run.revealAnswer,
           question: run.question ? async () => {
             // Test 6's own ask: pick two options, jump to another tab, come back,
             // and check the picks survived the round trip. Every outcome below is
@@ -528,8 +566,99 @@ describe('Plato field tests — real VS Code', function () {
           const told = log.log.some((r) =>
             (r.toolResults ?? []).some((t) => t.head.toLowerCase().includes(run.expectModelTold.toLowerCase())),
           );
-          if (!told) notes.push(`MODEL: the expected text never reached the model (looked for "${run.expectModelTold}")`);
-          else notes.push(`model was told: "${run.expectModelTold}"`);
+          if (!told) {
+            // Say what the model DID see. A failing assertion with no evidence
+            // costs a whole debugging session, and this check's whole job is to
+            // be read when it goes red.
+            notes.push(
+              `MODEL: the expected text never reached the model (looked for "${run.expectModelTold}"; saw ${headsSeen(log)})`,
+            );
+          } else notes.push(`model was told: "${run.expectModelTold}"`);
+        }
+
+        // --- D49bb: the model was handed a MASKED view -----------------------
+        //
+        // The placeholder may sit anywhere in the file — `local.properties` is
+        // ten comment lines before its one assignment — so this asks the stub's
+        // boolean rather than searching the head. Searching the head passed for
+        // the wrong reason once already.
+        if (run.expectMaskedInModel) {
+          const log = await stubLog();
+          const masked = log.log.some((r) => (r.toolResults ?? []).some((t) => t.masked === true));
+          if (!masked) {
+            notes.push(`MODEL: no tool result carried a placeholder, so the protected file arrived unmasked`);
+          } else {
+            notes.push('the model was handed a masked view');
+          }
+        }
+
+        // --- D49bb: what the model was NOT told -----------------------------
+        //
+        // The negative half, and the half that matters. `expectModelTold` proves
+        // the placeholder arrived; only this proves the VALUE did not. Without
+        // it a masker that appended the placeholder to the real text would pass
+        // every other check in this file.
+        if (run.expectModelNotTold) {
+          const log = await stubLog();
+          const leaked = log.log.some((r) =>
+            (r.toolResults ?? []).some((t) => (t.head ?? '').includes(run.expectModelNotTold)),
+          );
+          if (leaked) {
+            notes.push(`SECRET: the real value reached the model — the mask failed open`);
+          } else {
+            notes.push('the real value never reached the model');
+          }
+        }
+
+        // --- D49bb: the file on disk after a masked round trip ---------------
+        //
+        // A masked read followed by a write is the trap the whole design turns
+        // on: without un-masking, the file now holds the literal placeholder and
+        // every secret in it is gone. Only the disk can prove which happened.
+        if (run.expectSecretRoundTrip) {
+          const body = readFileSync(join(DEMO_REPO, run.expectSecretRoundTrip.file), 'utf8');
+          for (const needle of run.expectSecretRoundTrip.keeps ?? []) {
+            if (!body.includes(needle)) {
+              notes.push(`SECRET: ${run.expectSecretRoundTrip.file} lost "${needle}" — a masked write was not restored`);
+            }
+          }
+          for (const needle of run.expectSecretRoundTrip.has ?? []) {
+            if (!body.includes(needle)) {
+              notes.push(`SECRET: ${run.expectSecretRoundTrip.file} does not contain "${needle}"`);
+            }
+          }
+          if (body.includes('«masked:')) {
+            notes.push('SECRET: the placeholder itself was written to disk');
+          } else {
+            notes.push(`secret round trip: ${run.expectSecretRoundTrip.file} is intact and carries no placeholder`);
+          }
+        }
+
+        // --- D49bc: the protected file Plato cannot mask ---------------------
+        //
+        // Two claims, and the count is the second: the card was DRAWN (rather
+        // than the file shown or refused without asking), and it stated what the
+        // click costs. `askOnce` is the session rule — a user who answered once
+        // must not be asked again in the same run, which is the difference
+        // between a question and a nuisance.
+        if (run.expectReveal) {
+          const text = await field.revealText();
+          if (!field.revealSeen) {
+            notes.push('REVEAL: no card was drawn — the file was shown or refused without asking');
+          } else if (!/goes into this conversation/.test(text)) {
+            notes.push(`REVEAL: the card did not state the cost of the click — it read: ${text}`);
+          } else {
+            notes.push('reveal card: drawn, and it states what the click costs');
+          }
+          if (run.expectReveal.askOnce !== undefined
+            && field.revealCards !== run.expectReveal.askOnce) {
+            notes.push(
+              `REVEAL: asked ${field.revealCards} time(s), expected ${run.expectReveal.askOnce} — ` +
+              `the session memory of the answer is not holding`,
+            );
+          } else if (run.expectReveal.askOnce !== undefined) {
+            notes.push(`reveal card: asked ${field.revealCards} time(s), as expected`);
+          }
         }
 
         // --- what the TRANSCRIPT says --------------------------------------
@@ -585,11 +714,16 @@ describe('Plato field tests — real VS Code', function () {
         // list, so "no stuck card was ever detected" — the check that gives cases
         // 12-14 their teeth — could not fail the case. Found while wiring the
         // acceptance clauses; a note is not a check.
-        const failures = notes.filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO):/.test(n),
+        //
+        // D49bc: `REVEAL` was written the same way and caught by the same rule
+        // one decision later — case 22's "no card was drawn" note would have
+        // passed a case in which no card appeared at all. **This list is part of
+        // writing a check, not an afterthought to it.**
+        const failures = notes.slice(mark).filter((n) =>
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL):/.test(n),
         );
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
-        for (const n of notes) console.log(`    ${n}`);
+        for (const n of notes.slice(mark)) console.log(`    ${n}`);
         // D49at: the manifest is what turns a pile of cases into an executable
         // acceptance test. Without it a run of fourteen cases cannot be mapped
         // back to the seven clauses, because a transcript records its TASK and

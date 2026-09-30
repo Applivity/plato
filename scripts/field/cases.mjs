@@ -24,10 +24,17 @@ const URLDECODE_LINE = 'url =  URLDecoder.decode(builder.build().toString(), "UT
 export const CASES = [
   {
     n: 1,
-    title: 'The secret guard refuses a command that names a protected file',
+    title: 'A shell command that names a protected file is refused, and a protected file reads masked',
     // The guard matches the file NAME before anything is opened, so a name that
     // does not exist exercises the identical path with nothing at risk — the
     // field-test page chose `notes.keystore` for exactly that reason.
+    //
+    // D49bb split this case in two, because the two halves now behave
+    // DIFFERENTLY. A shell command that names a protected file is still refused
+    // — its output cannot be masked before Plato has seen the values. The file
+    // tools no longer refuse at all: they hand the model the file with every
+    // value replaced by a placeholder. Asserting the old behaviour on the read
+    // would now fail, which is exactly what this case is for.
     runs: [
       {
         mode: 'plan',
@@ -47,10 +54,16 @@ export const CASES = [
         prompt: 'Read local.properties and summarise it',
         steps: [
           { tool: 'read_file', args: { path: 'local.properties' } },
-          { text: 'That file is protected, so the read was refused.' },
+          { text: 'Plato showed me the file with each value masked, so I can describe its keys but not its values.' },
         ],
         cards: [],
-        expectModelTold: 'refused',
+        // The read is ALLOWED now (D49bb), and what reaches the model is the
+        // masked view. The witness is the stub's `masked` flag and not the head
+        // text: `local.properties` is ten comment lines before its one
+        // assignment, so the placeholder falls outside any short window — and a
+        // head search passed here for the WRONG reason the first time, which is
+        // how that limit was found.
+        expectMaskedInModel: true,
       },
     ],
   },
@@ -782,6 +795,150 @@ export const CASES = [
             report: ['you edited it after Plato wrote it'],
           },
         ],
+      },
+    ],
+  },
+  {
+    n: 21,
+    title: 'A protected file is readable, its values are masked, and a masked write puts them back',
+    // D49bb. The refusal this replaces was the one thing with no way out: any
+    // call naming a protected file was stopped, in every mode, and the user could
+    // not overrule it. The founder's rule is that Plato WARNS rather than
+    // rejects, and the answer that made that safe is to withhold the VALUE
+    // instead of the FILE.
+    //
+    // The value here is deliberately fake, and the file is seeded by the
+    // HARNESS — a test that reads a real credential to prove it does not read a
+    // real credential has already lost the argument.
+    //
+    // Three claims, and the third is the one that would otherwise ship a
+    // data-loss bug: the model is handed the placeholder, the model is NOT
+    // handed the value, and the file on disk still holds the real value after a
+    // masked read was edited and written back.
+    runs: [
+      {
+        mode: 'auto',
+        // Written by the HARNESS before the run. The value is deliberately fake:
+        // a test that reads a real credential to prove it does not read a real
+        // credential has already lost the argument.
+        seed: {
+          '.env.plato-probe': 'API_KEY=sk-live-plato-probe-0001\nDB_URL=postgres://probe/db\n',
+        },
+        prompt: 'Read the probe file, then change the value of DB_URL in it.',
+        steps: [
+          {
+            calls: [
+              { tool: 'read_file', args: { path: '.env.plato-probe' } },
+              {
+                tool: 'apply_diff',
+                args: {
+                  path: '.env.plato-probe',
+                  // The SEARCH is the MASKED line, because that is what the model
+                  // was shown. A diff written against the real text would not
+                  // match, which is the second trap this case covers.
+                  diffs: [
+                    {
+                      search: 'DB_URL=«masked:DB_URL»',
+                      replace: 'DB_URL=postgres://changed/db',
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          { text: 'Changed it.' },
+        ],
+        cards: [],
+        expectModelTold: '«masked:API_KEY»',
+        expectModelNotTold: 'sk-live-plato-probe-0001',
+        expectSecretRoundTrip: {
+          file: '.env.plato-probe',
+          keeps: ['API_KEY=sk-live-plato-probe-0001'],
+          has: ['DB_URL=postgres://changed/db'],
+        },
+      },
+    ],
+  },
+  {
+    n: 22,
+    title: 'A protected file Plato cannot mask is offered, once — and in auto too',
+    // D49bc. "Plato cannot mask this" covers two unrelated files. A keystore
+    // stays refused, because its whole content is the secret and a card would
+    // offer a bad deal behind a reasonable-looking button. TEXT the masker only
+    // cannot PARSE is a different case, and the only reason to refuse it is the
+    // masker's own limits — so the user is asked instead.
+    //
+    // The mode is `auto` on purpose, and that is the design decision this case
+    // pins. `auto` means "no card for every write", not "no question may ever be
+    // asked": the alternative here is a refusal with no way through, which is
+    // exactly the dead end the founder objected to. Once per file per session is
+    // the difference between a question and a nuisance.
+    //
+    // The value is fake and the file is seeded by the HARNESS. `.plato-probe`
+    // keeps it off the deny list's exact names, and `secrets.*` protects it.
+    runs: [
+      {
+        mode: 'auto',
+        seed: {
+          'secrets.plato-probe': '{"API_KEY":"sk-live-reveal-0001"}',
+        },
+        // A person asking for a config file, not a person naming a mechanism.
+        prompt: 'Read the secrets probe file in the workspace root and tell me what it holds.',
+        steps: [
+          // TWICE, deliberately: the second read is what proves the answer was
+          // remembered for the session rather than asked again.
+          {
+            calls: [
+              { tool: 'read_file', args: { path: 'secrets.plato-probe' } },
+              { tool: 'read_file', args: { path: 'secrets.plato-probe' } },
+            ],
+          },
+          { text: 'I read it in full.' },
+        ],
+        cards: [],
+        // The user says yes on the card.
+        revealAnswer: 'allow',
+        expectReveal: { askOnce: 1 },
+        // The model WAS shown the value — that is what the click bought, and
+        // asserting it is what stops the card becoming theatre.
+        expectModelTold: 'sk-live-reveal-0001',
+      },
+    ],
+  },
+  {
+    n: 23,
+    title: 'A command that reaches a protected file indirectly prints no value',
+    // D49bc's other half, and D49bb's largest remaining hole. The scrub hides a
+    // value the session has SEEN. In `auto` — where `shell` runs unasked and the
+    // name check is the only guard — a command can reach a protected file
+    // INDIRECTLY and print a value nothing knows to hide.
+    //
+    // `cat .en*` is that command, exactly: the token scan splits on `*`, so it
+    // sees `.en` and lets the call through, and bash then expands the glob to
+    // `.env`. Before the fix the model was handed the value verbatim. The fix is
+    // to read the workspace's protected files once at run start, through the same
+    // masker, so the map knows the value whatever route it takes.
+    //
+    // The fake value and the harness-owned file are the same rule as case 21: a
+    // test that reads a real credential to prove it does not read a real
+    // credential has already lost the argument.
+    runs: [
+      {
+        mode: 'auto',
+        seed: { '.env': 'SEED_KEY=sk-live-seed-0001\n' },
+        prompt: 'Print the environment file in the workspace root, using a shell command.',
+        steps: [
+          // No read_file anywhere in this case. That is the point: the value
+          // never passes through a tool that masks.
+          { calls: [{ tool: 'shell', args: { command: 'cat .en*' } }] },
+          { text: 'Printed it.' },
+        ],
+        cards: [],
+        // The placeholder arrived, which is the scrub having fired on a result
+        // nothing masked. Both halves are needed: one proves the hiding worked,
+        // the other proves there was something to hide.
+        expectModelTold: '«masked:SEED_KEY»',
+        expectModelNotTold: 'sk-live-seed-0001',
       },
     ],
   },

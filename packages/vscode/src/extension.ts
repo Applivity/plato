@@ -45,6 +45,17 @@ import {
   emitDuoConfig,
   isSecretPath,
   isWriteTool,
+  createVault,
+  configureSecrets,
+  type SecretVault,
+  // D49bc: the protected-file list is the owner's, and the panel is where they
+  // own it (D45c). The built-in names are shown, and the entries are validated
+  // in core — an entry that would silently match nothing is refused there.
+  SECRET_DENYLIST,
+  protectNameError,
+  allowPathError,
+  revealCard,
+  type RevealCard,
   formatDiagnostics,
   stuckCard,
   type StuckCard,
@@ -238,6 +249,28 @@ function reclaimDeadProjects(): void {
   }
 }
 
+/**
+ * D49bb: hand the owner's protected-file settings to core.
+ *
+ * `isSecretPath` is a predicate called from eight places, including the walker
+ * that builds the first prompt, so the policy is module state set here rather
+ * than an argument threaded through every caller. Only the setting keys are read
+ * here; the matching rules live in core, where they are tested.
+ */
+function applySecretPolicy(): void {
+  const cfg = vscode.workspace.getConfiguration('plato');
+  configureSecrets({
+    extra: readStringList(cfg, 'secrets.protect'),
+    allow: readStringList(cfg, 'secrets.allow'),
+  });
+}
+
+/** A settings value that must be a list of strings; anything else reads as none. */
+function readStringList(cfg: vscode.WorkspaceConfiguration, key: string): string[] {
+  const v = cfg.get<unknown>(key);
+  return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
+}
+
 export function activate(ctx: vscode.ExtensionContext): void {
   // One chat panel per window; re-running the command reveals it instead
   // of spawning a blank second one.
@@ -245,6 +278,17 @@ export function activate(ctx: vscode.ExtensionContext): void {
   let host: ChatHost | undefined;
 
   setTimeout(reclaimDeadProjects, 0);
+
+  // D49bb: the protected list is the owner's. Read once at activation and again
+  // whenever the settings change, because a user who has just taken
+  // `local.properties` off the list should not have to reload the window to be
+  // believed.
+  applySecretPolicy();
+  ctx.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('plato.secrets')) applySecretPolicy();
+    }),
+  );
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand(
@@ -445,6 +489,14 @@ type Entry =
   | ({ k: 'undo-open' } & UndoCard)
   /** D49ax: the undo ran and was reported. Closes the card on a reload too. */
   | { k: 'undo-done' }
+  /**
+   * D49bc: a protected file Plato cannot mask is being offered in full. Recorded
+   * for the same reason as the other two — the host is parked on the answer, so
+   * a reload that lost the card would leave a run waiting for a click that can
+   * no longer be made.
+   */
+  | ({ k: 'reveal-open' } & RevealCard)
+  | { k: 'reveal-done' }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -477,8 +529,19 @@ class ChatHost {
   private mode: Mode = 'edit';
   private readonly sessionWrites = new Set<string>();
   private readonly sessionApprovals = new Set<string>();
+  /**
+   * D49bc: protected files the user chose to show IN FULL this session.
+   *
+   * Session state, like the two sets above, and for the same reason: the answer
+   * `Show it this session` is a session-long decision, and asking again on the
+   * next read would be the nuisance this whole decision exists to remove. It
+   * dies with the panel, so the next session asks once more.
+   */
+  private readonly revealedPaths = new Set<string>();
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
+  /** D49bc: the run is parked on a reveal card until this is answered. */
+  private pendingReveal: PendingResolve | null = null;
   private pendingQuestion: ((answers: string[]) => void) | null = null;
   /**
    * D49aq: how many questions the open card is asking, so cancelling it can
@@ -698,6 +761,12 @@ class ChatHost {
           this.pendingStuck = null;
           s?.({ action: 'stop' });
           this.send('stuck-done');
+          // D49bc: and the reveal card. The loop is parked on this one too, and
+          // "no" is the safe answer — the file is not shown.
+          const rv = this.pendingReveal;
+          this.pendingReveal = null;
+          rv?.(false);
+          this.send('reveal-done');
           this.controller.cancel();
           return;
         }
@@ -865,6 +934,38 @@ class ChatHost {
             'reasoning',
             m.value,
             vscode.ConfigurationTarget.Global,
+          );
+          return;
+        }
+        // D49bc: the Protected files section. Add and remove only — the entries
+        // themselves are validated in core, where the matcher is, so an entry
+        // that could never match is refused with a reason instead of being saved
+        // as a silent no-op.
+        if (
+          (m.type === 'secrets-add-name' || m.type === 'secrets-add-allow') &&
+          typeof m.value === 'string'
+        ) {
+          const protect = m.type === 'secrets-add-name';
+          const key = protect ? 'secrets.protect' : 'secrets.allow';
+          const bad = protect ? protectNameError(m.value) : allowPathError(m.value);
+          if (bad !== null) {
+            void this.sendSettings(bad);
+            return;
+          }
+          const value = m.value.trim();
+          const next = this.secretSetting(key);
+          if (!next.includes(value)) next.push(value);
+          await this.setSecretSetting(key, next);
+          return;
+        }
+        if (
+          (m.type === 'secrets-remove-name' || m.type === 'secrets-remove-allow') &&
+          typeof m.value === 'string'
+        ) {
+          const key = m.type === 'secrets-remove-name' ? 'secrets.protect' : 'secrets.allow';
+          await this.setSecretSetting(
+            key,
+            this.secretSetting(key).filter((s) => s !== m.value),
           );
           return;
         }
@@ -1143,6 +1244,14 @@ class ChatHost {
         }
         if (m.type === 'undo-dismiss') {
           void this.panel.webview.postMessage({ type: 'undo-done' });
+          return;
+        }
+        // D49bc: the answer to the reveal card. Only `true` shows the file, so a
+        // malformed message can never be read as consent.
+        if (m.type === 'reveal-answer') {
+          const resolve = this.pendingReveal;
+          this.pendingReveal = null;
+          resolve?.(m.allow === true);
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
@@ -1994,6 +2103,17 @@ class ChatHost {
         academy: this.academyStatus(),
       },
       workers: await this.workersState(),
+      // D49bc: the protected-file lists, so the panel can show and edit them
+      // (D45c — a knob that exists only in settings.json is not discoverable).
+      // The built-in names ride along to be SHOWN and not edited: removing
+      // `.env` everywhere is a silent hole, so the deliberate way to unprotect
+      // one is a path on the allow list, where the user can see which file they
+      // meant.
+      secrets: {
+        builtin: [...SECRET_DENYLIST],
+        extra: this.secretSetting('secrets.protect'),
+        allow: this.secretSetting('secrets.allow'),
+      },
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
@@ -2339,6 +2459,18 @@ class ChatHost {
   }
 
   /**
+   * D49bb: the session's secret map.
+   *
+   * It lives on the HOST and not on the run, and that is the whole point: a
+   * value masked in one run has to stay masked in the next, or the model reads
+   * it straight back out of a file the previous run copied it into. It is never
+   * written to disk — it holds real secret values, and the transcript is the one
+   * file in this product that would turn into a secret-bearing artifact if it
+   * ever reached one.
+   */
+  private secretVault: SecretVault = createVault();
+
+  /**
    * D49ay: compress transcripts that have aged out, at the two moments that cost
    * the user nothing — when the panel opens, and when a run ends.
    *
@@ -2610,10 +2742,14 @@ class ChatHost {
     await this.ctx.workspaceState.update(TITLE_KEY, '');
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
+    // D49bc: a new chat is a new session, so the reveals go with the other two.
+    // A file the user agreed to show once is not agreed to for the next chat.
+    this.revealedPaths.clear();
     this.pendingAttachments = [];
     this.pendingHistory = null;
     this.pendingApproval = null;
     this.pendingStuck = null;
+    this.pendingReveal = null;
     this.replyBuffer = '';
     // D49j: the webview is about to be blanked; a pending repaint would post
     // the old conversation's text into the new one.
@@ -3346,6 +3482,14 @@ class ChatHost {
         // The loop files them under this run's id — that is what makes "undo
         // everything from this request" one action instead of a file list.
         ...(this.undoDir() ? { undoStore: { dir: this.undoDir()! } } : {}),
+        // D49bb: a protected file is readable and its values are masked. The
+        // vault is what holds those values for the session so a write can put
+        // them back and every tool result can be scrubbed of them.
+        secretVault: this.secretVault,
+        // D49bc: a protected file Plato cannot mask is offered rather than
+        // refused, when the file is text. The session memory of the answer lives
+        // here, so the question is asked once per file.
+        revealProtected: (rel) => this.revealProtected(rel),
         onStuckNudge: (note) => {
           // The user hears about it BEFORE the card, so the pause is never a
           // surprise. Pushed as well as sent, because this is part of the run's
@@ -3656,6 +3800,58 @@ class ChatHost {
       // The card's own wording goes over the wire verbatim, so the live card and
       // a reloaded one cannot drift apart.
       void this.panel.webview.postMessage({ type: 'stuck', ...card });
+    });
+  }
+
+  /**
+   * D49bc: the owner's two protected-file lists, read and written from the panel.
+   *
+   * The store stays VS Code settings — the way the composer writes `plato.model`
+   * — so the panel and a hand-edited settings.json cannot disagree, and a user
+   * who prefers the editor keeps it. Global scope, like every other panel-written
+   * setting: the entries are names and workspace-relative paths, and a workspace
+   * override still wins for anyone who wants one.
+   */
+  private secretSetting(key: 'secrets.protect' | 'secrets.allow'): string[] {
+    return readStringList(vscode.workspace.getConfiguration('plato'), key);
+  }
+
+  private async setSecretSetting(
+    key: 'secrets.protect' | 'secrets.allow',
+    values: string[],
+  ): Promise<void> {
+    await vscode.workspace
+      .getConfiguration('plato')
+      .update(key, values, vscode.ConfigurationTarget.Global);
+    // `onDidChangeConfiguration` re-applies the policy to core; this redraws the
+    // list. The row appearing IS the confirmation, so success adds no flash.
+    void this.sendSettings();
+  }
+
+  /**
+   * D49bc: may Plato show this protected file in full?
+   *
+   * The answer is remembered for the session, so the card is drawn ONCE per file
+   * however many times a run reads it — the difference between a question and a
+   * nuisance. Core decides whether the file is a candidate at all (opaque
+   * content never gets here); this decides what the user said.
+   */
+  private async revealProtected(rel: string): Promise<boolean> {
+    if (this.revealedPaths.has(rel)) return true;
+    const ok = await this.promptReveal(rel);
+    if (ok) this.revealedPaths.add(rel);
+    return ok;
+  }
+
+  private promptReveal(rel: string): Promise<boolean> {
+    const card = revealCard(rel);
+    // The row goes into the log BEFORE the promise, so a reload rebuilds the
+    // card — an answer to a card the host is no longer waiting on is inert
+    // rather than dangerous, the rule the undo and stuck cards both follow.
+    this.push({ k: 'reveal-open', ...card });
+    return new Promise((resolve) => {
+      this.pendingReveal = resolve;
+      void this.panel.webview.postMessage({ type: 'reveal', ...card });
     });
   }
 

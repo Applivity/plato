@@ -34,7 +34,13 @@ import { resolve } from 'node:path';
  * whether it passed or not — an untracked leftover does not appear in a diff, so
  * nothing else would ever notice it.
  */
-const SCRATCH_FILES = ['probe-diagnostics.ts'];
+const SCRATCH_FILES = [
+  'probe-diagnostics.ts',
+  '.env.plato-probe',
+  // D49bc: case 22's unmaskable JSON blob, and case 23's environment file.
+  'secrets.plato-probe',
+  '.env',
+];
 
 import { DATE_HELPER, DEMO_REPO, VIEW_MODEL } from './cases.mjs';
 import { runsDirFor } from './verdict.mjs';

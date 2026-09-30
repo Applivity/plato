@@ -45,6 +45,9 @@ export class Field {
     this.questionSeen = false;
     /** D49aw: set when a stuck card was actually detected and answered. */
     this.stuckSeen = false;
+    /** D49bc: set when a reveal card was actually detected, and how many. */
+    this.revealSeen = false;
+    this.revealCards = 0;
     this.lastWatch = null;
     this.watchLines = 0;
     /** The prompt of the run in progress, so `newChat` can prove the chat reset. */
@@ -337,6 +340,11 @@ export class Field {
       const h = await this.driver.findElement(By.css('.card.undo-card h3'));
       return { kind: 'undo', heading: (await h.getText()).trim() };
     }
+    // D49bc: the reveal card, by class for the same reason as the two above.
+    if ((await this.driver.findElements(By.css('.card.reveal-card:not(.answered)'))).length > 0) {
+      const h = await this.driver.findElement(By.css('.card.reveal-card h3'));
+      return { kind: 'reveal', heading: (await h.getText()).trim() };
+    }
     // D49ba: the approval card is found by its CLASS and its DATA, never by
     // parsing its heading. The heading is now a sentence core writes — "Let Plato
     // edit src/a.ts?" — and a harness that matched its words would fail the day
@@ -382,6 +390,36 @@ export class Field {
   /** D49aw: is the run parked on the "Plato is repeating itself" card? */
   async stuckOpen() {
     return (await this.cardKind()).kind === 'stuck';
+  }
+
+  /** D49bc: is the run parked on the "show it in full" card? */
+  async revealOpen() {
+    return (await this.cardKind()).kind === 'reveal';
+  }
+
+  /** D49bc: the reveal card's own text, so a case can assert what it states. */
+  async revealText() {
+    const cards = await this.driver.findElements(By.css('.card.reveal-card'));
+    if (cards.length === 0) return '';
+    return (await cards[cards.length - 1].getText()).trim();
+  }
+
+  /**
+   * D49bc: answers the reveal card the way a person does.
+   *
+   * Both buttons are located INSIDE `.card.reveal-card`, so this cannot click an
+   * approval card's button sitting in the same conversation. The labels are
+   * stable and say what they do — unlike the undo card's primary button, whose
+   * label is built from the file list and would pin the harness to one wording.
+   */
+  async answerReveal(which) {
+    const label = which === 'allow' ? 'Show it this session' : 'Cancel';
+    const xpath =
+      `//div[contains(@class,'reveal-card')]//button[normalize-space(text())='${label}']`;
+    const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
+    await this.clickElement(btn);
+    this.log(`  answered the reveal card: ${label}`);
+    await this.driver.sleep(SETTLE_MS);
   }
 
   /**
@@ -539,15 +577,17 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '' } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '', revealAnswer = undefined } = {}) {
     const started = Date.now();
     let step = 0;
     let finished = null;
     let answered = 0;
     let cancelled = false;
     let stuckCards = 0;
+    let revealCards = 0;
     this.questionSeen = false;
     this.stuckSeen = false;
+    this.revealSeen = false;
     this.lastWatch = null;
     this.watchLines = 0;
 
@@ -614,6 +654,23 @@ export class Field {
         }
       }
 
+      // D49bc: the run is parked on a protected file Plato cannot mask. A
+      // declared case answers it the way a person would; an UNDECLARED one is
+      // told NO, which is the safe answer and the one that lets the run finish —
+      // the same rule every other card here follows, and for the same reason: a
+      // card nobody answers parks the run until the clock runs out.
+      if (finished === null && revealCards < 5 && (await this.revealOpen())) {
+        revealCards += 1;
+        this.revealSeen = true;
+        if (revealAnswer === 'allow' || revealAnswer === 'deny') {
+          this.log(`  the reveal card is up — answering "${revealAnswer}"`);
+          await this.answerReveal(revealAnswer);
+        } else {
+          this.log('  UNEXPECTED reveal card — declining so the run can finish');
+          await this.answerReveal('deny');
+        }
+      }
+
       const isNew = this.transcripts().filter((f) => !before.has(f));
       for (const file of isNew) {
         let text = '';
@@ -655,6 +712,7 @@ export class Field {
       await this.driver.sleep(500);
     }
 
+    this.revealCards = revealCards;
     if (finished === null) throw new Error(`run never completed within ${timeoutMs}ms (${tag})`);
     const events = readFileSync(finished, 'utf8')
       .split('\n')

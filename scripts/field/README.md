@@ -1,11 +1,15 @@
-# Field tests — the twenty live checks, driven automatically
+# Field tests — the live checks, driven automatically
 
 `tmp/plato-field-test.html` lists nine things that unit tests and the render
 suites can prove in pieces but that had never been exercised in a real run. It
 was written for a human to run by hand in VS Code. This directory runs them
 without a human. **Cases 10–17 were added here** — the cancel path, the editor's
 diagnostics, the three faces of the repetition bound, and the three acceptance
-clauses that had no witness at all — see the table below.
+clauses that had no witness at all — **18–21 with the undo and masking work**
+(what undo puts back, what it refuses, and the masked read round trip), **and
+22–23 with the two halves of D49bc** (a protected file Plato cannot mask is
+offered once, and a command that reaches a protected file indirectly prints no
+value) — see the table below.
 
 **This directory is also the M4 acceptance test's machine.** The seven clauses
 (D49at) are executed by `acceptance.mjs`, which maps each clause onto the cases
@@ -17,7 +21,7 @@ node scripts/field/acceptance.mjs              # judge the last run only
 ```
 
 ```
-node scripts/field/run-field.mjs              # all twenty
+node scripts/field/run-field.mjs              # all of them
 FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
@@ -66,7 +70,7 @@ Two rules keep the driver honest:
 
 | Case | Screen | Transcript |
 |---|---|---|
-| 1 secret guard | no card at all | `denied`, and no card raised |
+| 1 secret guard | no card at all | **run 1** the shell is refused · **run 2** the read completes and the model is handed a MASKED view (D49bb) |
 | 2 plan mode | no card at all | reads allowed, the build `denied` |
 | 3 edit mode | one card, for the build | a card, then an approved run |
 | 4 write refused / asks | plan: no card · edit: card | `denied` · user `declined` |
@@ -86,6 +90,9 @@ Two rules keep the driver honest:
 | 18 undo | the card names the files, and `/undo` is the only way in | a write completed with no card (`auto`) |
 | 19 undo refuses an edited file | the card names the refused file and says WHY, before the click; the other file is gone from the tree | the `shell` call the report names really ran; two writes completed |
 | 20 undo refuses the only file | **no card at all**; the file survives with the user's line intact | the edit that had to be refused completed |
+| 21 masked read + write | no card (`auto`) | the protected file reads and the write completes — and the disk still holds the real value (D49bb) |
+| 22 unmaskable file | the reveal card states the cost, and it is drawn **once** in `auto` | both reads complete, and the second raises no card (D49bc) |
+| 23 indirect secret | no card (`auto`) | the `cat .en*` call RUNS — so the masking is the stub's log, not the transcript (D49bc) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -221,11 +228,16 @@ worse than none:**
   D49at was written to fix. The clause is now stated as what the product does, and
   its two halves name two witnesses: the card in `edit` (case 15, a real window)
   and the `auto` policy (`modes.test.ts`, where that decision lives).
-- **Clause 3's third witness is subsumed, not separate.** "The model's log showing
-  the content was never in a request" is implied by "no read ran" — the guard
-  refuses by NAME before anything is opened — and a direct content test would need
-  a real deny-listed file with a known marker, which the audit keeps out of this
-  harness on purpose.
+- **Clause 3's original third witness is subsumed, not separate.** "The model's log
+  showing the content was never in a request" is implied by "no read ran" — the
+  guard refuses by NAME before anything is opened. **The content half is now a
+  direct test, and it uses a file the HARNESS seeds with a deliberately FAKE
+  marker** (cases 21–23): a test that reads a real credential to prove it does not
+  read a real credential has already lost the argument. **Clause 3 has been
+  restated twice** — by D49bb (the file reads, the VALUE is what never arrives)
+  and by D49bc (the values arrive when the user answers a card that states the
+  cost). A clause that still said *never* would pass by forbidding the card that
+  replaced the refusal.
 - **The stuck cases' screen notes were not fatal.** `STUCK:` and `GUIDANCE:` were
   missing from the spec's failure regex, so "no stuck card was ever detected" —
   the check written to give cases 12–14 their teeth — could not fail a case. Found
@@ -335,6 +347,14 @@ because `vscode-extension-tester` resolves from here.
 - **The `vscode` API surface is real here, but the provider is not.** These runs
   prove the webview, the extension host, the gates and the transcript. They do
   not prove a real vendor endpoint — no test touches the network by design.
+- **A secret's masking is judged on the stub's log, not the transcript
+  (D49bb/D49bc).** Tool RESULTS are deliberately not written to a transcript, so
+  the JSONL can show that a call ran and cannot show what it returned. Cases 21,
+  22 and 23 therefore assert the value-level claims on the scripted model's own
+  log (`expectModelTold`, `expectModelNotTold`, the `masked` flag) and keep the
+  transcript rules to what the transcript can see: the call ran, nothing was
+  refused, the run did not fail. **Do not "fix" this by writing results into the
+  transcript** — the record is not a secret-bearing file, and that is the point.
 - **`/undo` is not a run, so it has no transcript.** No case can witness an undo
   in the transcript, because there is nothing there to witness: the command
   writes no run. Case 18 therefore asserts on DISK, which is the stronger witness
@@ -351,6 +371,37 @@ because `vscode-extension-tester` resolves from here.
 
 Every one of these cost time to find. They are here because they are the kind of
 fault that reports as something else.
+
+**A card with a new class is INVISIBLE to the driver until `cardKind` knows it
+(D49bc).** `waitRunEnd` answers a question card, a stuck card and an approval
+card, and DENIES anything else it recognises. A card whose class is not in
+`cardKind` matches nothing, so the harness sees no card, does not answer, and the
+run parks until the 180-second timeout — reported as "run never completed", which
+names neither the card nor the question. Adding a card means adding it to
+`cardKind` AND giving `waitRunEnd` a branch for it. **An unrecognised card is a
+hang, not a failure.**
+
+**The stub answers every `calls` entry in ONE turn.** So a case that scripts two
+reads of the same file does not get two turns to answer a card in — both calls
+run back to back inside one turn. That is still the right shape for case 22: the
+session memory lives in the shell, so the second call never raises a card, and
+`askOnce: 1` holds within a single turn as well as across turns.
+
+**A seeded file goes on the RUN, not the case (D49bb).** The per-run checks all
+read `run.<field>` — `mode`, `cards`, `prompt` — so a `seed` written one level up
+on the case object is never seen. It fails as `ENOENT` from the round-trip read
+at the END of the case, which reads like a product bug that deleted a file and is
+really a field on the wrong object. Same family as the `run.question` slip
+recorded below.
+
+**A tool result's head is a window, and a placeholder can fall outside it
+(D49bb).** Case 1 reads `local.properties`, which is ten comment lines before its
+one assignment. The stub truncated tool results to 400 characters, so the masked
+line was past the window and a masked read was indistinguishable from an unmasked
+one — the check passed for the wrong reason and then failed once the window
+moved. The stub now stores a `masked` boolean alongside the head, and the
+assertion asks the boolean. **When a check searches a truncated string, ask what
+falls outside it.**
 
 **The editor's environment leaks.** Started from inside VS Code, the process
 inherits `ELECTRON_RUN_AS_NODE=1`, which makes any Electron binary start as plain

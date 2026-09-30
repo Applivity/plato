@@ -77,9 +77,16 @@ const CLAUSES = [
   },
   {
     n: 3,
-    text: 'A protected file never reaches a model — refused before any read, with no card',
-    cases: [1],
-    witness: 'the refused tool-event, the model-result log, and “no read ran”',
+    text: 'A protected file’s VALUES reach a model only through a card the user answered',
+    cases: [1, 21, 22, 23],
+    // D49bc restated this clause. It used to say the values NEVER reach a model,
+    // and that is no longer true by design: a file the masker cannot parse is
+    // shown in full when the USER says so, which is the whole point of the card.
+    // Saying "never" would make the clause pass for the wrong reason — or force
+    // the card to be a refusal again, which is what it replaced.
+    witness:
+      'the model-result log showing the placeholder and not the value (1, 21, 23); ' +
+      'the card, its cost line, and the value arriving only after the click (22)',
   },
   {
     n: 4,

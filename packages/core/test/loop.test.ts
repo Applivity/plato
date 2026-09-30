@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgentLoop } from '../src/runtime/loop.js';
 import { AgentBus, RunController } from '../src/runtime/bus.js';
+import { createVault, placeholder } from '../src/security/mask.js';
 import type {
   ChatProvider,
   TurnRequest,
@@ -1803,5 +1804,190 @@ describe('a stuck run is bounded by repetition, not by turns (D49aw)', () => {
     });
     // Seven declined writes, and the run still ends the normal way.
     expect(r.reason).toBe('complete');
+  });
+});
+
+/**
+ * D49bb: the vault reaches the run, and the refusal stands aside for the tools
+ * that can mask.
+ *
+ * The three assertions here are the seam rather than the masker: a masked read
+ * must ARRIVE at the model masked, a shell command that names a protected file
+ * must still be refused, and a result that carries a known value by some other
+ * route must be scrubbed before the model sees it.
+ */
+describe('a protected file is readable, with its values masked (D49bb)', () => {
+  const callTurn = (tool: string, input: Record<string, unknown>): TurnResponse => ({
+    content: [{ type: 'tool_use', id: 't1', name: tool, input }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  });
+  const done: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+  function capturing(turns: TurnResponse[]): { p: ChatProvider; requests: TurnRequest[] } {
+    const requests: TurnRequest[] = [];
+    let i = 0;
+    return {
+      requests,
+      p: {
+        id: 'anthropic',
+        async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+          requests.push(req);
+          i += 1;
+          const t = turns[i - 1];
+          if (t === undefined) throw new Error('unexpected extra turn');
+          return t;
+        },
+      },
+    };
+  }
+  function lastToolResult(req: TurnRequest): string {
+    for (let i = req.messages.length - 1; i >= 0; i -= 1) {
+      for (const b of req.messages[i]?.content ?? []) {
+        if (b.type === 'tool_result') return b.content;
+      }
+    }
+    return '';
+  }
+  function ws(): string {
+    return mkdtempSync(join(tmpdir(), 'plato-secret-'));
+  }
+
+  const ENV = 'API_KEY=sk-live-abc123456789\n';
+
+  it('hands the model the masked text, and never the value', async () => {
+    const root = ws();
+    writeFileSync(join(root, '.env'), ENV);
+    const { p, requests } = capturing([callTurn('read_file', { path: '.env' }), done]);
+
+    const r = await runAgentLoop({ ...BASE, root, provider: p, secretVault: createVault() });
+
+    expect(r.reason).toBe('complete');
+    const result = lastToolResult(requests[1]!);
+    expect(result).toContain('«masked:API_KEY»');
+    expect(result).not.toContain('sk-live-abc123456789');
+  });
+
+  it('still REFUSES a shell command that names a protected file', async () => {
+    const root = ws();
+    writeFileSync(join(root, '.env'), ENV);
+    const { p, requests } = capturing([callTurn('shell', { command: 'cat .env' }), done]);
+
+    await runAgentLoop({ ...BASE, root, provider: p, secretVault: createVault() });
+
+    const result = lastToolResult(requests[1]!);
+    expect(result).toContain('protected file');
+    expect(result).not.toContain('sk-live-abc123456789');
+  });
+
+  it('refuses it with no vault too', async () => {
+    const root = ws();
+    writeFileSync(join(root, '.env'), ENV);
+    const { p, requests } = capturing([callTurn('read_file', { path: '.env' }), done]);
+
+    await runAgentLoop({ ...BASE, root, provider: p });
+
+    expect(lastToolResult(requests[1]!)).toContain('protected file');
+  });
+
+  it('previews a protected-file diff against the masked view', async () => {
+    const root = ws();
+    writeFileSync(join(root, '.env'), ENV);
+    let preview = '';
+    const { p } = capturing([
+      callTurn('apply_diff', {
+        path: '.env',
+        // The SEARCH the model wrote is the masked line it was shown.
+        diffs: [{ search: `API_KEY=${placeholder('API_KEY')}`, replace: 'API_KEY=rotated-000' }],
+      }),
+      done,
+    ]);
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      secretVault: createVault(),
+      approve: (req) => {
+        preview = req.preview ?? '';
+        return Promise.resolve(true);
+      },
+    });
+
+    // Without matching the masked view the preview reads "preview unavailable",
+    // so the user is asked to approve a change they cannot see.
+    expect(preview).not.toContain('preview unavailable');
+    expect(preview).toContain('rotated-000');
+    // The card shows the USER their own value. That is the point of the card,
+    // and the preview never reaches disk (transcript.ts drops it).
+    expect(preview).toContain('sk-live-abc123456789');
+  });
+
+  it('scrubs a value that arrived by another route before the model sees it', async () => {
+    const root = ws();
+    writeFileSync(join(root, '.env'), ENV);
+    const { p, requests } = capturing([
+      callTurn('read_file', { path: '.env' }),
+      callTurn('shell', { command: 'printf %s sk-live-abc123456789' }),
+      done,
+    ]);
+
+    await runAgentLoop({ ...BASE, root, provider: p, secretVault: createVault() });
+
+    const result = lastToolResult(requests[2]!);
+    expect(result).not.toContain('sk-live-abc123456789');
+    expect(result).toContain('«masked:API_KEY»');
+  });
+
+  /**
+   * D49bc: the seed happens BEFORE the first tool call.
+   *
+   * The value here reaches a tool result by the route the scrub could not see —
+   * no `read_file`, no name the token scan recognises — which is exactly the
+   * hole. If the seed ran after the first call, or not at all, the model would
+   * be handed the value.
+   */
+  it('seeds the map before the first call, so an indirect read is scrubbed', async () => {
+    const root = ws();
+    // Protected by EXACT name, so a glob that expands to it is not that name.
+    writeFileSync(join(root, 'local.properties'), 'apiKey=sk-live-indirect-0001\n');
+    const { p, requests } = capturing([
+      callTurn('shell', { command: 'cat local.propert*' }),
+      done,
+    ]);
+
+    await runAgentLoop({ ...BASE, root, provider: p, secretVault: createVault() });
+
+    const result = lastToolResult(requests[1]!);
+    expect(result).not.toContain('sk-live-indirect-0001');
+    expect(result).toContain('«masked:apiKey»');
+  });
+
+  /** D49bc: the reveal ask reaches the executor through the loop. */
+  it('asks before showing a protected file the masker cannot parse', async () => {
+    const root = ws();
+    writeFileSync(join(root, 'secrets.json'), '{"API_KEY":"sk-live-blob-0001"}');
+    const asked: string[] = [];
+    const { p, requests } = capturing([
+      callTurn('read_file', { path: 'secrets.json' }),
+      done,
+    ]);
+
+    await runAgentLoop({
+      ...BASE,
+      root,
+      provider: p,
+      secretVault: createVault(),
+      revealProtected: (rel) => {
+        asked.push(rel);
+        return Promise.resolve(true);
+      },
+    });
+
+    expect(asked).toEqual(['secrets.json']);
+    expect(lastToolResult(requests[1]!)).toContain('sk-live-blob-0001');
   });
 });

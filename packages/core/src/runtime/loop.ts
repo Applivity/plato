@@ -21,6 +21,9 @@ import { recordWrites } from './undo.js';
 import type { Mode } from './modes.js';
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
+import { maskText, type SecretVault } from '../security/mask.js';
+import { isSecretPath } from '../security/secrets.js';
+import { seedVault } from './seedVault.js';
 import {
   AgentBus,
   RunController,
@@ -128,6 +131,14 @@ async function buildApprovalPreview(
   args: ToolArgs,
   /** D49p: the URL this one is a redirect FROM, when it is a redirect hop. */
   via?: string,
+  /**
+   * D49bb: the session's secret map. A diff the model wrote against a MASKED
+   * file has masked SEARCH strings, so the preview has to apply them to the
+   * masked view and then un-mask the result — otherwise every preview of a
+   * protected file reads "preview unavailable", which is the card telling the
+   * user nothing about the change they are approving.
+   */
+  vault?: SecretVault,
 ): Promise<string> {
   if (tool === 'web_fetch') {
     // D49p: the URL IS what leaves the machine, so it is what the user must see.
@@ -181,7 +192,21 @@ async function buildApprovalPreview(
           continue;
         }
         const before = await readFile(join(root, safe), 'utf8');
-        const after = applyBlocks(before, parseDiffBlocks(e.diffs)).content;
+        // D49bb: the model wrote its SEARCH against the masked view of a
+        // protected file, so the blocks are applied there and the result is
+        // un-masked for the CARD. Showing the user their own values on their own
+        // screen is the point; the preview is never written to disk.
+        let base = before;
+        if (vault !== undefined && isSecretPath(safe)) {
+          const masked = maskText(before);
+          if (masked !== null) {
+            vault.remember(masked.pairs);
+            base = masked.masked;
+          }
+        }
+        const applied = applyBlocks(base, parseDiffBlocks(e.diffs)).content;
+        const after =
+          base === before || vault === undefined ? applied : vault.unmask(applied);
         parts.push(`--- ${safe}\n${previewDiff(before, after)}`);
       }
       const joined = parts.join('\n\n');
@@ -283,6 +308,21 @@ export interface LoopOptions {
    * "everything from this request" as one action. Absent, no copies are kept.
    */
   undoStore?: { dir: string };
+  /**
+   * D49bb: the session's secret map, built by the shell so it outlives a run —
+   * a value masked in one run must still be masked in the next, or the model
+   * reads it back out of a file the previous run wrote it to.
+   *
+   * Absent, a protected file is refused the old way, which is what every test
+   * that does not opt in keeps getting.
+   */
+  secretVault?: SecretVault;
+  /**
+   * D49bc: the card for a protected TEXT file the masker cannot parse — see
+   * `ToolContext.revealProtected`, which this feeds. The shell answers from its
+   * session memory, so the second question about one file is never asked.
+   */
+  revealProtected?: (rel: string) => Promise<boolean>;
   /**
    * D49aw: put to the user when the run looks stuck — the same call returning
    * the same thing, or turns in which nothing succeeded. `continue` resumes and
@@ -449,6 +489,29 @@ async function runLoop(
   // D49ax: bound to this run's id below, so every write in one request is filed
   // together and "undo everything from this request" is one action.
   const undoStore = opts.undoStore;
+
+  // D49bc: fill the secret map from the workspace BEFORE the first tool call, so
+  // a value reached indirectly — `cat *.properties` in `auto`, where the name
+  // check is the only guard — is scrubbed out of the tool result that carries
+  // it. `seedVault` explains what this does and does not close; a run must never
+  // fail because one file could not be read, so it never throws.
+  if (opts.secretVault !== undefined) {
+    try {
+      const seeded = await seedVault(opts.root, opts.secretVault);
+      if (seeded.files > 0) {
+        bus.emit({
+          type: 'notice',
+          runId,
+          text:
+            `[plato] read ${seeded.files} protected file(s) in this project so that a command ` +
+            `cannot print a secret into the conversation. The values stay in memory and are never sent to a model.`,
+        });
+      }
+    } catch {
+      // A seeding failure is not a security failure: the map is empty and the
+      // guards behave exactly as they did before this existed.
+    }
+  }
 
   // Legacy shell callbacks ride the bus (D24a): one emission path.
   if (opts.onText) {
@@ -875,8 +938,20 @@ async function runLoop(
       // rule again — this one is for the user's benefit, that one is the
       // guarantee.
       const contained = containmentRefusal(opts.root, name, args);
-      const refusal =
-        contained ?? secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
+      // D49bb: with a secret map in play, a protected file is READABLE — the
+      // values are masked at the executor — so the pre-flight name refusal must
+      // stand aside for the file tools, or the mask never runs. `shell` keeps it:
+      // a command's output cannot be masked before Plato has seen the values, so
+      // the honest rule there is still "name it and it is refused".
+      //
+      // This is the refinement D49bb makes to D49ai: the token scan is unchanged,
+      // it simply no longer stands in front of a tool that can hand the model a
+      // masked view instead.
+      const secret =
+        opts.secretVault !== undefined && name !== 'shell'
+          ? null
+          : secretRefusal(name as Parameters<typeof secretRefusal>[0], args);
+      const refusal = contained ?? secret;
       if (refusal !== null) {
         // D49aq: the guard is loud. It used to push a tool_result to the model
         // and emit NOTHING, so the transcript showed the same thing whether the
@@ -928,7 +1003,7 @@ async function runLoop(
 
       if (decision === 'ask') {
         bus.emit({ type: 'tool-event', runId, tool: name, phase: 'requested', args });
-        const preview = await buildApprovalPreview(opts.root, name, args);
+        const preview = await buildApprovalPreview(opts.root, name, args, undefined, opts.secretVault);
         bus.emit({ type: 'approval-requested', runId, tool: name, preview });
         const host = approvalHost(name, args);
         allowed = await opts.approve({
@@ -1031,6 +1106,8 @@ async function runLoop(
         return executeTool(opts.root, name, args, {
           shells,
           signal: ctrl.signal,
+          vault: opts.secretVault,
+          revealProtected: opts.revealProtected,
           recordWrites: undoStore
             ? (caps) => recordWrites(undoStore.dir, opts.root, runId, caps)
             : undefined,

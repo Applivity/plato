@@ -1,4 +1,5 @@
 export * from './security/secrets.js';
+export * from './security/mask.js';
 export * from './security/readOnlyShell.js';
 export * from './tools/files.js';
 export * from './tools/diff.js';
@@ -24,6 +25,8 @@ export * from './runtime/undo.js';
 export * from './runtime/undoCopy.js';
 export * from './runtime/approvalCopy.js';
 export * from './runtime/toolWords.js';
+export * from './runtime/secretCopy.js';
+export * from './runtime/seedVault.js';
 export * from './runtime/context.js';
 export * from './runtime/chatlog.js';
 export * from './runtime/diagnostics.js';

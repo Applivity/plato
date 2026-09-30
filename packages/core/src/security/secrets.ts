@@ -47,7 +47,112 @@ const MATCHERS: ((p: string) => boolean)[] = SECRET_DENYLIST.map((pat) => {
 /** True when a path or filename is on the secret deny-list. */
 export function isSecretPath(p: string): boolean {
   const norm = p.replaceAll('\\', '/');
-  return MATCHERS.some((m) => m(norm));
+  // D49bb: the owner's own list. An EXCEPTION is checked first and by exact
+  // repo-relative path, so a user who says "local.properties is not a secret in
+  // this project" gets the whole file, and cannot accidentally re-include a
+  // different file that merely shares a name in another directory.
+  if (allowedPaths.has(norm)) return false;
+  if (MATCHERS.some((m) => m(norm))) return true;
+  return extraMatchers.some((m) => m(norm));
+}
+
+/**
+ * D49bb: the protected list is the OWNER's, not only the source's.
+ *
+ * The default list is a guess about other people's projects, and it was the one
+ * refusal with no way out — a user whose `credentials.json` was harmless had to
+ * edit source to say so. Two settings answer it: names to ADD, and exact paths to
+ * take OFF.
+ *
+ * This is module state rather than a threaded argument because `isSecretPath` is
+ * a predicate called from eight places, including the workspace walker that
+ * builds the first prompt. Threading a policy object through all of them would
+ * make every caller aware of a decision none of them makes. The state is set
+ * once at activation and on a settings change, and it is only ever additive to
+ * the defaults — the built-in list cannot be emptied from settings.
+ */
+const allowedPaths = new Set<string>();
+let extraMatchers: ((p: string) => boolean)[] = [];
+
+function matcherFor(pat: string): (p: string) => boolean {
+  if (pat.startsWith('.env.')) {
+    return (p: string) => p.split('/').some((seg) => seg === pat);
+  }
+  if (pat.includes('*')) {
+    const star = pat.indexOf('*');
+    const prefix = pat.slice(0, star);
+    const suffix = pat.slice(star + 1);
+    return (p: string) => {
+      const base = p.split('/').pop() ?? '';
+      return (
+        base.length >= prefix.length + suffix.length &&
+        base.startsWith(prefix) &&
+        base.endsWith(suffix)
+      );
+    };
+  }
+  return (p: string) => (p.split('/').pop() ?? '') === pat;
+}
+
+export function configureSecrets(opts: { extra?: string[]; allow?: string[] }): void {
+  extraMatchers = (opts.extra ?? [])
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map(matcherFor);
+  allowedPaths.clear();
+  for (const p of opts.allow ?? []) {
+    // `.` and a leading `./` are what a person types and what an editor's
+    // autocomplete gives; the comparison is against `resolveInRoot`'s output, so
+    // both are normalised away rather than silently failing to match.
+    const norm = p
+      .trim()
+      .replaceAll('\\', '/')
+      .replace(/^\.\//, '')
+      .replace(/\/+$/, '');
+    if (norm.length > 0 && norm !== '.') allowedPaths.add(norm);
+  }
+}
+
+/**
+ * D49bc: why a protected NAME cannot be accepted, or null when it can.
+ *
+ * The panel adds these names, and an entry that matches nothing must never be
+ * accepted in silence: `isSecretPath` compares the file's LAST PATH SEGMENT, so
+ * a name holding a `/` would protect nothing at all and nothing on screen would
+ * say so. A `*` is understood at the start or the end only — `*.pem`, `.env.*` —
+ * which is exactly the matcher above.
+ */
+export function protectNameError(raw: string): string | null {
+  const s = raw.trim();
+  if (s.length === 0) return 'Enter a file name.';
+  if (s.includes('/') || s.includes('\\')) {
+    return 'A protected name is a file name, not a path. Remove the "/".';
+  }
+  const stars = s.split('*').length - 1;
+  if (stars > 1) return 'Use one "*" at most.';
+  if (stars === 1 && !s.startsWith('*') && !s.endsWith('*')) {
+    return 'A "*" is allowed only at the start or the end, as in "*.pem".';
+  }
+  return null;
+}
+
+/**
+ * D49bc: why an ALLOWED PATH cannot be accepted, or null when it can.
+ *
+ * The asymmetry with a name is the security property, so it is enforced here
+ * rather than left to the matcher: a wildcard exception would silently
+ * unprotect everything matching it, and nothing on screen would say so.
+ */
+export function allowPathError(raw: string): string | null {
+  const s = raw.trim();
+  if (s.length === 0) return 'Enter a path.';
+  if (s.includes('*')) {
+    return 'An allowed file is one exact path, so a "*" is not allowed.';
+  }
+  if (s.startsWith('/') || s.startsWith('\\')) {
+    return 'Enter the path from the workspace root, with no leading "/".';
+  }
+  return null;
 }
 
 /**
