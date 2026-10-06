@@ -156,8 +156,13 @@ function escapesWorkspace(arg: string): boolean {
  * unbalanced quote. Every one of those is a case where a text reader could
  * describe a different command from the one bash runs, so the answer is a
  * refusal rather than a guess.
+ *
+ * D49be: exported for the secret check, which had the same problem from the
+ * other side — it read the raw text and so could not see a filename that
+ * quoting had taken apart (`cat key'store'.properties`). One tokenizer, so the
+ * two readers cannot disagree about what bash will open.
  */
-function tokenize(command: string): string[] | null {
+export function tokenize(command: string): string[] | null {
   const argv: string[] = [];
   let cur = '';
   /** True once the current token has content, so an empty `''` is still a token. */

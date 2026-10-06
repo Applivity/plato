@@ -19,18 +19,31 @@ export interface ModelEntry {
   reasoning: boolean;
   /** Hard provider cap on output tokens; requesting above it is a 400. */
   maxOutput: number;
-  /** Provider-advertised input context window. null = unknown. */
-  maxContext: number | null;
 }
 
+/**
+ * D49bf: the catalog carries NO context window, and that is the decision.
+ *
+ * It used to hold one per model, verified by hand from each provider's docs. A
+ * shipped window is a claim about somebody else's machine: it rots silently
+ * when a name is re-released with a different window, it cannot describe a
+ * self-hosted route capped to fit a GPU, and it is exactly the number that
+ * decides when a long session is folded away. **The connection is the only
+ * party that knows what it will accept**, so the window comes from `/models`
+ * (see `discover.ts`) and from nowhere else.
+ *
+ * `maxOutput` and the prices STAY, and the asymmetry is the reason: a
+ * too-high output request is a hard 400 the user cannot miss, while a wrong
+ * window only changes when Plato folds. One is a mistake; the other is a
+ * preference, and only the first is worth shipping a table for.
+ */
 export const MODEL_CATALOG: ModelEntry[] = [
-  // Context windows verified against each provider's own /models or docs.
-  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true, maxOutput: 64000, maxContext: 200000 },
-  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true, maxOutput: 32768, maxContext: 200000 },
-  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false, maxOutput: 8192, maxContext: 200000 },
-  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384, maxContext: 128000 },
-  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384, maxContext: 128000 },
-  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000, maxContext: 200000 },
+  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', pricePerMTok: [3, 15], reasoning: true, maxOutput: 64000 },
+  { id: 'claude-opus-4-1', label: 'Claude Opus 4.1', pricePerMTok: [15, 75], reasoning: true, maxOutput: 32768 },
+  { id: 'claude-3-5-haiku-latest', label: 'Claude Haiku 3.5', pricePerMTok: [0.8, 4], reasoning: false, maxOutput: 8192 },
+  { id: 'gpt-4o', label: 'GPT-4o', pricePerMTok: [2.5, 10], reasoning: false, maxOutput: 16384 },
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini', pricePerMTok: [0.15, 0.6], reasoning: false, maxOutput: 16384 },
+  { id: 'o4-mini', label: 'o4-mini', pricePerMTok: [1.1, 4.4], reasoning: true, maxOutput: 100000 },
 ];
 
 export function splitModelRef(ref: string): {
@@ -78,36 +91,22 @@ export function maxOutputFor(bareName: string): number {
 }
 
 /**
- * Provider-advertised input context window in tokens. null = unknown
- * (discovered model whose /models payload didn't carry the field, or
- * provider that doesn't expose it). Per D26c we never fake precision:
- * the UI shows "ctx unknown" rather than guessing.
- */
-export function maxContextFor(bareName: string): number | null {
-  return findModel(bareName)?.maxContext ?? null;
-}
-
-/**
- * D49t: the window to actually run with, from the two places that claim one.
+ * D49bf: the window to run with — what the user's own connection advertised, and
+ * nothing else.
  *
- * The catalog is a shipped table for well-known names; the **advertised** number
- * is what the user's own connection reported (see discover.ts). When both speak,
- * take the SMALLER — the two ways to be wrong are not symmetric. Too small means
- * summarising earlier than needed, which works. Too large means sending more than
- * the model can hold, and on the common local servers that does not raise an
- * error, it truncates silently. So the conservative reading is the only safe one.
+ * This used to take the SMALLER of a shipped catalog value and the advertised
+ * one. **The catalog half is gone** (founder, 2026-10-06): a hand-maintained
+ * window is misleading exactly where it matters, because it is a claim about a
+ * machine Plato is not talking to. See the note on `MODEL_CATALOG`.
  *
- * A connection that reports nothing leaves the catalog value in place; a model in
- * neither leaves `null`, and the caller decides what to do about not knowing.
+ * `null` when the connection said nothing, and the caller decides what to do
+ * about not knowing — the UI still says "context unknown" rather than printing
+ * an assumption as a fact (D26c). What to ASSUME for compaction in that case is
+ * a separate decision with its own home: `DEFAULT_CONTEXT_WINDOW` in
+ * `runtime/context.ts`.
  */
-export function resolveMaxContext(
-  bareName: string,
-  advertised?: number,
-): number | null {
-  const known = maxContextFor(bareName);
-  if (known === null) return advertised ?? null;
-  if (advertised === undefined) return known;
-  return Math.min(known, advertised);
+export function resolveMaxContext(advertised?: number): number | null {
+  return advertised ?? null;
 }
 
 /**

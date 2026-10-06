@@ -36,8 +36,24 @@ import { maxOutputFor, splitModelRef } from '../providers/registry.js';
 /** How many recent messages to keep verbatim across a compaction. */
 export const MAX_RECENT_TO_KEEP = 6;
 
-/** Conservative fallback when `maxContext` is unknown. */
-export const UNKNOWN_CONTEXT_FLOOR = 8_192;
+/**
+ * D49bf: the window to ASSUME for compaction when nothing knows the real one.
+ *
+ * 128,000, raised from 8,192 (founder, 2026-10-06). The old value was chosen to
+ * be safe for any model in service, and the price was paid on every run against
+ * an endpoint whose `/models` did not answer: Plato folded a long session after
+ * a handful of files, on models that would have held all of it. 128k is the
+ * modal window for the models people actually run now.
+ *
+ * **The trade, stated rather than implied.** 8,192 could not be exceeded; 128k
+ * can. A model that advertises nothing and truly holds less than 128k now gets
+ * sent more than it accepts — which is a **400 the user sees**, not the silent
+ * truncation the old note worried about, because the guess is client-side and
+ * the provider is the one that refuses. The founder's call was to take that
+ * error over folding good work early, and the fix when it happens is visible:
+ * refresh the model list so the connection's own number is used.
+ */
+export const DEFAULT_CONTEXT_WINDOW = 131_072;
 
 /** D37a: hard ceiling on the summary call's output budget. */
 const COMPACT_MAX_TOKENS_CEILING = 2048;
@@ -66,24 +82,24 @@ export function compactMaxTokensFor(model: string): number {
 
 /**
  * D37a: should the auto-compaction trigger? Pure function so the trip
- * math is testable without the loop. `maxContext` MUST come from
- * `maxContextFor(bare)` (catalog) — passing a value from a /models
- * payload is a bug; this helper assumes catalog-shaped input.
+ * math is testable without the loop.
  *
- * The reasoning: discovered `context_length` fields (OpenRouter,
- * LiteLLM) are *informational* and may be stale, route-specific, or
- * outright wrong. Compaction timing has to be conservative — we'd
- * rather compact slightly early than trust an advertised number that
- * 400s on a real request. Unknown models fall back to
- * `UNKNOWN_CONTEXT_FLOOR` (8192) because silent unbounded growth is
- * the only worse failure mode than compacting too eagerly.
+ * D49bf: `maxContext` is the number the CONNECTION advertised, passed straight
+ * through from `resolveMaxContext` — which is now its only source, the shipped
+ * catalog having been removed. `null` means the connection said nothing, and
+ * the trip then uses `DEFAULT_CONTEXT_WINDOW`.
+ *
+ * The conservative reading is still the right one where a number exists at all:
+ * too small summarises earlier than needed, which works; too large sends more
+ * than the model holds. What changed is only what happens when NOTHING is known
+ * — assuming 128k rather than 8,192, at the founder's direction.
  */
 export function shouldAutoCompact(
   estimatedTokens: number,
   maxContext: number | null,
   threshold: number,
 ): boolean {
-  const ceiling = maxContext ?? UNKNOWN_CONTEXT_FLOOR;
+  const ceiling = maxContext ?? DEFAULT_CONTEXT_WINDOW;
   return estimatedTokens >= ceiling * threshold;
 }
 

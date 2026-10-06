@@ -750,6 +750,13 @@ silent unbounded growth is the only worse failure mode than
 compacting slightly early. Unknown models fall back to
 `UNKNOWN_CONTEXT_FLOOR` (8192).
 
+> **REVERSED, then SUPERSEDED (2026-10-06, D49bf).** The rule in (a) — that a discovered
+> window must NEVER drive compaction timing and only the catalog may — was reversed by
+> D49t (2026-09-22) on the founder's call, and D49bf finished the job: **the connection's
+> advertised number is now the ONLY source, the catalog carries no window at all, and an
+> unadvertised model is assumed to hold 128k rather than 8,192.** The paragraph above is
+> kept as the record of a rule reasoned carefully and then found wrong in practice.
+
 (b) *Model-aware summary cap.* The summariser's `maxTokens` was
 hard-coded at 1024 — fine for big models, but a 1/4 budget on a big
 model (Sonnet 4.5: 64000 / 4 = 16000) was wildly generous, while a
@@ -2120,6 +2127,13 @@ as an open decision** — trusting a `/models` payload was deliberately rejected
 OpenRouter and LiteLLM routes report stale windows, so the answer is a product choice
 (a per-connection window field, a larger floor, or opt-in endpoint discovery), not a
 patch.
+
+> **FIXED (2026-10-06, D49bf).** The gap left open above is closed, and the founder took the
+> option this paragraph named *"trusting a `/models` payload"* — the one it had rejected.
+> The window now comes from the connection alone and the shipped catalog is gone; a model
+> nothing is known about is assumed to hold **128k**, not 8,192, which is what had folded
+> this run after three files. The trade that bought (a 400 instead of an early fold) is
+> recorded in D49bf.
 
 **Lesson worth keeping:** three of the four traps in this adapter family were found by
 falsification, and this one was found by *running the thing*. A test suite proves what
@@ -3633,6 +3647,96 @@ and `.q-tabs`). **Tests:** one in `packages/core/test/loop.test.ts`, one in
 `packages/core/test/modes.test.ts`. **Render:** the `question` suite, one new block of ten
 assertions. **Field: no new case** — a tab is not a card kind, so nothing in the driver changes; the
 existing question cases re-prove the card in a real window.
+
+---
+
+**D49be — the secret check reads the command the way bash reads it (founder, 2026-10-06).**
+
+The recorded defect, closed: **`cat key'store'.properties` was refused by nothing.** The deny-list
+check matched whole strings and, for a command, split the text on every character a filename cannot
+contain — and a single quote is one of those. So the command became the four harmless tokens `key`,
+`store`, `properties`, while **bash concatenates adjacent quoted and unquoted runs into one word**
+and opens `keystore.properties`. The guard was reading a different command from the one that ran.
+
+**The fix was already written and unexported.** D49aq built a tokenizer that models bash's quoting
+faithfully (`readOnlyShell.ts`) for the read-only-shell allowance; it returns the UNQUOTED tokens and
+answers `null` for anything it will not model. The secret check now runs the command through it
+first. **One tokenizer, so the two readers cannot disagree about what bash will open** — which is the
+whole point, and the reason this was worth doing as a shared call rather than a second quoter written
+beside the first.
+
+**The two scans are UNIONED, never swapped.** The tokenizer refuses a command containing a backslash,
+a newline or an unbalanced quote; the text scan from D49ai still runs afterwards, so the check
+**cannot start catching less than it did before**. That the union matters is itself tested: a command
+the tokenizer refuses still has its plainly-written name caught by the text scan.
+
+**What this does NOT close, stated rather than implied:** a splice the tokenizer refuses to model — a
+backslash (`cat keystore\\properties`) — is left to the text scan, which cannot see it. The check is
+still **best effort, as D49ai recorded it**, and the guard that actually holds for a masked file is
+the value scrub, not this name check. This decision removes the quoted case, which was the one a
+model would reach by accident; it does not claim the check is now a guarantee.
+
+**Verified by falsification, re-run green after:** removing the tokenizer pass fails the quoted-splice
+test and nothing else — the other nine assertions in the file still pass, which is what proves the
+tokenizer is exactly what catches the splice and not incidental cover.
+
+**Files:** `packages/core/src/security/secrets.ts` (`mentionsSecretPath`, now unioned),
+`packages/core/src/security/readOnlyShell.ts` (`tokenize` exported). **Tests:**
+`mentionsSecretPath` — a new `describe` of five assertions in `packages/core/test/secrets.test.ts`.
+**Field:** case 1 gains a third run whose command is `cat .en'v.production'` — falsified by removing
+the tokenizer pass, which prints the hole in the failure message (`cat .env.production: No such file
+or directory` reaching the model). The file does not exist in the field page, so a regression opens
+nothing.
+
+---
+
+**D49bf — the model's context window comes from the CONNECTION, and the shipped catalog stops
+claiming one (founder, 2026-10-06).**
+
+Two changes in one decision, because the second is what the first is worth.
+
+**1. The table is gone.** `MODEL_CATALOG` carried a context window for each model Plato knew by name,
+and `resolveMaxContext` took the SMALLER of that and the number the connection advertised. The
+founder's judgement: *"it would be misleading or error prone to keep an internal table. let the
+plato discover model context from what model advertises."* A shipped window is **a claim about a
+machine Plato is not talking to**: it rots the moment a name is re-released under a different limit,
+it cannot describe a self-hosted route capped to fit a GPU, and it is precisely the number that
+decides when a long session is folded away. The connection is the only party that knows what it will
+accept. **`resolveMaxContext(advertised?)` now returns the advertised number or `null`, and the
+catalog field is deleted** — not merely ignored, so it cannot creep back, which a test enforces.
+
+**2. The assumption for "nothing knows" is 128k, raised from 8,192.** The old floor was chosen to be
+safe for any model, and the price was paid on every run against an endpoint whose `/models` did not
+answer — the defect HANDOFF carried: **Plato folded a good session at about 6,500 tokens.** 128k is
+the modal window for the models people actually run now.
+
+**The trade, recorded rather than glossed, because it is real and it runs the other way.**
+8,192 could not be exceeded; **128k can**. A model that advertises nothing and truly holds less than
+128k now gets sent more than it accepts. **That is a 400 the user sees, not a silent truncation** —
+the guess is client-side and the provider is the one that refuses — and the repair is visible and
+local: refresh the model list so the connection's own number is used. The founder took that error
+over folding good work early.
+
+**Where the two facts live, since they are not the same fact.** "We do not know the window" stays
+`null` and the UI keeps saying **"ctx unknown"** — printing an assumption as a fact is the
+misleading-ness this decision is against. "What to assume when folding" is a separate number with a
+separate home, `DEFAULT_CONTEXT_WINDOW` in `runtime/context.ts`. **The catalog keeps `maxOutput` and
+the prices**, and the asymmetry is deliberate: a too-high output request is a hard 400, a wrong
+window only changes when Plato folds. One is a mistake; the other is a preference, and only the
+first is worth shipping a table for.
+
+**Verified by falsification — two reverts for this decision, each re-run green afterwards.** The
+default put back to 8,192 fails two tests: the unit one that pins the trip points, and a new loop
+test whose whole subject is that the *old* trip point no longer folds (about 5,000 tokens, which used
+to compact and now does not). A window added back to a catalog entry fails the test that inverts
+D37's own rule — that rule required a non-null window on every entry, and it is now required to
+carry none.
+
+**Files:** `packages/core/src/providers/registry.ts` (`ModelEntry`, `MODEL_CATALOG`,
+`resolveMaxContext`; `maxContextFor` deleted), `packages/core/src/runtime/context.ts`
+(`DEFAULT_CONTEXT_WINDOW`), `packages/core/src/runtime/loop.ts` and `packages/vscode/src/extension.ts`
+(three call sites). **Tests:** `providers.test.ts` (the D37 rule inverted, the resolver block
+rewritten), `context.test.ts`, `loop.test.ts` (one new wiring test, one new regression test).
 
 ---
 

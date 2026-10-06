@@ -3,7 +3,6 @@ import {
   MODEL_CATALOG,
   createProvider,
   findModel,
-  maxContextFor,
   maxOutputFor,
   modelSupportsReasoning,
   parseModelRef,
@@ -61,26 +60,23 @@ describe('catalog (bare model names)', () => {
     }
   });
 
-  it('declares a non-null maxContext for every catalog entry', () => {
+  /**
+   * D49bf INVERTED this test. It used to require a non-null `maxContext` on
+   * every entry — a shipped window for each model Plato knew by name. The
+   * founder removed the table on 2026-10-06: a window is a claim about a machine
+   * Plato is not talking to, it rots when a name is re-released, and it decides
+   * when a session is folded away. So the rule is now that the catalog declares
+   * NONE, and this is what stops one creeping back.
+   */
+  it('declares NO maxContext on any catalog entry (D49bf)', () => {
     for (const m of MODEL_CATALOG) {
-      expect(m.maxContext).not.toBeNull();
-      expect(m.maxContext).toBeTypeOf('number');
-      expect(m.maxContext).toBeGreaterThan(0);
+      expect(Object.keys(m)).not.toContain('maxContext');
     }
   });
 });
 
-describe('maxContextFor / maxOutputFor (D37)', () => {
-  it('returns catalog maxContext for known bare names', () => {
-    expect(maxContextFor('claude-sonnet-4-5')).toBe(200000);
-    expect(maxContextFor('gpt-4o')).toBe(128000);
-  });
-
-  it('returns null for unknown models — never guesses (D26c)', () => {
-    expect(maxContextFor('totally-custom')).toBeNull();
-  });
-
-  it('maxOutputFor still falls back to 8192 for unknown models', () => {
+describe('maxOutputFor (D37)', () => {
+  it('returns catalog maxOutput for known bare names, 8192 for unknown ones', () => {
     expect(maxOutputFor('claude-3-5-haiku-latest')).toBe(8192);
     expect(maxOutputFor('totally-custom')).toBe(8192);
   });
@@ -265,30 +261,29 @@ describe('OpenAICompatProvider.completeTurn', () => {
  * D49t: the catalog and the user's connection can both claim a context window,
  * and the run has to pick. The rule is "the smaller wins" — see resolveMaxContext.
  */
-describe('resolveMaxContext / resolveMaxOutput (D49t)', () => {
-  it('uses the catalog when the connection says nothing', () => {
-    expect(resolveMaxContext('claude-sonnet-4-5')).toBe(200000);
-    expect(resolveMaxOutput('claude-sonnet-4-5')).toBe(64000);
-  });
-
-  it('uses the connection when the model is unknown to the catalog', () => {
-    expect(resolveMaxContext('my-litellm-group', 163840)).toBe(163840);
-    expect(resolveMaxOutput('my-litellm-group', 64000)).toBe(64000);
-  });
-
+describe('resolveMaxContext / resolveMaxOutput (D49t, D49bf)', () => {
   /**
-   * A connection can serve a SMALLER window than the model is capable of — a
-   * LiteLLM route capped to fit a GPU, say. Believing the catalog there means
-   * sending more than the route accepts.
+   * D49bf: the connection is the ONLY source now. A model Plato knows by name
+   * gets nothing from a shipped table — the number that decides when a session
+   * is folded has to be the one the endpoint will actually accept.
    */
-  it('takes the smaller when both speak', () => {
-    expect(resolveMaxContext('claude-sonnet-4-5', 32768)).toBe(32768);
-    expect(resolveMaxContext('claude-sonnet-4-5', 500000)).toBe(200000);
-    expect(resolveMaxOutput('claude-sonnet-4-5', 4096)).toBe(4096);
+  it('takes the connection\'s number for a model the catalog knows', () => {
+    expect(resolveMaxContext(200000)).toBe(200000);
+    // The old rule took the SMALLER of catalog and connection, so this asked for
+    // 200000 and got 200000 back from the catalog. Now the connection is simply
+    // believed — including when it claims MORE than the catalog used to say.
+    expect(resolveMaxContext(500000)).toBe(500000);
   });
 
-  it('still reports unknown when neither speaks', () => {
-    expect(resolveMaxContext('my-litellm-group')).toBeNull();
+  it('reports unknown when the connection says nothing — never guesses (D26c)', () => {
+    expect(resolveMaxContext()).toBeNull();
+    expect(resolveMaxContext(undefined)).toBeNull();
+  });
+
+  it('resolveMaxOutput still takes the smaller of catalog and connection', () => {
+    expect(resolveMaxOutput('claude-sonnet-4-5')).toBe(64000);
+    expect(resolveMaxOutput('claude-sonnet-4-5', 4096)).toBe(4096);
+    expect(resolveMaxOutput('claude-sonnet-4-5', 500000)).toBe(64000);
   });
 
   /**

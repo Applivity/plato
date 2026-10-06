@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-09-28)
+## Current state (verified 2026-10-06)
 
 - **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
   (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
@@ -424,17 +424,24 @@ are now only in PROGRESS.
   adding any SDK: set every credential and endpoint option deliberately**, or the library
   will prefer the environment over the app's own settings and the call site will read as
   if it had passed what it needed. `createProvider` must not drop `baseUrl` per kind.
-- **A model's context window comes from the CONNECTION, not the catalog alone (D49t).**
-  `LoopOptions.advertised` carries what the connection reported; the ring and the RUN
-  resolve through one rule, `resolveMaxContext` / `resolveMaxOutput`, which **takes the
-  smaller when two sources disagree** — too small summarises early and works, too large
-  overflows, and on local servers it overflows *silently*. The catalog still covers
-  well-known names; `null` still means unknown, and the UI says so. Discovery runs
-  automatically before a run (5 s bound, 24 h staleness) instead of waiting for "Fetch
-  models". **`max_tokens` is NOT a window** — it is the output cap; it used to be read as
-  one. **LiteLLM reports sizes only on `/model/info`**, which is implemented but
-  **unverified against a live LiteLLM**. Ollama and llama.cpp runtime windows are not read
-  at all.
+- **A model's context window comes from the CONNECTION, and from nowhere else (D49t,
+  D49bf).** `LoopOptions.advertised` carries what the connection reported, and the ring and
+  the RUN resolve through one rule, `resolveMaxContext`. **The shipped catalog used to
+  supply a window for well-known names; that table is GONE** (founder, 2026-10-06) — a
+  hand-maintained window is a claim about a machine Plato is not talking to, it rots when a
+  name is re-released under a different limit, and it is exactly the number that decides
+  when a long session is folded away. So the rule is now simply **believe the connection**.
+  `null` still means unknown and the UI still says "ctx unknown" rather than printing an
+  assumption as a fact (D26c); what compaction *assumes* in that case is a separate number
+  with its own home, `DEFAULT_CONTEXT_WINDOW` = **128k**, in `runtime/context.ts` — raised
+  from 8,192. **`resolveMaxOutput` still takes the SMALLER of catalog and connection**, and
+  the asymmetry is deliberate: a too-high output request is a hard 400 the user cannot miss,
+  while a wrong window only changes when Plato folds. One is a mistake, the other is a
+  preference. Discovery runs automatically before a run (5 s bound, 24 h staleness) instead
+  of waiting for "Fetch models". **`max_tokens` is NOT a window** — it is the output cap; it
+  used to be read as one. **LiteLLM reports sizes only on `/model/info`**, which is
+  implemented but **unverified against a live LiteLLM**. Ollama and llama.cpp runtime
+  windows are not read at all.
 - **A tool result must answer a tool call, so compaction may not cut inside an
   exchange (D49r).** `compactionSplit` sliced by COUNT alone, so a cut landing inside
   a tool exchange stranded the results with no `tool_calls` above them — and a strict
@@ -442,9 +449,10 @@ are now only in PROGRESS.
   (`openai HTTP 400: Messages with role 'tool' must be a response to a preceding
   message with 'tool_calls'`). The cut now walks back until the kept tail can stand
   alone, keeping fewer messages than asked. **Anthropic enforces the same rule**, so
-  this was never OpenAI-specific. **Related, open, and NOT fixed:** a model name
-  outside the catalog is assumed to hold only **8,192 tokens**, so compaction fires
-  very early for any LiteLLM group or custom model — see the PROGRESS backlog.
+  this was never OpenAI-specific. **Related, FIXED by D49bf:** a model outside the old
+  catalog was assumed to hold only **8,192 tokens**, so compaction fired very early for any
+  LiteLLM group or custom model. It is now **128k** — see the bullet above, which also
+  states the trade that came with it.
 - **Images can be attached, and the rules around them are not obvious (D49n/o).**
   A new `image` member on `CanonicalContent` (`ImageMime` = the four types both
   wires accept; base64 with **no `data:` prefix**). **The MIME is sniffed from the
@@ -860,11 +868,11 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 808 in packages/core across 45 files**
-   (verified 2026-10-01). This is the only place in this file that carries the count;
+2. `pnpm -r test` — the unit tests. **Current: 812 in packages/core across 45 files**
+   (verified 2026-10-06). This is the only place in this file that carries the count;
    update it here when it moves.
 3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 564
-   assertions** (verified 2026-10-01), or `render:fast` to reuse the bundle. Add an
+   assertions** (verified 2026-10-06), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
@@ -877,7 +885,8 @@ before any of it is trusted:**
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the **23** live field cases it is built on, driven automatically in a real
+   done) AND the **23** live field cases it is built on — **30 runs**, since a case may carry
+   several, and the run count is what the acceptance test reports — driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
    A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
@@ -991,11 +1000,15 @@ all three of their records, which is the duplication D48 exists to stop.**
     map the masker refused — so the revealed values stay outside the scrub for the session, and the
     notice in the file says the one rule that keeps them in place.
 
-- **An unknown model's context window floors at 8,192**, so the compaction guard fires at ~6.5k
-  tokens. **A real defect**, unlike the percentage question that was closed as not-a-defect.
-- **The quote-splice hole in the secret check** — `cat key'store'.properties` names no deny-listed
-  file and is not refused. D49aq's shell tokenizer produces the real filename and could close it in
-  one line, but that changes the secret check for every tool, so it is a decision, not a slip-in.
+- **The two items above this list's old head are CLOSED (D49be, D49bf), and each left a stated
+  boundary rather than a to-do.** The **quote-splice hole** (`cat key'store'.properties`) is fixed:
+  the secret check reads the command through D49aq's shell tokenizer, so quoting no longer hides a
+  filename from it. What it still does **not** model is a splice the tokenizer itself refuses — a
+  backslash, an unbalanced quote — which falls to the text scan and is invisible to it. The
+  **8,192-token assumption** is gone: an unadvertised model is assumed to hold **128k**. The trade
+  that bought is real and recorded in D49bf — a model that advertises nothing and truly holds less
+  than 128k now gets a **400** instead of an early fold, and the fix when it happens is to refresh
+  the model list so the connection's own number is used.
 - **The fold's cadence constants are named *pairs* while counting messages**, so a fold fires on
   roughly 13 exchanges rather than 26 — recorded, not changed; the numbers are a behavioural
   decision and want the founder.

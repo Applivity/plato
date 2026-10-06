@@ -50,6 +50,25 @@ export const CASES = [
         expectModelTold: 'refused',
       },
       {
+        // D49be: the SAME refusal, reached by a command whose filename quoting
+        // has taken apart. bash concatenates the runs, so this opens
+        // `.env.production`; a splitter sees `.en` and `v.production`, and
+        // neither is on the list — which is exactly why the old check passed it.
+        //
+        // Falsifiable, and chosen so it stays harmless if the guard fails:
+        // `.env.production` does not exist in the field page, so a regression
+        // runs `cat` on nothing. (`notes.keystore` could not be used here — its
+        // own fragments are protected, so the OLD check already caught it.)
+        mode: 'plan',
+        prompt: "Run this exact shell command and show me its raw output: cat .en'v.production'",
+        steps: [
+          { tool: 'shell', args: { command: "cat .en'v.production'" } },
+          { text: 'That command was refused because it references a protected file, so I cannot show its output.' },
+        ],
+        cards: [],
+        expectModelTold: 'refused',
+      },
+      {
         mode: 'plan',
         prompt: 'Read local.properties and summarise it',
         steps: [

@@ -2056,7 +2056,7 @@ class ChatHost {
       // the tick boxes went.
       const offered = resolveOfferedModels(c.allModels, c.models);
       for (const mid of offered) {
-        const n = resolveMaxContext(mid, poolByName.get(mid)?.maxContext);
+        const n = resolveMaxContext(poolByName.get(mid)?.maxContext);
         if (n !== null) ctx[mid] = n;
       }
       connections.push({
@@ -2935,12 +2935,12 @@ class ChatHost {
       // model the run would refuse — nor hide one it would accept.
       for (const m of resolveOfferedModels(c.allModels, c.models)) {
         const poolEntry = poolByName.get(m);
-        // D26c/D49t: ONE resolution rule, shared with the run. The catalog and
-        // the connection can both claim a window; the smaller wins, so the ring
-        // the user reads is the number compaction actually uses. When only one
-        // of them speaks, that one is used; when neither does, `null` and the UI
-        // says "ctx unknown" rather than inventing precision.
-        const maxContext = resolveMaxContext(m, poolEntry?.maxContext);
+        // D26c/D49t/D49bf: ONE resolution rule, shared with the run. The window
+        // is whatever the CONNECTION advertised — the shipped catalog no longer
+        // claims one (D49bf), so the ring the user reads is the same number
+        // compaction uses, and when the connection says nothing this is `null`
+        // and the UI says "ctx unknown" rather than inventing precision.
+        const maxContext = resolveMaxContext(poolEntry?.maxContext);
         items.push({
           value: `${c.id}:${m}`,
           label: m,

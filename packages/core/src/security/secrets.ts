@@ -5,6 +5,8 @@
  * Belt-and-suspenders with .gitignore-based exclusion: this deny-list is
  * cheap, deterministic, and testable without touching the filesystem.
  */
+import { tokenize } from './readOnlyShell.js';
+
 export const SECRET_DENYLIST: readonly string[] = [
   'keystore.properties',
   'local.properties',
@@ -172,14 +174,37 @@ export function allowPathError(raw: string): string | null {
  *
  * Deliberately a TOKEN scan rather than a substring one: `echo do not commit
  * keystore.properties` is refused (safe direction), while a token that merely
- * contains the letters is not. **Best effort, and recorded as such** — a command
- * built to evade a text check (`cat key'store'.properties`) still can. In `act`
- * and `edit` the approval card is the real gate; in `auto` the user has chosen
- * not to have one, which is why the plain case is worth closing here.
+ * contains the letters is not.
+ *
+ * **D49be: the command is now read the way BASH reads it, not only the way the
+ * text splits.** Splitting on the characters a filename cannot contain took a
+ * quoted command apart and never put it back together: `cat key'store'.properties`
+ * was the three harmless tokens `key`, `store`, `properties`, while bash
+ * concatenates adjacent quoted and unquoted runs into one word — it opens
+ * `keystore.properties`. The tokenizer from D49aq already models that, so the
+ * command goes through it first (`readOnlyShell.ts`), and the text scan below
+ * still runs afterwards.
+ *
+ * **The two are UNIONED, never swapped**, because the tokenizer answers `null`
+ * for anything it does not model — a backslash, a newline, an unbalanced quote —
+ * and this check must not start catching LESS than it did before. **Best effort,
+ * and still recorded as such**: a splice the tokenizer refuses to model is left
+ * to the text scan, which cannot see it. In `edit` the approval card is the real
+ * gate; in `auto` the user has chosen not to have one, which is why the plain
+ * case is worth closing here — and why the guard that actually holds for a
+ * masked file is the value scrub, not this name check.
  */
 export function mentionsSecretPath(text: string): boolean {
-  // Tokens keep the characters a filename is made of, so `.env.local` and
-  // `release.jks` survive whole while `/`, quotes, `=`, `;` and spaces split.
+  // The command as bash will run it. Quoting is undone, so `'a'` and `a` are the
+  // same token and two quoted runs of one word are one word again.
+  for (const token of tokenize(text) ?? []) {
+    if (token.length > 0 && isSecretPath(token)) {
+      return true;
+    }
+  }
+  // The raw text, as before. Tokens keep the characters a filename is made of,
+  // so `.env.local` and `release.jks` survive whole while `/`, quotes, `=`, `;`
+  // and spaces split. This is what still catches a command the tokenizer refused.
   for (const token of text.split(/[^A-Za-z0-9_.\-+]+/)) {
     if (token.length > 0 && isSecretPath(token)) {
       return true;

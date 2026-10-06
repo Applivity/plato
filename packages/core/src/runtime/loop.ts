@@ -676,10 +676,11 @@ async function runLoop(
 
     // D37: emit the live context estimate before this turn goes out so
     // the UI's ring is always one step ahead of the model call.
-    // D49t: the connection's own report, when it made one. Before this the
-    // discovered number reached the header ring and nothing else, so compaction
-    // fell back to UNKNOWN_CONTEXT_FLOOR (8192) and tripped after a few files.
-    const maxCtx = resolveMaxContext(bareModel, opts.advertised?.context);
+    // D49t/D49bf: the connection's own report, and now the ONLY source. The
+    // shipped catalog used to supply a window for known names; it is gone, so a
+    // model the connection said nothing about leaves this null and the trip
+    // below assumes DEFAULT_CONTEXT_WINDOW.
+    const maxCtx = resolveMaxContext(opts.advertised?.context);
     const breakDown = promptBreakdown(currentSystem, messages, allTools);
     bus.emit({
       type: 'context',
@@ -700,12 +701,12 @@ async function runLoop(
     // The effective trigger is the OR of: (a) controller.requestCompact
     // (Manual pill + Compact button), and (b) auto-threshold tripped.
     const manualCompact = ctrl.drainCompactRequest();
-    // D37a: trip math lives in shouldAutoCompact. The helper's docstring
-    // spells out the invariant — `maxContext` is catalog-only; a value
-    // surfaced by a /models payload is informational for the header
-    // caption but must NEVER drive compaction timing (OpenRouter /
-    // LiteLLM routes have been known to report stale or route-specific
-    // windows). Unknown models fall back to UNKNOWN_CONTEXT_FLOOR.
+    // D37a: trip math lives in shouldAutoCompact. **The rule it used to state
+    // here was already reversed and is now fully gone:** it said a window from a
+    // /models payload must NEVER drive compaction, and catalog-only values
+    // should. D49t made the advertised number the one that counts, and D49bf
+    // removed the catalog so there is nothing left to be conservative about. An
+    // unadvertised model gets DEFAULT_CONTEXT_WINDOW, not 8,192.
     const autoTripped =
       compactCfg.mode === 'auto' &&
       shouldAutoCompact(breakDown.total, maxCtx, compactCfg.threshold);

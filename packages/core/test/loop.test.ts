@@ -416,9 +416,36 @@ describe('runAgentLoop context + compaction (D37)', () => {
     expect(events.length).toBe(1);
     expect(events[0]?.turn).toBe(1);
     expect(events[0]?.total).toBeGreaterThan(0);
-    // Catalog has haiku at 200k; first turn has no lastInputTokens.
-    expect(events[0]?.maxContext).toBe(200_000);
+    // D49bf: nothing advertised a window, and the shipped catalog no longer
+    // claims one, so the event carries null and the UI says "ctx unknown"
+    // rather than printing an assumption as a fact.
+    expect(events[0]?.maxContext).toBeNull();
     expect(events[0]?.lastInputTokens).toBeUndefined();
+  });
+
+  it('carries the CONNECTION\'s window to the event, its only source (D49bf)', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 5, outputTokens: 2 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const seen: (number | null)[] = [];
+    bus.on((e) => {
+      if (e.type === 'context') seen.push(e.maxContext);
+    });
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      advertised: { context: 131_072 },
+    });
+    expect(seen).toEqual([131_072]);
   });
 
   it('auto-compacts when the estimate crosses the threshold', async () => {
@@ -456,14 +483,17 @@ describe('runAgentLoop context + compaction (D37)', () => {
         compactedSeen = true;
       }
     });
-    // Use a model id NOT in the catalog so the loop falls back to
-    // UNKNOWN_CONTEXT_FLOOR (8192). With threshold 0.5 the trip point
-    // is 4096 — a 10×2000-char history easily blows past it.
+    // The window the connection ADVERTISED (D49bf: now the only source). At
+    // 8000 with threshold 0.5 the trip point is 4000 — a 10×2000-char history
+    // (about 5000 tokens) blows past it. Advertising it here rather than
+    // leaning on a default keeps this test about the CROSSING, which is its
+    // subject; the default has its own test below.
     await runAgentLoop({
       ...BASE,
       model: 'litellm:totally-unknown-model',
       provider: p,
       bus,
+      advertised: { context: 8_000 },
       history: [
         { role: 'user', text: 'a'.repeat(2_000) },
         { role: 'assistant', text: 'b'.repeat(2_000) },
@@ -482,6 +512,56 @@ describe('runAgentLoop context + compaction (D37)', () => {
     expect(compactedSeen).toBe(true);
     expect(compacted.mode).toBe('auto');
     expect(compacted.before).toBeGreaterThan(compacted.after);
+  });
+
+  /**
+   * D49bf: the default window is 128k, not 8,192. **This is the defect the
+   * change exists to remove** — a run against an endpoint whose /models said
+   * nothing used to fold a good session at about 6,500 tokens. The identical
+   * history to the test above (about 5,000 tokens) now sits well under the line.
+   *
+   * Falsified by putting the old default back: with 8,192 the trip point is
+   * 4,096 and this fails, which is what makes it a check rather than a comment.
+   */
+  it('does NOT auto-compact an unadvertised model at the OLD 8k trip point (D49bf)', async () => {
+    let summariseCalls = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          summariseCalls += 1;
+          return {
+            content: [{ type: 'text', text: 'summary' }],
+            usage: { inputTokens: 50, outputTokens: 10 },
+            stopReason: 'stop',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 5, outputTokens: 2 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({
+      ...BASE,
+      model: 'litellm:totally-unknown-model',
+      provider: p,
+      history: [
+        { role: 'user', text: 'a'.repeat(2_000) },
+        { role: 'assistant', text: 'b'.repeat(2_000) },
+        { role: 'user', text: 'c'.repeat(2_000) },
+        { role: 'assistant', text: 'd'.repeat(2_000) },
+        { role: 'user', text: 'e'.repeat(2_000) },
+        { role: 'assistant', text: 'f'.repeat(2_000) },
+        { role: 'user', text: 'g'.repeat(2_000) },
+        { role: 'assistant', text: 'h'.repeat(2_000) },
+        { role: 'user', text: 'i'.repeat(2_000) },
+        { role: 'assistant', text: 'j'.repeat(2_000) },
+      ],
+      compact: { mode: 'auto', threshold: 0.5 },
+    });
+    expect(summariseCalls).toBe(0);
   });
 
   it('compacts on controller.requestCompact() in manual mode', async () => {

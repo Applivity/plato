@@ -269,13 +269,22 @@ describe('shouldAutoCompact (D37a trip guard)', () => {
     expect(shouldAutoCompact(7999, 10000, 0.8)).toBe(false);
   });
 
-  it('uses UNKNOWN_CONTEXT_FLOOR (8192) for null maxContext', () => {
-    // 8192 × 0.5 = 4096
-    expect(shouldAutoCompact(4096, null, 0.5)).toBe(true);
-    expect(shouldAutoCompact(4095, null, 0.5)).toBe(false);
-    // 8192 × 0.8 = 6553.6
-    expect(shouldAutoCompact(6554, null, 0.8)).toBe(true);
-    expect(shouldAutoCompact(6553, null, 0.8)).toBe(false);
+  /**
+   * D49bf: when the connection advertised nothing, the trip assumes 128k and not
+   * the old 8,192. The old default folded a good session after a handful of
+   * files on any endpoint whose /models did not answer; these numbers are the
+   * whole point of the change, so they are pinned rather than described.
+   */
+  it('uses DEFAULT_CONTEXT_WINDOW (128k) for null maxContext (D49bf)', () => {
+    // 131072 × 0.5 = 65536
+    expect(shouldAutoCompact(65536, null, 0.5)).toBe(true);
+    expect(shouldAutoCompact(65535, null, 0.5)).toBe(false);
+    // 131072 × 0.8 = 104857.6
+    expect(shouldAutoCompact(104858, null, 0.8)).toBe(true);
+    expect(shouldAutoCompact(104857, null, 0.8)).toBe(false);
+    // And the old trip point is now far below the line, which is the regression
+    // this guards: at 8192 the guard fired at ~6.5k tokens.
+    expect(shouldAutoCompact(6554, null, 0.8)).toBe(false);
   });
 
   it('honors custom thresholds (0.5–0.95)', () => {
