@@ -2010,6 +2010,7 @@ class ChatHost {
   private askUser(req: {
     questions: {
       question: string;
+      header?: string;
       context?: string;
       options: string[];
       recommended?: string;

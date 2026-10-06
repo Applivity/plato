@@ -267,14 +267,19 @@ are now only in PROGRESS.
   already receives every tool call's arguments. **The rule a user lives with: state is
   legible WITHOUT COLOUR** — completed struck through, in-progress heaviest, a distinct
   glyph per state.
-- **The questions panel numbers its questions as tabs (D49aj).** The card said
-  *"Question 2 of 3"*, which tells the user how many questions there are and nothing
-  about **which are already answered or how to reach one** without stepping through
-  every question before it. The strip shows the whole set, marks an answered question
-  on its own tab, and jumps on a click. **Three states, and colour is not the only
-  cue** — active filled, answered outlined, untouched grey. **`← Back` was already
-  there and is unchanged**: it restores a prior answer including free text, pinned by
-  the `question` render suite since D49y, and the tabs do not replace it.
+- **The questions panel NAMES its questions as tabs (D49aj; the labels replace the
+  numbers, D49bd).** The card said *"Question 2 of 3"*, which tells the user how many
+  questions there are and nothing about **which are already answered or how to reach
+  one** without stepping through every question before it. The strip shows the whole
+  set, marks an answered question on its own tab, and jumps on a click. **Each tab is
+  named by the question's `header`** — one or two words the model writes, naming the
+  decision (*"Contract"*, *"Test runner"*) rather than the topic — and **a question
+  with no header keeps its number**, so the field is additive and can only improve a
+  card. **The strip wraps to a second row** rather than clipping when the names are
+  wider than the panel. **Three states, and colour is not the only cue** — active
+  filled, answered outlined, untouched grey. **`← Back` was already there and is
+  unchanged**: it restores a prior answer including free text, pinned by the `question`
+  render suite since D49y, and the tabs do not replace it.
 - **A question may be multi-select, and the model asks for it (D49al).** Set
   `multiple: true` on a question and the card draws **checkboxes** instead of radios;
   the user picks several, and the answer travels as **one `"; "`-joined string per
@@ -855,11 +860,11 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 806 in packages/core across 45 files**
-   (verified 2026-09-28). This is the only place in this file that carries the count;
+2. `pnpm -r test` — the unit tests. **Current: 808 in packages/core across 45 files**
+   (verified 2026-10-01). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 554
-   assertions** (verified 2026-09-28), or `render:fast` to reuse the bundle. Add an
+3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 564
+   assertions** (verified 2026-10-01), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against

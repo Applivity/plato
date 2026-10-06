@@ -236,7 +236,9 @@ export function toolDeclarations(): CanonicalTool[] {
         + 'recommended option. Set multiple: true on a question where more than one option may be '
         + 'right — the user then gets checkboxes and can pick several, and their answer comes back '
         + 'as those picks separated by "; ". The card always adds a free-text row as well, so use '
-        + 'it for what you cannot anticipate instead of padding the options with weak ones.',
+        + 'it for what you cannot anticipate instead of padding the options with weak ones. Give '
+        + 'every question a header: one or two words that name the decision, so the user can tell '
+        + 'the questions apart at a glance.',
       parameters: {
         type: 'object',
         properties: {
@@ -249,6 +251,15 @@ export function toolDeclarations(): CanonicalTool[] {
               type: 'object',
               properties: {
                 question: { type: 'string', description: 'The question title/heading' },
+                // D49bd: the tab label. It names the decision, not the topic, so a
+                // tab strip reading "Contract · Test runner · Cleanup" tells the
+                // user what is being decided — which a number cannot.
+                header: {
+                  type: 'string',
+                  maxLength: 12,
+                  description:
+                    'One or two words, at most 12 characters, naming what this question decides rather than what it is about — "Contract", "Test runner", "Cleanup". It labels the tab that switches between questions. The full question is still shown on the card, so do not repeat it here.',
+                },
                 context: { type: 'string', description: 'Optional 1-2 line context explaining why you are asking' },
                 options: {
                   type: 'array',

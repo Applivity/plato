@@ -142,10 +142,14 @@ const type = async (p, text) => {
   await p.close();
 }
 
-// D. Numbered tabs. The old label said "Question 2 of 3", which told the user
-//    nothing about the other questions and offered no way to reach one except
-//    stepping through with Next. The strip shows the whole set, marks what is
-//    already answered, and jumps straight to a question.
+// D. Tabs, and the FALLBACK. The old label said "Question 2 of 3", which told
+//    the user nothing about the other questions and offered no way to reach one
+//    except stepping through with Next. The strip shows the whole set, marks
+//    what is already answered, and jumps straight to a question.
+//
+//    D49bd: a tab is NAMED by the question's `header`. This block's fixtures
+//    carry no header, so what it pins is the other half — a question without a
+//    label still gets its number, which is what makes the field safe to add.
 {
   const p = await page(760);
   await p.evaluate((x) => window.dispatchEvent(
@@ -163,7 +167,7 @@ const type = async (p, text) => {
     };
   });
   check('there is one tab per question', initial.count === 2, initial);
-  check('the tabs are numbered from 1', initial.labels === '1,2', initial);
+  check('a question with no label is numbered (D49bd)', initial.labels === '1,2', initial);
   check('the first tab is the active one', initial.active === 0, initial);
   // The count is repeated here on purpose: on its own this passes vacuously on
   // a card with no tabs at all, which is exactly the regression it must catch.
@@ -212,6 +216,94 @@ const type = async (p, text) => {
     /Keep signatures/.test(jumped.selected), jumped);
   checkPageClean(p, 'question tabs');
   await p.close();
+}
+
+// E. D49bd: NAMED tabs. The model gives each question a one- or two-word header
+//    and the tab shows that name. Four things are pinned, and the last three are
+//    the ones a label change can break silently:
+//      - the name replaces the number, and an answered question is marked by NAME;
+//      - four names fit on one row at a normal width;
+//      - at a NARROW width they WRAP instead of running off the card — the strip
+//        grows downward, and nothing is clipped;
+//      - a blank header is not a label: that question keeps its number.
+const NAMED = [
+  { header: 'Contract', question: 'Should behaviour that affects public method contracts change?', options: ['Keep signatures', 'Change and fix callers'] },
+  { header: 'Constraints', question: 'Any constraints on the fix?', options: ['None', 'Some'] },
+  { header: 'Migration', question: 'Should the old migration files be deleted?', options: ['Yes', 'No'] },
+  { header: 'Test runner', question: 'Which test runner should I wire up?', options: ['vitest', 'jest'] },
+];
+
+/** The strip's own geometry: its labels, how many rows they occupy, and how far
+ *  the last tab runs past the strip's right edge (positive means clipped). */
+const strip = (p) => p.evaluate(() => {
+  const s = document.querySelector('.q-tabs');
+  if (!s) { return { found: false }; }
+  const tabs = [...s.querySelectorAll('.q-tab')];
+  const last = tabs[tabs.length - 1];
+  return {
+    found: true,
+    count: tabs.length,
+    labels: tabs.map((t) => t.textContent).join('|'),
+    rows: new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top))).size,
+    overflowRight: last
+      ? Math.round(last.getBoundingClientRect().right - s.getBoundingClientRect().right) : 0,
+  };
+});
+
+const openNamed = async (p, questions) => {
+  await p.evaluate((x) => window.dispatchEvent(
+    new MessageEvent('message', { data: x }),
+  ), { type: 'user-question', questions });
+  await p.waitForTimeout(260);
+};
+
+{
+  // --- Wide: the names are the labels, and they sit on one row. -------------
+  const p = await page(760);
+  await openNamed(p, NAMED);
+  const wide = await strip(p);
+  check('a tab shows the question\'s header, not its number',
+    wide.labels === 'Contract|Constraints|Migration|Test runner', wide);
+  check('four named tabs fit on one row at a normal width', wide.rows === 1, wide);
+  check('and none of them runs off the card', wide.overflowRight <= 1, wide);
+
+  // The answered marker is a NAME now, and the name is what the user sees as
+  // "done" — a tab that lost its label on answering would be the regression.
+  await p.evaluate(() => { document.querySelector('.q-option').click(); });
+  await p.waitForTimeout(140);
+  await p.evaluate(() => {
+    [...document.querySelectorAll('.q-form button')]
+      .find((b) => /Next/.test(b.textContent)).click();
+  });
+  await p.waitForTimeout(240);
+  const answered = await p.evaluate(() => {
+    const on = [...document.querySelectorAll('.q-tabs .q-tab')]
+      .filter((t) => t.classList.contains('answered'));
+    return { n: on.length, label: on.map((t) => t.textContent).join(',') };
+  });
+  check('the answered question is marked on its own NAMED tab',
+    answered.n === 1 && answered.label === 'Contract', answered);
+  checkPageClean(p, 'named tabs');
+  await p.close();
+
+  // --- Narrow: the strip wraps rather than clipping. ------------------------
+  const q = await page(300);
+  await openNamed(q, NAMED);
+  const narrow = await strip(q);
+  check('at a narrow width the named tabs wrap to more than one row',
+    narrow.rows > 1, narrow);
+  check('and still none of them is clipped', narrow.overflowRight <= 1, narrow);
+  checkPageClean(q, 'named tabs, narrow');
+  await q.close();
+
+  // --- A blank header is not a label. --------------------------------------
+  const r = await page(760);
+  await openNamed(r, [{ header: '   ', question: 'Any constraints?', options: ['None', 'Some'] }, NAMED[1]]);
+  const blank = await strip(r);
+  check('a blank header falls back to that question\'s number',
+    blank.labels === '1|Constraints', blank);
+  checkPageClean(r, 'blank header');
+  await r.close();
 }
 
 // D49al. Multi-select. A question with `multiple: true` gets CHECKBOXES and the

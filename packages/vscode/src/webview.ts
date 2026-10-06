@@ -281,8 +281,16 @@ export function chatHtml(): string {
                                                 #4daafc); }
   .todo-item.pending .todo-text { color:var(--pl-muted); }
   .q-form { padding: 4px 10px; display:flex; flex-direction:column; gap:12px; }
-  .q-tabs { display:flex; gap:4px; padding:2px 0; }
-  .q-tab { min-width:22px; height:22px; padding:0 6px; border-radius:11px; font-size:11px;
+  /* D49bd: named tabs are wider than digits, so the strip wraps to a second row
+     rather than clipping. flex-wrap alone does it — a wrapped flex line places
+     every tab at its full width and only breaks when one does not fit, so no tab
+     is ever squeezed. (Removing this line clips the last tab by 88px in the
+     narrow case the question suite measures; flex-shrink:0 was tried as a guard
+     and dropped, because with wrapping on it changed nothing and it would clip a
+     single over-long label instead of letting it wrap.) */
+  .q-tabs { display:flex; gap:4px; padding:2px 0; flex-wrap:wrap; }
+  .q-tab { min-width:22px; min-height:22px; padding:0 8px; border-radius:11px;
+           font-size:11px;
            font-family:inherit; cursor:pointer; color:var(--pl-muted);
            background:transparent; border:1px solid var(--pl-muted); }
   .q-tab:hover { color:var(--vscode-foreground); border-color:var(--vscode-focusBorder); }
@@ -4610,6 +4618,13 @@ export function chatHtml(): string {
       }
       return labels.concat(custom ? [custom] : []).join('; ');
     };
+    // D49bd: the tab shows the model's one- or two-word header when it gave one,
+    // and the question's number when it did not — so no question ever gets a
+    // nameless tab, and a card from a model that skipped the field still works.
+    const tabLabel = (i) => {
+      const h = String((questions[i] && questions[i].header) || '').trim();
+      return h || String(i + 1);
+    };
 
     const body = document.createElement('div');
     body.className = 'q-form';
@@ -4622,10 +4637,10 @@ export function chatHtml(): string {
       const options = Array.isArray(q.options) ? [...q.options] : [];
       options.push('Others'); // always allow a custom answer
 
-      // D49aj: numbered tabs. The old label said "Question 2 of 3" and told the
-      // user nothing about the others; a tab strip shows the whole set, marks
-      // the ones already answered, and lets the user jump straight to any of
-      // them instead of stepping through with Next.
+      // D49aj: tabs, not "Question 2 of 3" — the strip shows the whole set, marks
+      // the ones already answered, and lets the user jump straight to any of them
+      // instead of stepping through with Next. D49bd: each tab is NAMED by the
+      // model's one- or two-word header, falling back to the number.
       if (questions.length > 1) {
         const tabs = document.createElement('div');
         tabs.className = 'q-tabs';
@@ -4635,7 +4650,7 @@ export function chatHtml(): string {
           tab.type = 'button';
           tab.className = 'q-tab';
           tab.setAttribute('role', 'tab');
-          tab.textContent = String(i + 1);
+          tab.textContent = tabLabel(i);
           if (i === idx) {
             tab.classList.add('active');
             tab.setAttribute('aria-selected', 'true');

@@ -276,6 +276,21 @@ describe('the ask_user declaration keeps the question card small (D49ak)', () =>
   });
 
   /**
+   * D49bd: the short label each question's TAB is named with. It is bounded and
+   * asked for in the prompt, but deliberately NOT required — a question without
+   * one renders with its number instead, so the field can only improve a card.
+   */
+  it('asks for a bounded tab label, and does not require it (D49bd)', () => {
+    const h = param(['properties', 'questions', 'items', 'properties', 'header']);
+    expect(h.type).toBe('string');
+    expect(h.maxLength).toBe(12);
+    expect(ask().description).toContain('header');
+    const required = param(['properties', 'questions', 'items']).required as string[];
+    expect(required).not.toContain('header');
+    expect(required).toContain('question');
+  });
+
+  /**
    * The founder's point, in his words: *"a model should really work hard to give
    * us plausible options within limits."* A tighter ceiling only helps if the
    * model spends the smaller space better, so the description says what a good

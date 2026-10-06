@@ -392,6 +392,12 @@ export interface LoopOptions {
   askUser?: (req: {
     questions: {
       question: string;
+      /**
+       * D49bd: a one- or two-word label for this question, shown on its tab.
+       * Absent when the model did not give one, and the view then shows the
+       * question's number — so a question without a label is still reachable.
+       */
+      header?: string;
       context?: string;
       options: string[];
       recommended?: string;
@@ -1043,8 +1049,12 @@ async function runLoop(
             const raw = Array.isArray(args['questions']) ? args['questions'] : [];
             const questions = raw.map((q) => {
               const rec = q as unknown as Record<string, unknown>;
+              // D49bd: the tab label. Trimmed, and a blank one becomes undefined
+              // rather than an empty tab — the view falls back to the number.
+              const header = typeof rec['header'] === 'string' ? rec['header'].trim() : '';
               return {
                 question: String(rec['question'] ?? ''),
+                header: header || undefined,
                 context: typeof rec['context'] === 'string' ? rec['context'] : undefined,
                 options: Array.isArray(rec['options'])
                   ? (rec['options'] as unknown[]).map(String)

@@ -305,6 +305,56 @@ describe('runAgentLoop truncation handling', () => {
     expect(r.reason).toBe('complete');
     expect(r.finalText).toBe('done');
   });
+
+  /**
+   * D49bd: the tab label. Core's only job is to carry the model's one- or
+   * two-word header to the host unchanged, and to turn a blank one into
+   * nothing — the view then shows the question's number. Both halves are pinned
+   * here because a blank header reaching the view would draw an empty pill, and
+   * the view's fallback is what makes the field safe to add to the schema.
+   */
+  it('carries each question\'s short header through, and blanks it to undefined', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [{
+              type: 'tool_use',
+              id: 'ask_hdr',
+              name: 'ask_user',
+              input: {
+                questions: [
+                  { header: 'Contract', question: 'Change the signatures?', options: ['Yes', 'No'] },
+                  { header: '   ', question: 'Any constraints?', options: ['None', 'Some'] },
+                  { question: 'Which files?', options: ['A', 'B'] }
+                ]
+              }
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use'
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop'
+        };
+      }
+    };
+    let seen: Array<{ header?: string }> = [];
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      askUser: async (req) => {
+        seen = req.questions.map((q) => ({ header: q.header }));
+        return ['Yes', 'None', 'A'];
+      }
+    });
+    expect(seen[0]!.header).toBe('Contract');
+    expect(seen[1]!.header).toBeUndefined();
+    expect(seen[2]!.header).toBeUndefined();
+  });
   it('clamps maxTokens to the model hard cap (haiku 8192), never above', async () => {
     const p = provider([
       { content: [{ type: 'text', text: 'ok' }], usage: { inputTokens: 1, outputTokens: 1 }, stopReason: 'stop' },

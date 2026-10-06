@@ -3567,6 +3567,68 @@ falsifying the seeding proves the case's teeth: with `seedVault` disabled, case 
 
 ---
 
+**D49bd — a question's tab is NAMED by the model, not numbered (founder, 2026-10-01).**
+
+The founder's ask: *"for questions in plato, we have tabs, but tabs are numbered (which I guess serve
+not particular purpose) can we replace numbers with properly 1,2 word titles on tabs?"* **The numbers
+did serve two purposes** — they mark the position in the set and carry the answered state — but he is
+right that they are a weak *name*, and D49aj's own argument is what makes renaming the tab the
+completion of it: the strip exists so the user can tell the questions apart, and a digit never did
+that. **This entry supersedes the LABELS of D49aj; the strip, its three states and `← Back` are
+unchanged.**
+
+**The label comes from the MODEL, and that is the decision.** Every question already carries
+`question`, `context`, `options` and `recommended`; it gains one optional `header`. The alternative —
+deriving a title from the question text — was rejected on evidence, not taste: trimming *"Should
+behaviour that affects public method contracts change?"* yields *"Should behaviour"*, which is a
+fragment that is **neither a position nor a name**, and it repeats the heading printed directly
+underneath it. A number at least says where you are. **Only a name beats a number here, and only the
+model can write one.** The header names the **decision**, not the topic — `Contract`, `Test runner`,
+`Cleanup` — so a strip reads as the set of things being decided.
+
+**The field is optional, and the number is the fallback.** A question that arrives without a header
+keeps its number, in the schema (not `required`), in core (a blank becomes `undefined`) and in the
+view (an absent or blank label falls back). **Three layers, because each is falsifiable on its own**
+and because the field can then only ever improve a card — the property that makes adding a field to a
+tool contract safe. **The prompt asks for it and the schema bounds it** (`maxLength: 12`, and the
+description says one or two words): a constraint the prompt never mentions is one the model will
+cross, which is the rule D49am already set for this declaration.
+
+**The label never enters the transcript.** The answer still comes back as the **full question** — the
+`Q2: <question>` the model reads, and the `You: <question>: <answer>` the user sees are both
+unchanged — so the header is **UI-only**: it costs no tokens and cannot confuse the model about what
+it asked.
+
+**CSS: the strip wraps, and the first guard I wrote for it was wrong.** Named pills are much wider
+than digits; four of them overflow a narrow panel. `flex-wrap: wrap` fixes that, and the field case
+below measures it. **I also added `flex-shrink: 0`, and falsifying it changed nothing** — every
+assertion stayed green. Reasoning about flexbox says why: with wrapping on, a line is broken using
+each item's **full** width and shrinking only applies within a line, so at any width the tabs wrap
+before they squeeze. **In the one case the guard did affect — a single label wider than the whole
+strip — it would clip the label instead of letting it wrap, which is worse than not having it.** So
+it was removed. **This is D49ap running in the other direction: a guard I could not falsify was a
+guard I could not justify, and reading the spec afterwards is what turned "harmless" into "harmful".**
+
+**Verified by falsification — eight reverts, each re-run green afterwards.** The view made to ignore
+the header fails four assertions (the name, the answered tab's name, the blank fallback, and the
+narrow wrap, because four digits fit where four names do not); `flex-wrap` removed fails two, and
+prints the last tab **88px past the card's edge**; core dropping the header fails one; core passing a
+blank through fails one; `maxLength` removed fails one; the prompt sentence removed fails one; and the
+view's number fallback removed fails three, printing the nameless tab as `""`. **One self-inflicted
+error is worth recording because the file warns about it and I did it anyway:** the CSS comment was
+first written with backticks, and `webview.ts` is **one template literal**, so it closed the template
+and failed the build — the exact trap the comment at the top of `showUserQuestion` names.
+
+**Files:** `packages/core/src/tools/schemas.ts` (the `header` property and the prompt line),
+`packages/core/src/runtime/loop.ts` (the passthrough, and `header?` on `LoopOptions.askUser`),
+`packages/vscode/src/extension.ts` (the shell's type), `packages/vscode/src/webview.ts` (`tabLabel`,
+and `.q-tabs`). **Tests:** one in `packages/core/test/loop.test.ts`, one in
+`packages/core/test/modes.test.ts`. **Render:** the `question` suite, one new block of ten
+assertions. **Field: no new case** — a tab is not a card kind, so nothing in the driver changes; the
+existing question cases re-prove the card in a real window.
+
+---
+
 **D49az — undo is BUILT: the copy is taken at the executor, and the plan is made again when the
 user clicks (Tier C item 3, built 2026-09-28).**
 
