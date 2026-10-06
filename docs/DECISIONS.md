@@ -2891,6 +2891,12 @@ regression it names.** Both were found by falsifying rather than by reading the 
 
 **Falsified:** suppressing the strip fails **8 assertions** and the suite exits 1.
 
+> **LABELS SUPERSEDED (2026-10-01, D49bd).** The tabs are still tabs, with the same three
+> states, the same jump-on-click and the same `← Back` — but **a tab is now NAMED rather than
+> numbered**: each question carries an optional one- or two-word `header` the model writes, and
+> a question without one still falls back to its number. The paragraph above about the strip,
+> and the paragraph about the vacuous assertion, both stand unchanged.
+
 ---
 
 **D49ak — three modes, not four: `act` is merged into `edit`, and `auto` fetches without asking
@@ -3609,7 +3615,8 @@ strip — it would clip the label instead of letting it wrap, which is worse tha
 it was removed. **This is D49ap running in the other direction: a guard I could not falsify was a
 guard I could not justify, and reading the spec afterwards is what turned "harmless" into "harmful".**
 
-**Verified by falsification — eight reverts, each re-run green afterwards.** The view made to ignore
+**Verified by falsification — eight reverts, each re-run green afterwards. Seven proved the
+assertions have teeth; the eighth proved a guard had none.** The view made to ignore
 the header fails four assertions (the name, the answered tab's name, the blank fallback, and the
 narrow wrap, because four digits fit where four names do not); `flex-wrap` removed fails two, and
 prints the last tab **88px past the card's edge**; core dropping the header fails one; core passing a
