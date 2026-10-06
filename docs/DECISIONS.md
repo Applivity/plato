@@ -3740,6 +3740,53 @@ rewritten), `context.test.ts`, `loop.test.ts` (one new wiring test, one new regr
 
 ---
 
+**D49bi — an observer's cancel releases the parked cards, because only the user's Cancel button ever
+did (founder, 2026-10-06).**
+
+**The defect, found while auditing the parked cards for D49bg and fixed on the founder's instruction
+— *"if this can easily be fixed with low risk do it, and if not leave it for later."*** The release
+of every parked card lived **inline in the user's own Cancel button**. The button unblocked a waiting
+approval, question, stuck card and reveal card, and then cancelled. **An observer in `duo`/`academy`
+never ran that code**: it called `controller.cancel()` directly, which sets the abort flag and wakes
+the pause gate — and then the run stayed parked anyway, because the loop is `await`ing a card's
+promise, and **that await is not signal-aware**. So an observer could not end a run the user had not
+answered. It is the same defect D49aq fixed for the button, and it survived that fix because the fix
+went into the button rather than into the operation.
+
+**The fix is an extract-method, which is what made it low risk.** `releaseParkedCards()` holds the
+release and both callers now run it: the button, unchanged in behaviour because the statements are
+the same ones moved, and the observer's cancel, which is the new caller. The owner of the fact — *a
+cancel must answer every card the run is parked on* — is now one method instead of a block inside one
+of its callers.
+
+**Why the other candidate fix was NOT taken.** The alternative was to make every parked `await` race
+the abort signal, so that an abort released a card by itself. That is the deeper fix and it was
+rejected for now: it changes four awaits in the loop, each needs to know the SAFE answer to resolve
+with, and the host would still need telling so the card leaves the screen — a protocol change, not a
+refactor. **This entry buys the behaviour without touching the loop**, and leaves the signal-aware
+version available if a third caller ever appears.
+
+**The taxonomy this corrected, and it was an error in an earlier draft of D49bg.** Four cards park a
+run — approval, **question**, stuck, reveal. **Four cards were recorded in the log** — approval,
+stuck, undo, reveal. The sets differ by the undo card, which is raised between runs and keeps **no
+resolver**, so it has nothing to release and is deliberately absent from the new method. An earlier
+draft listed undo among the parked cards and said "five parked cards"; both were wrong, and the audit
+that fixed the code is what caught them.
+
+**Verified as far as this repository can, and no further — stated because the shell has no unit
+tests.** The button path is **behaviourally identical** because the release is the same statements
+moved, and the second caller is inert on the fields the first already nulled. The regression evidence
+is the field harness, re-run on this change: **clause 7 (Stop works — cancel ends the run as cancelled
+and dismisses the card) and clause 4 (the observer path is live in Duo) both pass**, and those are the
+two clauses that exercise the code that moved. **There is no automated check that an observer's cancel
+releases a card**, and making one means scripting a stub that emits a `cancel` intervention while a
+card is on screen — possible, flaky, and not bought here. It is recorded rather than implied.
+
+**Files:** `packages/vscode/src/extension.ts` (`releaseParkedCards`, the button's cancel branch, the
+observer's `action === 'cancel'` branch).
+
+---
+
 **D49bh — a question's recommended option is resolved against its own choices, and a miss is recorded
 rather than silent (founder, 2026-10-06).**
 
@@ -3795,13 +3842,17 @@ test), `scripts/render/question.mjs` (block I).
 
 **D49bg — the question card is recorded, and the answer it produced is too (founder, 2026-10-06).**
 
-**The gap.** Four cards park a run: approval, stuck, undo and reveal. All four are written into the
-transcript log, so a reload replays them and the user can still answer. **The question card was the
-one that was not.** It was posted straight to the view and never recorded, so a reload that
-discarded the webview took the card off the screen while the host stayed parked on a promise that
-nothing else could resolve — a run waiting for a click that could no longer be made. This is the
-same failure D49aw, D49ax and D49bc each closed for the other three, and the founder asked for it
-closed after the audit said which card was missing.
+**The gap, and the two counts it turns on — which an earlier draft of this entry ran together.**
+**Four cards were written into the transcript log** — approval, stuck, undo and reveal — so a reload
+replayed them and the user could still act on them. **Four cards PARK a run**, meaning each holds a
+promise the loop is `await`ing with nothing else able to interrupt it: approval, **question**, stuck
+and reveal. The two sets are not the same set, and the difference is the undo card, which is raised
+between runs and keeps no resolver, so there is nothing for a reload to lose. **The question card was
+therefore the only PARKED card missing from the log**, and the only recorded card missing from it as
+well. It was posted straight to the view and never written down, so a reload that discarded the
+webview took the card off the screen while the host stayed parked on a promise nothing else could
+resolve — a run waiting for a click that could no longer be made. The founder asked for it closed
+after the audit said which card was missing.
 
 **Two rows, and the second is the one that makes the transcript honest.** `question-open` carries the
 questions, so the replay rebuilds a card that is still answerable; `question-done` closes it, so an
@@ -3845,9 +3896,8 @@ a question was actually open.
 **Boundary, stated rather than implied.** The view half is proved by the render suite, which feeds
 the rows; **that the host writes them is type-checked and read, not tested** — the shell has no unit
 tests and a window reload takes the extension host with it, so the field harness cannot reach this
-either. **Found while auditing the parked cards, and deliberately NOT fixed here:** an observer's
-cancel does not release a parked card, identically for all five of them. It is pre-existing, it is
-not caused by this change, and **HANDOFF's open work carries it with the two possible fixes.**
+either. **Found while auditing the parked cards, and left open here:** an observer's cancel did not
+release a parked card. It was pre-existing and not caused by this change, and **D49bi fixes it.**
 
 **Files:** `packages/vscode/src/extension.ts` (`AskQuestion`, the two `Entry` rows, `askUser`,
 `openQuestions`, the `user-answer` and `cancel` handlers), `packages/vscode/src/webview.ts` (two

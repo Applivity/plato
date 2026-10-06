@@ -773,43 +773,9 @@ class ChatHost {
           return;
         }
         if (m.type === 'cancel' && this.running) {
-          // Unblock a waiting approval too, so cancel takes effect now.
-          const r = this.pendingApproval;
-          this.pendingApproval = null;
-          r?.(false);
-          // D49aq: and unblock a waiting QUESTION, which this used to miss. The
-          // loop awaits the answer with nothing that can interrupt it, so with a
-          // question card on screen Cancel did nothing at all — the run stayed
-          // blocked until the user answered it, which is the one moment they are
-          // least likely to want to. One answer per question, so the loop's
-          // per-question mapping does not read `undefined`.
-          const q = this.pendingQuestion;
-          this.pendingQuestion = null;
-          const n = this.pendingQuestionCount;
-          this.pendingQuestionCount = 0;
-          q?.(Array.from({ length: n }, () => CANCELLED_ANSWER));
-          // D49bg: the card is closed in the LOG as well as on screen — but only
-          // when one was open, or every ordinary cancel would add a row saying a
-          // question had been closed that was never asked. No echo rows either:
-          // the user answered nothing, and a row saying they did would be the
-          // transcript lying about what happened.
-          if (q !== null) {
-            this.openQuestions = [];
-            this.push({ k: 'question-done' });
-          }
-          this.send('question-done');
-          // D49aw: and the stuck card, for exactly the same reason — the loop is
-          // parked on this promise, and Cancel has to mean cancel.
-          const s = this.pendingStuck;
-          this.pendingStuck = null;
-          s?.({ action: 'stop' });
-          this.send('stuck-done');
-          // D49bc: and the reveal card. The loop is parked on this one too, and
-          // "no" is the safe answer — the file is not shown.
-          const rv = this.pendingReveal;
-          this.pendingReveal = null;
-          rv?.(false);
-          this.send('reveal-done');
+          // D49bi: release the cards first, so cancel takes effect now. This is
+          // the SAME code an observer's cancel runs — see `releaseParkedCards`.
+          this.releaseParkedCards();
           this.controller.cancel();
           return;
         }
@@ -2071,6 +2037,67 @@ class ChatHost {
   }
 
   // ---- Settings surface (D27) -------------------------------------------
+
+  /**
+   * D49bi: answer every card the run is parked on, so a cancel takes effect now.
+   *
+   * **Four cards park a run** — approval, question, stuck and reveal — and each
+   * one holds a promise the loop is `await`ing with nothing else able to
+   * interrupt it. Until this existed the release lived inline in the user's own
+   * Cancel button, so **only the button could do it**: an observer in
+   * `duo`/`academy` calling `cancel()` set the abort flag and left the run
+   * parked on a card it could not answer. Both callers now run this, which is
+   * the whole reason it is a method.
+   *
+   * The **undo** card is deliberately absent: it keeps no resolver, because it is
+   * raised between runs rather than from inside one, so there is nothing to
+   * release. Every answer given here is the SAFE one — a denial, a cancelled
+   * answer, a stop, and a refusal to show a file — so releasing cannot approve
+   * something the user never saw.
+   *
+   * Guarded per card rather than assumed, because both callers can arrive and the
+   * second must be inert: each resolver is nulled before it is called, and the
+   * log row is written only when a question was actually open.
+   */
+  private releaseParkedCards(): void {
+    // Unblock a waiting approval, so cancel takes effect now.
+    const r = this.pendingApproval;
+    this.pendingApproval = null;
+    r?.(false);
+    // D49aq: and unblock a waiting QUESTION, which cancel used to miss. The loop
+    // awaits the answer with nothing that can interrupt it, so with a question
+    // card on screen Cancel did nothing at all — the run stayed blocked until the
+    // user answered it, which is the one moment they are least likely to want to.
+    // One answer per question, so the loop's per-question mapping does not read
+    // `undefined`.
+    const q = this.pendingQuestion;
+    this.pendingQuestion = null;
+    const n = this.pendingQuestionCount;
+    this.pendingQuestionCount = 0;
+    q?.(Array.from({ length: n }, () => CANCELLED_ANSWER));
+    // D49bg: the card is closed in the LOG as well as on screen — but only when
+    // one was open, or every ordinary cancel would add a row saying a question
+    // had been closed that was never asked. No echo rows either: the user
+    // answered nothing, and a row saying they did would be the transcript lying
+    // about what happened.
+    if (q !== null) {
+      this.openQuestions = [];
+      this.push({ k: 'question-done' });
+    }
+    this.send('question-done');
+    // D49aw: the stuck card, for the same reason — the loop is parked on this
+    // promise, and Cancel has to mean cancel.
+    const s = this.pendingStuck;
+    this.pendingStuck = null;
+    s?.({ action: 'stop' });
+    this.send('stuck-done');
+    // D49bc: and the reveal card. The loop is parked on this one too, and "no" is
+    // the safe answer — the file is not shown.
+    const rv = this.pendingReveal;
+    this.pendingReveal = null;
+    rv?.(false);
+    this.send('reveal-done');
+  }
 
   /** D34: ask_user — posts stacked question cards (one per question). */
   private askUser(req: { questions: AskQuestion[] }): Promise<string[]> {
@@ -3427,6 +3454,12 @@ class ChatHost {
                   this.send('notice', `[${name}] paused the run`, noticeMeta);
                 } else if (a.action === 'cancel') {
                   interventionsUsed += 1;
+                  // D49bi: release the parked cards BEFORE cancelling, exactly as
+                  // the user's own Cancel does. Without this the abort flag was
+                  // set while the run stayed parked on a card the observer could
+                  // not answer, so an observer's cancel only took effect once the
+                  // user answered it themselves.
+                  this.releaseParkedCards();
                   this.controller.cancel();
                   this.send('notice', `[${name}] cancelled the run`, noticeMeta);
                 }

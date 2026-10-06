@@ -294,10 +294,13 @@ are now only in PROGRESS.
   the declared options, so 3 options are 4 rows on screen. **How many boxes may be ticked is
   unlimited.** A ceiling binds only the model, which may offer fewer; the card renders whatever
   arrives.
-- **The question card is one of the five parked cards that survive a reload (D49bg).** Four cards
-  park a run — approval, stuck, undo, reveal — and the question card was the one **not** written
-  into the transcript log, so a reload took it off the screen while the host stayed parked on a
-  promise nothing else could resolve. It now writes a `question-open` row (carrying the questions,
+- **The question card is recorded in the log like the cards around it (D49bg).** **Two counts, and
+  they are not the same count:** four cards were **recorded** — approval, stuck, undo and reveal —
+  and four cards **park a run**, meaning each holds a promise the loop is `await`ing — approval,
+  **question**, stuck and reveal. The undo card is the difference: it is raised between runs and keeps
+  no resolver. The question card was the only parked card missing from the log, so a reload took it
+  off the screen while the host stayed parked on a promise nothing else could resolve. It now writes a
+  `question-open` row (carrying the questions,
   **`multiple` included** — a restored card that lost that flag draws **circles where the live card
   drew boxes**) and a `question-done` row, and **the answer is in the log too**: one `You: <question>:
   <answer>` row per question, worded like the view's own echo, because a fold used to summarise a run
@@ -942,7 +945,11 @@ before, and something reading those transcripts is affected.
    meant that, and in `edit` the session memory answers without drawing one.
 4. **Cancel now works while a question is open.** It did not: the handler
    unblocked a waiting approval and never a waiting question, so the user could
-   not stop the run until they answered.
+   not stop the run until they answered. **Superseded in shape by D49bi:** the
+   release is now `releaseParkedCards()`, and **both** cancel paths run it — the
+   button and an observer's intervention. **A new cancel path must call it too**,
+   or it inherits exactly the defect D49aq fixed; that is the one place a card's
+   answer is given on the user's behalf.
 
 **Read this section with D49as next to it — the three gaps it records are now
 closed.** (Written 2026-09-25, closed the same day; the record is kept because the
@@ -1006,15 +1013,13 @@ all three of their records, which is the duplication D48 exists to stop.**
 5. **The D47c–n sign-off**, then the `personas.ts` role prompts that D47d records as possibly too
    weak for real agentic flow. The checklist is in the backlog and wants a **narrow** panel width,
    which is where the D47g Role-box clip and the D47h overflow lived.
-6. **An observer's cancel does not release a parked card (found 2026-10-06, NOT fixed).** In
-   `duo`/`academy` the observer can call `controller.cancel()`, which sets the abort flag — but the
-   loop is `await`ing the user's answer on a card, and **that await is not signal-aware**. The run
-   therefore stays parked until the user answers, which is what the user's own Cancel button did
-   before D49aq fixed it for the button. **It is identical for all five parked cards** (approval,
-   question, stuck, undo, reveal), and that is what makes it a decision rather than a patch: either
-   every parked await races the abort signal, or an observer cancel routes through the same
-   resolution the button uses. **Severity is low, and worth saying:** the user can still cancel
-   themselves, so the run does end — what is missing is the observer's ability to end it for them.
+6. **An observer's cancel did not release a parked card — FIXED (D49bi, 2026-10-06).** The release
+   lived inline in the user's own Cancel button, so an observer in `duo`/`academy` calling
+   `controller.cancel()` set the abort flag while the run stayed parked on a card it could not
+   answer. It is now `releaseParkedCards()`, which both callers run. **The deeper fix — making every
+   parked `await` race the abort signal — was considered and deliberately not taken** (four loop
+   awaits, each needing its safe answer, plus a protocol change to get the card off the screen), so
+   it stays available if a third caller ever appears.
 
 **Smaller, each already scoped:**
 
