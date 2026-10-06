@@ -4314,6 +4314,11 @@ export function chatHtml(): string {
       // answer leaves the user a card they can still answer.
       case 'reveal-open': showReveal(t); break;
       case 'reveal-done': dismissReveal(); break;
+      // D49bg: rebuilt from the log, so a reload while the host waits for the
+      // answer leaves the user a card they can still answer — the same rule the
+      // four cards around it follow.
+      case 'question-open': showUserQuestion(t); break;
+      case 'question-done': dismissQuestion(); break;
       case 'card-done': cardDone(t); break;
       case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;

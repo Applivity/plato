@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runAgentLoop } from '../src/runtime/loop.js';
+import { runAgentLoop, resolveRecommended } from '../src/runtime/loop.js';
 import { AgentBus, RunController } from '../src/runtime/bus.js';
 import { createVault, placeholder } from '../src/security/mask.js';
 import type {
@@ -304,6 +304,112 @@ describe('runAgentLoop truncation handling', () => {
     });
     expect(r.reason).toBe('complete');
     expect(r.finalText).toBe('done');
+  });
+
+  /**
+   * D49bh: the recommendation the model names, resolved against the options it
+   * offered. The card used to compare the two strings EXACTLY, so a model that
+   * abbreviated its own label recommended nothing, the marker silently vanished,
+   * and nothing anywhere said so.
+   */
+  describe('a recommended option is resolved against the choices (D49bh)', () => {
+    const OPTS = ['Keep signatures and correct minimally', 'Change and fix callers'];
+
+    it('finds the option the model named exactly', () => {
+      expect(resolveRecommended(OPTS, 'Change and fix callers')).toBe('Change and fix callers');
+    });
+
+    it('finds it when the spacing differs', () => {
+      expect(resolveRecommended(OPTS, '  Change and fix callers ')).toBe('Change and fix callers');
+    });
+
+    it('finds it when the case differs — the common slip', () => {
+      expect(resolveRecommended(OPTS, 'change AND fix callers')).toBe('Change and fix callers');
+    });
+
+    // The load-bearing one. Leniency that can pick a DIFFERENT option would put a
+    // recommendation on screen that the model never made, which is worse than
+    // showing none — so an ambiguous match resolves to nothing.
+    it('refuses to choose when two options differ only in case', () => {
+      expect(resolveRecommended(['Yes', 'yes'], 'yes')).toBeUndefined();
+    });
+
+    it('returns nothing for a name that matches no option', () => {
+      expect(resolveRecommended(OPTS, 'Keep signatures')).toBeUndefined();
+    });
+
+    // A prefix is the tempting leniency, and it is the one that marks the wrong
+    // option. It must not be accepted.
+    it('does not accept a prefix of an option', () => {
+      expect(resolveRecommended(OPTS, 'Change')).toBeUndefined();
+    });
+
+    it('returns nothing when the model recommended nothing', () => {
+      expect(resolveRecommended(OPTS, undefined)).toBeUndefined();
+      expect(resolveRecommended(OPTS, '   ')).toBeUndefined();
+    });
+
+    it('returns the OPTION string, so the card\'s own comparison still holds', () => {
+      const opts = ['  Indented  '];
+      const got = resolveRecommended(opts, 'indented');
+      expect(got).toBe('  Indented  ');
+      // Which is the point: strict equality against the option, as the view does.
+      expect(opts.includes(got ?? '')).toBe(true);
+    });
+  });
+
+  it('asks the question anyway when its recommendation names no option (D49bh)', async () => {
+    let askedOptions: string[] | undefined;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [{
+              type: 'tool_use',
+              id: 'ask_rec',
+              name: 'ask_user',
+              input: {
+                questions: [{
+                  question: 'Which approach?',
+                  options: ['Keep signatures and correct minimally', 'Change and fix callers'],
+                  // Abbreviated its own label — the realistic miss.
+                  recommended: 'Keep signatures',
+                }],
+              },
+            }],
+            usage: { inputTokens: 10, outputTokens: 10 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 10, outputTokens: 10 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    bus.on((e) => { if (e.type === 'notice') { notices.push(e.text); } });
+
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      bus,
+      askUser: async (req) => {
+        askedOptions = req.questions[0]!.options;
+        // The question is asked with every option intact; only the marker is gone.
+        expect(req.questions[0]!.recommended).toBeUndefined();
+        return ['Change and fix callers'];
+      },
+    });
+
+    expect(r.reason).toBe('complete');
+    // The ask happened — a missing marker must never withhold a question.
+    expect(askedOptions).toEqual(['Keep signatures and correct minimally', 'Change and fix callers']);
+    // And the drop is audible in the run record rather than silent.
+    expect(notices.some((t) => /no recommendation was marked/.test(t))).toBe(true);
   });
 
   /**

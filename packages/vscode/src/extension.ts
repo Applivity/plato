@@ -445,6 +445,24 @@ interface StoredChat {
 }
 
 /**
+ * D49bg: one question from `ask_user`, as the shell needs it — to draw the card
+ * now, and to draw it AGAIN after a reload.
+ *
+ * `multiple` is here because a restored card that lost it would show circles
+ * where the live card showed boxes, which silently changes what the user thinks
+ * they may pick. The flag was already arriving at runtime; the type was just
+ * narrower than the value, so the shell was the one place that could not see it.
+ */
+interface AskQuestion {
+  question: string;
+  header?: string;
+  context?: string;
+  options: string[];
+  recommended?: string;
+  multiple?: boolean;
+}
+
+/**
  * Persisted chat entries. The log lives in workspaceState (survives
  * window reloads and restarts); the webview renders whatever it is given.
  */
@@ -497,6 +515,16 @@ type Entry =
    */
   | ({ k: 'reveal-open' } & RevealCard)
   | { k: 'reveal-done' }
+  /**
+   * D49bg: the question card, recorded for exactly the reason the four cards
+   * above are — the host is parked on the answer with nothing else able to
+   * interrupt it, so a reload that lost the card would leave a run waiting for a
+   * click that can no longer be made. It was the last parked card still missing
+   * from this union.
+   */
+  | { k: 'question-open'; questions: AskQuestion[] }
+  /** D49bg: the questions were answered or the run was cancelled — closes it. */
+  | { k: 'question-done' }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -549,6 +577,12 @@ class ChatHost {
    * would pad with `undefined`.
    */
   private pendingQuestionCount = 0;
+  /**
+   * D49bg: the questions the open card is asking, kept so the answer can be
+   * written into the log as the exchange it was. The count above is not enough —
+   * a row saying the user answered cannot say WHAT they answered.
+   */
+  private openQuestions: AskQuestion[] = [];
   /**
    * D49aw: the stuck card's answer. Cancel must resolve this too — a run waiting
    * on the card is waiting with nothing else able to interrupt it, which is the
@@ -754,6 +788,15 @@ class ChatHost {
           const n = this.pendingQuestionCount;
           this.pendingQuestionCount = 0;
           q?.(Array.from({ length: n }, () => CANCELLED_ANSWER));
+          // D49bg: the card is closed in the LOG as well as on screen — but only
+          // when one was open, or every ordinary cancel would add a row saying a
+          // question had been closed that was never asked. No echo rows either:
+          // the user answered nothing, and a row saying they did would be the
+          // transcript lying about what happened.
+          if (q !== null) {
+            this.openQuestions = [];
+            this.push({ k: 'question-done' });
+          }
           this.send('question-done');
           // D49aw: and the stuck card, for exactly the same reason — the loop is
           // parked on this promise, and Cancel has to mean cancel.
@@ -1207,9 +1250,32 @@ class ChatHost {
         }
         if (m.type === 'user-answer' && Array.isArray(m.answers)) {
           const resolve = this.pendingQuestion;
+          // A reloaded transcript can leave an old card clickable, and this used
+          // to be harmless: the answer went nowhere. It is not harmless any more,
+          // because the echo below would write an exchange into the log that
+          // never happened — so an answer with nothing pending is dropped.
+          if (resolve === null) return;
           this.pendingQuestion = null;
           this.pendingQuestionCount = 0;
-          resolve?.(m.answers.map(String));
+          const answers = m.answers.map(String);
+          // D49bg: the question and the answer are part of the conversation, so
+          // they go into the log rather than living only in the view. A reload
+          // used to drop both, and a fold summarised a run in which the user
+          // appeared to have said nothing at all — the same fault D49ag fixed for
+          // tool rows. The wording matches the view's own echo exactly, so a
+          // reloaded transcript reads like the live one.
+          for (let i = 0; i < this.openQuestions.length; i += 1) {
+            const q = this.openQuestions[i]!;
+            this.push({
+              k: 'msg',
+              cls: 'you',
+              who: 'You',
+              text: `${q.question}: ${answers[i] ?? ''}`,
+            });
+          }
+          this.openQuestions = [];
+          this.push({ k: 'question-done' });
+          resolve?.(answers);
           return;
         }
         // ---- D44a/D44c: paperclip attachment + real slash commands --------
@@ -2007,15 +2073,11 @@ class ChatHost {
   // ---- Settings surface (D27) -------------------------------------------
 
   /** D34: ask_user — posts stacked question cards (one per question). */
-  private askUser(req: {
-    questions: {
-      question: string;
-      header?: string;
-      context?: string;
-      options: string[];
-      recommended?: string;
-    }[];
-  }): Promise<string[]> {
+  private askUser(req: { questions: AskQuestion[] }): Promise<string[]> {
+    // D49bg: the row is written BEFORE the promise, as the stuck card's is, so a
+    // reload rebuilds the card the host is still waiting on.
+    this.push({ k: 'question-open', questions: req.questions });
+    this.openQuestions = req.questions;
     return new Promise((resolve) => {
       this.pendingQuestion = resolve;
       // D49aq: remembered so a cancel can resolve with one answer per question.

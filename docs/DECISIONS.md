@@ -3740,6 +3740,121 @@ rewritten), `context.test.ts`, `loop.test.ts` (one new wiring test, one new regr
 
 ---
 
+**D49bh — a question's recommended option is resolved against its own choices, and a miss is recorded
+rather than silent (founder, 2026-10-06).**
+
+**The defect, and it is the quiet kind.** The model writes `recommended` and `options` as two
+separate fields of one `ask_user` call, and nothing tied them together. The card compared them
+**exactly**, so a model that abbreviated its own label — recommending `"Keep signatures"` where the
+option read `"Keep signatures and correct minimally"` — marked **nothing at all**. The card rendered
+perfectly, the question was asked, the options were all there, and **the loss was invisible in all
+three places it could have shown**: the user saw a card with no recommendation and no way to know one
+had been meant, the model was never told its recommendation was ignored, and the run record said
+nothing. This is the same shape as the defects this repository keeps removing — a failure
+indistinguishable from normal operation.
+
+**The founder's call, and it sets the shape: the question is what matters.** *"doesn't look like a big
+problem if the card can't show word 'recommend' but we will do our best effort and yes questions can
+still and should be shown and answered by user normally."* So **a miss never withholds the ask.** The
+alternative — refusing the call — was already rejected for this exact tool, when an over-long option
+list was allowed through for the same reason: the model had already decided to ask, and a card that
+cannot show the question is a worse outcome than a card missing a marker.
+
+**The leniency is bounded, and the bound is the point.** Matching ignores surrounding whitespace and
+case, which covers the realistic slips. It **can only ever find the same option or find none** — a
+prefix is explicitly NOT accepted, because `"Change"` starting `"Change and fix callers"` would put a
+recommendation on screen that the model never made, and **a recommendation on the wrong option is
+worse than no recommendation**. For the same reason, two options differing only in case resolve to
+nothing rather than to a guess. The resolver returns **the option's own string**, not the model's, so
+the view's exact comparison stays correct and **one place decides what a match is**.
+
+**A miss is audible.** The loop emits a `notice` on the run — the channel it already uses for things
+it has to say about an ask — naming the question whose recommendation was dropped. It is deliberately
+**not** on the user's card: that would tell the user about a field they cannot see. **What it cannot
+do is repair the call in flight:** `ask_user`'s result *is* the user's answer, so the model is parked
+between the question and the answer and is first told anything when the answer comes back. The note
+therefore reaches it too late to fix that question — it can only do better on the next one. That is
+the accepted cost of never withholding a question, and it is the reason the alternative (refuse and
+let it retry) exists but was not taken.
+
+**Verified, five falsifications, each reverted and re-run green.** Restoring the exact comparison
+fails four assertions (spacing, case, the ambiguity bound, and that the OPTION's string is returned);
+accepting a prefix fails three, including the one that forbids marking the wrong option; making a miss
+refuse the call fails the test whose whole subject is that the question is still asked; removing the
+notice fails it too. **A sixth gap was found by the work itself:** `recommended` had been in the
+`question` render suite's fixtures from the start and **no assertion had ever checked what it does** —
+the field was exercised and its one visible effect was unpinned. Nine assertions now cover it: exactly
+one option marked, marked on the full label the model named, nothing marked when there is no
+recommendation, and a recommendation on a **checkbox** question alongside its boxes.
+
+**Files:** `packages/core/src/runtime/loop.ts` (`resolveRecommended`, exported, plus the `ask_user`
+arg mapping and the notice). **Tests:** `loop.test.ts` (a resolver block, 8 assertions, and one loop
+test), `scripts/render/question.mjs` (block I).
+
+---
+
+**D49bg — the question card is recorded, and the answer it produced is too (founder, 2026-10-06).**
+
+**The gap.** Four cards park a run: approval, stuck, undo and reveal. All four are written into the
+transcript log, so a reload replays them and the user can still answer. **The question card was the
+one that was not.** It was posted straight to the view and never recorded, so a reload that
+discarded the webview took the card off the screen while the host stayed parked on a promise that
+nothing else could resolve — a run waiting for a click that could no longer be made. This is the
+same failure D49aw, D49ax and D49bc each closed for the other three, and the founder asked for it
+closed after the audit said which card was missing.
+
+**Two rows, and the second is the one that makes the transcript honest.** `question-open` carries the
+questions, so the replay rebuilds a card that is still answerable; `question-done` closes it, so an
+answered or cancelled question does not come back. Without the second, a reload would resurrect a
+question the user had already dealt with.
+
+**The answer echo is the other half, and it was not in the request but is the same fault.** The
+question and the user's answer existed only in the view: the host pushed nothing for either. A
+reload therefore lost the whole exchange, and — worse, because it is invisible — **a fold summarised
+a run in which the user appeared to have said nothing at all.** D49ag fixed exactly this shape for
+tool rows (*"a fold summarising the row could not say what the run had done"*). The host now pushes
+one `msg` row per question, worded identically to the view's own echo, so a reloaded transcript reads
+like the live one. **The cancel path deliberately writes no echo row:** the user answered nothing,
+and a row saying otherwise would be the transcript lying about what happened.
+
+**The `multiple` flag has to travel with the record, and that is a behaviour fix, not bookkeeping.**
+The card draws boxes for a multi question and circles for a single one. A restored card that lost the
+flag draws **circles** — which does not merely look different, it silently changes what the user
+believes they may pick. The value was already arriving at runtime; the shell's declared type was
+narrower than it, so the shell was the one place that could not see it. The shared `AskQuestion`
+type now carries it.
+
+**Verified.** A new block in the `question` render suite rebuilds from the exact rows the host now
+writes and **drives the card to Submit**, because "a card is present" passes on a card whose buttons
+do nothing; it also feeds the closed sequence and requires **no** card. **Four falsifications, each
+reverted and re-run green:** removing the `question-open` replay fails five assertions; removing
+`question-done` fails the two that require the card to stay closed; dropping `multiple` from the row
+draws **4 radios where 4 boxes belong**; removing the echo row fails the transcript assertion. The
+"no card" assertions were first written as bare absences, and the falsification showed they passed
+**vacuously** when replay drew nothing at all — so the block now draws the card from the open row
+first and then requires it gone, which is the rule D49aj records for the same mistake.
+
+**One guard the recording made necessary, and it is why the two handlers are not symmetric with what
+they were.** Both `user-answer` and `cancel` are received whether or not a question is open — a
+reloaded transcript can leave an old card clickable, and every ordinary cancel arrives the same way.
+Writing the closing row unconditionally would have put a `question-done` row in the log for every
+cancel, and an echo row for every click on a stale card, **inventing exchanges that never happened.**
+`user-answer` with nothing pending is now dropped outright, and the closing row is written only when
+a question was actually open.
+
+**Boundary, stated rather than implied.** The view half is proved by the render suite, which feeds
+the rows; **that the host writes them is type-checked and read, not tested** — the shell has no unit
+tests and a window reload takes the extension host with it, so the field harness cannot reach this
+either. **Found while auditing the parked cards, and deliberately NOT fixed here:** an observer's
+cancel does not release a parked card, identically for all five of them. It is pre-existing, it is
+not caused by this change, and **HANDOFF's open work carries it with the two possible fixes.**
+
+**Files:** `packages/vscode/src/extension.ts` (`AskQuestion`, the two `Entry` rows, `askUser`,
+`openQuestions`, the `user-answer` and `cancel` handlers), `packages/vscode/src/webview.ts` (two
+`appendEntry` cases). **Harness:** `scripts/render/question.mjs` (blocks G and H, 13 assertions).
+
+---
+
 **D49az — undo is BUILT: the copy is taken at the executor, and the plan is made again when the
 user clicks (Tier C item 3, built 2026-09-28).**
 

@@ -447,5 +447,175 @@ const clickOption = async (p, label) => {
   await p.close();
 }
 
+// G. D49bg. The question card was the LAST parked card missing from the log —
+//    approval, stuck, undo and reveal were all rebuilt on replay and this one was
+//    not, so a reload while the host waited on the answer took the card off the
+//    screen with the run still parked on a promise nobody could resolve.
+//
+//    A rebuilt card is only worth anything if it is still ANSWERABLE, so these
+//    assertions drive it to Submit and read what the view posts. "A card is
+//    present" would pass on a card whose buttons do nothing.
+const postMsg = (p, msg) => p.evaluate((x) => window.dispatchEvent(
+  new MessageEvent('message', { data: x }),
+), msg);
+
+const rebuild = async (p, log) => {
+  await postMsg(p, { type: 'restore', log, hasConnections: true, title: '' });
+  await p.waitForTimeout(320);
+};
+
+/** The question card as the replay left it. */
+const qCard = (p) => p.evaluate(() => {
+  const c = [...document.querySelectorAll('.card')].find((x) => x.querySelector('.q-form'));
+  return {
+    found: !!c,
+    heading: c ? String((c.querySelector('h3') || {}).textContent || '') : '',
+    tabs: c ? c.querySelectorAll('.q-tabs .q-tab').length : 0,
+  };
+});
+
+const submit = async (p) => {
+  const n = await p.evaluate(() => {
+    const b = [...document.querySelectorAll('.q-form button')]
+      .find((x) => /Next|Submit/.test(x.textContent));
+    if (!b || b.disabled) { return 0; }
+    b.click();
+    return 1;
+  });
+  await p.waitForTimeout(240);
+  return n;
+};
+
+const answersPosted = (p) => p.evaluate(() =>
+  window.__posted.filter((m) => m.type === 'user-answer'));
+
+{
+  const p = await page(760);
+  await rebuild(p, [
+    { k: 'msg', cls: 'you', who: 'You', text: 'wire up the tests' },
+    { k: 'question-open', questions: [MULTI, Q1] },
+  ]);
+  const card = await qCard(p);
+  check('a reload while the run waits rebuilds the question card',
+    card.found === true, card);
+  check('and it is the real card, not an empty shell',
+    card.heading === 'Plato has a few questions' && card.tabs === 2, card);
+  // The `multiple` flag has to survive the trip through the log: a rebuilt card
+  // that lost it draws circles where the live card drew boxes, which quietly
+  // changes what the user believes they may pick.
+  const drawn = await marks(p);
+  check('a multi question is still checkboxes after the reload',
+    drawn.boxes === 4 && drawn.radios === 0, drawn);
+
+  await clickOption(p, 'DateHelper.java');
+  await submit(p);
+  await clickOption(p, 'Keep signatures and correct minimally');
+  await submit(p);
+  const sent = await answersPosted(p);
+  check('the rebuilt card still answers the host', sent.length === 1, sent);
+  check('and the answer is the one that was picked',
+    sent.length === 1 && sent[0].answers.join('|') === 'DateHelper.java|Keep signatures and correct minimally',
+    sent.length === 1 ? sent[0].answers : sent);
+  checkPageClean(p, 'rebuilt question card');
+  await p.close();
+}
+
+// H. The other half: once answered (or cancelled) the card must NOT come back.
+//    Without the closing row a reload would resurrect a question the user had
+//    already dealt with, and the answer rows are what keep the exchange in the
+//    transcript — a fold used to summarise a run in which the user appeared to
+//    have said nothing.
+{
+  const p = await page(760);
+  // The card is drawn FIRST, from the same row the host writes when it asks. The
+  // "not rebuilt" assertions below are absences, and an absence passes just as
+  // well on a replay that draws nothing at all — so this is what makes them mean
+  // something. It is the count-repeated-on-purpose rule the tab block uses.
+  await rebuild(p, [{ k: 'question-open', questions: [Q1] }]);
+  const up = await qCard(p);
+  check('the open row alone does draw the card', up.found === true, up);
+
+  await rebuild(p, [
+    { k: 'question-open', questions: [Q1] },
+    { k: 'msg', cls: 'you', who: 'You', text: `${Q1.question}: Keep signatures and correct minimally` },
+    { k: 'question-done' },
+  ]);
+  const closed = await qCard(p);
+  check('an answered question is not rebuilt on reload', closed.found === false, closed);
+  const text = await p.evaluate(() => document.getElementById('log').textContent);
+  check('and the exchange it produced is still in the transcript',
+    text.indexOf(Q1.question) !== -1 && text.indexOf('Keep signatures') !== -1,
+    text.slice(0, 300));
+  checkPageClean(p, 'answered question replay');
+  await p.close();
+
+  // And a card closed with no answer at all — the cancel path, which writes no
+  // echo rows because the user answered nothing.
+  const q = await page(760);
+  await rebuild(q, [{ k: 'question-open', questions: [Q1] }]);
+  check('the open row draws the card here too', (await qCard(q)).found === true);
+  await rebuild(q, [
+    { k: 'question-open', questions: [Q1] },
+    { k: 'question-done' },
+  ]);
+  const gone = await qCard(q);
+  check('a cancelled question is not rebuilt either', gone.found === false, gone);
+  checkPageClean(q, 'cancelled question replay');
+  await q.close();
+}
+
+// I. The recommendation marker. `recommended` has been in this suite's fixtures
+//    from the start and **nothing asserted what it does** — the field was
+//    exercised and its one visible effect was unpinned. Core now resolves the
+//    model's string against the options before the card sees it, so this is the
+//    view's whole contract: mark the matching option, mark exactly ONE, and mark
+//    nothing when there is nothing to mark.
+const REC_MULTI = { ...MULTI, recommended: 'DateHelper.java' };
+
+/** Where the marker is, and how many rows carry it. */
+const markers = (p) => p.evaluate(() => {
+  const rows = [...document.querySelectorAll('.q-option')];
+  const on = rows.filter((r) => /\(recommended\)/.test(r.textContent));
+  return {
+    total: rows.length,
+    count: on.length,
+    labels: on.map((r) => r.querySelector('.q-text').textContent).join('|'),
+    boxes: document.querySelectorAll('.q-check').length,
+  };
+});
+
+{
+  // A page per card: `openCard` appends, so two cards in one page would be
+  // counted as one card's rows.
+  const p = await page(760);
+  await openCard(p, [Q1]);
+  const one = await markers(p);
+  check('exactly one option carries the recommendation', one.count === 1, one);
+  check('and it is the option the model named, by its full label',
+    one.labels === 'Keep signatures and correct minimally (recommended)', one);
+  checkPageClean(p, 'recommended marker');
+  await p.close();
+
+  // The other half: no recommendation means no marker anywhere, so a card cannot
+  // be read as recommending something the model never named.
+  const q = await page(760);
+  await openCard(q, [MULTI]);
+  const none = await markers(q);
+  check('a question with no recommendation marks nothing', none.count === 0, none);
+  check('and that is a real card, not an empty one', none.total === 4, none);
+  checkPageClean(q, 'no recommendation');
+  await q.close();
+
+  // The case the founder asked about: a recommendation on a CHECKBOX question.
+  const r = await page(760);
+  await openCard(r, [REC_MULTI]);
+  const multi = await markers(r);
+  check('a multi question can carry a recommendation too', multi.count === 1, multi);
+  check('and it still draws checkboxes',
+    multi.boxes === 4 && /DateHelper\.java/.test(multi.labels), multi);
+  checkPageClean(r, 'recommended box');
+  await r.close();
+}
+
 console.log('');
 await finish('question card');

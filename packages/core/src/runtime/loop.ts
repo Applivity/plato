@@ -66,6 +66,43 @@ function clampThreshold(t: number): number {
   return Math.max(0.5, Math.min(0.95, t));
 }
 
+/**
+ * D49bh: the option a question's `recommended` names — the option itself, or
+ * `undefined` when it names none.
+ *
+ * The model writes `recommended` and `options` as two separate fields of one
+ * call, and nothing ties them together, so it can recommend `"Keep signatures"`
+ * where the option reads `"Keep signatures and correct minimally"` — usually by
+ * abbreviating its own label, often with a stray space or a capital letter. The
+ * card compares them exactly, so any difference marked nothing at all and said
+ * nothing about it. **The question was fine; the recommendation was silently
+ * gone.**
+ *
+ * The match ignores surrounding whitespace and case, and **that leniency is
+ * bounded**: it can only ever find the SAME option or find none, never a
+ * different one. Two options that differ only in case therefore resolve to
+ * nothing rather than to a guess — a recommendation on the wrong option is
+ * worse than no recommendation, and guessing is how a marker the model never
+ * meant appears on screen.
+ *
+ * It returns the OPTION's own string, not the recommendation's, so the view's
+ * exact comparison stays correct and one place decides what a match is.
+ */
+export function resolveRecommended(
+  options: readonly string[],
+  recommended: string | undefined,
+): string | undefined {
+  if (recommended === undefined) {
+    return undefined;
+  }
+  const want = recommended.trim().toLowerCase();
+  if (want.length === 0) {
+    return undefined;
+  }
+  const hits = options.filter((o) => o.trim().toLowerCase() === want);
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
 export interface ApprovalRequest {
   tool: string;
   args: ToolArgs;
@@ -1048,19 +1085,33 @@ async function runLoop(
         if (name === 'ask_user' && opts.askUser) {
           try {
             const raw = Array.isArray(args['questions']) ? args['questions'] : [];
+            // D49bh: questions whose recommendation named no option on the card.
+            const droppedRecommended: string[] = [];
             const questions = raw.map((q) => {
               const rec = q as unknown as Record<string, unknown>;
               // D49bd: the tab label. Trimmed, and a blank one becomes undefined
               // rather than an empty tab — the view falls back to the number.
               const header = typeof rec['header'] === 'string' ? rec['header'].trim() : '';
+              const options = Array.isArray(rec['options'])
+                ? (rec['options'] as unknown[]).map(String)
+                : [];
+              const asked = typeof rec['recommended'] === 'string' ? rec['recommended'] : undefined;
+              const recommended = resolveRecommended(options, asked);
+              // D49bh: a recommendation that resolves to nothing does NOT block
+              // the ask. Refusing a malformed call was already rejected for this
+              // tool (the card would then fail to show a question the model had
+              // already decided to ask), and a missing marker is cosmetic where a
+              // withheld question is not. It is recorded instead, because a drop
+              // nobody can see is the failure this whole entry is about.
+              if (asked !== undefined && asked.trim().length > 0 && recommended === undefined) {
+                droppedRecommended.push(String(rec['question'] ?? ''));
+              }
               return {
                 question: String(rec['question'] ?? ''),
                 header: header || undefined,
                 context: typeof rec['context'] === 'string' ? rec['context'] : undefined,
-                options: Array.isArray(rec['options'])
-                  ? (rec['options'] as unknown[]).map(String)
-                  : [],
-                recommended: typeof rec['recommended'] === 'string' ? rec['recommended'] : undefined,
+                options,
+                recommended,
                 // D49al: only an explicit `true` makes a question multi-select,
                 // so a model that omits the field keeps single-answer behaviour.
                 multiple: rec['multiple'] === true,
@@ -1068,6 +1119,17 @@ async function runLoop(
             });
             if (questions.length === 0) {
               return { ok: false, output: 'ask_user: no questions provided' };
+            }
+            if (droppedRecommended.length > 0) {
+              // The list is bounded by the ask itself (1-4 questions), so one
+              // notice carries all of them without a cap of its own.
+              bus.emit({
+                type: 'notice',
+                runId,
+                text: droppedRecommended.length === 1
+                  ? `[plato] no recommendation was marked on "${droppedRecommended[0]}" — the option it named is not one of the choices.`
+                  : `[plato] no recommendation was marked on ${droppedRecommended.length} questions — the option each one named is not one of its choices.`,
+              });
             }
             const answers = await opts.askUser({ questions });
             const text = answers

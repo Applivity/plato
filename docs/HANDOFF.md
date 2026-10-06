@@ -294,6 +294,26 @@ are now only in PROGRESS.
   the declared options, so 3 options are 4 rows on screen. **How many boxes may be ticked is
   unlimited.** A ceiling binds only the model, which may offer fewer; the card renders whatever
   arrives.
+- **The question card is one of the five parked cards that survive a reload (D49bg).** Four cards
+  park a run — approval, stuck, undo, reveal — and the question card was the one **not** written
+  into the transcript log, so a reload took it off the screen while the host stayed parked on a
+  promise nothing else could resolve. It now writes a `question-open` row (carrying the questions,
+  **`multiple` included** — a restored card that lost that flag draws **circles where the live card
+  drew boxes**) and a `question-done` row, and **the answer is in the log too**: one `You: <question>:
+  <answer>` row per question, worded like the view's own echo, because a fold used to summarise a run
+  in which the user appeared to have said nothing. **Cancel writes no echo row on purpose** — the
+  user answered nothing. **The `recommended` flag renders as ` (recommended)` after that option's
+  label**, for single-answer and multi-select questions alike, and it is **advisory only** — nothing
+  is pre-selected (a deliberate choice: the marker is the whole feature). **Core resolves the model's
+  string against its own options before the card sees it (D49bh)** — ignoring surrounding whitespace
+  and case, and **only ever finding the same option or none**, never a different one — and the
+  question is **asked either way**, so a recommendation that names no option loses its marker and
+  nothing else. A genuine miss is **recorded as a notice on the run**, because the model writes the
+  recommendation and the options as two unrelated fields and can abbreviate its own label — **and
+  that notice reaches the model too late to fix the question it is about**, since the ask tool's
+  result *is* the user's answer; the run is parked in between, so the model is first told anything
+  when the answer comes back. **A question is NOT time-bound**: the run waits until the user answers,
+  cancels, or VS Code closes, and nothing auto-picks the recommended option.
 - **`web_fetch` sends nothing without consent, and that is enforced by a KIND
   (D49p).** `net` is the only tool kind that returns `ask` in **every** mode,
   `auto` included — egress cannot be un-sent. **An approval covers ONE HOST**:
@@ -868,10 +888,10 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 812 in packages/core across 45 files**
+2. `pnpm -r test` — the unit tests. **Current: 821 in packages/core across 45 files**
    (verified 2026-10-06). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 564
+3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 586
    assertions** (verified 2026-10-06), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -986,6 +1006,15 @@ all three of their records, which is the duplication D48 exists to stop.**
 5. **The D47c–n sign-off**, then the `personas.ts` role prompts that D47d records as possibly too
    weak for real agentic flow. The checklist is in the backlog and wants a **narrow** panel width,
    which is where the D47g Role-box clip and the D47h overflow lived.
+6. **An observer's cancel does not release a parked card (found 2026-10-06, NOT fixed).** In
+   `duo`/`academy` the observer can call `controller.cancel()`, which sets the abort flag — but the
+   loop is `await`ing the user's answer on a card, and **that await is not signal-aware**. The run
+   therefore stays parked until the user answers, which is what the user's own Cancel button did
+   before D49aq fixed it for the button. **It is identical for all five parked cards** (approval,
+   question, stuck, undo, reveal), and that is what makes it a decision rather than a patch: either
+   every parked await races the abort signal, or an observer cancel routes through the same
+   resolution the button uses. **Severity is low, and worth saying:** the user can still cancel
+   themselves, so the run does end — what is missing is the observer's ability to end it for them.
 
 **Smaller, each already scoped:**
 
