@@ -24,6 +24,7 @@ describe('TranscriptWriter', () => {
       runId: 'abc123',
       task: 'fix bugs',
       model: 'claude-sonnet-4-5',
+      mode: 'edit',
     });
     bus.emit({ type: 'text', runId: 'abc123', text: 'hello' });
     bus.emit({
@@ -85,6 +86,10 @@ describe('TranscriptWriter', () => {
       schemaVersion: 1,
       runId: 'abc123',
       task: 'fix bugs',
+      // D49bj: the header names the mode the run began in, so a record can say
+      // what its writes were gated by. Still schemaVersion 1 — the field is
+      // added, not redefined, and nothing branches on the number.
+      mode: 'edit',
     });
     // Secret-safety (D24c): args and previews never reach disk.
     const raw = readFileSync(join(runsDir, name!), 'utf8');
@@ -128,6 +133,7 @@ describe('TranscriptWriter', () => {
       runId: 'late',
       task: 't',
       model: 'm',
+      mode: 'edit',
     } satisfies AgentEvent);
     expect(safeList(runsDir)).toEqual(before);
     rmSync(dir, { recursive: true, force: true });

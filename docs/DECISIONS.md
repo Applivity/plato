@@ -3740,6 +3740,151 @@ rewritten), `context.test.ts`, `loop.test.ts` (one new wiring test, one new regr
 
 ---
 
+**D49bk — the mode-change question card is closed, because its answer would be a lie (founder,
+2026-10-07).**
+
+**This closes the one thing D49bj recorded and did not fix.** That entry left a risk: with `auto`
+live and reachable, a model could ask the user to loosen the mode mid-run. The founder read the
+whole picture back and reached the sharper conclusion himself — *"it is only a suggestion then no
+point showing a question card"* — and he was right, for a reason worth writing down precisely.
+
+**First, a correction to this repository's own account of itself, made while answering him.** An
+earlier statement (mine, in conversation) was that the worker prompt never names the three modes.
+**That is false and the prompt says so at the top:** *"Modes gate how edits are approved (plan =
+read-only, edit = writes and commands with your approval, auto = trusted) and the host enforces
+them."* What the prompt does **not** say is **which mode is active** — the mode is never passed into
+`buildWorkerRole`, so the model knows the vocabulary and not where it stands. It learns where it
+stands one way only: by being refused. In `plan`, a write or a non-read-only command returns
+`blocked: <tool> is not permitted in plan mode` as a tool result, and that single line names the mode
+and implies the one that would allow the work. **So there is no detection in Plato and no
+suggestion machinery** — there is a refusal, and a model that can read it.
+
+**Second, why a card is worse than useless here, which is the whole decision.** A question card's
+answer travels back to the model **as a tool result**. So a card reading *"switch to auto?"* would
+return **"Yes"** to a model whose mode is unchanged: **the model is then told the user agreed to
+something that did not happen, and its next move rests on a permission it does not hold.** In `edit`
+it recovers, because the write raises its own card; in `plan` it hits the same wall again. It is
+recoverable, and it is still the exact failure this codebase keeps removing — a control whose own
+framing implied it would act, leaving a false belief behind. **The card was rejected for creating the
+belief, not merely for failing to act.**
+
+**Third, why the fix is wording and not a guard.** There is nothing to enforce. The model has no mode
+tool, and core is handed a read-only getter, so it **cannot** change the mode; the only defective
+channel is the wording it chooses. So one passage joins the prompt where modes are introduced: *the
+mode is the user's to change and you cannot change it; if a call comes back refused because of the
+mode, say in one sentence what you would do if it were permitted and let the user decide; never put a
+mode change on a question card.* **The positive half is as load-bearing as the prohibition** — a rule
+that only forbade the card would leave a model that hit a refusal with nothing to say, and a refusal
+is exactly when the user most needs to hear what is blocked. Prose keeps the decision with the user,
+which is where D49bj recorded that it belongs.
+
+**The alternative, named and not taken: make the card real.** The host could accept a mode request and
+switch on a Yes. That would make the card honest — and it would hand the model a sanctioned channel
+for asking to loosen its own permissions mid-run, which is the one party with an incentive to ask. It
+is a posture choice rather than a defect, and it stays available.
+
+**Verified.** Three assertions pin the passage — the prohibition, its reason, and the positive
+instruction — and **each half fails on its own when removed**: deleting the card sentence fails one,
+and deleting the statement-plus-instruction fails two. Everything else was re-run green on the same
+state: `tsc -b --force` clean, **825 unit tests**, render **21 suites / 595 assertions**, bundle and
+inline syntax check, and the field acceptance suite re-run because a prompt change alters what a real
+model is told — **7 of 7 clauses over 23 cases and 30 runs**, with clause 2 (the gates hold, per mode)
+and clause 5 (the run's account of itself is honest) the nearest to the change. **The new passage is
+confirmed present in the built bundle**, not only in the source.
+
+**Files:** `packages/core/src/runtime/workerRole.ts` (`DEFAULT_PLATO_BODY`), **Tests:**
+`packages/core/test/workerRole.test.ts` (a new `D49bk` block).
+
+---
+
+**D49bj — the mode is remembered, and a mode switch is written into the record (founder,
+2026-10-06).**
+
+**The question that found it: does Plato handle a mode switch mid-turn?** It does, and that part is
+deliberate — the mode is read fresh at **every tool call**, not snapshotted at run start, which is
+exactly the fix the founder's own act→edit switch forced in M1 (`getMode` is read live in the loop).
+The picker is never disabled and the host accepts a switch at any moment, a card on screen included.
+**But three things around that live switch did not hold up, and two of them were silence.**
+
+**1. The mode did not survive a reload.** Neither half stored it. The host started at `edit` and the
+view started at `edit`, independently, so after any reload — a window reload, an extension update, a
+VS Code restart — **the user's choice was gone and nothing said so.** This is the identical defect
+the model picker already had fixed for the model (D49x: *"its choice is a preference and must outlive
+the panel"*), and the mode never got the same treatment. **The two sides agreeing by luck is what hid
+it**: both defaulted to the same value, so the disagreement this creates was invisible until one of
+them was stored. Storing one of them alone would have been worse than storing neither.
+
+**2. A switch left no trace in either record.** The line the user sees when they switch was posted to
+the live view alone, never pushed into the saved conversation — so a reload dropped it — and it was
+never a bus event, so the run transcript never had it. Worse, **no run record named the mode at all**,
+not even the one the run began in. A transcript could therefore not tell a write that a card let
+through from one that ran free in `auto`, unless the reader reconstructed it from the approval rows —
+and a run in `edit` where nothing happened to be gated is indistinguishable from a run in `auto`.
+
+**3. A card already on screen is not reconsidered.** Switching to `plan` while an approval card is up
+leaves the card live, and Allow on it still writes: the verdict was computed under the mode in force
+and the switch does not withdraw it. **This is deliberately left as it is.** The user is the one
+clicking, Deny is on the same card, and the honest fix is wording rather than mechanism — the notice
+now says the change applies from the next request. **Auto-answering the card was rejected outright:**
+a mode click that resolved a pending approval would grant a permission the user never gave for that
+action, which is the opposite of the rule the codebase already follows everywhere else — a card
+released early is always answered with the SAFE value (`releaseParkedCards` denies, cancels and
+stops).
+
+**What was built, for 1 and 2.** The mode is stored beside the log and the title, validated **on the
+way in** because a stored value is a boundary and an unrecognised one would otherwise reach the
+permission table and deny every tool; the host sends it on the restore payload, because the view
+cannot guess it. **And the record now carries the mode twice, from two different truths:** the run
+header names the mode the run **began** in — a required field on `run-started`, not an optional one,
+so an emitter that forgets it is a compile error rather than a record that cannot say what its own
+writes were gated by — and a mid-run switch is pushed into the conversation and emitted as a notice
+on the run's own bus. **The field means "what this run started under" and never "what it ended
+under"**; a single field claimed over the whole run would be wrong about every write made before the
+switch, which is why the switch gets its own line instead. The transcript's `schemaVersion` stays
+**1**: the field is added, not redefined, and nothing branches on the number — a bump would claim the
+older shape needs different handling, and it does not.
+
+**The known risk, addressed by D49bk and otherwise left: the model can ask for its own loosening.**
+`auto` is the wide mode and the switch is live, so a model can write *"this needs several commands —
+switch to auto"* mid-run and one click removes the card from every remaining write and every remaining
+fetch. **Nothing is bypassed** — the user still clicks, and can decline — but the model is now a party
+that can request more permission in the middle of a run. There is no mode tool and no setter: the mode
+is host state reachable only from the panel's own picker, so a model cannot switch it, only ask.
+Freezing the mode for the duration of a run would undo the live switch M1 exists to have. **D49bk
+closes the one channel that made this worse than a suggestion** — a question card, whose answer would
+have told the model the user agreed while nothing changed — and leaves the ask itself in prose, where
+the decision stays with the user.
+
+**Verified, and each assertion falsified.** The run record's starting mode: hardcoding a wrong mode in
+the emit fails the loop test, and snapshotting the mode once before the loop — the old bug — fails its
+companion assertion that the mode is genuinely re-read after the run starts. The header's field:
+removing it fails the transcript test. The view's restore: removing the `setMode` call fails three
+render assertions. The replayed switch line: giving that log row an unknown kind fails the two
+assertions that draw it. **One assertion was rewritten because it was not discriminating** — *"a
+stored value that is not a mode falls back to edit"* also passes when the payload is ignored
+entirely, so it cannot tell "validated" from "never read"; it is replaced by a second restore that
+must land, which does fail when the feature is removed. The junk-value guard is asserted where it is a
+real boundary instead: the host, which reads the value off disk.
+
+**And confirmed end to end in a real window, which is the check that matters for a record.**
+**Field acceptance: 7 of 7 clauses over 23 cases and 30 runs**, and the transcripts those runs left
+were read back afterwards: **the headers carry `plan`, `edit` and `auto`**, each matching its own
+case — `"mode":"auto"` on *Print the environment file in the workspace root*, `"plan"` on *Read
+local.properties and summarise it*. So the value written is the run's real mode and not a constant
+that happens to satisfy a test. **What is still not covered, stated rather than implied: no case
+switches mode MID-run**, because the harness sets a case's mode before the run starts and drives no
+switch during one — so the live read rests on the unit and render tests and on M1's own history, not
+on a real window.
+
+**Files:** `packages/core/src/runtime/bus.ts` (`run-started` carries the mode),
+`packages/core/src/runtime/loop.ts` (the emit), `packages/core/src/runtime/transcript.ts` (the
+header), `packages/vscode/src/extension.ts` (the stored key, the restore, the switch handler, the run
+id), `packages/vscode/src/webview.ts` (the restore applies the mode). **Tests:**
+`packages/core/test/loop.test.ts` (one new block), `transcript.test.ts` (the header assertion),
+`bus.test.ts` (the event literal), `scripts/render/modes.mjs` (two new blocks, nine assertions).
+
+---
+
 **D49bi — an observer's cancel releases the parked cards, because only the user's Cancel button ever
 did (founder, 2026-10-06).**
 

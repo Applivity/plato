@@ -436,6 +436,9 @@ const CANCELLED_ANSWER = '(the run was cancelled before this was answered)';
 const TITLE_KEY = 'plato.chatTitle';
 const SESSIONS_KEY = 'plato.chatSessions';
 const SESSIONS_MAX = 30;
+/** D49bj: the mode outlives the panel, like the title and the log. */
+const MODE_KEY = 'plato.chatMode';
+const MODES: readonly Mode[] = ['plan', 'edit', 'auto'];
 
 interface StoredChat {
   id: string;
@@ -554,6 +557,10 @@ interface RunCtx {
 class ChatHost {
   // D49ak: `edit` is the default — it replaced `act`, and it is the middle of
   // the three modes (plan looks, edit asks, auto does not).
+  //
+  // D49bj: a default only until the constructor reads the stored one back. The
+  // mode is the user's own setting, and losing it on a reload is what the model
+  // picker's own decision (D49x) already refused to accept for the model.
   private mode: Mode = 'edit';
   private readonly sessionWrites = new Set<string>();
   private readonly sessionApprovals = new Set<string>();
@@ -598,6 +605,13 @@ class ChatHost {
    * Null outside a run, which is also when there is no ask to report.
    */
   private runBus: AgentBus | null = null;
+  /**
+   * D49bj: the live run's id, so a mode switch made mid-run can be filed against
+   * it. The loop mints the id, so this only exists between `run-started` and the
+   * end of the run — empty string outside one, which is exactly when there is no
+   * record to write to.
+   */
+  private currentRunId = '';
   private replyBuffer = '';
   /**
    * D49j: the current turn's text as it arrives, and the pending throttle
@@ -655,13 +669,32 @@ class ChatHost {
     this.log = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
     // D40: the conversation title survives reloads with the log.
     this.chatTitle = ctx.workspaceState.get<string>(TITLE_KEY, '');
+    // D49bj: and the mode survives them too. Validated on the way in because
+    // this value comes off disk — the picker is the only writer and offers only
+    // the three, but a stored file is a boundary, and an unrecognised value
+    // would otherwise reach the permission table and deny every tool.
+    const storedMode = ctx.workspaceState.get<string>(MODE_KEY, 'edit');
+    this.mode = MODES.find((m) => m === storedMode) ?? 'edit';
     this.panel.webview.onDidReceiveMessage(
       async (m: { type?: string; [k: string]: unknown }) => {
         if (m.type === 'mode' && typeof m.value === 'string') {
           this.mode = m.value as Mode;
           this.sessionWrites.clear();
           this.sessionApprovals.clear();
-          this.send('notice', `Mode: ${this.mode}`);
+          // D49bj: the choice outlives the panel, as the model choice does.
+          void this.ctx.workspaceState.update(MODE_KEY, this.mode);
+          // D49bj: the switch is part of the conversation's story, so it is
+          // WRITTEN DOWN and not only shown. It used to be a live line alone —
+          // a reload dropped it, and no run record named the mode at all, so a
+          // transcript could not tell a write let through by a card from one
+          // that ran free in `auto`. The same push-then-send pair the stuck
+          // nudge uses: one line live, one on replay.
+          const line = `Mode: ${this.mode}`;
+          this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: line });
+          // The run's own record is reached only by the bus, and only while a
+          // run is live. Between runs there is nothing to file it under.
+          this.runBus?.emit({ type: 'notice', runId: this.currentRunId, text: line });
+          this.send('notice', line);
           return;
         }
         // D40: user renamed the conversation title from the header chip.
@@ -1312,6 +1345,10 @@ class ChatHost {
             hasConnections: readConnections().length > 0,
             model: this.effectiveModel(),
             title: this.chatTitle,
+            // D49bj: the view cannot guess this one. It starts at its own
+            // default (`edit`) and so would disagree with a stored mode on every
+            // reload, which is how a choice made before the reload disappeared.
+            mode: this.mode,
           });
         }
       },
@@ -3256,9 +3293,15 @@ class ChatHost {
     this.runBus = bus;
     // D49av: the loop mints the runId, and the diagnostics notice needs it. The
     // bus delivers synchronously, so it is set long before the first write.
+    // D49bj: kept on the host as well, because a mode switch arrives from the
+    // panel rather than from this scope and still has to name the run it landed
+    // in.
     let runId = '';
     bus.on((e) => {
-      if (e.type === 'run-started') runId = e.runId;
+      if (e.type === 'run-started') {
+        runId = e.runId;
+        this.currentRunId = e.runId;
+      }
     });
     const writer = new TranscriptWriter(
       join(this.homePlatoDir(), 'runs', this.projectKey(root)),
@@ -3796,6 +3839,9 @@ class ChatHost {
       // D49aq: cleared with the run, so no later approval can report against a
       // run that has ended.
       this.runBus = null;
+      // D49bj: and the id with it, so a mode switch between runs cannot be
+      // filed against the run that just ended.
+      this.currentRunId = '';
       // D44d: once idle, auto-fold the conversation tail on its cadence.
       this.scheduleAutoFold(conn, apiKey, ref);
       writer.close();

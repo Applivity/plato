@@ -4140,6 +4140,11 @@ export function chatHtml(): string {
             setModelSelected(m.model, m.model, null);
           }
         }
+        // D49bj: the mode is the host's to remember, not the view's. The view's
+        // own default is the middle mode, so without this a stored mode was
+        // overwritten in the UI on every reload while the host still ran the
+        // real one — the button and the permission table disagreeing, silently.
+        if (typeof m.mode === 'string') setMode(m.mode);
         // D43: empty-composer state rides the same restore payload.
         applyEmptyState(typeof m.hasConnections === 'boolean'
           ? m.hasConnections : true);

@@ -104,5 +104,83 @@ const label = (p) => p.evaluate(() => {
   await p.close();
 }
 
+// D. D49bj: a STORED mode is restored, not overwritten by the view's own
+//    default. The view hardcodes its starting mode, so before this the two
+//    halves of the product disagreed after every reload — the button said one
+//    mode while the permission table ran another, and nothing said so.
+{
+  const p = await page(760);
+  const post = (msg) => p.evaluate(
+    (x) => window.dispatchEvent(new MessageEvent('message', { data: x })), msg);
+  const restoreMode = (mode) => post({
+    type: 'restore',
+    log: [],
+    hasConnections: true,
+    model: '',
+    title: '',
+    mode,
+  });
+
+  check('the view starts on edit before any restore', (await label(p)) === 'edit', await label(p));
+
+  await restoreMode('auto');
+  await p.waitForTimeout(220);
+  check('a restore carrying auto moves the button to auto',
+    (await label(p)) === 'auto', await label(p));
+  const cls = await p.evaluate(() => document.getElementById('modeBtn').className);
+  check('and the button and composer agree it is auto, not edit',
+    cls.includes('mode-auto') && !cls.includes('mode-edit'), cls);
+
+  // The picker's own active row must follow, or reopening it would show a
+  // different mode marked than the one that is running.
+  const rows = await openPicker(p);
+  check('the picker marks auto active after the restore',
+    rows.find((r) => r.active)?.mode === 'auto', rows.map((r) => [r.mode, r.active]));
+
+  // A SECOND restore must land too, because `ready` fires on every reload and
+  // each one re-sends the mode. Asserting a JUNK value instead would look like a
+  // stronger check and be a weaker one: "a bad payload leaves the default" also
+  // passes when the payload is ignored entirely, so it cannot tell the two
+  // apart. (The junk case is handled where it is a real boundary — the host
+  // validates the stored value before it ever reaches the panel.)
+  await restoreMode('plan');
+  await p.waitForTimeout(220);
+  check('a second restore is applied too, not only the first',
+    (await label(p)) === 'plan', await label(p));
+
+  checkPageClean(p, 'mode restore');
+  await p.close();
+}
+
+// E. D49bj: the switch is WRITTEN DOWN, so it survives a reload. The host now
+//    pushes a system line into the log and re-sends it as a notice; this proves
+//    the pushed row is one the replay knows how to draw. A row with a `k` the
+//    view does not handle would vanish on reload with nothing to show for it.
+{
+  const p = await page(760);
+  const post = (msg) => p.evaluate(
+    (x) => window.dispatchEvent(new MessageEvent('message', { data: x })), msg);
+  await post({
+    type: 'restore',
+    log: [{ k: 'msg', cls: 'sys', who: 'Plato', text: 'Mode: auto' }],
+    hasConnections: true,
+    model: '',
+    title: '',
+    mode: 'auto',
+  });
+  // The exact selector, not a substring of the whole page: the restore payload
+  // also carries the mode, so a loose `innerText.includes('Mode: auto')` could
+  // pass on something that is not the log line at all.
+  const drawn = await p.evaluate(() => [...document.querySelectorAll('.msg.sys')]
+    .map((e) => e.textContent).join('\n'));
+  check('a mode-switch line in the log is rebuilt on replay',
+    drawn.includes('Mode: auto'), drawn);
+  check('and it is a system line, where the model cannot have written it',
+    (await p.evaluate(() => [...document.querySelectorAll('.msg.sys')]
+      .filter((e) => e.textContent.includes('Mode: auto')).length)) === 1, drawn);
+  checkPageClean(p, 'mode replay');
+  await p.close();
+}
+
 console.log('');
 await finish('mode picker');

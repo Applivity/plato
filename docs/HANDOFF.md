@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-10-06)
+## Current state (verified 2026-10-07)
 
 - **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
   (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
@@ -228,6 +228,38 @@ are now only in PROGRESS.
   recognise is refused outright (D49ao). **`auto` fetches without asking** — the founder's call, amending D49p. **Any doc or comment that still
   lists four modes is stale**; the two architecture documents keep their bodies verbatim
   by design (D48) and carry superseded-map rows instead.
+- **The mode is read live at every tool call, and it is now remembered and recorded (D49bj).**
+  The live read is deliberate and old: the mode is not snapshotted at run start, so a switch takes
+  effect on the model's **next tool call**, in the same turn — this is the fix the founder's own
+  act→edit switch forced in M1. The picker is never disabled and the host accepts a switch at any
+  moment. **What D49bj added is the two halves that were missing.** It is **stored** beside the log
+  and the title (validated on the way in — a stored value is a boundary, and an unrecognised one
+  would reach the permission table and deny every tool) and sent on the restore payload, because the
+  view starts at its own default and would otherwise overwrite the stored mode in the UI on every
+  reload while the host ran the real one. **And the record names it twice:** the run header carries
+  the mode the run **began** in — a **required** field on `run-started`, so a forgetful emitter is a
+  compile error — and a mid-run switch is pushed into the conversation and emitted as a notice on the
+  run's bus. The header field means **what the run started under**, never what it ended under; one
+  field claimed over the whole run would be wrong about every write made before the switch. **Two
+  facts stay as they are, deliberately: a card already on screen is NOT reconsidered when the mode
+  changes** (the user is the one clicking, and auto-answering it would grant an approval they never
+  gave), **and the model can ASK for a looser mode mid-run** (*"switch to auto"*) since `auto` is live
+  — it still needs the user's click, and there is no mode tool and no setter, so a model can ask,
+  never switch. Freezing the mode for a run's duration was rejected: it would undo the live switch.
+- **A mode change never goes on a question card, and the prompt now says so (D49bk).** The mode is the
+  user's to change and the model cannot change it; if a call comes back **refused because of the
+  mode**, the model says in one sentence what it would do if the call were permitted and lets the user
+  decide. **The card was closed for a sharper reason than "it would do nothing":** a card's answer
+  travels back to the model **as a tool result**, so a card reading *"switch to auto?"* would return
+  **"Yes"** to a model whose mode was unchanged — **telling it the user agreed to something that did
+  not happen**, and letting its next move rest on a permission it does not hold. **Two facts to keep
+  straight when reasoning about this, because both were got wrong once in conversation: the prompt
+  DOES name all three modes and what they mean, and it never says which one is ACTIVE** (the mode is
+  not passed into `buildWorkerRole` at all) — so the model knows the vocabulary and not where it
+  stands, and learns where it stands only by being refused, whose message names the mode (`blocked:
+  <tool> is not permitted in plan mode`). **There is no detection in Plato and no suggestion
+  machinery: there is a refusal, and a model that can read it.** Wording rather than a guard, because
+  there is nothing to enforce — the only defective channel is the wording the model chooses.
 - **The 2026-09-23/24 repairs are history, and PROGRESS is their home (D49r–D49ag).** They were a
   long run of real-use faults found by running Plato on the trial ground below, and this file used
   to narrate all of them — which is the duplication D48 exists to stop. **Two changed the product's
@@ -891,11 +923,11 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 821 in packages/core across 45 files**
-   (verified 2026-10-06). This is the only place in this file that carries the count;
+2. `pnpm -r test` — the unit tests. **Current: 825 in packages/core across 45 files**
+   (verified 2026-10-07). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 586
-   assertions** (verified 2026-10-06), or `render:fast` to reuse the bundle. Add an
+3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 595
+   assertions** (verified 2026-10-07), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
@@ -1059,6 +1091,22 @@ all three of their records, which is the duplication D48 exists to stop.**
 - **History run-detail view**, and three small wins: title regenerate, title-call token metering.
 - **Deferred by decision (D46):** a per-project council override, and moving conversation history
   to `~/.plato/history/` (it is in VS Code `workspaceState` today).
+- **Two stated boundaries from the mode work (D49bj/D49bk), neither a to-do.** **No field case covers a
+  mid-run mode switch** — the harness sets a case's mode *before* the run and drives no switch
+  during one, so the live read is proved by unit and render tests and by M1's own history, not by a
+  real window. And **the model can ask to be loosened** — with `auto` live and reachable, a model can
+  write *"switch to auto"* mid-run and one click removes the card from every remaining write and
+  fetch. Nothing is bypassed (the user still clicks, and can decline), and a model cannot switch the
+  mode itself: there is no mode tool and the setter is host state reached only from the picker. It is
+  left as prose rather than fixed because the fix considered — freezing the mode for a run's duration
+  — would undo the live switch M1 exists to have. **The one channel that made it worse than a
+  suggestion is closed (D49bk): a mode change never goes on a question card**, since the card's answer
+  returns to the model as a tool result and would read as agreement to a change that did not happen.
+  **A card already on screen is also not reconsidered when the mode changes**, deliberately: the user
+  is the one clicking, and auto-answering it would grant an approval they never gave. **If the card is
+  ever wanted back, it has to be made real** — the host accepting a mode request and switching on a
+  Yes — which is a posture choice, not a defect, and it hands the model a sanctioned way to ask for
+  its own loosening.
 
 **Not work at all, and deliberately last:** the **publish gate** — the trademark sweep (D16) and
 the license decision (D19). They gate a public release, not a milestone. See "The publish gate"

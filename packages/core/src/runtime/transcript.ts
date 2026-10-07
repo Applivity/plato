@@ -48,11 +48,18 @@ export class TranscriptWriter {
       this.file = join(this.runsDir, `${ts}-${event.runId}.jsonl`);
       const header = {
         kind: 'header',
+        // D49bj: still 1. `mode` is ADDED, not redefined — a reader of an older
+        // file finds the same keys it always did, and nothing branches on this
+        // number. A bump would claim the older shape needs different handling,
+        // and it does not.
         schemaVersion: SCHEMA_VERSION,
         runId: event.runId,
         startedAt: new Date().toISOString(),
         task: this.meta.task,
         root: this.meta.root,
+        // D49bj: the mode the run began in, from the event rather than the meta
+        // — the meta is built before the loop exists and cannot know it.
+        mode: event.mode,
       };
       appendFileSync(this.file, `${JSON.stringify(header)}\n`);
     }

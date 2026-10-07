@@ -697,7 +697,17 @@ async function runLoop(
   // more — that is the model's own ceiling, which is what the user picked.
   const maxTokens = resolveMaxOutput(bareModel, opts.advertised?.maxOutput);
 
-  bus.emit({ type: 'run-started', runId, task: opts.task, model: opts.model });
+  // D49bj: the mode is recorded ONCE, here, as the mode the run began in. Read
+  // live below for every decision, so the field means "what this run started
+  // under" and never "what it ended under" — a record that claimed the latter
+  // would be wrong about the writes made before the switch.
+  bus.emit({
+    type: 'run-started',
+    runId,
+    task: opts.task,
+    model: opts.model,
+    mode: opts.getMode(),
+  });
 
   // D49ab: no turn bound. The loop ends when the model stops calling tools —
   // see the note in modes.ts for why the count was removed and what it cost.

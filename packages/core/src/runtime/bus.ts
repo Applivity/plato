@@ -3,6 +3,7 @@
  * Synchronous in-process pub-sub; listeners are isolated — a throwing
  * listener never breaks the run. The loop is the single emitter.
  */
+import type { Mode } from './modes.js';
 
 export type ToolPhase =
   | 'requested'
@@ -25,7 +26,11 @@ export type ToolPhase =
 export type RefusalReason = 'secret' | 'containment';
 
 export type AgentEvent =
-  | { type: 'run-started'; runId: string; task: string; model: string }
+  // D49bj: the mode the run STARTED in. Required, not optional, so an emitter
+  // that forgets it is a compile error rather than a run record that cannot say
+  // what its own writes were gated by. A mid-run switch is a `notice` on this
+  // same bus (see the host), so the two together read as the run's whole story.
+  | { type: 'run-started'; runId: string; task: string; model: string; mode: Mode }
   | { type: 'turn-started'; runId: string; turn: number }
   | { type: 'text'; runId: string; text: string }
   | {

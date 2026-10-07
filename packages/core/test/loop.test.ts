@@ -2227,3 +2227,63 @@ describe('a protected file is readable, with its values masked (D49bb)', () => {
     expect(lastToolResult(requests[1]!)).toContain('sk-live-blob-0001');
   });
 });
+
+describe('the run record names the mode it began in (D49bj)', () => {
+  it('records the STARTING mode even though every later decision reads the live one', async () => {
+    const bus = new AgentBus();
+    const started: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'run-started') started.push(e.mode);
+    });
+    // The user switches to `auto` immediately after sending. The first read is
+    // the run's start; every read after it is the switch. Both halves matter —
+    // the record must keep the first, and the loop must still make the second.
+    let reads = 0;
+    const getMode = () => {
+      reads += 1;
+      return reads === 1 ? ('edit' as const) : ('auto' as const);
+    };
+    // `todo_write` because it is allowed in EVERY mode and touches nothing —
+    // the tool is here only to make the loop reach its per-call decision, so it
+    // must not be the thing the test is measuring.
+    let i = 0;
+    const turns: TurnResponse[] = [
+      {
+        content: [
+          {
+            type: 'tool_use',
+            id: 't1',
+            name: 'todo_write',
+            input: { todos: [{ content: 'think', status: 'in_progress' }] },
+          },
+        ],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        stopReason: 'tool_use',
+      },
+      {
+        content: [{ type: 'text', text: 'done' }],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        stopReason: 'stop',
+      },
+    ];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        const t = turns[i];
+        i += 1;
+        if (t === undefined) throw new Error('unexpected extra turn');
+        return t;
+      },
+    };
+
+    const r = await runAgentLoop({ ...BASE, provider: p, bus, getMode });
+
+    expect(r.reason).toBe('complete');
+    // The run began in `edit`, and that is what the record says — even though
+    // the very next decision, one line later, was made in `auto`.
+    expect(started).toEqual(['edit']);
+    // And the mode was genuinely re-read after the run started, which is what
+    // makes those two facts different rather than one.
+    expect(reads).toBeGreaterThan(1);
+  });
+});

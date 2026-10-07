@@ -7,6 +7,7 @@ const started = (runId = 'r1'): AgentEvent => ({
   runId,
   task: 't',
   model: 'm',
+  mode: 'edit',
 });
 
 describe('AgentBus', () => {
