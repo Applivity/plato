@@ -100,7 +100,7 @@ Two rules keep the driver honest:
 | 23 indirect secret | no card (`auto`) | the `cat .en*` call RUNS — so the masking is the stub's log, not the transcript (D49bc) |
 | 24 pause | the button says `Pausing…` and **not** `Resume` straight after the click, then `Resume` once the run really parked | `Plato paused at a safe point.` and `Plato resumed.` — the pause is in the record, not only on the button (D49bm) |
 | 25 pause too late | the button never claims a pause it did not get | the run completed, and the record says it finished before the pause took effect — **the silence is what fails** (D49bm) |
-| 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, and the queue is empty after (D49bo) |
+| 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, the queue is empty after, and **the queued run began only after the run before it had finished** — checked as OVERLAP, not as a count of runs, because the defect this catches started the queued run *first* (D49bo) |
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
 | 28 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name** |
 

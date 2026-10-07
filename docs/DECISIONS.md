@@ -3909,6 +3909,16 @@ flight. The fix is honesty, not new power. The pre-run window is covered by the 
 exercised opportunistically by case 24; making it deterministic would need test-only machinery in the
 host's startup path, which was judged not worth it.
 
+> **CORRECTED (2026-10-07, hours later, by the queue's own bug — see the amendment to D49bo).** Two
+> things in the paragraph above did not survive the day. **The held flags covered Pause and Cancel and
+> NOT the queue**, which reached the same window: a `/queue` typed there started a second run
+> alongside the one still being prepared, found by real-model case 30 failing once in ten. So "the
+> pre-run window is covered" was true of two controls and false as a statement about the window.
+> **And it CAN be entered deterministically** — `modelsDelayMs` stalls the model-discovery call the
+> host makes while preparing, and a solo `FIELD_CASES=26` run is the one whose model pool is stale, so
+> the stall applies. The judgement that it "was judged not worth it" was made before knowing where the
+> window was reachable from.
+
 **Falsifications, each reverted and re-run green:** removing the isolation guard fails the throwing
 listener test; removing the edge guard fails both "announces nothing" tests; restoring the
 label-flips-on-click behaviour fails three render assertions **including the one written for exactly
