@@ -11,7 +11,7 @@
  * Run it with:  node scripts/field/run-field.mjs
  * One case only: FIELD_CASES=5 node scripts/field/run-field.mjs
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
@@ -93,12 +93,20 @@ const only = (process.env['FIELD_CASES'] ?? '')
   .filter((n) => n > 0);
 const selected = only.length > 0 ? CASES.filter((c) => only.includes(c.n)) : CASES;
 
-/** Sets the scripted model's next replies. */
-async function setScript(steps, needles = []) {
+/**
+ * Sets the scripted model's next replies.
+ *
+ * D49bo: `modelsDelayMs` deliberately stalls the provider's model-discovery call,
+ * which the host makes while PREPARING a run — before it is `running` and before
+ * its controls mean anything. Without a stall the window is milliseconds wide and
+ * a race inside it can only be hit by luck; with one, a case can walk into it on
+ * purpose. See case 26.
+ */
+async function setScript(steps, needles = [], modelsDelayMs = 0) {
   const res = await fetch(`${STUB}/__script`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ steps, needles }),
+    body: JSON.stringify({ steps, needles, modelsDelayMs }),
   });
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }
@@ -217,7 +225,7 @@ describe('Plato field tests — real VS Code', function () {
         // misdiagnosis: a note saying "model was told: refused" appearing under
         // the masked-read run looked like the wrong case definition had loaded.
         const mark = notes.length;
-        await setScript(run.steps);
+        await setScript(run.steps, [], run.modelsDelayMs ?? 0);
         await field.setMode(run.mode);
         // D49at clause 4: set orchestration EXPLICITLY before every run, not only
         // for the case that needs Duo. The chip is sticky, so a case that left it
@@ -451,12 +459,46 @@ describe('Plato field tests — real VS Code', function () {
           }
           const q = await field.queueState();
           if (c.n === 26) {
-            const second = runs.done.sort().pop();
+            const ordered = runs.done.slice().sort();
+            const second = ordered[ordered.length - 1];
             const text = second === undefined ? '' : readFileSync(second, 'utf8');
             if (!text.includes('write the release notes')) {
               notes.push('QUEUE: the second run did not carry the queued message as its task');
             } else {
               notes.push('queue: the queued message became the next run, with nobody pressing anything');
+            }
+            // D49bo: the claim is that the queue hands over when the run before
+            // it has FINISHED, so that is what is checked — and the first version
+            // of this assertion did not check it. It compared the two headers'
+            // `startedAt` stamps, which is a COIN FLIP under the very defect it
+            // exists for: that stamp is written when a run REACHES THE WIRE, after
+            // the host has prepared it, so two runs started into one preparation
+            // window stamp in either order. It passed against the broken build.
+            //
+            // The fact the claim is about is when the first run STOPPED, and the
+            // only witness to that is the transcript file's own last write. Two
+            // runs sharing one controller, one webview and one runs directory are
+            // the defect; overlap is the symptom, and this reads overlap directly.
+            const startedAtOf = (f) => {
+              if (f === undefined) return null;
+              for (const line of readFileSync(f, 'utf8').split('\n')) {
+                if (!line.trim()) continue;
+                try {
+                  const e = JSON.parse(line);
+                  if (e.kind === 'header') return e.startedAt;
+                } catch {
+                  // A partial last line is not a header.
+                }
+              }
+              return null;
+            };
+            const firstEndedAt = ordered[0] === undefined ? null : statSync(ordered[0]).mtimeMs;
+            const secondStartedAt = startedAtOf(second);
+            if (firstEndedAt !== null && secondStartedAt !== null
+              && Date.parse(secondStartedAt) <= firstEndedAt) {
+              notes.push(`QUEUE: the queued run began BEFORE the run it was queued behind had finished — two runs overlapped (queued started ${secondStartedAt}, the first run's last write ${new Date(firstEndedAt).toISOString()})`);
+            } else {
+              notes.push('queue: the queued run began only after the run before it had finished');
             }
             if (q.names.length !== 0) {
               notes.push(`QUEUE: the queue still shows ${q.names.length} message(s) after it was sent`);

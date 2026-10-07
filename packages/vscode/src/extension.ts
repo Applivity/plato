@@ -667,6 +667,29 @@ class ChatHost {
    * the queue to continue, so one cancel cannot be quietly undone.
    */
   private queueHeld = false;
+  /**
+   * D49bo: true from the moment a run is STARTED until it has fully unwound.
+   *
+   * **`running` is not this flag, and using it as one was a real defect.**
+   * `running` is set only once the host has finished preparing — reading the key,
+   * filling the model pool, starting MCP servers, the last of which allows twenty
+   * seconds — and anything that may start a run has to refuse for that whole
+   * span. It did not: a `/queue` arriving in that window found `running` false,
+   * drained the queue, and started a **second run alongside the one still being
+   * prepared**. The two then shared one controller, one webview and one runs
+   * directory, and the queued task raced the real one to the wire. Caught by
+   * real-model case 30 as **1 failure in 10** — the queued run's transcript
+   * carried the EARLIER timestamp and the run took two minutes instead of forty
+   * seconds — and diagnosed from that evidence rather than by guessing, which is
+   * the whole reason the diagnostic below exists.
+   */
+  private runInFlight = false;
+  /**
+   * D49bo: how the last run ended, or null when it failed or never reached its
+   * result. Read by the queue's advance, which runs after the run has unwound and
+   * so cannot see the local that held it.
+   */
+  private lastRunEnd: RunEndReason | null = null;
   private modelOverride: string | null = null;
   // D49aa: not readonly — a fold REPLACES the array with one that keeps every
   // row plus the summary, which is clearer than splicing a new list into the old.
@@ -3299,8 +3322,35 @@ class ChatHost {
    * just cancelled to finish unwinding before it archives the chat.
    */
   private startRun(task: string, ctx: RunCtx = {}): void {
-    if (this.running) return;
-    this.runPromise = this.run(task, ctx);
+    // `runInFlight`, NOT `running` — see the field's note. `running` is false for
+    // the whole of a run's preparation, so a second start in that window slipped
+    // through and ran two runs at once.
+    if (this.runInFlight) return;
+    this.runInFlight = true;
+    this.runPromise = this.run(task, ctx).finally(() => {
+      this.runInFlight = false;
+      // D49bo: hand the queue on from HERE, not from inside `run()`. The slot has
+      // to be free before the next run may start, and this is the one place that
+      // is true for every exit — including the guards that return early, which is
+      // why the advance cannot live at the end of the body.
+      this.advanceAfterRun();
+    });
+  }
+
+  /**
+   * D49bo: hand the queue on, now that the run has fully unwound — state cleared,
+   * writer closed, MCP servers stopped, and the run slot free.
+   */
+  private advanceAfterRun(): void {
+    if (this.disposed || this.queueHeld || this.queue.length === 0) return;
+    if (nextQueued(this.queue, this.lastRunEnd) !== null) {
+      this.advanceQueue();
+    } else {
+      // Cancel, stuck, or a failure. The hold is sticky until the user asks for
+      // the queue to continue — one cancel must not be quietly undone.
+      this.queueHeld = true;
+      this.postQueue();
+    }
   }
 
   private async run(task: string, ctx: RunCtx = {}): Promise<void> {
@@ -3771,6 +3821,11 @@ class ChatHost {
     // failure is distinguishable from every clean ending — the queue holds on a
     // failure, and the pause line must not be written after a cancel.
     let ended: RunEndReason | null = null;
+    // D49bo: cleared per run, so a guard that returns early cannot leave the
+    // PREVIOUS run's ending behind for the queue to act on. Null means "no
+    // result", which is how a failure and an abandoned start both read — and
+    // both must hold the queue.
+    this.lastRunEnd = null;
     try {
       let modelTask = await this.buildModelTask(task, ctx, root);
       // D44c: /history-imported context rides this run's task. Consumed here,
@@ -3947,6 +4002,9 @@ class ChatHost {
         },
       });
       ended = result.reason;
+      // D49bo: kept on the host, because the queue's advance runs after this
+      // method has returned and cannot see a local.
+      this.lastRunEnd = ended;
       // D49j: a run cancelled mid-stream leaves text in the preview that never
       // reached a committed block. Fold it in before the reply is recorded.
       this.foldPreview();
@@ -4058,19 +4116,6 @@ class ChatHost {
         s.stop();
       }
     }
-    // D49bo: hand the queue on, now that this run is fully wound down — state
-    // cleared, writer closed, MCP servers stopped. Deliberately not started when
-    // the panel is gone, which would send a run against a dead webview.
-    if (this.queue.length > 0 && !this.queueHeld) {
-      if (nextQueued(this.queue, ended) !== null) {
-        this.advanceQueue();
-      } else {
-        // Cancel, stuck, or a failure. The hold is sticky until the user asks
-        // for the queue to continue — one cancel must not be quietly undone.
-        this.queueHeld = true;
-        this.postQueue();
-      }
-    }
   }
 
   /**
@@ -4080,7 +4125,9 @@ class ChatHost {
    * has one answer: when none is running, none is held, and the panel is open.
    */
   private advanceQueue(): void {
-    if (this.disposed || this.running || this.queueHeld) return;
+    // `runInFlight`, not `running`: a queued message may NOT start while a run is
+    // still being prepared, or two runs share one controller and one webview.
+    if (this.disposed || this.runInFlight || this.queueHeld) return;
     const next = this.queue.shift();
     if (next === undefined) return;
     this.postQueue();

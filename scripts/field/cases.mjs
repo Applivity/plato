@@ -1028,6 +1028,17 @@ export const CASES = [
         cards: [],
         during: 'queueWhileBusy',
         expectRuns: 2,
+        // D49bo: hold the model-discovery call for four seconds, which the host
+        // makes while PREPARING a run — before it is running, and before its
+        // controls exist. That widens the window the `/queue` command lands in
+        // from milliseconds to seconds, so a solo `FIELD_CASES=26
+        // node scripts/field/run-field.mjs` walks into it on purpose and the
+        // "the queued run began after the run before it" assertion has something
+        // to catch. It only bites when this case's run is the session's FIRST:
+        // the pool is then stale, so the call is made at all. In a full run an
+        // earlier case has already warmed the pool and the window is narrow again
+        // — which is why the assertion, not the stall, is what lives in the case.
+        modelsDelayMs: 4000,
       },
     ],
   },

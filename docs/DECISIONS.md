@@ -4015,6 +4015,44 @@ view edit the queue locally fails the render assertion; and dropping the payload
 the row is recorded and the words carry into the next run's history. That is untouched here; `/queue`
 is the answer for a deliberate follow-up.
 
+> **AMENDED (2026-10-07, same day, after real-model case 30 failed once in ten runs).** The rule above
+> was right and its GUARD WAS WRONG. `advanceQueue` — and the `run()` it starts — refused only when
+> `this.running`, and **`running` is set at the END of a run's preparation**, after the key is read,
+> the model pool filled and MCP servers started, a span that allows twenty seconds. So a `/queue`
+> arriving in that window found `running` false, drained the queue, and started **a second run
+> alongside the one still being prepared**. Two runs then shared one controller, one webview and one
+> runs directory.
+>
+> **The diagnosis came from the evidence rather than from guessing, which is why the flake was worth
+> leaving one diagnostic in place for.** The single failure reported the queued run's task as the
+> FIRST prompt's — which is only possible if the queued run sorted EARLIER, which is only possible if
+> it STARTED EARLIER. That, plus a run that took two minutes where the same case takes thirty-five
+> seconds, is the whole mechanism. `runInFlight` now spans start-to-unwind, set in `startRun` and
+> cleared in its promise's `finally` — **so it is cleared on every exit, including the eight guard
+> clauses that return early from `run()`, which is why the queue's advance moved out of the body and
+> into that chain.** `lastRunEnd` carries the ending out with it, because the advance can no longer
+> see the local that held it.
+>
+> **This is the same window D49bm found for Pause and Cancel, and the queue was the case left
+> uncovered** — which is the durable lesson: when a hazard is found in one control, the others that
+> reach the same state need looking at in the same pass.
+>
+> **Proving it needed a way INTO the window, and the stub now has one.** `modelsDelayMs` stalls the
+> provider's model-discovery call — which the host makes while preparing a run — turning a window
+> milliseconds wide into a four-second one. A solo `FIELD_CASES=26 node scripts/field/run-field.mjs`
+> walks into it on purpose, because that case's run is then the session's first and the model pool is
+> stale, so the call is made at all. **Against the pre-fix source that run fails with the evidence
+> printed: the queued run started at 17:56:51.449 and the first run's last write was 17:56:54.117 —
+> 2.7 seconds of overlap.** With the fix it is green, and six further real-model runs pass at ~30s.
+>
+> **One assertion in the case was written, tested against the broken build, and DEMOTED for having no
+> teeth.** It compared the two transcripts' header stamps, and passed against the defect: `startedAt`
+> is written when a run REACHES THE WIRE, after its preparation, so two runs started into one window
+> stamp in either order. **The check that catches it reads the two runs' OVERLAP** — the queued run's
+> `startedAt` against the first transcript's own last-write time — and the chip assertion catches it
+> too, because a queue that drains instantly never shows the chip. **A check that passes against the
+> bug it was written for is worse than no check**, which is the same rule D49at learned about notes.
+
 ---
 
 **D49bk — the mode-change question card is closed, because its answer would be a lie (founder,

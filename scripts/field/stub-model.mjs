@@ -33,6 +33,8 @@ const PORT = Number(process.env['PLATO_STUB_PORT'] ?? 4599);
 let steps = [];
 let cursor = 0;
 let log = [];
+/** D49bo: how long `/models` is held before it answers. See `/__script`. */
+let modelsDelayMs = 0;
 
 const textFrames = (res, text, finish) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
@@ -105,6 +107,12 @@ const server = createServer(async (req, res) => {
   if (url === '/__script' && req.method === 'POST') {
     const body = await readBody(req);
     steps = Array.isArray(body.steps) ? body.steps : [];
+    // D49bo: how long to hold the model-discovery response. The host asks for
+    // this while PREPARING a run — before it is `running` — so stalling it widens
+    // the window in which a control press can arrive before the run has started.
+    // Milliseconds wide by default, which makes a race inside it unhittable by
+    // anything but luck.
+    modelsDelayMs = Number(body.modelsDelayMs) || 0;
     cursor = 0;
     log = [];
     return json(res, 200, { ok: true, steps: steps.length });
@@ -122,6 +130,13 @@ const server = createServer(async (req, res) => {
   // The model list a human would see in Settings → Providers. Not used by the
   // runs, but its absence makes the panel look broken if anyone opens it.
   if (url.endsWith('/models')) {
+    // D49bo: the host asks for this while preparing a run, so a stall here is a
+    // stall BEFORE the run is `running`. That is the window a control press can
+    // arrive in, and the only way to enter it on purpose.
+    if (modelsDelayMs > 0) {
+      await new Promise((r) => setTimeout(r, modelsDelayMs));
+      if (res.writableEnded || res.destroyed) return;
+    }
     return json(res, 200, { data: [{ id: 'stub-model', object: 'model' }] });
   }
 

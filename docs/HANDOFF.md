@@ -163,7 +163,6 @@ are now only in PROGRESS.
   going" exempts that one call for the run so it cannot nag. **Verified end to end by field cases 12,
   13 and 14** — stop, keep-going-with-guidance, and the no-progress trigger respectively — and **every
   scripted case that existed then passed together** (fourteen at the time; the suite is 28 today).
-
 - **The controls around a run in flight mean what they say (D49bm, D49bn, D49bo).** The founder
   audited them and three of them did not. **Pause** flipped its own label to *Resume* on the click
   while only a REQUEST had been recorded, left no record anywhere, and had never been clicked by a
@@ -181,7 +180,14 @@ are now only in PROGRESS.
   window is a real trap and was a silent-drop bug in two controls:** the view's buttons appear the
   instant `ask` is posted, but the host reads the key, fills the model pool and starts MCP servers
   before it is `running`, so a Pause or a Cancel clicked in those seconds used to be dropped in
-  silence. Both are held now, and a pending cancel means the run never starts.
+  silence. Both are held now, and a pending cancel means the run never starts. **The queue was the
+  third control reaching the same state and was missed in that first pass** — a `/queue` typed in
+  the window found `running` false, drained the queue and started a **second run alongside the one
+  still being prepared**, so two runs shared one controller, one webview and one runs directory.
+  Found by real-model case 30 failing **once in ten**, diagnosed from the transcript order that
+  failure left behind, and fixed by a flag spanning start-to-unwind rather than the `running` that is
+  set only once preparation ends. **The lesson is the shape of the miss, not the bug:** when a hazard
+  is found in one control, the others that reach the same state want looking at in the same pass.
 
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
@@ -1157,11 +1163,16 @@ all three of their records, which is the duplication D48 exists to stop.**
   pause cannot stop a model call already in flight** — the loop only reaches a safe point between
   turns and between tool calls, and the button now says so instead of implying otherwise. **Do not
   "fix" this by aborting the call**: that would throw away the answer being written, which is the
-  thing Cancel is for. **(2) The pre-run window is covered by held flags but not by a deterministic
-  test.** The view's controls appear the instant `ask` is posted, while the host is still reading the
-  key, filling the model pool and starting MCP servers; a Pause or Cancel clicked in those seconds is
-  now held rather than dropped. Field case 24 exercises that window **opportunistically** — it is a
-  race — and making it deterministic would need test-only machinery in the host's startup path.
+  thing Cancel is for. **(2) The pre-run window is covered by a flag, and one control can enter it on
+  purpose.** The view's controls appear the instant `ask` is posted, while the host is still reading
+  the key, filling the model pool and starting MCP servers; a Pause, a Cancel or a `/queue` arriving
+  in those seconds used to be dropped or, for the queue, to start a second run. All three are held
+  now. **The queue's case can walk into the window deterministically** — `modelsDelayMs` in the stub
+  stalls the model-discovery call the host makes while preparing, and a solo
+  `FIELD_CASES=26 node scripts/field/run-field.mjs` is the run whose pool is stale, so the stall
+  applies. **Pause and Cancel cannot: nothing in the startup path can be stalled from a test without
+  test-only machinery in the product**, so case 24 exercises that window opportunistically and the
+  logic is what carries it.
   **(3) Field case 28 asserts from the run record only, and must stay LAST.** The harness cannot step
   back inside a webview panel it has closed (a new one is created but its iframe is never found), so
   the on-screen half is not checked and the spec skips the screen read for that case **by name**; a

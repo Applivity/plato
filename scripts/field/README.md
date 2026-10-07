@@ -409,6 +409,16 @@ mid-run control, and a delayed answer is where a real user reaches for Pause. A
 cancel during the wait destroys the request, and the stub returns without writing
 rather than throwing.
 
+**`modelsDelayMs` in the script holds the model-DISCOVERY call (D49bo).** That
+call is made while the host is still PREPARING a run — before it is `running`, and
+before its controls mean anything — so stalling it widens a window that is
+otherwise milliseconds wide. It only bites when the run in question is the
+session's FIRST, because the model pool is cached after that; a solo
+`FIELD_CASES=26 node scripts/field/run-field.mjs` is therefore the way to enter
+the pre-run window **on purpose**, and it is how the defect that started a second
+run alongside the first was reproduced and fixed. Run case 26 as part of the full
+suite and the stall is inert — the assertion is what lives in the case.
+
 **A seeded file goes on the RUN, not the case (D49bb).** The per-run checks all
 read `run.<field>` — `mode`, `cards`, `prompt` — so a `seed` written one level up
 on the case object is never seen. It fails as `ENOENT` from the round-trip read
