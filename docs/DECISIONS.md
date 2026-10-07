@@ -3760,6 +3760,81 @@ rewritten), `context.test.ts`, `loop.test.ts` (one new wiring test, one new regr
 
 ---
 
+**D49bl — the commands button draws a forward slash in a key cap, and the button now has coverage
+(founder, 2026-10-07).**
+
+**The founder's report, in two halves:** *"the commands button in plato shows backslash; I think it
+should be /"* — and, *"since it is just a simple line it could be visually difficult to recognize; can
+we choose an / with a square outline on button or something."* Both halves were right, and the first
+was a defect no check in this repository could see.
+
+**The defect, stated geometrically because that is what makes it invisible.** The icon was one SVG
+line from `(8,5)` to `(16,19)`. **In screen coordinates y runs DOWNWARD**, so that line starts at the
+upper left and ends at the lower right — which is a **backslash**: the one glyph that means the
+opposite of what the button does. Every artifact around it was valid. The markup parsed, the button
+worked, the tooltip said *Commands*, and a diagonal line is a diagonal line to every assertion that is
+not about **direction**. **So the assertions written for it are about direction**, and they test the
+property rather than the numbers: read both endpoints, find the one with the smaller `y` (the higher
+end), and require it to be the one with the larger `x`. A forward slash leans that way and a backslash
+does not, so the check survives a redraw with other numbers, reordered endpoints, or a rewrite in a
+path — none of which a `x1 === 15` assertion would. A companion assertion requires the line to
+actually lean, so a horizontal or vertical stroke cannot satisfy the reading by accident.
+
+**The second half is a legibility decision, and it was made by looking rather than by reasoning.**
+A lone diagonal reads as a stray stroke; **a slash inside a rounded square reads as a KEY**, which is
+what the affordance is — a control that types `/`. So the icon is now a rounded rect with the slash
+inside it, and the slash **centred** in the box (asserted against the box's midpoint, because a keycap
+glyph jammed into a corner is the kind of thing nobody writes a test for and everybody sees).
+
+**Two numbers were settled by rendering the alternatives and comparing them**, which is recorded
+because the reasoning is not obvious from the values: the icon is **16px where the paperclip beside it
+is 14**, because **a box is mostly empty space and measures lighter than a solid glyph at the same
+size** — at an equal 14 it read as the fainter of the two controls, which is the opposite of what the
+report asked for. And the slash **fills the box** (12 of the 16 inner units): the first attempt drew
+it 11 long and it looked lost in the middle, so the assertion pins a minimum rather than an exact
+length. The corner radius stays **4**, matching the button's own `border-radius` and the rounding of
+the icons around it.
+
+**The coverage gap this exposed is the more durable half of the entry: the commands button had NO
+render coverage at all** — not the glyph, not the click. So the new suite also asserts the two ways a
+cosmetic icon swap stops being cosmetic: the accessible name and tooltip still say what the button
+opens, and **clicking it opens the command menu with rows in it, and clicking again closes it**.
+Those are new assertions about behaviour that was never checked.
+
+**Fields, and the one that is deliberately NOT asserted.** Assertions cover direction, the box, the
+centring, the fill, the rendered size against both a floor and the button's own box, the accessible
+name, and the open/close click. **Nothing asserts the icon's COLOUR**, because it is `currentColor`
+inheriting `--pl-muted` like every other control in the bar — a theme property with one home, where a
+second assertion would pin the theme rather than the icon. It was checked by eye in both grounds
+before shipping; it is not claimed to be tested.
+
+**Verified.** `tsc -b --force` clean; **825 unit tests** unchanged; render now **22 suites / 614
+assertions** (+19 in the new `commands button` suite); bundle, extract-inline and `node --check` pass,
+and the new geometry is confirmed present in the built bundle. **Eight falsifications, each reverted
+and re-run green:** restoring the original backslash fails the direction assertion — **the suite fails
+on the exact defect reported**; removing the box fails six; moving the slash off-centre fails one;
+shortening it fails the fill assertion; drawing the icon at 13px fails the paperclip comparison and at
+8px fails the legibility floor; emptying `aria-label` fails the accessible-name check; and breaking
+the open and the close each fails its own assertion. **The field acceptance suite was NOT re-run, on
+the handoff's own rule** — it is for changes touching the mode gates, refusals, cards, session memory,
+plan note, transcript or egress, and an icon inside a button is none of those; the field driver also
+never touches this control, which was checked rather than assumed.
+
+**Files:** `packages/vscode/src/webview.ts` (the `#cmds` icon), `scripts/render/cmdbutton.mjs` (new
+suite), `scripts/render/run.mjs` (registered), `scripts/render/plib.mjs` (`SLASH_META_MSG`),
+`scripts/render/README.md` (the suite documented).
+
+**One process failure, recorded because it cost the founder a round trip and is not visible in any
+artifact.** The change was made and verified and reported as done — and **the founder reloaded and
+still saw the backslash**, because the VSIX had never been packaged or installed. **The reasoning
+error is the part worth keeping: the field acceptance suite is conditional and installation is not,
+and a decision about the first was allowed to stand in for the second.** The render suite proves a
+change is *correct*; `pnpm run package` → `pnpm run install:vsix` → reload is what makes it *exist for
+him*. The packaged VSIX was afterwards unpacked and read back to confirm the new geometry is inside
+it, so what he reloaded into is known rather than assumed.
+
+---
+
 **D49bk — the mode-change question card is closed, because its answer would be a lie (founder,
 2026-10-07).**
 

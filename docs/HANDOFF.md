@@ -742,10 +742,12 @@ explicitly NOT work item 1 of anything.**
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`): twenty-one
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`): twenty-two
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
-  list of defects they caught.
+  list of defects they caught. **They are also the only place a defect of
+  APPEARANCE can be caught** — D49bl's backslash was valid markup that rendered
+  the wrong glyph, and no other check in this repository can see direction.
 - `scripts/field/` — the **live** checks: the scripted cases driving a real
   VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
   that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
@@ -830,9 +832,12 @@ before any of it is trusted:**
    JS comment or string literal closes the template and breaks the
    build. `tsc -b` usually catches it; always run it after editing.
    **It is hit far more often than it looks, and it is almost always a COMMENT**
-   — four times in one session (D49ac/D49ad), every time while writing *about*
-   code or markdown, which is exactly when quoting is natural. The fix is never to
-   quote in that file: write the words, not the syntax. Symptom is
+   — four times in one session (D49ac/D49ad), and **twice more in the D49bj/D49bl
+   session, by the same agent that had just read this paragraph** — every time while
+   writing *about* code, markdown or a glyph, which is exactly when quoting is
+   natural. The fix is never to quote in that file: write the words, not the syntax
+   (D49bl's fix was the words *a bare BACKSLASH*). **A comment ABOUT an icon is as
+   dangerous as a comment about syntax**, which is not obvious. Symptom is
    `error TS1005: ';' expected` or `TS1127: Invalid character` at the comment's
    line and column — **go straight to the nearest backtick rather than reading the
    error as a real syntax fault in the surrounding code.**
@@ -932,7 +937,7 @@ before any of it is trusted:**
 2. `pnpm -r test` — the unit tests. **Current: 825 in packages/core across 45 files**
    (verified 2026-10-07). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 21 suites / 595
+3. `pnpm run render` — the real-DOM render suites. **Current: 22 suites / 614
    assertions** (verified 2026-10-07), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -945,6 +950,15 @@ before any of it is trusted:**
 6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
+
+   **Steps 5–7 are not optional and step 8 is.** Only the field acceptance suite is
+   conditional (step 8 says what it is for). **The render suite proves a change is CORRECT;
+   the install is what makes it EXIST for the founder.** Skipping the install and reporting
+   the work done is how D49bl's icon was reported finished while the founder's window still
+   ran the previous VSIX — he found out before anyone else did, by reloading and looking.
+   **If the change renders anything a person will see**, install it and have him look before
+   you write the documentation. When in doubt about what he will see, unpack the VSIX and read
+   the built file back rather than trusting the command's own success message.
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
    done) AND the **23** live field cases it is built on — **30 runs**, since a case may carry
    several, and the run count is what the acceptance test reports — driven automatically in a real

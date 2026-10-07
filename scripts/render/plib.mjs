@@ -15,6 +15,13 @@ export const approvalAnsweredSession = core.approvalAnsweredSession;
 /** The message the host sends at ready. Every suite that draws tool words needs it. */
 export const TOOL_WORDS_MSG = { type: 'tool-words', words: core.toolWordsForView() };
 
+/**
+ * The other half of what the host sends at ready (D44c): the command rows the
+ * `/` menu renders. From core rather than restated, for the same reason as the
+ * tool words — a second copy of a table is the fault the table exists to fix.
+ */
+export const SLASH_META_MSG = { type: 'slash-meta', commands: core.slashMenu() };
+
 const { chromium } = await import(resolvePlaywright());
 
 // One build per RUN. run.mjs prepares once, up front, and exports

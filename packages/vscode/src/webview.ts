@@ -1336,10 +1336,19 @@ export function chatHtml(): string {
     <div class="bar-left">
       <button id="cmds" class="cmd-btn" type="button" title="Commands (/…)"
               aria-label="Commands">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+        <!-- D49bl: a forward slash inside a key cap. It was a bare BACKSLASH —
+             the line ran top-left to bottom-right, the one glyph that means the
+             opposite of what this button does. The box is what makes it read: a
+             lone diagonal is just a stroke, and a slash inside a rounded square
+             is a KEY, which is what the affordance is. 16px rather than the
+             paperclip's 14, because a box is mostly empty space and measures
+             lighter than a solid glyph at the same size — chosen by looking at
+             it rendered, not by reasoning about the numbers. -->
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
              stroke="currentColor" stroke-width="2" stroke-linecap="round"
              stroke-linejoin="round" aria-hidden="true">
-          <line x1="8" y1="5" x2="16" y2="19"></line>
+          <rect x="3" y="3" width="18" height="18" rx="4"></rect>
+          <line x1="15" y1="6" x2="9" y2="18"></line>
         </svg>
       </button>
       <div class="future-attach">

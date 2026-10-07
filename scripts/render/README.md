@@ -81,6 +81,7 @@ Do not import `harness.mjs` directly and roll your own browser: the whole point 
 | `panels` | all three sections share one frame; marker >=16px; header >=32px; every section named; Delete separated from Refresh; add-provider inputs not clipped |
 | `narrow` | no overflow, buttons one line, mode cards >=150px, 1 column <=420px / 3 at 720px |
 | `history` | the empty Runs state names the real (`~/.plato/runs/`) transcript location, not the pre-D46 repo-relative path |
+| `cmdbutton` | the `/` button (D49bl): the glyph is a **forward** slash and not a backslash — asserted as a **property** (the higher end is on the right), so a redraw with different numbers still passes — it is centred in a rounded square, it is at least the size of the paperclip beside it, and clicking it opens the command menu with rows in it and closes it again. **The table above lists 6 of the 22 suites that exist**; the other 15 are named in `SUITES` in `run.mjs` and documented at the top of their own files. |
 
 ## Playwright
 
