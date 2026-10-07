@@ -161,8 +161,8 @@ are now only in PROGRESS.
   because that is the worry. Every escape hatch is open — Keep going (with the user's own typed
   guidance), Stop, the composer's Stop button, typing mid-run, switching modes — and answering "Keep
   going" exempts that one call for the run so it cannot nag. **Verified end to end by field cases 12,
-  13 and 14** — stop, keep-going-with-guidance, and the no-progress trigger respectively — and **all
-  fourteen scripted cases pass together**.
+  13 and 14** — stop, keep-going-with-guidance, and the no-progress trigger respectively — and **every
+  scripted case that existed then passed together** (fourteen at the time; the suite is 28 today).
 
 - **The controls around a run in flight mean what they say (D49bm, D49bn, D49bo).** The founder
   audited them and three of them did not. **Pause** flipped its own label to *Resume* on the click

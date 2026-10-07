@@ -660,6 +660,11 @@ archived anything. Fixes:
   close/reopen cycles from stacking duplicate snapshots.
   `newChat()` resets it; resume seeds it so already-archived
   content isn't re-archived.
+  **EXTENDED (D49bn, 2026-10-07):** archiving was all `dispose()` did, so a run in
+  flight kept going with nothing able to see or stop it. `dispose()` now also
+  cancels the run and **awaits it before archiving** — the order matters, because
+  the unwinding run pushes its last rows and closes its writer, and archiving first
+  would persist a log about to change.
 - Title generation moved from run-completion to run-start (right
   after connection/key resolution, before the agent loop), so the
   title lands a second or two into the run. `titleInFlight` guards
@@ -1200,6 +1205,10 @@ and PROGRESS now say so.
 > the acceptance test was restated (**D49at**) and **executed — 7 of 7 clauses pass** — and
 > **M4 is done**. Left in place as the record of what was true on 2026-09-17; the current
 > state lives in HANDOFF and PROGRESS, per this entry's own rule.
+>
+> **Clause count moved again (2026-10-07):** it is **8 of 8** — the run-control work
+> (D49bm/D49bn/D49bo) added clause 8, *"The run controls mean what they say."* The sentence
+> above is kept as written because it was true of the suite it describes.
 
 **BLUEPRINT and ARCHITECTURE are NOT rewritten.** They are the founder's
 design-tree record — BLUEPRINT was confirmed after the Q1–Q22 interview, and

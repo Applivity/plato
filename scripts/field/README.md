@@ -6,10 +6,15 @@ was written for a human to run by hand in VS Code. This directory runs them
 without a human. **Cases 10–17 were added here** — the cancel path, the editor's
 diagnostics, the three faces of the repetition bound, and the three acceptance
 clauses that had no witness at all — **18–21 with the undo and masking work**
-(what undo puts back, what it refuses, and the masked read round trip), **and
-22–23 with the two halves of D49bc** (a protected file Plato cannot mask is
-offered once, and a command that reaches a protected file indirectly prints no
-value) — see the table below.
+(what undo puts back, what it refuses, and the masked read round trip), **22–23
+with the two halves of D49bc** (a protected file Plato cannot mask is offered
+once, and a command that reaches a protected file indirectly prints no value),
+**and 24–28 with the run controls** (pause says only what the run is doing, a
+pause that never lands says so, a queued follow-up runs when the run before it
+finishes — and does NOT when that run was cancelled — and closing the chat panel
+stops the run) — see the table below. **Two further cases (30, 31) cover the queue
+and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
+they are not part of the scripted suite and need the founder's key file.
 
 **This directory is also the M4 acceptance test's machine.** The eight clauses
 (D49at) are executed by `acceptance.mjs`, which maps each clause onto the cases
@@ -247,6 +252,11 @@ worse than none:**
   missing from the spec's failure regex, so "no stuck card was ever detected" —
   the check written to give cases 12–14 their teeth — could not fail a case. Found
   while wiring the acceptance clauses. **A note is not a check.**
+- **A clause was ADDED rather than corrected (2026-10-07).** The run-control work
+  (D49bm/D49bn/D49bo) found three controls that did not mean what they claimed, so
+  the list grew from seven to **eight**: clause 8, *"The run controls mean what
+  they say — pause, queue, and closing the panel"*, witnessed by cases 24–28.
+  Nothing was restated; the seven that existed are unchanged.
 
 **Falsified.** Blanking `unfinishedPlanNote` in core makes case 17 fail with
 *"the run ended with 2 of 3 plan steps unfinished and did not say so"*, the judge

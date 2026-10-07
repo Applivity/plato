@@ -871,11 +871,11 @@ describe('Plato field tests — real VS Code', function () {
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes.slice(mark)) console.log(`    ${n}`);
         // D49at: the manifest is what turns a pile of cases into an executable
-        // acceptance test. Without it a run of fourteen cases cannot be mapped
-        // back to the seven clauses, because a transcript records its TASK and
-        // its root but not which case produced it — so `acceptance.mjs` had
-        // nothing to join on. Written per RUN, so a clause witnessed by one run
-        // of a two-run case can name it.
+        // acceptance test. Without it a run of cases cannot be mapped back to the
+        // clauses, because a transcript records its TASK and its root but not
+        // which case produced it — so `acceptance.mjs` had nothing to join on.
+        // Written per RUN, so a clause witnessed by one run of a two-run case can
+        // name it.
         MANIFEST.push({
           case: c.n,
           run: i + 1,
