@@ -8,7 +8,7 @@
  * needs the run controller, the chat archive, a provider to summarise, and
  * the workspace file system.
  */
-export type SlashCommandId = 'compact' | 'history' | 'system-prompt' | 'undo';
+export type SlashCommandId = 'compact' | 'history' | 'system-prompt' | 'undo' | 'queue';
 
 export interface SlashCommand {
   id: SlashCommandId;
@@ -46,6 +46,15 @@ const COMMANDS: readonly SlashCommand[] = [
     label: 'Undo',
     usage: '/undo',
     blurb: "Put back the files Plato changed in your last request",
+  },
+  {
+    // D49bo. The first command that carries TEXT. That is why the blurb names
+    // the shape rather than the effect alone: a reader who types a bare
+    // /queue has to know a message goes with it.
+    id: 'queue',
+    label: 'Queue',
+    usage: '/queue <message>',
+    blurb: 'Send this message as the next task when the current run finishes',
   },
 ];
 

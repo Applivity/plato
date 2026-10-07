@@ -2,7 +2,7 @@
 /**
  * The M4 acceptance test — EXECUTED, not described (D49at).
  *
- * M4's definition of done is seven clauses; this turns them into something that
+ * M4's definition of done is eight clauses; this turns them into something that
  * can pass or fail on evidence. The clauses were restated on 2026-09-25 with a
  * witness named for each, because **a clause with no witness is what made the
  * old one unfalsifiable** — and then the restated test was never run. This is
@@ -35,7 +35,7 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const MANIFEST = join(ROOT, 'tmp', 'field', 'last-manifest.json');
 
 /**
- * The seven clauses, each with the cases that witness it.
+ * The eight clauses, each with the cases that witness it.
  *
  * `screen` names the note prefix the spec uses for the half of a clause that
  * only exists on screen (a closing line, a card's contents). `transcript: false`
@@ -114,6 +114,22 @@ const CLAUSES = [
     text: 'Stop works — cancel ends the run as cancelled and dismisses the card',
     cases: [10],
     witness: "run-completed {reason: 'cancelled'}, the card gone",
+  },
+  {
+    n: 8,
+    // D49bm/D49bn/D49bo. The controls around a run in flight, and the one thing
+    // they have in common: each must mean what it says. Pause must not claim the
+    // run stopped before it did, and must say so when it never did; a queued
+    // message must run when the run before it FINISHED and not when the user
+    // stopped it; and closing the panel — the run's only supervisor — must stop
+    // the run rather than leave it going where nothing can see it.
+    text: 'The run controls mean what they say — pause, queue, and closing the panel',
+    cases: [24, 25, 26, 27, 28],
+    witness:
+      "the button's own label while the run is live (24, 25); the notices read back " +
+      'from the transcript; a second transcript with the queued task (26); the queue ' +
+      'still waiting after a cancel (27); run-completed cancelled with the reason on screen (28)',
+    screen: 'PAUSE',
   },
 ];
 

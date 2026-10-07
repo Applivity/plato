@@ -8,6 +8,7 @@ import {
   AgentBus,
   TranscriptWriter,
   RunController,
+  type RunEndReason,
   createProvider,
   splitModelRef,
   modelSupportsReasoning,
@@ -67,6 +68,8 @@ import {
   DEFAULT_PLATO_BODY,
   slashCommand,
   slashMenu,
+  // D49bo: the queue rule lives in core so it can be tested without a host.
+  nextQueued,
   COMPACT_SYSTEM_PROMPT,
   compactMaxTokensFor,
   PERSONAS,
@@ -622,6 +625,48 @@ class ChatHost {
   private streamPreview = '';
   private streamTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
+  /** D49bn: the panel was closed. Nothing may start after this. */
+  private disposed = false;
+  /** D49bn: the live run, so `dispose()` can wait for it to unwind. */
+  private runPromise: Promise<void> | null = null;
+  /**
+   * D49bm: the difference between "the user asked to pause" and "the run is
+   * parked". `pause()` only records the request — the loop may never reach a
+   * gate, because a turn that returns no tool calls ends the run — so the two
+   * are genuinely different states and the button must not conflate them.
+   */
+  private pauseRequested = false;
+  /** D49bm: whether the run parked at least once, for the closing line. */
+  private pauseEverParked = false;
+  /**
+   * D49bm: a control asked for before the run was under way.
+   *
+   * The run controls are in the VIEW's gift — they appear the instant `ask` is
+   * posted — but the host spends real time getting to `running = true`: it reads
+   * the key, fills the model pool and starts MCP servers, the last of which can
+   * take twenty seconds. A click in that window used to be dropped in silence,
+   * which is the same class of defect as the button that lied — the user asked,
+   * and nothing anywhere said the ask was never heard. Held here and applied the
+   * moment the run exists.
+   *
+   * Cancel matters most: losing it means Plato starts the run the user just
+   * asked it to stop.
+   */
+  private pendingPause = false;
+  private pendingCancel = false;
+  /**
+   * D49bo: messages to send as the next task, in order. Deliberately in memory
+   * only: a reload kills the run too, and a restored non-empty queue would
+   * either sit there forever or start a run nobody asked for the moment the
+   * panel opened.
+   */
+  private queue: string[] = [];
+  /**
+   * D49bo: set when a run ended for a reason that must not hand the queue on —
+   * a cancel, a stuck run, or a failure. It stays set until the user asks for
+   * the queue to continue, so one cancel cannot be quietly undone.
+   */
+  private queueHeld = false;
   private modelOverride: string | null = null;
   // D49aa: not readonly — a fold REPLACES the array with one that keeps every
   // row plus the summary, which is clearer than splicing a new list into the old.
@@ -780,12 +825,20 @@ class ChatHost {
           }
           return;
         }
-        if (m.type === 'pause' && this.running) {
-          this.controller.pause();
+        if (m.type === 'pause') {
+          // D49bm: record the REQUEST. The button is not told the run is paused
+          // here — only the loop's own park signal says that, because the loop
+          // may never reach a safe point.
+          this.pauseRequested = true;
+          if (this.running) this.controller.pause();
+          else this.pendingPause = true;
           return;
         }
-        if (m.type === 'resume' && this.running) {
-          this.controller.resume();
+        if (m.type === 'resume') {
+          this.pauseRequested = false;
+          // A click before the run started takes the request back with it.
+          this.pendingPause = false;
+          if (this.running) this.controller.resume();
           return;
         }
         // D49aw: the answer to a stuck card. "Keep going" carries whatever the
@@ -805,11 +858,17 @@ class ChatHost {
           });
           return;
         }
-        if (m.type === 'cancel' && this.running) {
-          // D49bi: release the cards first, so cancel takes effect now. This is
-          // the SAME code an observer's cancel runs — see `releaseParkedCards`.
-          this.releaseParkedCards();
-          this.controller.cancel();
+        if (m.type === 'cancel') {
+          if (this.running) {
+            // D49bi: release the cards first, so cancel takes effect now. This is
+            // the SAME code an observer's cancel runs — see `releaseParkedCards`.
+            this.releaseParkedCards();
+            this.controller.cancel();
+          } else {
+            // D49bm: the same window the pause can fall into, and worse if it is
+            // lost — the user asked Plato to stop and it would start regardless.
+            this.pendingCancel = true;
+          }
           return;
         }
         if (m.type === 'openSettings') {
@@ -1295,8 +1354,24 @@ class ChatHost {
           return;
         }
         // D44c: real commands execute in the host — no text expansion.
+        // D49bo: `text` carries what followed the command, which only /queue
+        // reads today. The four older commands ignore it, exactly as before.
         if (m.type === 'slash-run' && typeof m.id === 'string') {
-          await this.runCommand(m.id);
+          await this.runCommand(m.id, typeof m.text === 'string' ? m.text : '');
+          return;
+        }
+        if (m.type === 'queue-remove' && typeof m.index === 'number') {
+          this.queue.splice(m.index, 1);
+          this.postQueue();
+          return;
+        }
+        // The user asking the held queue to continue. Only this clears the hold:
+        // a cancel, a stuck run or a failure must not be quietly undone by the
+        // next run that happens to end cleanly.
+        if (m.type === 'queue-start') {
+          this.queueHeld = false;
+          this.postQueue();
+          this.advanceQueue();
           return;
         }
         // D49ax: the undo card's two answers. No pending resolver is kept, so an
@@ -1324,7 +1399,7 @@ class ChatHost {
           const attach = this.pendingAttachments.splice(0);
           const images = this.pendingImages.splice(0);
           this.push({ k: 'msg', cls: 'you', who: 'You', text: m.text });
-          void this.run(m.text, { attach, images });
+          this.startRun(m.text, { attach, images });
           return;
         }
         // The webview asks for the log once its script is live; posting
@@ -1349,6 +1424,11 @@ class ChatHost {
             // default (`edit`) and so would disagree with a stored mode on every
             // reload, which is how a choice made before the reload disappeared.
             mode: this.mode,
+            // D49bo: the queue is host-authoritative, and this host can outlive
+            // a webview reload — so the view is told what is waiting rather than
+            // keeping its own copy that would drift.
+            queue: this.queue,
+            queueHeld: this.queueHeld,
           });
         }
       },
@@ -1356,13 +1436,23 @@ class ChatHost {
   }
 
   private send(type: string, text?: unknown, meta?: Record<string, unknown>): void {
-    void this.panel.webview.postMessage({
-      type,
-      text,
-      // D47f: optional extras (e.g. a philosopher notice's colour) ride beside
-      // `text` so existing handlers that read only `text` are unaffected.
-      ...(meta ? { meta } : {}),
-    });
+    try {
+      void this.panel.webview.postMessage({
+        type,
+        text,
+        // D47f: optional extras (e.g. a philosopher notice's colour) ride beside
+        // `text` so existing handlers that read only `text` are unaffected.
+        ...(meta ? { meta } : {}),
+      });
+    } catch {
+      // D49bn: the panel can be GONE while the host still has things to say —
+      // closing the tab is exactly when that happens, because the teardown sends
+      // as it releases cards. Posting to a disposed webview throws, and letting
+      // that escape abandons the teardown halfway: `dispose()` never reached its
+      // `cancel()`, so the run it was stopping kept going. Found by field case
+      // 28, which reported the run as `complete` while the panel-close notice sat
+      // right there in the same transcript.
+    }
   }
 
   // ---- D44a/D44c: paperclip attachment + real slash commands ------------
@@ -1679,9 +1769,26 @@ class ChatHost {
   }
 
   /** D44c/D44d: dispatch a real command to its host action. */
-  private async runCommand(id: string): Promise<void> {
+  private async runCommand(id: string, text = ''): Promise<void> {
     if (slashCommand(id) === undefined) {
       this.send('notice', 'Unknown command: /' + id);
+      return;
+    }
+    // D49bo: the only command that takes text. The message is held, not sent —
+    // and when nothing is running there is nothing to wait for, so it goes at
+    // once through the same advance path every other start uses.
+    if (id === 'queue') {
+      const msg = text.trim();
+      if (msg.length === 0) {
+        this.send(
+          'notice',
+          'Type the message you want to queue — /queue <message> — or put it in the box and pick Queue.',
+        );
+        return;
+      }
+      this.queue.push(msg);
+      this.postQueue();
+      this.advanceQueue();
       return;
     }
     if (id === 'compact') {
@@ -2547,11 +2654,31 @@ class ChatHost {
    * stays persisted, so reopening the panel continues the conversation.
    */
   async dispose(): Promise<void> {
+    // D49bn: the panel is the run's only supervisor — the buttons, the cards and
+    // the log all live in it. Closing it used to leave the run going with
+    // nothing able to see or stop it: it kept calling tools and writing files,
+    // and the first write in `edit` parked on a card nobody could answer, for
+    // good. Closing the panel now stops the run.
+    this.disposed = true;
+    if (this.running) {
+      // `releaseParkedCards` first, exactly as the Cancel button does: the loop
+      // is parked on a promise that only an answer can resolve.
+      this.releaseParkedCards();
+      this.controller.cancel();
+    }
+    // The record of WHY is written by the run itself, in its `finally` — see the
+    // note there. From here it cannot be: a run still being prepared has no bus
+    // yet, and a bus notice emitted before the first `run-started` is dropped
+    // for having no file to land in, which is exactly the silence this is meant
+    // to remove.
     this.editorDiag.dispose();
     for (const w of this.homeWatchers) {
       w.dispose();
     }
     this.homeWatchers = [];
+    // The cancelled run pushes its last rows and closes its writer on the way
+    // out, so archiving before it finishes would persist a log about to change.
+    await this.runPromise;
     await this.archiveCurrentChat();
   }
 
@@ -3164,7 +3291,29 @@ class ChatHost {
     return v === 'off' ? undefined : { effort: v as 'low' | 'medium' | 'high' };
   }
 
+  /**
+   * D49bo: the only way a run is started. One run at a time is enforced HERE
+   * rather than assumed — the queue starts a run from the end of another, so a
+   * second start would otherwise interleave two runs over one controller and
+   * one webview. The promise is kept so `dispose()` can wait for the run it
+   * just cancelled to finish unwinding before it archives the chat.
+   */
+  private startRun(task: string, ctx: RunCtx = {}): void {
+    if (this.running) return;
+    this.runPromise = this.run(task, ctx);
+  }
+
   private async run(task: string, ctx: RunCtx = {}): Promise<void> {
+    // D49bm: a control pressed while the host was still preparing. Cancel is
+    // checked FIRST and means the run never starts — the user asked it to stop,
+    // and starting it anyway is the one answer that cannot be defended.
+    if (this.pendingCancel) {
+      this.pendingCancel = false;
+      this.pendingPause = false;
+      this.send('notice', 'Stopped before it started.');
+      this.send('done', { note: 'stopped before it started', secs: 0, tools: 0, tok: '', cost: '', obs: '' });
+      return;
+    }
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!root) {
       this.send('error', 'Open a folder before asking Plato.');
@@ -3515,8 +3664,41 @@ class ChatHost {
         }
       });
     }
-    this.controller = new RunController();
+    // D49bm: the park edges come from the LOOP, not from the click. `pause()`
+    // states a request; only `gate()` knows the run has actually stopped, and it
+    // may never be reached at all. Relaying a signal to the bus is the pattern
+    // this host already uses for the mode switch and the diagnostics look.
+    // D49bm: a fresh run starts with no pause history, so the closing line
+    // below cannot report a pause that belonged to the run before.
+    this.pauseRequested = false;
+    this.pauseEverParked = false;
+    this.controller = new RunController({
+      onPark: (parked) => {
+        if (parked) this.pauseEverParked = true;
+        const line = parked
+          ? 'Plato paused at a safe point.'
+          : 'Plato resumed.';
+        // The bus notice is what the RECORD keeps and what pushes the scrollback
+        // row; the `send` is what draws it live. Both are needed — the listener
+        // for `notice` writes the log, it does not render.
+        bus.emit({ type: 'notice', runId: this.currentRunId, text: line });
+        this.send('notice', line);
+        this.send('pause-state', { parked });
+      },
+    });
     this.running = true;
+    // D49bm: a pause asked for before the controller existed. Applied now, so a
+    // click during the setup is honoured rather than swallowed.
+    if (this.pendingPause) {
+      this.pendingPause = false;
+      this.pauseRequested = true;
+      this.controller.pause();
+    }
+    // D49bn: the panel closed while this run was still being prepared — before
+    // there was a controller for `dispose()` to cancel, and before there was a
+    // bus for it to write to. There is no view left to supervise this run, so it
+    // stops here; `run()`'s own `finally` says why, once the bus exists.
+    if (this.disposed) this.controller.cancel();
     // D37: forward live context + compaction events straight to the
     // webview. The ring + the compact-button + the post-compact notice
     // all read from these.
@@ -3585,6 +3767,10 @@ class ChatHost {
         }
       }
     });
+    // D49bo: how the run ended, or null when it threw. Read AFTER the try, so a
+    // failure is distinguishable from every clean ending — the queue holds on a
+    // failure, and the pause line must not be written after a cancel.
+    let ended: RunEndReason | null = null;
     try {
       let modelTask = await this.buildModelTask(task, ctx, root);
       // D44c: /history-imported context rides this run's task. Consumed here,
@@ -3760,6 +3946,7 @@ class ChatHost {
           return block.length > 0 ? block : undefined;
         },
       });
+      ended = result.reason;
       // D49j: a run cancelled mid-stream leaves text in the preview that never
       // reached a committed block. Fold it in before the reply is recorded.
       this.foldPreview();
@@ -3835,6 +4022,28 @@ class ChatHost {
       this.send('error', text);
       this.push({ k: 'msg', cls: 'bot', who: 'Error', text });
     } finally {
+      // D49bn: closing the panel is what stopped this run — whether the cancel
+      // came from `dispose()` while it ran, or from the check above because the
+      // panel went while the run was still being prepared. Written HERE, and
+      // only here: a run still being prepared has no bus, and a notice emitted
+      // before the first `run-started` is dropped for having no file to land in.
+      if (this.disposed) {
+        bus.emit({
+          type: 'notice',
+          runId,
+          text: 'The chat panel closed, so the run stopped.',
+        });
+      }
+      // D49bm: a pause that was asked for and never honoured. The loop only
+      // stops at a safe point, and a turn that returns no tool calls ends the
+      // run — so the request can simply run out of run. Without this line the
+      // button read "Pausing...", the run ended, and nothing said why the pause
+      // never landed. A cancel already narrates itself, so it is not repeated.
+      if (this.pauseRequested && !this.pauseEverParked && ended !== 'cancelled') {
+        const line = 'The run finished before the pause took effect.';
+        bus.emit({ type: 'notice', runId, text: line });
+        this.send('notice', line);
+      }
       this.running = false;
       // D49aq: cleared with the run, so no later approval can report against a
       // run that has ended.
@@ -3849,6 +4058,42 @@ class ChatHost {
         s.stop();
       }
     }
+    // D49bo: hand the queue on, now that this run is fully wound down — state
+    // cleared, writer closed, MCP servers stopped. Deliberately not started when
+    // the panel is gone, which would send a run against a dead webview.
+    if (this.queue.length > 0 && !this.queueHeld) {
+      if (nextQueued(this.queue, ended) !== null) {
+        this.advanceQueue();
+      } else {
+        // Cancel, stuck, or a failure. The hold is sticky until the user asks
+        // for the queue to continue — one cancel must not be quietly undone.
+        this.queueHeld = true;
+        this.postQueue();
+      }
+    }
+  }
+
+  /**
+   * D49bo: start the head of the queue, if nothing is in the way.
+   *
+   * The single place the queue is drained, so "when does a queued message run?"
+   * has one answer: when none is running, none is held, and the panel is open.
+   */
+  private advanceQueue(): void {
+    if (this.disposed || this.running || this.queueHeld) return;
+    const next = this.queue.shift();
+    if (next === undefined) return;
+    this.postQueue();
+    this.startRun(next, {});
+  }
+
+  /** D49bo: the queue is host-authoritative; the view only draws what it is sent. */
+  private postQueue(): void {
+    void this.panel.webview.postMessage({
+      type: 'queue',
+      items: this.queue,
+      held: this.queueHeld,
+    });
   }
 
   /**

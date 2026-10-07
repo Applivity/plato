@@ -21,6 +21,7 @@
  * Run with:  PLATO_FIELD_REAL=1 node scripts/field/run-field.mjs
  */
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
@@ -112,6 +113,13 @@ async function setApiKey(driver, key) {
  */
 let questionCards = [];
 
+/** D49bo: the runs that existed before the current case, so a run the QUEUE
+ *  started by itself can be told apart from one the spec drove. */
+let beforeRuns = new Set();
+
+/** D49bo: the follow-up queued mid-run by real case 30. */
+const QUEUED_TASK = 'now say it again in five words';
+
 /**
  * Waits for a run to finish, answering whatever the model raises.
  *
@@ -125,9 +133,10 @@ let questionCards = [];
  * behaviour (tabs, boxes rather than circles, ticks surviving) is what is under
  * test, so its state is captured while it is live.
  */
-async function drive(field, prompt) {
+async function drive(field, prompt, during = undefined) {
   const before = await field.send(prompt);
   return field.waitRunEnd(before, {
+    during,
     // Approve EVERYTHING. This pass measures whether the gates exist and behave,
     // not whether a denial path works — and a real agent doing real work asks for
     // far more approvals than any hand-written list allows. An earlier version
@@ -276,6 +285,107 @@ describe('Plato field tests — real model', function () {
       },
       onDisk: true,
     },
+    {
+      n: 30,
+      title: 'a queued follow-up becomes the next run, with a real model in front of it',
+      // D49bo against a real model. Deliberately about the QUEUE, not about what
+      // the model says: the first run is asked for something small, a follow-up is
+      // queued while it works, and the assertion is that a second run started by
+      // itself carrying that text. Nothing here depends on the model's choices,
+      // which is what makes it a fair test of a real one.
+      mode: 'auto',
+      prompt: 'Read CORRECTNESS_REVIEW.md and PLATO.md, then describe each in one sentence. Do not edit anything.',
+      during: async (notes) => {
+        await field.waitForRunStart();
+        await field.queueMessage(QUEUED_TASK);
+        const q = await field.queueState();
+        // REPORTED, never failed. A real model can finish the first run inside
+        // the round trip, in which case the queue has already advanced and there
+        // is nothing left to look at — that is the product working, not a fault.
+        // The chip itself is pinned DETERMINISTICALLY by the render suite (it is
+        // listed, numbered, and removable); what this case exists for is the
+        // advance, which `check` asserts from the second transcript.
+        notes.push(q.names.length > 0
+          ? 'queue: the follow-up is waiting, visible, while the first run works'
+          : 'queue: the first run finished before the chip could be read — the advance is what this case asserts');
+      },
+      check: async (events) => {
+        const notes = [];
+        // The queued run is started by the queue, so nothing here can drive it —
+        // it has to be waited for.
+        const runs = await field.waitForRunsDone(beforeRuns, 2, 120000);
+        const tasks = runs.fresh.sort().map((f) => {
+          const lines = readFileSync(f, 'utf8').split('\n');
+          const h = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
+            .find((e) => e !== null && e.kind === 'header');
+          const done = lines.some((l) => l.includes('"run-completed"'));
+          return `${(h ?? {}).task ?? '?'}${done ? '' : ' [unfinished]'}`;
+        });
+        notes.push(`runs this case: ${runs.fresh.length} (${tasks.join(' | ')})`);
+        if (runs.done.length < 2) {
+          notes.push(`QUEUE: expected a second run to start by itself, saw ${runs.done.length}`);
+        } else {
+          const second = runs.done.sort().pop();
+          const text = second === undefined ? '' : readFileSync(second, 'utf8');
+          const header = text.split('\n')
+            .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+            .find((e) => e !== null && e.kind === 'header');
+          if (!text.includes(QUEUED_TASK)) {
+            notes.push(`QUEUE: the second run did not carry the queued message as its task (its task was "${(header ?? {}).task ?? 'unreadable'}"; queued was "${QUEUED_TASK}")`);
+          } else {
+            notes.push('queue: the queued message became the next run, with nobody pressing anything');
+          }
+        }
+        const q = await field.queueState();
+        if (q.names.length !== 0) {
+          notes.push(`QUEUE: ${q.names.length} message(s) still waiting after the queue ran`);
+        }
+        return notes;
+      },
+    },
+    {
+      n: 31,
+      title: 'pause tells the truth about a real run, whichever honest outcome it lands',
+      // D49bm against a real model, and the assertion is deliberately two-sided:
+      // a real run may reach a safe point (a tool call) or may answer in one
+      // breath. BOTH are honest. What is NOT honest — and what this fails on — is
+      // a record that claims a pause that never happened, or one that says
+      // nothing at all after the user asked.
+      mode: 'auto',
+      prompt: 'Read CORRECTNESS_REVIEW.md and PLATO.md, then describe both in one sentence each. Do not edit anything.',
+      during: async (notes) => {
+        await field.waitForRunStart();
+        const clicked = await field.pause();
+        if (clicked.label !== 'Pausing…') {
+          notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}" — a request is not a pause`);
+        }
+        // Give the run a real chance to reach a safe point; if it finishes first,
+        // that is an answer too, and the record has to say so.
+        const parked = await field.waitForPauseLabel('Resume', 25000);
+        if (parked.label === 'Resume') {
+          notes.push('pause: the run parked at a safe point, as the button then said');
+          const released = await field.pause();
+          if (released.label !== 'Pause') {
+            notes.push(`PAUSE: the release left the button reading "${released.label}"`);
+          }
+        } else {
+          notes.push(`pause: the run did not park (the button stayed at "${parked.label}") — the record must say why`);
+        }
+      },
+      check: async (events, log) => {
+        const notes = [];
+        const parked = events.some((e) => e.type === 'notice' && /paused at a safe point/.test(e.text ?? ''));
+        const tooLate = events.some((e) => e.type === 'notice' && /finished before the pause took effect/.test(e.text ?? ''));
+        if (!parked && !tooLate) {
+          notes.push('PAUSE: the pause was asked for and the record accounts for it neither way — the silence this case exists to stop');
+        }
+        if (parked && !/Plato resumed/.test(log)) {
+          notes.push('PAUSE: the run parked but nothing says it continued');
+        }
+        notes.push(`pause: parked=${parked} finished-first=${tooLate}`);
+        return notes;
+      },
+    },
   ].filter((c) => only.length === 0 || only.includes(c.n));
 
   for (const c of cases) {
@@ -288,14 +398,21 @@ describe('Plato field tests — real model', function () {
       // case's question.
       questionCards = [];
       const before = c.onDisk ? repoDiff() : null;
+      beforeRuns = new Set(field.transcripts());
 
       await field.setMode(c.mode);
       const startedAt = Date.now();
-      const events = await drive(field, c.prompt);
+      // D49bm/D49bo: what a case does while the run is still in flight. Its notes
+      // are collected here because they are written BEFORE the run ends, and a
+      // note written into a different array would never be judged.
+      const duringNotes = [];
+      const events = await drive(field, c.prompt, c.during === undefined
+        ? undefined
+        : async () => { await c.during(duringNotes); });
       const secs = Math.round((Date.now() - startedAt) / 1000);
       await field.shot(`real-${c.n}-${c.mode}`);
 
-      const notes = await c.check(events, await field.logText(), secs);
+      const notes = [...duringNotes, ...(await c.check(events, await field.logText(), secs))];
       if (c.onDisk) {
         const after = repoDiff();
         if (after.lines > before.lines) {
@@ -312,7 +429,7 @@ describe('Plato field tests — real model', function () {
 
       console.log(`  real ${c.n} (${c.mode}): ${field.cardsSeen.length} card(s), ${field.decisions.length} decision(s)`);
       for (const n of notes) console.log(`    ${n}`);
-      const failures = notes.filter((n) => /^(CARDS|TRANSCRIPT|DISK|PLAN):/.test(n));
+      const failures = notes.filter((n) => /^(CARDS|TRANSCRIPT|DISK|PLAN|PAUSE|QUEUE|PANEL):/.test(n));
       if (failures.length > 0) throw new Error(`real ${c.n}: ${failures.join(' | ')}`);
     });
   }

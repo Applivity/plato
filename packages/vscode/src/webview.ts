@@ -1107,6 +1107,16 @@ export function chatHtml(): string {
                        cursor:pointer; font-size:13px; line-height:1; }
   .attach-chip .ac-x:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
                              background:rgba(241,76,76,.16); }
+  /* D49bo: the queue. Flex-wrap is on the row itself, so a long queue stacks
+     rather than pushing the Start control off the edge. The Start control only
+     exists while the queue is held, so it reads as the way out of a hold. */
+  .queue-row { flex-wrap:wrap; align-items:center; }
+  .queue-row .queue-start { font-family:inherit; font-size:11px; padding:3px 9px;
+                            border:1px solid var(--pl-border); border-radius:10px;
+                            background:transparent; color:var(--pl-muted);
+                            cursor:pointer; }
+  .queue-row .queue-start:hover { color:var(--vscode-editor-foreground);
+                                  border-color:var(--vscode-focusBorder, #6a6a6a); }
   .bar-btn { font-family:inherit; font-size:11.5px; padding:4px 10px;
              border:1px solid var(--pl-border); border-radius:4px;
              background:transparent; color:var(--pl-muted); cursor:pointer; }
@@ -1332,6 +1342,10 @@ export function chatHtml(): string {
     </div>
   </div>
   <div class="attach-row" id="attachRow" hidden></div>
+  <!-- D49bo: its own row, not the attachment row. Attachments are consumed by
+       the send; a queued message outlives runs, so the two must not share a
+       container that is cleared at different times. -->
+  <div class="attach-row queue-row" id="queueRow" hidden></div>
   <div class="composer-bar">
     <div class="bar-left">
       <button id="cmds" class="cmd-btn" type="button" title="Commands (/…)"
@@ -1363,6 +1377,9 @@ export function chatHtml(): string {
       </div>
     </div>
     <span class="bar-spacer"></span>
+    <!-- D49bm: the label and title are set by paintPause(), never by the click.
+         A button that flipped itself on the click claimed the run was paused
+         while only the REQUEST had been recorded. -->
     <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
     <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
@@ -3694,7 +3711,20 @@ export function chatHtml(): string {
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
-  let paused = false;
+  // D49bm: two different facts, and only one of them is knowable here.
+  // pauseWanted is what the user asked for; pauseParked is what the RUN is
+  // doing, and it is set only by the host, because only the loop knows when it
+  // reached a safe point. The button used to flip its own label on the click,
+  // so it claimed the second while only the first was true \u2014 and when the run
+  // ended before any safe point it claimed a pause that never happened.
+  let pauseWanted = false;
+  let pauseParked = false;
+  function paintPause() {
+    pp.textContent = pauseParked ? 'Resume' : (pauseWanted ? 'Pausing\u2026' : 'Pause');
+    pp.title = pauseParked
+      ? 'Continue the run'
+      : (pauseWanted ? 'Click to cancel the pause' : 'Pause at the next safe point');
+  }
   // Unified footer (D29d): while busy, the main input IS the guide box.
   const GUIDE_PLACEHOLDER =
     'Guide Plato mid-run\u2026 (injected at the next safe point)';
@@ -3703,6 +3733,13 @@ export function chatHtml(): string {
     pp.hidden = !on;
     cx.hidden = !on;
     q.placeholder = on ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER;
+    // Both directions reset. A run must start with no pause history, and a
+    // finished run must not leave a stale label for the next one to show.
+    pauseWanted = false;
+    pauseParked = false;
+    pp.disabled = false;
+    cx.disabled = false;
+    paintPause();
   }
   function sendGuidance() {
     const text = q.value.trim();
@@ -3713,11 +3750,28 @@ export function chatHtml(): string {
   }
   pp.addEventListener('click', () => {
     if (!busy) { return; }
-    paused = !paused;
-    vsapi.postMessage({ type: paused ? 'pause' : 'resume' });
-    pp.textContent = paused ? 'Resume' : 'Pause';
+    if (pauseParked || pauseWanted) {
+      // Both cleared at once, so a second click cannot arrive while the first
+      // round trip is still out and re-pause the run the user just released.
+      pauseWanted = false;
+      pauseParked = false;
+      vsapi.postMessage({ type: 'resume' });
+    } else {
+      pauseWanted = true;
+      vsapi.postMessage({ type: 'pause' });
+    }
+    paintPause();
     refreshChip();
   });
+  /** D49bm: the host's account of the RUN, which is the only account there is. */
+  function setPauseState(parked) {
+    pauseParked = Boolean(parked);
+    // The status line is the other half of the claim. It said "writing" while
+    // the run sat still, so "paused" has to be said there too, not only on a
+    // button the eye can miss.
+    setStatus(pauseParked ? 'Paused' : 'Plato is thinking');
+    paintPause();
+  }
   cx.addEventListener('click', () => {
     if (!busy || cx.disabled) { return; }
     cx.disabled = true;
@@ -3797,7 +3851,7 @@ export function chatHtml(): string {
       row.appendChild(el('span', 'pr-name', c.label));
       row.appendChild(el('span', 'pr-meta', c.usage));
       row.appendChild(el('span', 'pr-sub', c.blurb));
-      row.addEventListener('click', () => { runSlash(c.id); });
+      row.addEventListener('click', () => { runSlash(c.id, payloadFor(c.id)); });
       slashPop.appendChild(row);
       slashRows.push(row);
     }
@@ -3853,12 +3907,34 @@ export function chatHtml(): string {
   // Run a picked command: hand it to the host now. Only a box that actually
   // holds '/command' text is cleared — a prose draft opened via the / button
   // is left intact so running a command never eats the user's message.
-  function runSlash(id) {
+  //
+  // D49bo: the ONE exception is Queue, which is the only command that carries
+  // text. There are two ways to give it one, and both go through here because
+  // the menu is open in both:
+  //   - typed, '/queue <message>' — the message is what follows the token
+  //   - picked from the menu with a prose draft in the box — the draft IS the
+  //     message, and it is consumed
+  // A bare '/queue' gives neither, so the host is asked to state the usage
+  // rather than queue the literal words "/queue".
+  function payloadFor(id) {
+    if (id !== 'queue') { return ''; }
+    const raw = q.value;
+    const tok = '/' + id;
+    if (raw.slice(0, tok.length) === tok) {
+      const rest = raw.slice(tok.length).trim();
+      if (rest.length > 0 && rest.charAt(0) !== '/') { return rest; }
+    }
+    const draft = raw.trim();
+    return draft.length === 0 || draft.charAt(0) === '/' ? '' : draft;
+  }
+  function runSlash(id, text) {
     if (!slashCommands.some((c) => c.id === id)) { return; }
     closeCmdPop();
-    if (q.value.trim() && q.value.charAt(0) === '/') { q.value = ''; }
+    const payload = typeof text === 'string' ? text : '';
+    if (payload !== '' && id === 'queue') { q.value = ''; }
+    else if (q.value.trim() && q.value.charAt(0) === '/') { q.value = ''; }
     q.focus();
-    vsapi.postMessage({ type: 'slash-run', id: id });
+    vsapi.postMessage({ type: 'slash-run', id: id, text: payload });
   }
   function fmtBytes(n) {
     if (n < 1024) return n + ' B';
@@ -3901,6 +3977,46 @@ export function chatHtml(): string {
     attachRow.textContent = '';
     attachRow.hidden = true;
   }
+  // D49bo: the queued follow-ups. Unlike the attachment chips these are NOT
+  // removed locally — removal is by INDEX, and the host is authoritative, so a
+  // local edit that disagreed with it would take the wrong message out. The
+  // host answers within the same tick, so the row never visibly lags.
+  const queueRow = document.getElementById('queueRow');
+  function renderQueue(items, held) {
+    queueRow.textContent = '';
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) { queueRow.hidden = true; return; }
+    queueRow.hidden = false;
+    for (let i = 0; i < list.length; i += 1) {
+      const text = String(list[i] || '');
+      const chip = el('div', 'attach-chip');
+      chip.title = text;
+      chip.appendChild(el('span', 'ac-name', (i + 1) + '. ' + text));
+      const x = document.createElement('button');
+      x.className = 'ac-x';
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Remove queued message ' + (i + 1));
+      x.textContent = '×';
+      x.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'queue-remove', index: i });
+      });
+      chip.appendChild(x);
+      queueRow.appendChild(chip);
+    }
+    // Only ever shown while the queue is HELD. A run that stopped for a reason
+    // that must not be quietly undone leaves the queue waiting for this click.
+    if (held) {
+      const start = document.createElement('button');
+      start.className = 'queue-start';
+      start.type = 'button';
+      start.textContent = 'Start';
+      start.title = 'Send the first queued message now';
+      start.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'queue-start' });
+      });
+      queueRow.appendChild(start);
+    }
+  }
   // q: live command menu + empty-wipe cleanup. A send clears chips locally
   // only; attach-clear is posted solely here (no-send wipe), so attachments
   // that rode in on an ask are never double-cleared.
@@ -3940,7 +4056,9 @@ export function chatHtml(): string {
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const active = slashPop.querySelector('.popover-row.active');
-        if (active && active.dataset.id) { runSlash(active.dataset.id); }
+        if (active && active.dataset.id) {
+          runSlash(active.dataset.id, payloadFor(active.dataset.id));
+        }
         return;
       }
       if (e.key === 'Escape') { return; } // global handler closes + refocuses
@@ -3959,7 +4077,9 @@ export function chatHtml(): string {
     // D44c: a message that starts with a known command runs it NOW (idle or
     // mid-run) instead of sending text — commands are real host actions.
     const lead = leadingCmd(raw);
-    if (lead) { runSlash(lead.slice(1)); return; }
+    // D49bo: the SAME payload rule as the menu, because a typed '/queue msg'
+    // opens the menu and Enter runs the highlighted row either way.
+    if (lead) { runSlash(lead.slice(1), payloadFor(lead.slice(1))); return; }
     if (busy) { sendGuidance(); return; }
     const text = raw.trim();
     addMsg('you', 'You', text);
@@ -4154,10 +4274,20 @@ export function chatHtml(): string {
         // overwritten in the UI on every reload while the host still ran the
         // real one — the button and the permission table disagreeing, silently.
         if (typeof m.mode === 'string') setMode(m.mode);
+        // D49bo: the queue is the host's; this only draws it.
+        if (Array.isArray(m.queue)) renderQueue(m.queue, Boolean(m.queueHeld));
         // D43: empty-composer state rides the same restore payload.
         applyEmptyState(typeof m.hasConnections === 'boolean'
           ? m.hasConnections : true);
         break;
+      // D49bm: the run's own account of whether it is stopped. The payload is
+      // read from m.text because the host's send() builds {type, text, ...meta}
+      // — reading m.parked here found nothing, so the label never left
+      // "Pausing…" while the run sat still, which is the same lie in a new place.
+      case 'pause-state': setPauseState((m.text || {}).parked); break;
+      // D49bo: the whole queue, every time. One authoritative mirror beats
+      // three messages that each have to be kept in step with it.
+      case 'queue': renderQueue(m.items, m.held); break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); refreshChip(); setStatus('writing'); break;
       case 'turn': {
         // Turn boundary: commit the ongoing stream into a finished block so
@@ -4520,11 +4650,9 @@ export function chatHtml(): string {
     streaming = false;
     busy = false;
     clearStatus();
+    // D49bm: setRunUi now resets the pause label, the disabled state and both
+    // pause flags, so cancel-while-parked and a failed run both land clean.
     setRunUi(false);
-    paused = false;
-    pp.textContent = 'Pause';
-    pp.disabled = false;
-    cx.disabled = false;
     scroll();
   }
 

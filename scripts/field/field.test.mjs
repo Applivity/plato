@@ -260,6 +260,70 @@ describe('Plato field tests — real VS Code', function () {
           // card declares how the user answers it; a case that does not gets the
           // safe answer so the run can finish.
           revealAnswer: run.revealAnswer,
+          // D49bm/D49bo: the ONE moment a case acts on a run that is still in
+          // flight — clicking Pause, queueing a follow-up, closing the panel.
+          // The scripts live here rather than in `cases.mjs` because this is
+          // where `field`, `notes` and the transcript baseline are.
+          during: run.during === undefined ? undefined : async () => {
+            if (run.during === 'pause') {
+              const started = await field.waitForRunStart();
+              notes.push(`pause: the control is up and says "${started.label}"`);
+              const clicked = await field.pause();
+              if (clicked.label !== 'Pausing…') {
+                notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}" — a request is not a pause`);
+              }
+              const parked = await field.waitForPauseLabel('Resume');
+              if (parked.label !== 'Resume') {
+                notes.push(`PAUSE: the run never parked — the button stayed at "${parked.label}"`);
+              } else {
+                notes.push('pause: the run parked, and only then did the button offer Resume');
+              }
+              const released = await field.pause();
+              if (released.label !== 'Pause') {
+                notes.push(`PAUSE: the release left the button reading "${released.label}"`);
+              }
+            } else if (run.during === 'pauseTooLate') {
+              await field.waitForRunStart();
+              const clicked = await field.pause();
+              if (clicked.label !== 'Pausing…') {
+                notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}"`);
+              }
+              notes.push('pause-too-late: asked while the final answer was still being written');
+            } else if (run.during === 'queueWhileBusy') {
+              await field.waitForRunStart();
+              await field.queueMessage('write the release notes');
+              const q = await field.queueState();
+              if (q.names.length === 0) {
+                notes.push('QUEUE: the queued message was never shown, so nothing could be taken back');
+              } else {
+                notes.push(`queue: ${q.names.length} message waiting`);
+              }
+            } else if (run.during === 'queueThenCancel') {
+              await field.waitForRunStart();
+              await field.queueMessage('first follow-up');
+              await field.queueMessage('second follow-up');
+              const q = await field.queueState();
+              notes.push(`queue: ${q.names.length} message(s) waiting before the cancel`);
+              await field.cancel();
+            } else if (run.during === 'closePanel') {
+              await field.waitForRunStart();
+              await field.closeChat();
+              // Wait for the run to END, which is the claim. The panel is NOT
+              // reopened: the harness cannot find the iframe of a webview panel
+              // it has closed, and a reopen that always failed would turn this
+              // case into a harness story instead of a product one.
+              const done = await field.waitForRunsDone(before, 1, 40000);
+              notes.push(`panel close: ${done.done.length} run(s) ended after the tab was closed`);
+              // Put the panel back so the NEXT case can start from a normal
+              // window. Best effort by design: it exists for the cases after this
+              // one, not for this case's assertions, which are already read.
+              try {
+                await field.reopenChat();
+              } catch (e) {
+                notes.push(`panel close: the chat could not be reopened for the following cases (${e.message})`);
+              }
+            }
+          },
           question: run.question ? async () => {
             // Test 6's own ask: pick two options, jump to another tab, come back,
             // and check the picks survived the round trip. Every outcome below is
@@ -288,7 +352,15 @@ describe('Plato field tests — real VS Code', function () {
         });
 
         await field.shot(label);
-        const screen = await field.logText();
+        // D49bn: case 28 CLOSES the chat panel, and once it is closed the
+        // harness cannot step back inside a webview panel — a fresh one is
+        // created but its iframe is never found, and that failure is the
+        // harness's, not the product's. So that case is judged from the run
+        // record, which is where its assertion has teeth: the falsification in
+        // DECISIONS shows the case fails when the run is not stopped. Saying so
+        // here is the point — quietly skipping the screen half would be exactly
+        // the kind of silent gap this file exists to remove.
+        const screen = run.during === 'closePanel' ? '' : await field.logText();
 
         // --- what the SCREEN says ------------------------------------------
         const cardsThisRun = field.cardsSeen.filter((x) => x.tag === `case ${c.n} run ${i + 1}`);
@@ -344,6 +416,77 @@ describe('Plato field tests — real VS Code', function () {
             notes.push('CANCEL: the run does not say it was cancelled, so nothing tells the user the Stop worked');
           }
           notes.push(`cancel: card-dismissed=${!stillOpen} says-cancelled=${/cancelled/i.test(screen)}`);
+        }
+        // D49bm: the pause is only honest if the RECORD agrees with the button.
+        // The button is checked live, in `during`; these check that the run kept
+        // the same account, and that a pause which never landed is named rather
+        // than swallowed.
+        if (c.n === 24) {
+          if (!screen.includes('Plato paused at a safe point.')) {
+            notes.push('PAUSE: nothing on screen says the run stopped, so the pause left no record');
+          }
+          if (!screen.includes('Plato resumed.')) {
+            notes.push('PAUSE: nothing on screen says the run continued, so a paused run cannot be told from a stopped one');
+          }
+          if (!events.some((e) => e.type === 'notice' && /paused at a safe point/.test(e.text ?? ''))) {
+            notes.push('PAUSE: the transcript has no record of the park, so the run cannot be read back');
+          }
+          notes.push(`pause: recorded=${events.filter((e) => e.type === 'notice' && /paus/i.test(e.text ?? '')).length} notice(s)`);
+        }
+        if (c.n === 25) {
+          if (screen.includes('Plato paused at a safe point.')) {
+            notes.push('PAUSE: the run claims it paused, but it never reached a safe point to pause at');
+          }
+          if (!screen.includes('The run finished before the pause took effect.')) {
+            notes.push('PAUSE: the pause was asked for and never landed, and nothing says so — this is the silence the case exists to stop');
+          }
+          notes.push('pause-too-late: reported');
+        }
+        // D49bo: the queue advancing by itself, and — the sharper half — NOT
+        // advancing when the run before it was cancelled.
+        if (c.n === 26 || c.n === 27) {
+          const runs = await field.waitForRunsDone(before, run.expectRuns, 60000);
+          if (runs.done.length !== run.expectRuns) {
+            notes.push(`QUEUE: expected ${run.expectRuns} finished run(s), saw ${runs.done.length}`);
+          }
+          const q = await field.queueState();
+          if (c.n === 26) {
+            const second = runs.done.sort().pop();
+            const text = second === undefined ? '' : readFileSync(second, 'utf8');
+            if (!text.includes('write the release notes')) {
+              notes.push('QUEUE: the second run did not carry the queued message as its task');
+            } else {
+              notes.push('queue: the queued message became the next run, with nobody pressing anything');
+            }
+            if (q.names.length !== 0) {
+              notes.push(`QUEUE: the queue still shows ${q.names.length} message(s) after it was sent`);
+            }
+          } else {
+            if (q.names.length !== 2) {
+              notes.push(`QUEUE: a cancelled run should leave both messages waiting, saw ${q.names.length}`);
+            }
+            if (!q.start) {
+              notes.push('QUEUE: the queue is held but offers no way to continue it');
+            }
+            if (!/cancelled/i.test(screen)) {
+              notes.push('CANCEL: the run does not say it was cancelled');
+            }
+            notes.push('queue: held after the cancel, with a way to continue');
+          }
+        }
+        // D49bn: closing the panel stops the run, and says why. Judged from the
+        // record alone — see the note where `screen` is read — and the record is
+        // the right witness here for a second reason: the same bus notice is what
+        // puts the row in the chat log, so the transcript proves the row was
+        // written even though this case cannot look at the panel it was written in.
+        if (c.n === 28) {
+          if (!events.some((e) => e.type === 'notice' && /panel closed/.test(e.text ?? ''))) {
+            notes.push('PANEL: the run carries no record that the panel closing is what stopped it');
+          }
+          if (!events.some((e) => e.type === 'run-completed' && e.reason === 'cancelled')) {
+            notes.push('PANEL: the run did not end as cancelled, so it may still be going');
+          }
+          notes.push('panel close: the run stopped and the record names the cause');
         }
         if (c.n === 12) {
           // D49aw. The card must have appeared at all — without this check the
@@ -719,8 +862,11 @@ describe('Plato field tests — real VS Code', function () {
         // one decision later — case 22's "no card was drawn" note would have
         // passed a case in which no card appeared at all. **This list is part of
         // writing a check, not an afterthought to it.**
+        //
+        // D49bm/D49bo: `PAUSE`, `QUEUE` and `PANEL` join it in the same breath as
+        // the checks that use them, for exactly that reason.
         const failures = notes.slice(mark).filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL):/.test(n),
         );
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes.slice(mark)) console.log(`    ${n}`);

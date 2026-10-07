@@ -961,4 +961,119 @@ export const CASES = [
       },
     ],
   },
+  {
+    n: 24,
+    title: 'Pause stops the run at a safe point, and the button says so only then',
+    // D49bm. The defect this exists for: the button flipped its own label to
+    // "Resume" the instant it was clicked, so it claimed the run had stopped
+    // while only a REQUEST had been recorded. The loop only looks at the flag at
+    // a safe point — before a turn, or before a tool call — so between the click
+    // and the next safe point the two really are different, and the control has
+    // to say which one is true.
+    //
+    // The 3-second hold on the first step is what makes the run catchable at
+    // all: without it the whole scripted run is over in microseconds and there
+    // is no window in which a driver could click anything.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Read two files and tell me what they say.',
+        steps: [
+          { delayMs: 3000, calls: [{ tool: 'read_file', args: { path: 'CORRECTNESS_REVIEW.md' } }] },
+          { delayMs: 1500, calls: [{ tool: 'read_file', args: { path: 'PLATO.md' } }] },
+          { text: 'Both read.' },
+        ],
+        cards: [],
+        during: 'pause',
+      },
+    ],
+  },
+  {
+    n: 25,
+    title: 'A pause that never lands says so, instead of vanishing',
+    // D49bm's other half, and the case a user actually hits: the model is
+    // writing its final answer, which is exactly when someone reaches for
+    // Pause — and a turn that returns no tool calls ends the run, so the loop
+    // never reaches a safe point to stop at. Before this the button said
+    // "Pausing…", the run ended, and nothing ever explained what happened.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Say what the review file is for.',
+        steps: [
+          { delayMs: 2500, text: 'It is a review of the demo project, written for the field tests.' },
+        ],
+        cards: [],
+        during: 'pauseTooLate',
+      },
+    ],
+  },
+  {
+    n: 26,
+    title: 'A queued follow-up runs by itself when the run before it finishes',
+    // D49bo. The gap this closes: while a run is active the composer sends
+    // GUIDANCE into that run, so there was no way to say "when you are done, do
+    // this next". The third step is consumed by the queued run — the harness
+    // sets the script once per run, and the second run is started by the queue,
+    // not by the spec.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Read the review file.',
+        steps: [
+          { delayMs: 3000, calls: [{ tool: 'read_file', args: { path: 'CORRECTNESS_REVIEW.md' } }] },
+          { text: 'Read it.' },
+          { text: 'Wrote the release notes.' },
+        ],
+        cards: [],
+        during: 'queueWhileBusy',
+        expectRuns: 2,
+      },
+    ],
+  },
+  {
+    n: 27,
+    title: 'A cancelled run does not hand the queue on — it waits to be asked',
+    // D49bo. Handing the next item over one instant after the user asked Plato
+    // to stop would take the stop back without being asked. The hold is the
+    // reason the queue row has a Start control at all.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Read the review file.',
+        steps: [
+          { delayMs: 12000, calls: [{ tool: 'read_file', args: { path: 'CORRECTNESS_REVIEW.md' } }] },
+        ],
+        cards: [],
+        during: 'queueThenCancel',
+        expectRuns: 1,
+      },
+    ],
+  },
+  {
+    n: 28,
+    title: 'Closing the chat panel stops the run instead of leaving it going',
+    // D49bn. The panel is the run's only supervisor: the buttons, the cards and
+    // the log all live in it. Closing it used to leave the run calling tools and
+    // writing files with nothing able to see or stop it — and in `auto` there
+    // are no cards, so nothing would even ask.
+    //
+    // **THIS CASE MUST STAY LAST.** It closes the chat panel, and the harness
+    // cannot step back inside a webview panel once it has been closed — the new
+    // panel's iframe is never found. The case's own claims are read from the run
+    // record, so it passes; a case placed AFTER it would start from a window the
+    // driver can no longer reach into, and would fail for a reason that has
+    // nothing to do with the product.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Read the review file.',
+        steps: [
+          { delayMs: 25000, calls: [{ tool: 'read_file', args: { path: 'CORRECTNESS_REVIEW.md' } }] },
+        ],
+        cards: [],
+        during: 'closePanel',
+      },
+    ],
+  },
 ];

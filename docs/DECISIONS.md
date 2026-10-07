@@ -3835,6 +3835,179 @@ it, so what he reloaded into is known rather than assumed.
 
 ---
 
+**D49bm — pause says what is true, and the run record says it too (founder, 2026-10-07).**
+
+**The founder's audit question was "do they really mean what they claim", and for Pause the answer was
+no.** `pause()` set a flag that the loop looks at in **exactly two places** — before a turn and before
+each tool call — while the button flipped its own label to *Resume* **on the click**. So between the
+click and the next safe point the control claimed the run had stopped while only a REQUEST had been
+recorded; and when a turn returned no tool calls the run ended without ever reaching a gate, so the
+pause was claimed and never happened. **It also left no record anywhere** — not the chat, not the
+transcript — so afterwards a run that was paused could not be told from one that was not. And **no
+field case had ever clicked it**: the controller was unit-tested in isolation, and the wiring from
+button to loop lives in the shell, which has no unit tests at all.
+
+**The design follows from one fact: only `gate()` knows the run has stopped.** So `RunController`
+gained an optional `onPark?: (parked: boolean) => void`, fired from `gate()` — and the three rules in
+that body are each a bug avoided rather than a style choice:
+
+- **Edge-triggered.** `false` fires only when a park actually happened, or every ordinary gate would
+  report a resume that never occurred. Pinned by a test that an idle gate announces nothing.
+- **`true` fires on ENTERING the wait**, not before it, so a resume-then-pause inside one wait cannot
+  leave the outside believing the run was never parked.
+- **The callback is isolated with a `try`/`catch`, exactly as `AgentBus.emit` is.** Without it a throw
+  from the UI callback propagates out of the `await` and **kills the run** — the controller has to be
+  as hard to break as the bus it reports to. A test asserts a throwing listener does not reject
+  `gate()`, and the falsification removes the guard and watches it fail.
+
+**The UI is three states derived from two different facts**, and the distinction is the whole point:
+`pauseWanted` is what the user asked for and is known in the view at once; `pauseParked` is what the
+RUN is doing and is only ever set by the host. The label is `Pause` → `Pausing…` → `Resume`, the click
+on `Pausing…` takes the request back, and the status line says `Paused` while the run is genuinely
+stopped — because it previously said *writing* while the run sat still, which is the same claim in a
+second place. Both flags clear together on a click, so a second click cannot arrive while the first
+round trip is out and re-pause a run the user just released.
+
+**The pause that never lands is named rather than swallowed.** In the run's `finally`, if a pause was
+requested, never parked, and the run was not cancelled, one notice goes out: *"The run finished before
+the pause took effect."* Cancel already narrates itself, so it is not doubled.
+
+**Two defects were found by building this, both in the same window — the seconds between the view
+showing its buttons and the host reaching `running = true`.** The view's controls appear the instant
+`ask` is posted, but the host reads the key, fills the model pool and starts MCP servers first, and
+that last step can take twenty seconds. **A pause clicked in that window was dropped in silence**, and
+so was a cancel — which is worse, because losing a cancel means Plato starts the run the user just
+asked it to stop. Both are now held (`pendingPause`, `pendingCancel`) and applied when the run exists;
+a pending cancel means the run never starts, and says so.
+
+**Proving it found a third defect that no render suite could have seen.** The host's `send()` builds
+`{type, text, …meta}`, so `send('pause-state', {parked})` arrives as `m.text.parked` — while the view
+read `m.parked`. The render suite passed because it *fakes* the host and posted the shape the view
+expected; the field case is what caught it, through the label never leaving `Pausing…` while the run
+sat still. **The render suite now posts the host's real shape**, so the fake cannot agree with a view
+that is wrong about its host.
+
+**Fields, verified.** Field case **24** clicks Pause on a run the stub holds open with a new
+`delayMs` (without it the scripted run is over in microseconds and there is no window to click in),
+asserts the label is `Pausing…` and **not** `Resume`, waits for the park, asserts `Resume` and the
+`paused` row, then releases and asserts the run finishes. Case **25** asks to pause during the final
+answer and asserts the run completed **and** the record carries the too-late notice and does **not**
+claim a park. Real-model case **31** accepts either honest outcome and asserts only that the record
+accounts for the request one way or the other — **the silence is what fails.**
+
+**Known limit, recorded rather than hidden:** a pause still cannot stop a model call already in
+flight. The fix is honesty, not new power. The pre-run window is covered by the held flags and
+exercised opportunistically by case 24; making it deterministic would need test-only machinery in the
+host's startup path, which was judged not worth it.
+
+**Falsifications, each reverted and re-run green:** removing the isolation guard fails the throwing
+listener test; removing the edge guard fails both "announces nothing" tests; restoring the
+label-flips-on-click behaviour fails three render assertions **including the one written for exactly
+that defect**; and dropping the `parked` payload shape fails the field case.
+
+---
+
+**D49bn — closing the chat panel stops the run (founder, 2026-10-07).**
+
+**The gap, in the founder's own framing of the controls: the panel IS the run's supervisor.** The
+buttons, the cards and the log all live in it — and closing it did nothing to the run. `onDidDispose`
+archived the chat and tore down the watchers and **never touched the controller**. The run kept calling
+tools and writing files with no UI, no Pause, no Cancel, and **no timeout on a parked card**, so the
+first write in `edit` parked forever on a card nobody could answer. In `auto` there are no cards at
+all, so nothing would even ask. **The founder chose "stop the run" over "keep it running in the
+background", and the reasoning is that nothing in the code ever claimed a run survives the tab.**
+
+`dispose()` now sets `disposed` first, then releases parked cards and cancels when a run is active,
+then **awaits the run promise before archiving** — the cancelled run pushes its last rows and closes
+its writer on the way out, so archiving first would persist a log that was about to change. A run
+still being prepared has no controller to cancel, so `run()` checks `disposed` itself once it exists.
+
+**The record of WHY is written by the run, in its `finally`, and that placement is load-bearing.** A
+run still being prepared has no bus yet, and a bus notice emitted before the first `run-started` is
+**dropped for having no file to land in** — which is exactly the silence this entry is about. Writing
+it from `dispose()` would have produced a notice that vanishes in the case that needs it most.
+
+**Field case 28 closes the real tab and asserts the run ended cancelled with the panel-close notice in
+the record.** Building it found the sharpest defect of the three: **`dispose()` never reached its
+`cancel()`**, because `releaseParkedCards()` posts to a webview that is already gone and the throw
+abandoned the teardown half-done. The symptom was a transcript carrying the panel-close notice **next
+to** `run-completed {reason: 'complete'}` — the run said its supervisor had closed and then reported
+finishing normally. `send()` now survives a disposed panel, and the falsification rethrows and watches
+case 28 fail on exactly that.
+
+**THE HARNESS LIMIT, stated because the case's coverage is not what it looks like.** Case 28 asserts
+from the **run record only**. The harness cannot step back inside a webview panel it has closed — a
+new one is created but its iframe is never found — so the on-screen half is not checked, and the spec
+skips the screen read for that one case by name rather than quietly. The record is the right witness
+anyway: the same bus notice is what writes the chat row, so the transcript proves the row was written
+even though this case cannot look at the panel it was written in. **Case 28 must stay LAST** — it
+leaves the driver outside a frame it cannot re-enter.
+
+**Two harness routes were tried and both failed in a FULL-suite run while working in isolation**,
+which is a shape worth recognising: `EditorView.closeEditor('Plato Chat')` left the panel open once
+the earlier cases had crowded the tab bar and pushed it behind the overflow control, and the command
+palette — `executeCommand('workbench.action.closeActiveEditor')` — never became visible at all that
+late, timing out after five seconds. The tab's own close button is now clicked **in the workbench
+DOM**, which needs neither the tab to be visible nor the palette to open.
+
+---
+
+**D49bo — `/queue`: a follow-up can be held for the next run (founder, 2026-10-07).**
+
+**The founder's read was that steering already exists, and he was right — so `/steer` was not built.**
+Typing while a run is active already posts guidance, which queues FIFO and is injected into the
+model's next turn; a command for it would be a rename. **`/queue` is the genuinely missing thing**, and
+the gap is that one channel carries two meanings: while a run is active Enter means *change this run*,
+while idle it means *start a task*, and there is no way to say **"when you are done, do this next."** A
+user who types a follow-up mid-run gets it injected into the current run, where the model may blend the
+two or drop the first. Checked against the field before cutting: Claude Code ships exactly this with
+three priorities — send now, after the current step, after the whole reply as a new turn — and Plato
+had working equivalents of the first two and lacked the third.
+
+**The advance rule lives in core, and it is narrower than the obvious rule.** `nextQueued(queue,
+reason)` returns the head only for `complete` and `cap`. **"Not cancelled" was the first version and it
+is not enough**: an **errored** run would burn the whole queue against a dead provider, one run at a
+time, and a **stuck** run would drain it into the loop the model could not escape. A failure carries no
+reason at all, so `null` holds too. The hold is sticky until the user asks for the queue to continue —
+one cancel must not be quietly undone by the next run that happens to end cleanly.
+
+**`/queue` is the first command that carries TEXT**, which needed a small piece of plumbing: the
+webview kept only the command token. `leadingCmd` now yields the remainder, `runSlash(id, text)` posts
+it, and the four older commands ignore the argument exactly as before. **The typed path and the
+menu-picked path share one payload rule**, and that is not tidiness — typing `/queue fix the tests`
+opens the command menu, so Enter runs the highlighted row, and an earlier version sent that row with an
+empty payload: the message was dropped and the host answered with the usage note instead. **The field
+driver found it before the field run existed**, by typing the way a person does. A bare `/queue` sends
+nothing and the host states the usage rather than queueing the literal word.
+
+**The queue is in memory only, deliberately.** A reload kills the run too, and a persisted non-empty
+queue would either sit there forever or **start a run the moment the panel opened** — a run nobody
+asked for. The chips reuse the attachment vocabulary in their **own row**, because an attachment is
+consumed by the send while a queued message outlives runs, so one row could not serve both. Removal
+posts the **index** and is not applied locally: the host is authoritative and a local edit that
+disagreed with it would take out the wrong message.
+
+**Verified.** Core: `nextQueued` over all five endings, and the park tests. Render: a new `queue` suite
+(23 assertions) — the list is visible, numbered and removable, an empty queue shows no row, `Start`
+appears only while held, removal posts the index and does not edit the view, a restored panel draws the
+queue it is sent, and a long queue does not push the panel sideways. **Field case 26** queues mid-run
+and asserts a second run started by itself carrying the queued task, with the stub's script covering
+both runs because the harness sets the script once per run and the second run is started by the queue;
+**case 27** cancels and asserts both messages are still waiting with a way to continue. **Real-model
+case 30** does the same against a real model, and asserts the advance from the second transcript rather
+than from the chip, because a real run can finish inside the round trip. **Acceptance clause 8** was
+added for all of this: *"The run controls mean what they say."*
+
+**Falsifications, each reverted and re-run green:** draining on cancel fails the hold test; making the
+view edit the queue locally fails the render assertion; and dropping the payload rule fails the typed
+`/queue` assertion in both the render suite and the field case.
+
+**Known limit:** guidance typed during the model's final answer still reaches nobody **in that run** —
+the row is recorded and the words carry into the next run's history. That is untouched here; `/queue`
+is the answer for a deliberate follow-up.
+
+---
+
 **D49bk — the mode-change question card is closed, because its answer would be a lie (founder,
 2026-10-07).**
 

@@ -191,6 +191,18 @@ const server = createServer(async (req, res) => {
   }
 
   const step = steps[cursor];
+  // D49bm: a step may hold its answer for a moment before it is sent. Without
+  // this the stub replies in microseconds and a whole run is over before a
+  // driver has clicked anything, so no test could catch a run mid-flight — and
+  // "mid-flight" is exactly where the pause control has to be tested. A model
+  // that is thinking is also when a user reaches for Pause.
+  const wait = Number(step.delayMs) || 0;
+  if (wait > 0) {
+    await new Promise((r) => setTimeout(r, wait));
+    // A cancel during the wait destroys the request; writing to it would throw
+    // and look like a stub crash rather than the stop the user asked for.
+    if (res.writableEnded || res.destroyed) return;
+  }
   log[log.length - 1].consumedStep = cursor;
   cursor += 1;
   if (body.stream === true) return playStep(res, step);

@@ -28,6 +28,7 @@ import {
   AgentBus,
   RunController,
   type RefusalReason,
+  type RunEndReason,
   type ToolPhase,
 } from './bus.js';
 import { DEFAULT_RETRY, withRetry } from '../providers/retry.js';
@@ -472,7 +473,7 @@ export interface LoopResult {
    * Why the run ended: natural completion, a truncated answer, a cancel, or the
    * user stopping a run that looked stuck (D49aw).
    */
-  reason: 'complete' | 'cap' | 'cancelled' | 'stuck';
+  reason: RunEndReason;
   /**
    * D49aw: the sentence to show when a run ended `stuck`. Written here rather
    * than in the shell so the wording is testable, and so the done note and the

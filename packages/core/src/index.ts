@@ -18,6 +18,7 @@ export * from './runtime/workerRole.js';
 export * from './runtime/attachments.js';
 export * from './runtime/commands.js';
 export * from './runtime/bus.js';
+export * from './runtime/queue.js';
 export * from './runtime/cost.js';
 export * from './runtime/transcript.js';
 export * from './runtime/retention.js';

@@ -534,6 +534,254 @@ export class Field {
     await this.driver.sleep(SETTLE_MS);
   }
 
+  /**
+   * D49bm: reads the pause button as the user sees it, without clicking.
+   *
+   * The label is the whole point of the control: "Pausing…" means the request is
+   * recorded and the run is still going, "Resume" means the run has actually
+   * stopped. A test that only clicked would not be able to tell the two apart.
+   */
+  async pauseState() {
+    const btn = await this.driver.findElement(By.id('pp'));
+    return {
+      hidden: (await btn.getAttribute('hidden')) !== null,
+      label: (await btn.getText()).trim(),
+      title: await btn.getAttribute('title'),
+    };
+  }
+
+  /** Clicks Pause or Resume, whichever the button currently offers. */
+  async pause() {
+    const btn = await this.driver.findElement(By.id('pp'));
+    await this.clickElement(btn);
+    this.log('  clicked the pause control');
+    return this.pauseState();
+  }
+
+  /**
+   * Waits for a run to be in flight.
+   *
+   * `send` returns as soon as the prompt is typed, so anything that acts on a
+   * RUNNING run has to wait for the run control to appear first. Clicking Pause
+   * before that is a no-op — the handler ignores a click outside a run — and the
+   * case would report a pause that was never asked for.
+   */
+  async waitForRunStart(timeoutMs = 20000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try {
+        const st = await this.pauseState();
+        if (!st.hidden) return st;
+      } catch {
+        // The frame can lag the click that opened the run; keep waiting.
+      }
+      await this.driver.sleep(200);
+    }
+    throw new Error(
+      `no run started within ${timeoutMs}ms — the run control never appeared, so nothing could be tested`,
+    );
+  }
+
+  /**
+   * Waits for the pause button to reach a label, and returns whatever it holds
+   * when the wait runs out — so the caller can report what it actually saw
+   * rather than a timeout with no state in it.
+   */
+  async waitForPauseLabel(want, timeoutMs = 20000) {
+    const started = Date.now();
+    let last = null;
+    while (Date.now() - started < timeoutMs) {
+      last = await this.pauseState();
+      if (last.label === want) return last;
+      await this.driver.sleep(200);
+    }
+    return last;
+  }
+
+  /**
+   * D49bo: types '/queue <message>' and presses Enter — the typed path, which
+   * is the one a user reaches for. The command menu is open by then (the '/'
+   * opened it), so this also exercises Enter running the highlighted row.
+   */
+  async queueMessage(text) {
+    const q = await this.driver.findElement(By.id('q'));
+    await q.click();
+    await q.sendKeys('/queue ' + text);
+    await this.driver.sleep(250);
+    await q.sendKeys(Key.ENTER);
+    await this.driver.sleep(SETTLE_MS);
+    this.log('  queued: ' + text);
+  }
+
+  /** The queue row, as drawn. Empty `names` means the row is hidden. */
+  async queueState() {
+    const row = await this.driver.findElement(By.id('queueRow'));
+    const hidden = (await row.getAttribute('hidden')) !== null;
+    if (hidden) return { hidden: true, names: [], start: false };
+    const names = await this.driver.executeScript(
+      'return [...arguments[0].querySelectorAll(".ac-name")].map((e) => e.textContent);',
+      row,
+    );
+    const starts = await this.driver.findElements(By.css('#queueRow .queue-start'));
+    return { hidden: false, names: names, start: starts.length > 0 };
+  }
+
+  /** Clicks the × on a queued message, 0-based. */
+  async queueRemove(i) {
+    const boxes = await this.driver.findElements(By.css('#queueRow .ac-x'));
+    if (boxes.length <= i) {
+      throw new Error(`asked to remove queued message ${i} of ${boxes.length}`);
+    }
+    await this.clickElement(boxes[i]);
+    await this.driver.sleep(SETTLE_MS);
+    this.log(`  removed queued message ${i + 1}`);
+  }
+
+  /** Clicks Start, which is the only way a HELD queue continues. */
+  async queueStart() {
+    const btn = await this.driver.wait(
+      until.elementLocated(By.css('#queueRow .queue-start')), 10000);
+    await this.clickElement(btn);
+    await this.driver.sleep(SETTLE_MS);
+    this.log('  started the held queue');
+  }
+
+  /** Types into the composer without sending — the queue command reads it. */
+  async type(text) {
+    const q = await this.driver.findElement(By.id('q'));
+    await q.click();
+    await q.sendKeys(text);
+    await this.driver.sleep(200);
+  }
+
+  /**
+   * D49bn: closes the chat panel the way a user does — the × on its tab.
+   *
+   * The tab lives in the workbench, not inside the webview frame, so the driver
+   * has to step out first and back in afterwards, exactly as `newChat` does for
+   * VS Code's own modal.
+   */
+  async closeChat() {
+    await this.webview.switchBack();
+    this.log('  closing the chat panel');
+    // The tab's own close button, clicked in the workbench DOM.
+    //
+    // Two other routes were tried and both failed in a FULL-suite run while
+    // working in isolation. `EditorView.closeEditor('Plato Chat')` left the panel
+    // open once the earlier cases' editors had crowded the tab bar, because the
+    // tab is then behind the overflow control. And the command palette —
+    // `executeCommand('workbench.action.closeActiveEditor')` — never became
+    // visible at all that late in a run, timing out after five seconds. A direct
+    // click on the tab's close button needs neither the tab to be visible nor the
+    // palette to open.
+    //
+    // Still verified, because a click that misses would let the case pass for the
+    // wrong reason: the caller asserts the RUN ended as cancelled, which a close
+    // that did nothing cannot produce. The falsification in DECISIONS shows
+    // exactly that failure.
+    const result = await this.driver.executeScript(`
+      const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
+      const tab = tabs.find((t) =>
+        ((t.getAttribute('aria-label') || '') + ' ' + (t.textContent || ''))
+          .includes('Plato Chat'));
+      if (!tab) return 'no-tab:' + tabs.length;
+      const btn = tab.querySelector('.tab-actions-right .action-label')
+        || tab.querySelector('.close-action')
+        || tab.querySelector('.codicon-close')
+        || tab.querySelector('[title="Close"]');
+      if (!btn) return 'no-close-button';
+      btn.click();
+      return 'clicked';
+    `);
+    if (result !== 'clicked') {
+      throw new Error(`the Plato Chat tab could not be closed (${result})`);
+    }
+    await this.driver.sleep(1500);
+    this.log('  closed the chat panel');
+  }
+
+  /**
+   * D49bn: opens the chat again and steps back inside its frame.
+   *
+   * The panel is built from scratch, so its iframe arrives later than a fixed
+   * sleep allows — measured at over five seconds in a full-suite run, where the
+   * window still had the earlier cases' editors to restore. Retried rather than
+   * guessed at, and a failure names what it was waiting for.
+   */
+  async reopenChat() {
+    const { EditorView, Workbench } = await import('vscode-extension-tester');
+    const view = new EditorView();
+    await new Workbench().executeCommand('Plato: Open Chat');
+    let titles = [];
+    for (let i = 0; i < 5; i += 1) {
+      await this.driver.sleep(1000);
+      // Back to the workbench first, EVERY pass: the panel was closed while the
+      // driver was inside its iframe, and a lookup made from a dead frame context
+      // fails for a reason that has nothing to do with whether the panel exists.
+      try {
+        await this.webview.switchBack();
+      } catch {
+        /* already at the top level */
+      }
+      try {
+        titles = await view.getOpenEditorTitles();
+      } catch {
+        titles = [];
+      }
+      const title = titles.find((t) => /plato/i.test(t));
+      if (title !== undefined) {
+        // Bring the tab to the front BEFORE looking for its iframe. A webview
+        // panel that is not the visible tab has no iframe in the DOM, so the
+        // lookup fails with a message about the VS Code version that has nothing
+        // to do with what went wrong.
+        try {
+          await view.openEditor(title);
+          await this.driver.sleep(1000);
+        } catch {
+          /* it may already be the active tab */
+        }
+        await this.webview.switchToFrame();
+        await this.driver.sleep(400);
+        this.log('  reopened the chat panel');
+        return;
+      }
+    }
+    throw new Error(
+      `the chat panel did not come back within 15s — open editors: ${titles.join(', ') || 'none'}`,
+    );
+  }
+
+  /**
+   * D49bo: waits for `want` NEW runs to finish on their own.
+   *
+   * The queue advances by itself, so nothing the spec does starts the second
+   * run — it has to be waited for. A run counts as finished only when its
+   * transcript carries an ending, because the file appears when the run STARTS.
+   */
+  async waitForRunsDone(before, want, timeoutMs = 60000) {
+    const started = Date.now();
+    const freshDone = () => {
+      const fresh = this.transcripts().filter((f) => !before.has(f));
+      const done = fresh.filter((f) => {
+        try {
+          const t = readFileSync(f, 'utf8');
+          return t.includes('"run-completed"') || t.includes('"run-failed"');
+        } catch {
+          return false;
+        }
+      });
+      return { fresh, done };
+    };
+    while (Date.now() - started < timeoutMs) {
+      if (freshDone().done.length >= want) {
+        await this.driver.sleep(900);
+        return freshDone();
+      }
+      await this.driver.sleep(400);
+    }
+    return freshDone();
+  }
+
   /** Clicks Allow once / Deny / Approve-all on the open card. */
   async decide(which) {
     const xpath =
@@ -577,9 +825,10 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '', revealAnswer = undefined } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '', revealAnswer = undefined, during = undefined } = {}) {
     const started = Date.now();
     let step = 0;
+    let didDuring = false;
     let finished = null;
     let answered = 0;
     let cancelled = false;
@@ -592,6 +841,15 @@ export class Field {
     this.watchLines = 0;
 
     while (Date.now() - started < timeoutMs) {
+      // D49bm/D49bo: the ONE moment a case gets to act on a run that is still in
+      // flight — clicking Pause, queueing a follow-up, pressing Stop. It runs
+      // once, on the first pass, while the model is still thinking. A case that
+      // needs it must give the stub a `delayMs`, or the run is over before this
+      // line runs at all.
+      if (finished === null && !didDuring) {
+        didDuring = true;
+        if (during !== undefined) await during();
+      }
       // A question card must NEVER leave the harness waiting — whether or not the
       // case declared one, and however many times the model asks. A run that stops
       // for an answer nobody gives needs a person sitting next to it, and removing

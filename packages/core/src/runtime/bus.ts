@@ -5,6 +5,13 @@
  */
 import type { Mode } from './modes.js';
 
+/**
+ * How a run ended. Named once here (D49bo) rather than repeated inline, because
+ * the queue rule in `queue.ts` branches on it and a second spelling of the same
+ * union is a union that can drift.
+ */
+export type RunEndReason = 'complete' | 'cap' | 'cancelled' | 'stuck';
+
 export type ToolPhase =
   | 'requested'
   | 'allowed'
@@ -115,7 +122,7 @@ export type AgentEvent =
       type: 'run-completed';
       runId: string;
       /** `stuck` (D49aw): the user stopped a run that was repeating itself. */
-      reason: 'complete' | 'cap' | 'cancelled' | 'stuck';
+      reason: RunEndReason;
       turns: number;
       inputTokens: number;
       outputTokens: number;
@@ -176,13 +183,35 @@ export class AgentBus {
  * D37: `requestCompact` is a one-shot flag the loop checks at the same
  * safe points. Manual and Auto both funnel through here so the loop
  * has a single compactor entry point.
+ *
+ * D49bm: `pause()` states a REQUEST. Only `gate()` knows when the run really
+ * stopped, so it reports both edges through `RunControllerOptions.onPark`.
  */
+export interface RunControllerOptions {
+  /**
+   * D49bm: fired when the loop **actually parks** at a safe point, and again
+   * when it leaves — the only two moments `gate()` knows the run has stopped.
+   *
+   * `pause()` records a REQUEST and nothing else, so without this a caller
+   * cannot tell "the user asked to pause" from "the run is paused", and a UI
+   * that flips its own button on the click is claiming the second while only
+   * the first is true. The loop may never reach a gate at all — a turn that
+   * returns no tool calls ends the run — so a request can also go unhonoured,
+   * which is why the caller needs both edges rather than one.
+   */
+  onPark?: (parked: boolean) => void;
+}
+
 export class RunController {
   private guidanceQueue: string[] = [];
   private paused = false;
   private cancelled = false;
+  /** D49bm: whether `gate()` is inside its wait right now. */
+  private parked = false;
   private waiter: (() => void) | null = null;
   private compactRequested = false;
+
+  constructor(private readonly opts: RunControllerOptions = {}) {}
   /**
    * D49i: `gate()` can only stop the run at a safe point — between turns or
    * between tool calls. A provider call already in flight was unstoppable, so a
@@ -239,12 +268,38 @@ export class RunController {
     return out;
   }
 
+  /**
+   * Isolated the same way `AgentBus.emit` is: a caller's listener is the UI's
+   * problem, and a throw from it would propagate out of the `await` below and
+   * **kill the run**. The controller must be as hard to break as the bus.
+   */
+  private notify(parked: boolean): void {
+    try {
+      this.opts.onPark?.(parked);
+    } catch {
+      // Isolated by contract (D24b).
+    }
+  }
+
   /** Await at safe points. Resolves false only when cancelled. */
   async gate(): Promise<boolean> {
+    // D49bm: announce the EDGES only, and only edges that happened.
+    //  - `true` fires on ENTERING the wait, not before it, so a resume-then-pause
+    //    inside one wait does not leave the outside believing it was never parked.
+    //  - `false` fires only if a park actually happened, or every ordinary gate
+    //    would report a resume that never occurred.
     while (this.paused && !this.cancelled) {
+      if (!this.parked) {
+        this.parked = true;
+        this.notify(true);
+      }
       await new Promise<void>((resolve) => {
         this.waiter = resolve;
       });
+    }
+    if (this.parked) {
+      this.parked = false;
+      this.notify(false);
     }
     return !this.cancelled;
   }

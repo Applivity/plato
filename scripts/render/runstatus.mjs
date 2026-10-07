@@ -89,4 +89,76 @@ const snap = (p) => p.evaluate(() => {
   await p.close();
 }
 
+// E. D49bm: the pause button reports the RUN, and never the click.
+//
+// The defect this exists for: the button flipped its own label to "Resume" the
+// instant it was clicked, so it claimed the run had stopped while only a
+// REQUEST had been recorded — and when the run ended before any safe point, it
+// claimed a pause that never happened. So the assertion that matters is the one
+// right after the click, and it is that the label is NOT "Resume".
+{
+  const p = await page(620, S());
+  const snapP = () => p.evaluate(() => {
+    const btn = document.getElementById('pp');
+    const bar = document.getElementById('statusbar');
+    const posted = window.__posted;
+    return {
+      hidden: btn.hidden,
+      label: btn.textContent,
+      title: btn.title,
+      status: bar ? (bar.querySelector('.stext') || {}).textContent : null,
+      last: posted.length > 0 ? posted[posted.length - 1] : null,
+    };
+  });
+  const post = (x) => p.evaluate(
+    (m) => window.dispatchEvent(new MessageEvent('message', { data: m })), x);
+  const click = () => p.evaluate(() => { document.getElementById('pp').click(); });
+
+  await send(p, 'a long job');
+  const started = await snapP();
+  check('the pause button appears with the run', started.hidden === false, started);
+  check('and it offers to pause', started.label === 'Pause', started);
+
+  await click();
+  const asked = await snapP();
+  check('a click asks to pause and does NOT claim the run has stopped',
+    asked.label === 'Pausing…', asked);
+  check('and it says the click can be taken back',
+    /cancel the pause/i.test(asked.title || ''), asked);
+  check('the request reaches the host',
+    asked.last !== null && asked.last.type === 'pause', asked);
+  check('the status line does not say paused yet',
+    asked.status !== 'Paused', asked);
+
+  // The host's account of the run: only now is it genuinely parked.
+  await post({ type: 'pause-state', text: { parked: true } });
+  await p.waitForTimeout(120);
+  const parked = await snapP();
+  check('when the host reports the park, the button offers to resume',
+    parked.label === 'Resume', parked);
+  check('and the status line says paused, not what it was doing',
+    parked.status === 'Paused', parked);
+
+  await click();
+  const released = await snapP();
+  check('clicking Resume releases at once', released.label === 'Pause', released);
+  check('and the release reaches the host',
+    released.last !== null && released.last.type === 'resume', released);
+  // The flags are cleared together, so a second click cannot arrive while the
+  // first round trip is out and re-pause the run the user just let go.
+  await click();
+  const again = await snapP();
+  check('a second click pauses again rather than repeating the release',
+    again.label === 'Pausing…' && again.last.type === 'pause', again);
+
+  await post({ type: 'pause-state', text: { parked: false } });
+  await post({ type: 'done', text: { secs: 2, tools: 1 } });
+  await p.waitForTimeout(150);
+  const after = await snapP();
+  check('the end of the run takes the button away and clears the label',
+    after.hidden === true && after.label === 'Pause', after);
+  checkPageClean(p, 'pause');
+  await p.close();
+}
+
 await finish('run status');

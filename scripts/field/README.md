@@ -11,7 +11,7 @@ clauses that had no witness at all — **18–21 with the undo and masking work*
 offered once, and a command that reaches a protected file indirectly prints no
 value) — see the table below.
 
-**This directory is also the M4 acceptance test's machine.** The seven clauses
+**This directory is also the M4 acceptance test's machine.** The eight clauses
 (D49at) are executed by `acceptance.mjs`, which maps each clause onto the cases
 that witness it and judges them independently from the transcripts:
 
@@ -93,6 +93,11 @@ Two rules keep the driver honest:
 | 21 masked read + write | no card (`auto`) | the protected file reads and the write completes — and the disk still holds the real value (D49bb) |
 | 22 unmaskable file | the reveal card states the cost, and it is drawn **once** in `auto` | both reads complete, and the second raises no card (D49bc) |
 | 23 indirect secret | no card (`auto`) | the `cat .en*` call RUNS — so the masking is the stub's log, not the transcript (D49bc) |
+| 24 pause | the button says `Pausing…` and **not** `Resume` straight after the click, then `Resume` once the run really parked | `Plato paused at a safe point.` and `Plato resumed.` — the pause is in the record, not only on the button (D49bm) |
+| 25 pause too late | the button never claims a pause it did not get | the run completed, and the record says it finished before the pause took effect — **the silence is what fails** (D49bm) |
+| 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, and the queue is empty after (D49bo) |
+| 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
+| 28 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name** |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -196,7 +201,7 @@ treats a DISABLED Stop button as an error rather than a no-op click.
 
 ## The acceptance test, executed (D49at)
 
-M4's definition of done is **seven clauses**, and `acceptance.mjs` runs them. It
+M4's definition of done is **eight clauses**, and `acceptance.mjs` runs them. It
 is not a separate suite: it maps each clause onto the cases that witness it and
 judges them, so a clause cannot pass without a case that ran.
 
@@ -386,6 +391,13 @@ reads of the same file does not get two turns to answer a card in — both calls
 run back to back inside one turn. That is still the right shape for case 22: the
 session memory lives in the shell, so the second call never raises a card, and
 `askOnce: 1` holds within a single turn as well as across turns.
+
+**A step may hold its answer with `delayMs` (D49bm).** The stub otherwise replies
+in microseconds, so a scripted run is over before a driver has clicked anything.
+`{ delayMs: 2500, calls: [...] }` keeps the run in flight long enough to test a
+mid-run control, and a delayed answer is where a real user reaches for Pause. A
+cancel during the wait destroys the request, and the stub returns without writing
+rather than throwing.
 
 **A seeded file goes on the RUN, not the case (D49bb).** The per-run checks all
 read `run.<field>` — `mode`, `cards`, `prompt` — so a `seed` written one level up

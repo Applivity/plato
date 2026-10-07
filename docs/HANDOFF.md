@@ -77,7 +77,8 @@ are now only in PROGRESS.
      disagree.
 
 - **M4 IS DONE (2026-09-27).** Its two deliverables are complete and both are measured. **The
-  acceptance test is restated *and executed*: 7 of 7 clauses pass**, by
+  acceptance test is restated *and executed*: 8 of 8 clauses pass** (clause 8 added by the
+  run-control work, D49bm/D49bn/D49bo), by
   `node scripts/field/acceptance.mjs --run` across every scripted case in real VS Code — the
   first time that test has ever been runnable, let alone run. **The secret audit is done (D49au).**
   Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
@@ -162,6 +163,25 @@ are now only in PROGRESS.
   going" exempts that one call for the run so it cannot nag. **Verified end to end by field cases 12,
   13 and 14** — stop, keep-going-with-guidance, and the no-progress trigger respectively — and **all
   fourteen scripted cases pass together**.
+
+- **The controls around a run in flight mean what they say (D49bm, D49bn, D49bo).** The founder
+  audited them and three of them did not. **Pause** flipped its own label to *Resume* on the click
+  while only a REQUEST had been recorded, left no record anywhere, and had never been clicked by a
+  test; it is now three states from two different facts (`Pause` → `Pausing…` → `Resume`, the park
+  announced by `gate()` through `RunController.onPark` and only by it), it writes *"Plato paused at a
+  safe point."* / *"Plato resumed."* into the log and the transcript, and a pause that never lands
+  says so instead of vanishing. **A pause still cannot stop a model call already in flight** — the fix
+  is honesty, not new power. **Closing the chat panel stops the run** (the panel is its only
+  supervisor), and the record names the cause rather than leaving a bare `cancelled`. **`/queue` holds
+  a follow-up for the next run**, which is the one thing guidance cannot express: while a run is
+  active Enter means *change this run*, and there was no way to say *"when you are done, do this
+  next"*. A queued message advances only when the run **finished** — a cancel, a stuck run or a
+  failure holds it, sticky until the user asks for it to continue — and it lives **in memory only**,
+  because a restored queue would either sit forever or start a run nobody asked for. **The pre-run
+  window is a real trap and was a silent-drop bug in two controls:** the view's buttons appear the
+  instant `ask` is posted, but the host reads the key, fills the model pool and starts MCP servers
+  before it is `running`, so a Pause or a Cancel clicked in those seconds used to be dropped in
+  silence. Both are held now, and a pending cancel means the run never starts.
 
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
@@ -643,7 +663,7 @@ platform.** Until then the test verifies a change by reading, and says so.
 is still in development. They are now the **publish gate** — see its own section below, and
 "Open work" for everything else that is not done.
 
-1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 7 of 7 clauses pass.** One command
+1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 8 of 8 clauses pass.** One command
    runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (every scripted case)
    and judges each clause, exiting non-zero unless every one passes. Pass the `--run` flag or run the
    harness yourself first; the judge reads `tmp/field/last-manifest.json`. **Two witnesses per
@@ -713,7 +733,7 @@ explicitly NOT work item 1 of anything.**
   disagreed is how this file last went stale.**
 - Validate the **ACCEPTANCE TEST** — M4's definition of done, and the repo's end-to-end
   check — with `node scripts/field/acceptance.mjs --run`. It packages a fresh VSIX, drives
-  every field case through real VS Code, and judges the seven clauses (D49at),
+  every field case through real VS Code, and judges the eight clauses (D49at),
   exiting non-zero unless every one passes. `--run` inherits the launcher's **destructive
   demo-repo reset**; to judge a run you already did, drop the flag. Use `render:fast`-style
   judgement (`node scripts/field/verdict.mjs --case N --last 1`) when you want one case.
@@ -742,7 +762,7 @@ explicitly NOT work item 1 of anything.**
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
-- `scripts/render/` — the real-DOM render suites (`pnpm run render`): twenty-two
+- `scripts/render/` — the real-DOM render suites (`pnpm run render`): twenty-three
   suites driving the actual webview in headless Chromium. They exist because
   `tsc` and the unit tests cannot see the rendered page; see its README for the
   list of defects they caught. **They are also the only place a defect of
@@ -750,7 +770,7 @@ explicitly NOT work item 1 of anything.**
   the wrong glyph, and no other check in this repository can see direction.
 - `scripts/field/` — the **live** checks: the scripted cases driving a real
   VS Code window through Selenium, plus the acceptance judge (`acceptance.mjs`)
-  that turns them into M4's seven clauses. `scripts/field/README.md` is the map,
+  that turns them into M4's eight clauses. `scripts/field/README.md` is the map,
   including the traps and the honest boundaries.
 
 ## Trial runs — the proving-ground repo, and how Plato is actually judged
@@ -832,12 +852,15 @@ before any of it is trusted:**
    JS comment or string literal closes the template and breaks the
    build. `tsc -b` usually catches it; always run it after editing.
    **It is hit far more often than it looks, and it is almost always a COMMENT**
-   — four times in one session (D49ac/D49ad), and **twice more in the D49bj/D49bl
-   session, by the same agent that had just read this paragraph** — every time while
-   writing *about* code, markdown or a glyph, which is exactly when quoting is
-   natural. The fix is never to quote in that file: write the words, not the syntax
-   (D49bl's fix was the words *a bare BACKSLASH*). **A comment ABOUT an icon is as
-   dangerous as a comment about syntax**, which is not obvious. Symptom is
+   — four times in one session (D49ac/D49ad), **twice more in the D49bj/D49bl
+   session, by the same agent that had just read this paragraph**, and **twice more
+   again in the D49bm/D49bo session, in the same file, in the same way** — every
+   time while writing *about* code, markdown, a glyph or a payload shape, which is
+   exactly when quoting is natural. **The count is now eight.** The fix is never to
+   quote in that file: write the words, not the syntax (D49bl's fix was the words
+   *a bare BACKSLASH*, D49bm's was *the payload is read from m.text*). **A comment
+   ABOUT an icon, a CSS property or a message shape is as dangerous as a comment
+   about syntax**, which is not obvious. Symptom is
    `error TS1005: ';' expected` or `TS1127: Invalid character` at the comment's
    line and column — **go straight to the nearest backtick rather than reading the
    error as a real syntax fault in the surrounding code.**
@@ -934,10 +957,10 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 825 in packages/core across 45 files**
+2. `pnpm -r test` — the unit tests. **Current: 839 in packages/core across 46 files**
    (verified 2026-10-07). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 22 suites / 614
+3. `pnpm run render` — the real-DOM render suites. **Current: 23 suites / 653
    assertions** (verified 2026-10-07), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
@@ -960,10 +983,13 @@ before any of it is trusted:**
    you write the documentation. When in doubt about what he will see, unpack the VSIX and read
    the built file back rather than trusting the command's own success message.
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the **23** live field cases it is built on — **30 runs**, since a case may carry
+   done) AND the **28** live field cases it is built on — **35 runs**, since a case may carry
    several, and the run count is what the acceptance test reports — driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
-   the seven clauses with a pass or fail each; it exits non-zero unless all seven pass.
+   the eight clauses with a pass or fail each; it exits non-zero unless all eight pass.
+   A ninth and tenth case (**30, 31**) cover the queue and the pause against a **real** model:
+   `PLATO_FIELD_REAL=1 node scripts/field/run-field.mjs`, which needs the founder's key file
+   and is never part of the scripted run.
    A scripted model answers, so there is no key, no network and no cost; `FIELD_CASES=1,5`
    with `run-field.mjs` runs a subset. Reach for this when a change touches the mode gates,
    a refusal, the approval, question or stuck cards, the session memory, the plan note, the
@@ -1127,6 +1153,23 @@ all three of their records, which is the duplication D48 exists to stop.**
   ever wanted back, it has to be made real** — the host accepting a mode request and switching on a
   Yes — which is a posture choice, not a defect, and it hands the model a sanctioned way to ask for
   its own loosening.
+- **Four stated boundaries from the run-control work (D49bm/D49bn/D49bo), none a to-do.** **(1) A
+  pause cannot stop a model call already in flight** — the loop only reaches a safe point between
+  turns and between tool calls, and the button now says so instead of implying otherwise. **Do not
+  "fix" this by aborting the call**: that would throw away the answer being written, which is the
+  thing Cancel is for. **(2) The pre-run window is covered by held flags but not by a deterministic
+  test.** The view's controls appear the instant `ask` is posted, while the host is still reading the
+  key, filling the model pool and starting MCP servers; a Pause or Cancel clicked in those seconds is
+  now held rather than dropped. Field case 24 exercises that window **opportunistically** — it is a
+  race — and making it deterministic would need test-only machinery in the host's startup path.
+  **(3) Field case 28 asserts from the run record only, and must stay LAST.** The harness cannot step
+  back inside a webview panel it has closed (a new one is created but its iframe is never found), so
+  the on-screen half is not checked and the spec skips the screen read for that case **by name**; a
+  case placed after it would start from a window the driver can no longer reach into. **(4) The queue
+  is in memory.** A window reload loses it, as it loses the run — persisting it would either leave a
+  queue that never drains or start a run the moment the panel opened. **Guidance typed during the
+  model's final answer still reaches nobody in that run**; the row is recorded and the words carry
+  into the next run's history. That is unchanged and is exactly what `/queue` is for.
 
 **Not work at all, and deliberately last:** the **publish gate** — the trademark sweep (D16) and
 the license decision (D19). They gate a public release, not a milestone. See "The publish gate"

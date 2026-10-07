@@ -664,6 +664,102 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 24 — D49bm. The pause is only honest if the RECORD agrees with the button.
+  // The button is checked live, by the spec; this is the same account read back
+  // from the file, which is all a later reader has.
+  24: (a) => [
+    {
+      name: 'the record says the run stopped at a safe point',
+      ok: a.notices.some((t) => /paused at a safe point/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'and that it continued, so a paused run is not left looking stopped',
+      ok: a.notices.some((t) => /Plato resumed/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'the run finished normally after the release',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+  ],
+
+  // 25 — D49bm's other half. The pause was asked for while the model was writing
+  // its final answer, and a turn that calls no tools ends the run — so the loop
+  // never reached a safe point to stop at. What must NOT happen is silence.
+  25: (a) => [
+    {
+      name: 'the record does NOT claim the run paused',
+      ok: !a.notices.some((t) => /paused at a safe point/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'and it says the run finished before the pause took effect',
+      ok: a.notices.some((t) => /finished before the pause took effect/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'the run finished on its own',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+  ],
+
+  // 26 — D49bo. This rule sees the FIRST run only: the second was started by the
+  // queue rather than by the spec, so the spec is what asserts its task. What
+  // belongs here is that the run which held the queue ended in a way that hands
+  // it on — a cancel would have held it instead.
+  26: (a) => [
+    {
+      name: 'the run ended complete, which is what lets the queue advance',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+    {
+      name: 'the work it was asked for actually happened',
+      ok: a.doneFor('read_file').length > 0,
+      detail: summarise(a.toolEvents),
+    },
+    {
+      name: 'the run did not fail',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 27 — D49bo, the sharper half. The user cancelled, so the queue must NOT be
+  // handed on: starting the next item a moment later takes the stop back.
+  27: (a) => [
+    {
+      name: 'the run ended cancelled',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+    {
+      name: 'no second run was started by the queue',
+      // The spec asserts this against the transcript count; here the cut is that
+      // the run recorded a cancel rather than a completion.
+      ok: a.completed.every((e) => e.reason !== 'complete'),
+      detail: JSON.stringify(a.completed),
+    },
+  ],
+
+  // 28 — D49bn. Closing the panel stops the run, and the record names the cause
+  // rather than leaving "cancelled" to be read as the user's own doing.
+  28: (a) => [
+    {
+      name: 'the run stopped',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+    {
+      name: 'and the record says the panel closing is what stopped it',
+      ok: a.notices.some((t) => /panel closed/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+  ],
 };
 
 function summarise(events) {

@@ -5,7 +5,8 @@ describe('D44c/D44d/D45a-2 command registry', () => {
   it('has the real commands and no dropped/expander ids', () => {
     const ids = SLASH_COMMANDS.map((c) => c.id);
     // D49ax added /undo — the only way an undo is ever started.
-    expect(ids).toEqual(['compact', 'history', 'system-prompt', 'undo']);
+    // D49bo added /queue — the only command that carries text.
+    expect(ids).toEqual(['compact', 'history', 'system-prompt', 'undo', 'queue']);
     for (const gone of [
       'plan', 'fix', 'review', 'commit', 'test', 'autocompact',
     ]) {
@@ -16,7 +17,12 @@ describe('D44c/D44d/D45a-2 command registry', () => {
   it('gives every command a label, usage, and one-line description', () => {
     for (const c of SLASH_COMMANDS) {
       expect(c.label.length).toBeGreaterThan(0);
-      expect(c.usage).toBe('/' + c.id);
+      // D49bo: usage is the command token, and for /queue the argument shape
+      // after it. Nothing else may be invented here — the menu prints this
+      // verbatim, so free-form text would reach the user unread.
+      expect(c.usage === '/' + c.id || c.usage.startsWith('/' + c.id + ' ')).toBe(
+        true,
+      );
       expect(c.blurb.length).toBeGreaterThan(0);
       // Commands are actions, not text expanders: no expandable payload.
       expect('expand' in c).toBe(false);
@@ -29,13 +35,14 @@ describe('D44c/D44d/D45a-2 command registry', () => {
     expect(slashCommand('history')?.label).toBe('History');
     expect(slashCommand('system-prompt')?.usage).toBe('/system-prompt');
     expect(slashCommand('undo')?.label).toBe('Undo');
+    expect(slashCommand('queue')?.usage).toBe('/queue <message>');
     expect(slashCommand('plan')).toBeUndefined();
     expect(slashCommand(undefined)).toBeUndefined();
   });
 
   it('slashMenu returns webview-safe rows with no extra keys', () => {
     const rows = slashMenu();
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
     for (const row of rows) {
       expect(Object.keys(row).sort()).toEqual(['blurb', 'id', 'label', 'usage']);
     }
