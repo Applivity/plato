@@ -3016,8 +3016,28 @@ other, and the founder's sentence is what exposed it.
 
 **What did NOT change:** only the shell is widened, and only for commands the allowlist recognises.
 Everything else `plan` denied stays denied — writes, `web_fetch` still asks rather than running,
-MCP tools, `kill_shell`. **And in `plan` a refusal is a `deny`, never an `ask`** — plan shows no
-approval cards at all, so an unrecognised command is refused outright rather than offered.
+MCP tools, `kill_shell`. **And in `plan` a COMMAND refusal is a `deny`, never an `ask`** — an
+unrecognised command is refused outright rather than offered, because `plan` draws no card for a
+command, so the safe direction there is refusal and not a question.
+
+**CORRECTED (2026-10-07), because this passage claimed more than it could support.** It read *"plan
+shows no approval cards at all"* — a sentence a user can falsify in one keystroke, and it contradicted
+the clause about `web_fetch` two lines above it. **`plan` is a mode without cards for WRITES; it is not
+a mode without cards.** Four things appear in `plan`, and every one is deliberate:
+
+1. **An approval card for `web_fetch`.** Its rule is evaluated *before* the plan branch, so it returns
+   `ask` in `plan` and `edit` alike, and a test pins it (`decide('web_fetch', 'plan')` is `ask`). This
+   is the card the old wording denied while the same paragraph asserted it.
+2. **The question card.** `ask_user` is allowed in every mode on purpose (D49ah), and `plan` is the
+   mode where writing the plan down matters most — so denying it there would be exactly backwards.
+3. **The stuck card.** Raised on the repetition bound in every mode; the ask is **not mode-gated at
+   all**, so a `plan` run that goes in circles still puts the card up rather than stopping silently.
+4. **The reveal card** for a protected text file the masker cannot parse — raised in every mode by
+   design, `auto` included (D49bc).
+
+**The generalisation was the whole error:** a fact about the **shell** was written as a fact about the
+**mode**. What survives, and what this entry actually decided, is the narrow and useful version — *an
+unrecognised command is denied rather than offered* — and that is the sentence to quote from here.
 
 **The gap the widening exposed, which is a defect in D49an rather than in this change: a background
 command was being treated as a read.** `shell` takes `run_in_background`, and D49an's check looked

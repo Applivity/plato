@@ -317,14 +317,21 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
    *
    * **Both halves matter and they are different halves.** A read-only command is
    * allowed, and every command that is not one is still DENIED in plan — not
-   * asked, denied, because plan shows no cards. So the widening has to be exact:
-   * anything the allowlist does not recognise leaves the verdict at `deny`.
+   * asked, denied, because plan draws no card for a COMMAND. So the widening has
+   * to be exact: anything the allowlist does not recognise leaves the verdict at
+   * `deny`.
+   *
+   * **Scoped to commands on purpose.** This used to read "plan shows no cards",
+   * which is false about the MODE and was corrected on 2026-10-07: `web_fetch`
+   * asks in plan, and the question, stuck and reveal cards are not mode-gated at
+   * all. See D49ao. The fact being pinned here is about the shell, and it is
+   * still true.
    */
   it('gives plan the read-only commands, and nothing else (D49ao)', () => {
     expect(decideWithArgs('shell', 'plan', { command: 'git status' })).toBe('allow');
     expect(decideWithArgs('shell', 'plan', { command: 'ls -la' })).toBe('allow');
     expect(decideWithArgs('shell', 'plan', { command: 'grep -rn foo src' })).toBe('allow');
-    // Denied, not asked: plan never shows an approval card.
+    // Denied, not asked: plan draws no card for a command.
     expect(decideWithArgs('shell', 'plan', { command: 'rm -rf src' })).toBe('deny');
     expect(decideWithArgs('shell', 'plan', { command: 'npm test' })).toBe('deny');
     expect(decideWithArgs('shell', 'plan', { command: 'cat /etc/passwd' })).toBe('deny');

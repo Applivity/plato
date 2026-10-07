@@ -224,8 +224,14 @@ are now only in PROGRESS.
   widening the list.
 - **There are THREE modes, not four (D49ak).** `act` was merged into `edit`, so `edit`
   asks for every command instead of denying the shell. **`plan` denies every command that is
-  not read-only** — not "asks": plan shows no cards, so anything the allowlist does not
-  recognise is refused outright (D49ao). **`auto` fetches without asking** — the founder's call, amending D49p. **Any doc or comment that still
+  not read-only** — not "asks": an unrecognised command is refused outright rather than offered,
+  because `plan` draws no card for a command (D49ao). **`plan` is a mode without cards for WRITES,
+  not a mode without cards** — an earlier wording here said "plan shows no cards", which is false and
+  was falsifiable in one keystroke: **`web_fetch` still ASKS in `plan`** (its rule is checked before
+  the plan branch, and a test pins it), and three more cards are raised in `plan` because they are not
+  mode-gated at all — the **question card** (`ask_user` is allowed in `plan` on purpose), the **stuck
+  card**, and the **reveal card** for a protected text file (D49bc, `auto` included). Read the
+  correction in D49ao before repeating the generalisation. **`auto` fetches without asking** — the founder's call, amending D49p. **Any doc or comment that still
   lists four modes is stale**; the two architecture documents keep their bodies verbatim
   by design (D48) and carry superseded-map rows instead.
 - **The mode is read live at every tool call, and it is now remembered and recorded (D49bj).**
