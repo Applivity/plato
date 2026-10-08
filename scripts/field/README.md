@@ -9,10 +9,12 @@ clauses that had no witness at all — **18–21 with the undo and masking work*
 (what undo puts back, what it refuses, and the masked read round trip), **22–23
 with the two halves of D49bc** (a protected file Plato cannot mask is offered
 once, and a command that reaches a protected file indirectly prints no value),
-**and 24–28 with the run controls** (pause says only what the run is doing, a
-pause that never lands says so, a queued follow-up runs when the run before it
-finishes — and does NOT when that run was cancelled — and closing the chat panel
-stops the run) — see the table below. **Two further cases (30, 31) cover the queue
+**and 24–29 with the run controls and the provider stream** (pause says only what
+the run is doing, a pause that never lands says so, a queued follow-up runs when
+the run before it finishes — and does NOT when that run was cancelled — a stream
+the provider cuts is retried rather than reported as a finished run, and closing
+the chat panel stops the run) — see the table below. **Two further cases (30, 31)
+cover the queue
 and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
 they are not part of the scripted suite and need the founder's key file.
 
@@ -102,7 +104,8 @@ Two rules keep the driver honest:
 | 25 pause too late | the button never claims a pause it did not get | the run completed, and the record says it finished before the pause took effect — **the silence is what fails** (D49bm) |
 | 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, the queue is empty after, and **the queued run began only after the run before it had finished** — checked as OVERLAP, not as a count of runs, because the defect this catches started the queued run *first* (D49bo) |
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
-| 28 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name** |
+| 28 cut stream | the retried answer is on screen, not the half one the cut sent | the transcript records the **retry** the cut provoked, and the run still finished `complete` **on the second step** (D49bp). The stub ends the response with no `finish_reason` and no `[DONE]` — a proxy timeout's shape — so a build that takes the half answer as a finished turn shows no retry and the wrong text |
+| 29 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08; case 28 runs before it so this one keeps the last slot.) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -255,8 +258,15 @@ worse than none:**
 - **A clause was ADDED rather than corrected (2026-10-07).** The run-control work
   (D49bm/D49bn/D49bo) found three controls that did not mean what they claimed, so
   the list grew from seven to **eight**: clause 8, *"The run controls mean what
-  they say — pause, queue, and closing the panel"*, witnessed by cases 24–28.
-  Nothing was restated; the seven that existed are unchanged.
+  they say — pause, queue, and closing the panel"*, witnessed by cases 24–27 and
+  29. Nothing was restated; the seven that existed are unchanged.
+- **Clause 5 gained a witness (2026-10-08).** The provider-stream work (D49bp) is
+  the same claim that clause already makes — the run's account of itself is
+  honest — so case 28 was added to it rather than growing a ninth clause: a stream
+  the provider CUT is a failed attempt to retry, not a reply the model chose to
+  end. **Case 28 runs before case 29, and this is why the table's numbers are not
+  all in run order:** the panel-close case must be LAST, so the two were numbered
+  to keep the order ascending around it.
 
 **Falsified.** Blanking `unfinishedPlanNote` in core makes case 17 fail with
 *"the run ended with 2 of 3 plan steps unfinished and did not say so"*, the judge

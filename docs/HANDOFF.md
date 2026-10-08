@@ -189,6 +189,24 @@ are now only in PROGRESS.
   set only once preparation ends. **The lesson is the shape of the miss, not the bug:** when a hazard
   is found in one control, the others that reach the same state want looking at in the same pass.
 
+- **The provider stream is not taken at its word (D49bp, 2026-10-08).** Found by reading a list of
+  harness bugs the founder met on the wire; most did not apply — the list is from a durable,
+  distributed, multi-tenant cloud harness and Plato is in-process, single-user, one run at a time —
+  and **two did, both in the OpenAI-compatible adapter, which is the path his own DeepSeek/LiteLLM
+  runs take.** **A stream the provider cut was returned as a COMPLETED turn:** the SSE reader never
+  checked that a `[DONE]` sentinel or a `finish_reason` had arrived, so a proxy timeout or a
+  mid-stream 502 turned a **half-written answer into a finished run** — and a stream cut before any
+  content into **a successful empty turn**. The stream must now say it finished. **There was also no
+  read timeout at all** on this path (the Anthropic adapter inherits the SDK's): a server that stopped
+  talking held the run open until the user pressed Cancel. An idle watchdog now resets on every chunk
+  **received** — never on a particular field, so a model streaming reasoning the adapter does not read
+  still proves the connection is alive — plus a deadline on the headers and a non-streamed body. **The
+  same shape in compaction:** a summary that came back empty dropped the older conversation and put
+  nothing in its place, and the run reported the compaction as done; it now keeps the conversation and
+  says so. **A provider that ends a stream with neither a `[DONE]` nor a `finish_reason` is retried
+  and, if it does it every time, fails the run** — a malformed server reported honestly, which is the
+  intended trade.
+
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
   the ones **new since the write**, and appends them to the tool result — so the model learns in the
@@ -963,7 +981,7 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 839 in packages/core across 46 files**
+2. `pnpm -r test` — the unit tests. **Current: 844 in packages/core across 46 files**
    (verified 2026-10-07). This is the only place in this file that carries the count;
    update it here when it moves.
 3. `pnpm run render` — the real-DOM render suites. **Current: 23 suites / 653
@@ -989,7 +1007,7 @@ before any of it is trusted:**
    you write the documentation. When in doubt about what he will see, unpack the VSIX and read
    the built file back rather than trusting the command's own success message.
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the **28** live field cases it is built on — **35 runs**, since a case may carry
+   done) AND the **29** live field cases it is built on — **36 runs**, since a case may carry
    several, and the run count is what the acceptance test reports — driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the eight clauses with a pass or fail each; it exits non-zero unless all eight pass.
@@ -1173,10 +1191,12 @@ all three of their records, which is the duplication D48 exists to stop.**
   applies. **Pause and Cancel cannot: nothing in the startup path can be stalled from a test without
   test-only machinery in the product**, so case 24 exercises that window opportunistically and the
   logic is what carries it.
-  **(3) Field case 28 asserts from the run record only, and must stay LAST.** The harness cannot step
+  **(3) Field case 29 asserts from the run record only, and must stay LAST.** The harness cannot step
   back inside a webview panel it has closed (a new one is created but its iframe is never found), so
   the on-screen half is not checked and the spec skips the screen read for that case **by name**; a
-  case placed after it would start from a window the driver can no longer reach into. **(4) The queue
+  case placed after it would start from a window the driver can no longer reach into. **This is why the
+  case numbers are not all in run order: case 28 (a cut provider stream) runs before 29, and was
+  numbered to keep the order ascending around the one case that must run last** (D49bp). **(4) The queue
   is in memory.** A window reload loses it, as it loses the run — persisting it would either leave a
   queue that never drains or start a run the moment the panel opened. **Guidance typed during the
   model's final answer still reaches nobody in that run**; the row is recorded and the words carry

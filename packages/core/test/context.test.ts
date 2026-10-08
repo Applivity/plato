@@ -146,7 +146,10 @@ describe('compactMessages', () => {
     expect(client.calls.length).toBe(1);
   });
 
-  it('keeps the system prompt untouched when the summary is empty', async () => {
+  // D49bp: an empty summary used to be applied anyway — the older messages were
+  // dropped and replaced by nothing, and the compaction was still reported as
+  // done. The primitive now declines: nothing is lost.
+  it('returns the conversation unchanged when the summary is empty', async () => {
     const fake: TurnResponse = {
       content: [],
       usage: { inputTokens: 10, outputTokens: 0 },
@@ -157,18 +160,20 @@ describe('compactMessages', () => {
         return fake;
       },
     };
+    const msgs = [user('a'), asst('b'), user('c')];
     const r = await compactMessages(
       client as unknown as Parameters<typeof compactMessages>[0],
       {
         model: 'anthropic:claude-sonnet-4-5',
         system: 'BASE',
-        messages: [user('a'), asst('b'), user('c')],
+        messages: msgs,
         tools: [],
         keepRecent: 1,
       },
     );
     expect(r.system).toBe('BASE');
     expect(r.summary).toBe('');
+    expect(r.messages).toEqual(msgs);
   });
 
   it('uses the compact system prompt and a model-aware summary cap (D37a)', async () => {

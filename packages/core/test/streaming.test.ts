@@ -21,6 +21,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
 
 import { AnthropicNativeProvider } from '../src/providers/anthropic-native.js';
 import { ProviderError } from '../src/providers/errors.js';
+import { OpenAICompatProvider } from '../src/providers/openai-compat.js';
 import { createProvider } from '../src/providers/registry.js';
 import { AgentBus } from '../src/runtime/bus.js';
 import { runAgentLoop } from '../src/runtime/loop.js';
@@ -147,6 +148,18 @@ function sse(chunks: string[], contentType = 'text/event-stream'): Response {
       },
     }),
     { status: 200, headers: { 'content-type': contentType } },
+  );
+}
+
+/** D49bp: a `text/event-stream` that sends headers and then nothing, ever. */
+function stalled(): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start() {
+        /* never enqueues, never closes */
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream' } },
   );
 }
 
@@ -412,6 +425,52 @@ describe('OpenAICompatProvider SSE parsing (D49j)', () => {
     );
     const streamed = await ask(f, () => {});
     expect(streamed).toEqual(blocking);
+  });
+
+  // D49bp: a stream that stops early used to be returned as a completed turn —
+  // a half answer, or none at all, reported as a finished run.
+  it('rejects a stream that ends before the response finished', async () => {
+    const f = fetchReturning(
+      sse([line({ choices: [{ delta: { content: 'half an ans' } }] })]),
+    );
+    await expect(ask(f, () => {})).rejects.toMatchObject({ status: null });
+  });
+
+  // The guard against the obvious false positive: a server that ends on a
+  // `finish_reason` without a `[DONE]` DID finish, and must be accepted.
+  it('accepts a stream that ends on a finish_reason without [DONE]', async () => {
+    const f = fetchReturning(
+      sse([line({ choices: [{ delta: { content: 'done' }, finish_reason: 'stop' }] })]),
+    );
+    const res = await ask(f, () => {});
+    expect(res.content).toEqual([{ type: 'text', text: 'done' }]);
+    expect(res.stopReason).toBe('stop');
+  });
+
+  // D49bp: a socket that goes silent mid-answer used to hold the run open until
+  // the user pressed Cancel. The idle window here is 25ms, not the real 120s.
+  it('abandons a stream that stops sending (idle timeout)', async () => {
+    const f = fetchReturning(stalled());
+    const p = new OpenAICompatProvider('sk-test', 'https://router.example/v1/', f, {
+      streamIdleMs: 25,
+    });
+    await expect(
+      p.completeTurn(turn({ model: 'openai:gpt-4o', onDelta: () => {} })),
+    ).rejects.toMatchObject({ status: null });
+  });
+
+  // D49bp: the connection itself can hang before a single header arrives.
+  it('abandons a connection that never answers (connect deadline)', async () => {
+    const f = ((_url: string, init: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      })) as unknown as typeof fetch;
+    const p = new OpenAICompatProvider('sk-test', 'https://router.example/v1/', f, {
+      responseTimeoutMs: 25,
+    });
+    await expect(
+      p.completeTurn(turn({ model: 'openai:gpt-4o' })),
+    ).rejects.toMatchObject({ status: null });
   });
 });
 

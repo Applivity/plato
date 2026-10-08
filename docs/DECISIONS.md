@@ -1675,6 +1675,10 @@ usage, and both parity claims. A seventh render suite asserts the DOM contract
 making `streamHtml` append, which produced `"HelloHello worHello world"` and five
 failures.
 
+> **EXTENDED (D49bp, 2026-10-08).** The `[DONE]` sentinel was handled from the start; a stream that
+> ended WITHOUT one was not, and was returned as a completed turn. The completeness check and the read
+> timeouts are D49bp's subject.
+
 **D49k — a file tool may only touch the workspace (M5.0, 0.25.0 — 2026-09-20).**
 
 **The rule.** *Every path argument resolves inside the workspace root. A path
@@ -3962,6 +3966,10 @@ anyway: the same bus notice is what writes the chat row, so the transcript prove
 even though this case cannot look at the panel it was written in. **Case 28 must stay LAST** — it
 leaves the driver outside a frame it cannot re-enter.
 
+> **RENUMBERED (2026-10-08, see D49bp).** This case is now **case 29**. A new case had to run *before*
+> it — a cut provider stream — and the cut case took 28 so the numbers stay in run order around the one
+> case that must run last. The claim above is unchanged; only its number moved.
+
 **Two harness routes were tried and both failed in a FULL-suite run while working in isolation**,
 which is a shape worth recognising: `EditorView.closeEditor('Plato Chat')` left the panel open once
 the earlier cases had crowded the tab bar and pushed it behind the overflow control, and the command
@@ -4062,6 +4070,73 @@ is the answer for a deliberate follow-up.
 > `startedAt` against the first transcript's own last-write time — and the chip assertion catches it
 > too, because a queue that drains instantly never shows the chip. **A check that passes against the
 > bug it was written for is worse than no check**, which is the same rule D49at learned about notes.
+
+---
+
+**D49bp — the provider stream says when it was cut, and gives up when it stalls; and a compaction that
+summarised nothing is refused (founder, 2026-10-08).**
+
+**Two defects, found by reading a list of harness bugs the founder met on the wire.** He asked for a
+casual read of whether any of it applied, and explicitly not binding. Most did not: the list is from a
+durable, distributed, multi-tenant cloud harness, and Plato is in-process, single-user, one run at a
+time, with no message queue, worker pool, reconnect loop or tracing pipeline. **Two items did apply,
+and both live in the OpenAI-compatible adapter** — the path his own DeepSeek/LiteLLM runs take.
+
+**1. A stream the provider cut was returned as a COMPLETED turn.** `consumeSse` read until the socket
+said `done`, then returned whatever it had accumulated, without ever checking that the stream had
+actually FINISHED — that a `[DONE]` sentinel or a `finish_reason` had arrived. A proxy timeout, a
+gateway idle kill or a mid-stream 502 therefore produced a response with `finish_reason: null`, and the
+loop's rule — no tool calls and not a length cap means the run completed — turned a half-written answer
+into a finished run, and a stream cut before any content into **a successful empty turn**. **The loop
+already had the vocabulary for "this ended early"** — a `max_tokens` stop is reported as a cap — and an
+abrupt EOF simply was not in it. The stream must now say it finished: `[DONE]` OR a `finish_reason`, and
+neither is a retryable transport failure. The mid-tool-call variant was already self-limiting (a
+half-written `arguments` string fails to parse and becomes `{_raw}`, so the tool errors), which is why
+the silent half was the dangerous one.
+
+**2. There was no read timeout at all.** The Anthropic adapter inherits the SDK's own default; this one
+used a bare `fetch` carrying only the caller's cancel signal, so a server that accepted the connection
+and then stopped talking held the run open until the user pressed Cancel — and the retry policy could
+not help, because a stall never throws. The turn now carries an idle watchdog that resets on every chunk
+RECEIVED, never on a particular field: a model streaming reasoning fragments this adapter does not read
+still proves the connection is alive, and a keepalive that reset the clock without carrying progress
+would defeat the guard. Headers and a non-streamed body get a separate, generous deadline.
+
+**3. The minor one, fixed because it is the same shape.** `compactMessages` returned the trimmed message
+list even when the summariser produced no text, so the older conversation was dropped and replaced by
+nothing while the run reported the compaction as done. It now returns the ORIGINAL messages — a declined
+compaction — the summary call's tokens are still counted, and the loop emits a notice instead of a
+`context-compacted` event.
+
+**Falsified, each reverted and re-run green:** the cut-stream check removed → the new streaming test
+resolves instead of rejecting, and **field case 28 fails on all three of its witnesses**; the idle
+watchdog neutered → that test hangs to its 5s timeout; the connect deadline neutered → the same;
+`messages: keep` restored → both the empty-summary test and the loop test fail.
+
+**One existing test changed, and why that is right.** `abort.test.ts` asserted the signal handed to
+`fetch` was the caller's own OBJECT. The timeout machinery relays through Plato's controller, so the
+object changed while the property the test exists for did not: it now asserts that aborting the caller's
+signal aborts what the request carries. A test that pins an identity rather than the behaviour breaks on
+the right change.
+
+**End-to-end, and a constraint learned the hard way.** The stub can now cut a stream (`step.cut`), and
+the case is judged by **recovery** rather than by a stop: the second scripted step exists only for the
+retry, so a build that still takes the half answer as complete never reaches it. **It was first added as
+case 29, after the panel-close case — and the full suite proved why the panel-close case must be LAST**:
+the harness cannot re-enter a closed panel, so 29 never ran and clause 5 reported "no run in the
+manifest". The two
+were renumbered — cut is 28, panel close is 29 — so the numbers stay in run order around the one case
+that must run last. It joins **acceptance clause 5**, *"the run's account of itself is honest"*, which is
+the claim it is: a cut stream is a failed attempt to retry, not a reply the model chose to end. **Real
+model: zero retries and zero failures across the whole pass** — the check that matters most, since this
+adapter is the one the founder's runs use.
+
+**Stated boundaries.** A real provider cannot be made to cut a stream on demand, so the cut is provable
+on the stub only; the real-model pass is a regression check that the new completeness rule does not
+false-positive on a real stream, and it did not. The idle window is 120s of total silence and the
+header/body deadline 300s — generous on purpose, because a slow first token is not a stall. A server
+that ends a stream with neither `[DONE]` nor a `finish_reason` is now retried and, if it does it every
+time, fails the run: that is a malformed server being reported honestly, not a working one being broken.
 
 ---
 

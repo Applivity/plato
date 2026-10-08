@@ -767,48 +767,63 @@ async function runLoop(
           messages,
           tools: allTools,
         });
-        currentSystem = result.system;
-        messages.length = 0;
-        messages.push(...result.messages);
-        // The summariser call used tokens; fold them into the run
-        // totals honestly so the done-card cost is accurate.
+        // The summariser call used tokens; fold them into the run totals
+        // honestly so the done-card cost is accurate — whether or not the
+        // summary it produced turned out to be usable.
         inputTokens += result.summaryTokens;
         const summaryCost = estimateCost(opts.model, {
           inputTokens: result.summaryTokens,
           outputTokens: 0,
         });
         costUsd += summaryCost.usd;
-        const afterBreakdown = promptBreakdown(
-          currentSystem,
-          messages,
-          allTools,
-        );
-        bus.emit({
-          type: 'context-compacted',
-          runId,
-          turn,
-          mode: manualCompact ? 'manual' : 'auto',
-          beforeTokens,
-          afterTokens: afterBreakdown.total,
-          summaryTokens: result.summaryTokens,
-          keptMessages: messages.length,
-        });
-        // Re-emit `context` so the ring immediately reflects the new
-        // estimate, before the model call below.
-        bus.emit({
-          type: 'context',
-          runId,
-          turn,
-          maxContext: maxCtx,
-          total: afterBreakdown.total,
-          system: afterBreakdown.system,
-          user: afterBreakdown.user,
-          assistant: afterBreakdown.assistant,
-          tool: afterBreakdown.tool,
-          ...(lastInputTokens !== undefined
-            ? { lastInputTokens }
-            : {}),
-        });
+        if (result.summary.length === 0) {
+          // D49bp: `compactMessages` returned the conversation unchanged
+          // because the summariser produced nothing. Applying an empty summary
+          // would delete the whole earlier conversation and put nothing back,
+          // while the run reported the compaction as done. Say what happened and
+          // leave the context alone.
+          bus.emit({
+            type: 'notice',
+            runId,
+            text:
+              '[plato] context compaction produced no summary — the conversation was kept as it was.',
+          });
+        } else {
+          currentSystem = result.system;
+          messages.length = 0;
+          messages.push(...result.messages);
+          const afterBreakdown = promptBreakdown(
+            currentSystem,
+            messages,
+            allTools,
+          );
+          bus.emit({
+            type: 'context-compacted',
+            runId,
+            turn,
+            mode: manualCompact ? 'manual' : 'auto',
+            beforeTokens,
+            afterTokens: afterBreakdown.total,
+            summaryTokens: result.summaryTokens,
+            keptMessages: messages.length,
+          });
+          // Re-emit `context` so the ring immediately reflects the new
+          // estimate, before the model call below.
+          bus.emit({
+            type: 'context',
+            runId,
+            turn,
+            maxContext: maxCtx,
+            total: afterBreakdown.total,
+            system: afterBreakdown.system,
+            user: afterBreakdown.user,
+            assistant: afterBreakdown.assistant,
+            tool: afterBreakdown.tool,
+            ...(lastInputTokens !== undefined
+              ? { lastInputTokens }
+              : {}),
+          });
+        }
       } catch (e) {
         // A failed compaction must not crash the run. Surface a notice
         // and continue; the next threshold check (or the next manual

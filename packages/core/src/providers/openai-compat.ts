@@ -17,6 +17,39 @@ const DEFAULT_BASE = 'https://api.openai.com/v1';
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
+/**
+ * D49bp: how long a streaming turn may be SILENT before Plato gives up on it.
+ *
+ * The turn call had no read timeout: a server that accepted the connection and
+ * then stopped talking held the run open until the user pressed Cancel, and the
+ * retry policy could not help, because a stalled socket never throws. The clock
+ * is reset by every chunk RECEIVED, never by a particular field — a model that
+ * streams reasoning fragments this adapter does not read still proves the
+ * connection is alive, and a keepalive that reset the clock without carrying
+ * progress would defeat the guard. Silence for this long means the socket is
+ * dead, not slow.
+ */
+const STREAM_IDLE_MS = 120_000;
+
+/**
+ * D49bp: how long a connection has to produce its headers, or a non-streamed
+ * body its whole payload. This path carries no per-chunk progress signal, so
+ * the bound is a total deadline rather than an idle one, and it is
+ * correspondingly generous.
+ */
+const RESPONSE_TIMEOUT_MS = 300_000;
+
+/**
+ * D49bp: overridable so a test does not wait in real time — the same injection
+ * the retry policy uses for its sleep.
+ */
+export interface OpenAICompatTimeouts {
+  /** Max silence, in ms, before a streaming turn is abandoned. */
+  streamIdleMs?: number;
+  /** Max ms for a connection's headers, or a whole non-streamed body. */
+  responseTimeoutMs?: number;
+}
+
 interface ChatCompletionsResponse {
   choices?: {
     finish_reason?: string | null;
@@ -74,10 +107,15 @@ function stopReasonFrom(finish: string | null | undefined): TurnResponse['stopRe
  * (D07).
  *
  * `onDelta` fires per text fragment. Everything else accumulates.
+ *
+ * D49bp: the read is watched. A stream that goes silent for `idleMs` is
+ * abandoned, and one that ENDS without saying it finished is rejected — see the
+ * checks before the return.
  */
 async function consumeSse(
   body: ReadableStream<Uint8Array>,
   onDelta: (text: string) => void,
+  idleMs: number,
 ): Promise<ChatCompletionsResponse> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -86,55 +124,97 @@ async function consumeSse(
   let finish: string | null = null;
   let usage: ChatCompletionsResponse['usage'];
   const calls = new Map<number, ToolCallAcc>();
+  let sawDone = false;
+  /** D49bp: set by the watchdog, so a stall is reported as a stall. */
+  let stalled = false;
 
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    // `{stream: true}` keeps a multi-byte character split across chunk
-    // boundaries whole; a `data:` line split across reads is handled by
-    // holding the unterminated tail in `buf`.
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop() ?? '';
-    let sawDone = false;
-    for (const raw of lines) {
-      // CRLF and bare LF both appear in the wild.
-      const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
-      // ':' is the SSE heartbeat/comment; every other field is ignored
-      // because only `data:` carries a payload here.
-      if (!line.startsWith('data:')) continue;
-      const payload = line.slice(5).trim();
-      if (payload === '[DONE]') {
-        sawDone = true;
-        break;
+  // D49bp: the read watchdog. Cancelling the reader resolves a pending `read()`
+  // with `done: true`, which is how the timer reaches into the await below
+  // without racing a second promise — and leaking one abort listener per chunk.
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const bump = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      stalled = true;
+      void reader.cancel().catch(() => {});
+    }, idleMs);
+  };
+
+  bump();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bump();
+      // `{stream: true}` keeps a multi-byte character split across chunk
+      // boundaries whole; a `data:` line split across reads is handled by
+      // holding the unterminated tail in `buf`.
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+      for (const raw of lines) {
+        // CRLF and bare LF both appear in the wild.
+        const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw;
+        // ':' is the SSE heartbeat/comment; every other field is ignored
+        // because only `data:` carries a payload here.
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') {
+          sawDone = true;
+          break;
+        }
+        if (payload.length === 0) continue;
+        let chunk: ChatCompletionsResponse;
+        try {
+          chunk = JSON.parse(payload) as ChatCompletionsResponse;
+        } catch {
+          continue; // a keep-alive that is not JSON; ignore it
+        }
+        const choice = chunk.choices?.[0];
+        const delta = choice?.delta;
+        if (delta?.content) {
+          text += delta.content;
+          onDelta(delta.content);
+        }
+        for (const tc of delta?.tool_calls ?? []) {
+          const idx = tc.index ?? 0;
+          const acc = calls.get(idx) ?? { id: '', name: '', args: '' };
+          // Only the first fragment carries the id; name and arguments arrive
+          // in pieces and are concatenated by string.
+          if (tc.id) acc.id += tc.id;
+          if (tc.function?.name) acc.name += tc.function.name;
+          if (tc.function?.arguments) acc.args += tc.function.arguments;
+          calls.set(idx, acc);
+        }
+        if (choice?.finish_reason) finish = choice.finish_reason;
+        if (chunk.usage) usage = chunk.usage;
       }
-      if (payload.length === 0) continue;
-      let chunk: ChatCompletionsResponse;
-      try {
-        chunk = JSON.parse(payload) as ChatCompletionsResponse;
-      } catch {
-        continue; // a keep-alive that is not JSON; ignore it
-      }
-      const choice = chunk.choices?.[0];
-      const delta = choice?.delta;
-      if (delta?.content) {
-        text += delta.content;
-        onDelta(delta.content);
-      }
-      for (const tc of delta?.tool_calls ?? []) {
-        const idx = tc.index ?? 0;
-        const acc = calls.get(idx) ?? { id: '', name: '', args: '' };
-        // Only the first fragment carries the id; name and arguments arrive
-        // in pieces and are concatenated by string.
-        if (tc.id) acc.id += tc.id;
-        if (tc.function?.name) acc.name += tc.function.name;
-        if (tc.function?.arguments) acc.args += tc.function.arguments;
-        calls.set(idx, acc);
-      }
-      if (choice?.finish_reason) finish = choice.finish_reason;
-      if (chunk.usage) usage = chunk.usage;
+      if (sawDone) break;
     }
-    if (sawDone) break;
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+
+  // D49bp: the stream ended. It FINISHED only if the server said so — the
+  // `[DONE]` sentinel, or a `finish_reason` on the choice. With neither, the
+  // read stopped early (a proxy timeout, a mid-stream 502, a dropped socket),
+  // and the honest report is a retryable transport failure — not a half-written
+  // turn, or an empty one, returned as if it were complete. `mapResponse` below
+  // would otherwise hand the loop a turn that looks like the model chose to say
+  // nothing.
+  if (stalled) {
+    throw new ProviderError(
+      null,
+      `the stream stalled with no data for ${Math.round(idleMs / 1000)}s`,
+      'openai',
+    );
+  }
+  if (!sawDone && finish === null) {
+    throw new ProviderError(
+      null,
+      'the stream ended before the response finished',
+      'openai',
+    );
   }
 
   return {
@@ -213,6 +293,7 @@ export class OpenAICompatProvider implements ChatProvider {
     private readonly apiKey: string,
     private readonly baseUrl?: string,
     private readonly fetchImpl: FetchLike = (...a) => fetch(...a),
+    private readonly timeouts: OpenAICompatTimeouts = {},
   ) {}
 
   private strip(ref: string): string {
@@ -333,19 +414,51 @@ export class OpenAICompatProvider implements ChatProvider {
     if (this.apiKey.length > 0) {
       headers.authorization = `Bearer ${this.apiKey}`;
     }
+
+    // D49bp: the controller the fetch actually carries. Two things can abort it
+    // — the caller's signal (a cancel) and a timeout below — and the caller's
+    // own signal is the one consulted when a failure is classified, so a
+    // deliberate stop stays distinguishable from a dead socket.
+    const abort = new AbortController();
+    const relay = (): void => abort.abort();
+    if (req.signal) {
+      if (req.signal.aborted) abort.abort();
+      else req.signal.addEventListener('abort', relay, { once: true });
+    }
+    const idleMs = this.timeouts.streamIdleMs ?? STREAM_IDLE_MS;
+    const responseMs = this.timeouts.responseTimeoutMs ?? RESPONSE_TIMEOUT_MS;
+    /** Set when a guard here aborted, not the caller — so the cause is named. */
+    let deadlineHit = false;
+    const deadline = (): void => {
+      deadlineHit = true;
+      abort.abort();
+    };
+
     let res: Response;
+    // D49bp: even the wait for headers is bounded — a backend that accepts the
+    // connection and never answers is the same hang as one that goes silent.
+    const connectTimer = setTimeout(deadline, responseMs);
     try {
       res = await this.fetchImpl(`${base}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: req.signal,
+        signal: abort.signal,
       });
     } catch (e) {
+      if (deadlineHit) {
+        throw new ProviderError(
+          null,
+          `no response within ${Math.round(responseMs / 1000)}s`,
+          'openai',
+        );
+      }
       // D49d: a rejected fetch (DNS failure, refused socket) has no status —
       // keep it distinguishable from an HTTP error so the retry policy can
       // treat a transport failure as retryable.
       throw toProviderError(e, 'openai');
+    } finally {
+      clearTimeout(connectTimer);
     }
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 300);
@@ -356,16 +469,41 @@ export class OpenAICompatProvider implements ChatProvider {
         parseRetryAfter(res.headers.get('retry-after')),
       );
     }
-    // D49j: some compatible servers ignore `stream: true` and answer with a
-    // plain JSON body. Trusting the request flag would turn that into a
-    // silently EMPTY answer, so the response content-type decides.
-    if (
-      req.onDelta &&
-      res.body !== null &&
-      (res.headers.get('content-type') ?? '').includes('text/event-stream')
-    ) {
-      return mapResponse(await consumeSse(res.body, req.onDelta));
+    try {
+      // D49j: some compatible servers ignore `stream: true` and answer with a
+      // plain JSON body. Trusting the request flag would turn that into a
+      // silently EMPTY answer, so the response content-type decides.
+      if (
+        req.onDelta &&
+        res.body !== null &&
+        (res.headers.get('content-type') ?? '').includes('text/event-stream')
+      ) {
+        const body = res.body;
+        const onDelta = req.onDelta;
+        return mapResponse(await consumeSse(body, onDelta, idleMs));
+      }
+      // D49bp: no per-chunk signal on this path, so the whole body gets a
+      // deadline rather than an idle one.
+      const bodyTimer = setTimeout(deadline, responseMs);
+      try {
+        return mapResponse((await res.json()) as ChatCompletionsResponse);
+      } finally {
+        clearTimeout(bodyTimer);
+      }
+    } catch (e) {
+      if (deadlineHit) {
+        throw new ProviderError(
+          null,
+          `no response within ${Math.round(responseMs / 1000)}s`,
+          'openai',
+        );
+      }
+      // A truncated body (`res.json()` on a half-read socket) and any other
+      // read failure land here; a caller cancel arrives as its own abort, which
+      // the retry policy refuses to retry because that same signal is aborted.
+      throw toProviderError(e, 'openai');
+    } finally {
+      req.signal?.removeEventListener('abort', relay);
     }
-    return mapResponse((await res.json()) as ChatCompletionsResponse);
   }
 }

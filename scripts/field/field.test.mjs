@@ -360,7 +360,7 @@ describe('Plato field tests — real VS Code', function () {
         });
 
         await field.shot(label);
-        // D49bn: case 28 CLOSES the chat panel, and once it is closed the
+        // D49bn: case 29 CLOSES the chat panel, and once it is closed the
         // harness cannot step back inside a webview panel — a fresh one is
         // created but its iframe is never found, and that failure is the
         // harness's, not the product's. So that case is judged from the run
@@ -521,7 +521,7 @@ describe('Plato field tests — real VS Code', function () {
         // the right witness here for a second reason: the same bus notice is what
         // puts the row in the chat log, so the transcript proves the row was
         // written even though this case cannot look at the panel it was written in.
-        if (c.n === 28) {
+        if (c.n === 29) {
           if (!events.some((e) => e.type === 'notice' && /panel closed/.test(e.text ?? ''))) {
             notes.push('PANEL: the run carries no record that the panel closing is what stopped it');
           }
@@ -529,6 +529,26 @@ describe('Plato field tests — real VS Code', function () {
             notes.push('PANEL: the run did not end as cancelled, so it may still be going');
           }
           notes.push('panel close: the run stopped and the record names the cause');
+        }
+        if (c.n === 28) {
+          // D49bp. The stub cut the stream, so the run must show a RETRY and end
+          // on the retried answer rather than the half one. Both halves are read
+          // from the two independent witnesses: the retry notice from the
+          // transcript, the answer from the screen. If the cut were still taken
+          // as a finished turn, there would be no retry and the screen would
+          // carry only the truncated reply — so each check fails on its own.
+          const retried = events.filter(
+            (e) => e.type === 'notice' && /retrying in/.test(e.text ?? ''),
+          );
+          if (retried.length === 0) {
+            notes.push('CUT: the transcript shows no retry, so the cut stream was taken as a finished turn');
+          }
+          if (!screen.includes('for the field tests')) {
+            notes.push('CUT: the run did not reach the retried answer, so it ended on the truncated reply');
+          }
+          notes.push(
+            `cut: ${retried.length} retry notice(s), retried answer on screen=${screen.includes('for the field tests')}`,
+          );
         }
         if (c.n === 12) {
           // D49aw. The card must have appeared at all — without this check the
@@ -908,7 +928,7 @@ describe('Plato field tests — real VS Code', function () {
         // D49bm/D49bo: `PAUSE`, `QUEUE` and `PANEL` join it in the same breath as
         // the checks that use them, for exactly that reason.
         const failures = notes.slice(mark).filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT):/.test(n),
         );
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes.slice(mark)) console.log(`    ${n}`);

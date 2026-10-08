@@ -97,9 +97,13 @@ const CLAUSES = [
   },
   {
     n: 5,
-    text: 'The run’s account of itself is honest — unfinished plan, refusal, cancel',
-    cases: [7, 10, 17],
-    witness: 'the closing line and the log',
+    text: 'The run’s account of itself is honest — unfinished plan, refusal, cancel, a cut stream',
+    // D49bp extended this clause. The same claim covers the provider stream: a
+    // turn the provider CUT is a failed attempt to be retried, not a reply the
+    // model chose to end, so the run's account of finishing must not be bought
+    // with a half answer. Case 29 is that witness.
+    cases: [7, 10, 17, 28],
+    witness: 'the closing line and the log; the retry notice and the retried answer (28)',
     screen: 'PLANNOTE',
   },
   {
@@ -124,11 +128,11 @@ const CLAUSES = [
     // stopped it; and closing the panel — the run's only supervisor — must stop
     // the run rather than leave it going where nothing can see it.
     text: 'The run controls mean what they say — pause, queue, and closing the panel',
-    cases: [24, 25, 26, 27, 28],
+    cases: [24, 25, 26, 27, 29],
     witness:
       "the button's own label while the run is live (24, 25); the notices read back " +
       'from the transcript; a second transcript with the queued task (26); the queue ' +
-      'still waiting after a cancel (27); run-completed cancelled with the reason on screen (28)',
+      'still waiting after a cancel (27); run-completed cancelled with the reason on screen (29)',
     screen: 'PAUSE',
   },
 ];

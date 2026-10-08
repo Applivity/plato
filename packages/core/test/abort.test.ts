@@ -116,31 +116,35 @@ describe('the loop treats an abort as cancellation (D49i)', () => {
 });
 
 describe('the signal reaches the transport (D49i)', () => {
-  it('the OpenAI adapter passes it to fetch', async () => {
+  it("the OpenAI adapter relays the caller's cancel into the request", async () => {
     const ac = new AbortController();
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
-      new Response(
-        JSON.stringify({
-          choices: [{ finish_reason: 'stop', message: { content: 'hi' } }],
-          usage: { prompt_tokens: 1, completion_tokens: 1 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
-    );
+    let sent: AbortSignal | null = null;
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      sent = init.signal as AbortSignal;
+      ac.abort(); // the user cancels while the request is in flight
+      throw new Error('aborted');
+    });
     const p = createProvider('openai', {
       apiKey: 'sk-test',
       baseUrl: 'https://router.example/v1/',
       fetchImpl: fetchMock as unknown as typeof fetch,
     });
-    await p.completeTurn({
-      model: 'openai:gpt-4o',
-      system: 'S',
-      messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
-      tools: [],
-      maxTokens: 10,
-      signal: ac.signal,
-    });
-    expect(fetchMock.mock.calls[0]![1].signal).toBe(ac.signal);
+    await expect(
+      p.completeTurn({
+        model: 'openai:gpt-4o',
+        system: 'S',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'q' }] }],
+        tools: [],
+        maxTokens: 10,
+        signal: ac.signal,
+      }),
+    ).rejects.toBeInstanceOf(ProviderError);
+    // D49bp: the request no longer carries the caller's own signal object —
+    // Plato wraps it so a read timeout can abort the same request too. What
+    // must still hold is the property this test is for: the caller's cancel
+    // reaches the transport.
+    expect(sent).not.toBeNull();
+    expect(sent!.aborted).toBe(true);
   });
 
   it('the Anthropic adapter passes it to the SDK', async () => {

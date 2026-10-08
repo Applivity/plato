@@ -60,6 +60,15 @@ const playStep = (res, step) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
   const chunk = (o) => res.write(`data: ${JSON.stringify(o)}\n\n`);
   chunk({ choices: [{ index: 0, delta: { role: 'assistant', ...(text ? { content: text } : {}) } }] });
+  // D49bp: a step may SIMULATE A CUT. The response ends here — no
+  // `finish_reason` and no `[DONE]` sentinel — which is the shape a proxy
+  // timeout or a mid-stream 502 leaves behind. Plato must report the half answer
+  // as a FAILED attempt and retry, not return it as a turn the model chose to
+  // end. The next scripted step is what the retry consumes.
+  if (step.cut === true) {
+    res.end();
+    return;
+  }
   calls.forEach((c, i) => {
     chunk({
       choices: [

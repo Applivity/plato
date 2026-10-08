@@ -620,6 +620,63 @@ describe('runAgentLoop context + compaction (D37)', () => {
     expect(compacted.before).toBeGreaterThan(compacted.after);
   });
 
+  // D49bp: an empty summary used to be APPLIED — the older conversation was
+  // dropped and replaced by nothing, and the run reported the compaction as
+  // done. It must be reported and the context kept instead.
+  it('keeps the conversation and reports it when the summariser returns nothing', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req) {
+        if (req.system.startsWith('You are a context compactor')) {
+          return {
+            content: [],
+            usage: { inputTokens: 50, outputTokens: 0 },
+            stopReason: 'stop',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    let compactedSeen = false;
+    let contextEvents = 0;
+    bus.on((e) => {
+      if (e.type === 'notice') notices.push(e.text);
+      if (e.type === 'context-compacted') compactedSeen = true;
+      if (e.type === 'context') contextEvents += 1;
+    });
+    await runAgentLoop({
+      ...BASE,
+      model: 'litellm:totally-unknown-model',
+      provider: p,
+      bus,
+      advertised: { context: 8_000 },
+      history: [
+        { role: 'user', text: 'a'.repeat(2_000) },
+        { role: 'assistant', text: 'b'.repeat(2_000) },
+        { role: 'user', text: 'c'.repeat(2_000) },
+        { role: 'assistant', text: 'd'.repeat(2_000) },
+        { role: 'user', text: 'e'.repeat(2_000) },
+        { role: 'assistant', text: 'f'.repeat(2_000) },
+        { role: 'user', text: 'g'.repeat(2_000) },
+        { role: 'assistant', text: 'h'.repeat(2_000) },
+        { role: 'user', text: 'i'.repeat(2_000) },
+        { role: 'assistant', text: 'j'.repeat(2_000) },
+      ],
+      compact: { mode: 'auto', threshold: 0.5 },
+    });
+    expect(notices.join(' ')).toMatch(/no summary/);
+    expect(compactedSeen).toBe(false);
+    // A successful compaction re-emits `context` with the smaller total; a
+    // declined one re-emits nothing, so the single pre-turn event stands.
+    expect(contextEvents).toBe(1);
+  });
+
   /**
    * D49bf: the default window is 128k, not 8,192. **This is the defect the
    * change exists to remove** — a run against an endpoint whose /models said

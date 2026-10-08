@@ -746,9 +746,35 @@ const RULES = {
     },
   ],
 
-  // 28 — D49bn. Closing the panel stops the run, and the record names the cause
-  // rather than leaving "cancelled" to be read as the user's own doing.
+  // 28 — D49bp. The stub ends the response without a `finish_reason` or a
+  // `[DONE]` sentinel, which is what a cut stream leaves behind. The claim is
+  // that Plato read the cut as a FAILED attempt and retried it — the second
+  // scripted step exists only for that retry — rather than finishing the run on
+  // the half answer it had been sent.
   28: (a) => [
+    {
+      name: 'the transcript records the retry the cut provoked',
+      ok: a.notices.some((t) => /retrying in/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'the run still finished, on the retried answer',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+    {
+      name: 'the cut did not end the run as a failure',
+      ok: a.failed.length === 0,
+      detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
+    },
+  ],
+
+  // 29 — D49bn. Closing the panel stops the run, and the record names the cause
+  // rather than leaving "cancelled" to be read as the user's own doing.
+  // Renumbered from 28 on 2026-10-08: this case MUST run last, and the cut-stream
+  // case above had to run before it, so 28 went to the cut and the panel close
+  // took 29.
+  29: (a) => [
     {
       name: 'the run stopped',
       ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',

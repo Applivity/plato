@@ -1063,18 +1063,41 @@ export const CASES = [
   },
   {
     n: 28,
+    title: 'A stream the provider cuts is retried, not reported as a finished run',
+    // D49bp. The stub ends the response with no `finish_reason` and no `[DONE]`
+    // sentinel — the shape a proxy timeout or a mid-stream 502 leaves behind.
+    // Before this, the half answer was returned as a COMPLETE turn, so the run
+    // ended reporting success with a truncated reply and never noticed. The
+    // second step exists only for the retry: the run reaches it only if the cut
+    // was seen as a failed attempt rather than as the model deciding to stop.
+    runs: [
+      {
+        mode: 'auto',
+        prompt: 'Say what the review file is for.',
+        steps: [
+          { text: 'It is a review of the demo', cut: true },
+          { text: 'It is a review of the demo project, written for the field tests.' },
+        ],
+        cards: [],
+      },
+    ],
+  },
+  {
+    n: 29,
     title: 'Closing the chat panel stops the run instead of leaving it going',
     // D49bn. The panel is the run's only supervisor: the buttons, the cards and
     // the log all live in it. Closing it used to leave the run calling tools and
     // writing files with nothing able to see or stop it — and in `auto` there
     // are no cards, so nothing would even ask.
     //
-    // **THIS CASE MUST STAY LAST.** It closes the chat panel, and the harness
-    // cannot step back inside a webview panel once it has been closed — the new
-    // panel's iframe is never found. The case's own claims are read from the run
-    // record, so it passes; a case placed AFTER it would start from a window the
-    // driver can no longer reach into, and would fail for a reason that has
-    // nothing to do with the product.
+    // **THIS CASE MUST STAY LAST, and it is why the numbers here are not all in
+    // the order they run.** It closes the chat panel, and the harness cannot step
+    // back inside a webview panel once it has been closed — the new panel's
+    // iframe is never found. The case's own claims are read from the run record,
+    // so it passes; a case placed AFTER it would start from a window the driver
+    // can no longer reach into, and would fail for a reason that has nothing to
+    // do with the product. (Case 28 was moved ahead of it for exactly this
+    // reason, and is numbered to keep the order ascending.)
     runs: [
       {
         mode: 'auto',

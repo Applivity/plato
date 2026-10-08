@@ -323,6 +323,11 @@ export interface CompactedContext {
  *
  * Errors propagate. Callers should `try/catch` and surface a friendly
  * message — a failed compaction must not silently break the run.
+ *
+ * D49bp: a summary that comes back EMPTY is such a failure. The original
+ * messages are returned unchanged, so a caller that applies the result cannot
+ * drop the older conversation and put nothing in its place. See the note at
+ * the return.
  */
 export async function compactMessages(
   client: { completeTurn(req: TurnRequest): Promise<{ content: CanonicalContent[]; usage: { inputTokens: number; outputTokens: number } }> },
@@ -360,12 +365,18 @@ export async function compactMessages(
   // circular import on cost.ts; leave it to the caller.
   const summaryCostUsd = 0;
   const baseSystem = opts.system;
-  const system = summary.length > 0
+  // D49bp: an empty summary is a FAILED compaction, not an empty one to apply.
+  // Returning `keep` here would drop every older message and put nothing in its
+  // place — the run would carry on with its history deleted and report the
+  // compaction as done. The original list comes back instead, so no caller can
+  // lose context this way; the loop reports the failure.
+  const usable = summary.length > 0;
+  const system = usable
     ? `${baseSystem}\n\n[Conversation summary so far]\n${summary}`
     : baseSystem;
   return {
     system,
-    messages: keep,
+    messages: usable ? keep : [...opts.messages],
     beforeOlderTokens,
     keepTokens,
     summaryTokens,
