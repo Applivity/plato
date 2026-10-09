@@ -1,0 +1,24 @@
+# What does NOT go into the VSIX.
+#
+# There was no .vscodeignore until 2026-10-08, so every build shipped the whole
+# TypeScript source tree and 1.6 MB of source maps. The artifact was clean of
+# secrets, but it handed the complete source to anyone who unzipped it — more
+# than is intended while the repo is private and the license is undecided (D19).
+#
+# Only `dist/` is loaded at runtime (`main` in package.json). `out/` is a second,
+# duplicate build from tsc; the source, the build config and the maps are inputs.
+
+# Build inputs — not needed to run.
+src/**
+scripts/**
+tsconfig.json
+esbuild.mjs
+package.vsix.json
+
+# A duplicate build. `main` points at dist/extension.js, never at out/.
+out/**
+
+# Source maps. These are what carried the source back in.
+**/*.map
+
+node_modules/**

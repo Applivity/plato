@@ -279,6 +279,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // of spawning a blank second one.
   let live: vscode.WebviewPanel | undefined;
   let host: ChatHost | undefined;
+  // D49bq: the activity-bar list re-reads the stored chats when it is shown, and
+  // once the panel has closed — which is when a conversation is archived.
+  const chatsChanged = new vscode.EventEmitter<void>();
 
   setTimeout(reclaimDeadProjects, 0);
 
@@ -388,12 +391,18 @@ export function activate(ctx: vscode.ExtensionContext): void {
         },
       );
       panel.onDidDispose(() => {
-        if (live === panel) {
-          // D41: archive on close so History fills without New Chat.
-          void host?.dispose();
-          live = undefined;
-          host = undefined;
+        if (live !== panel) {
+          return;
         }
+        const closing = host;
+        live = undefined;
+        host = undefined;
+        // D41: archive on close so History fills without New Chat. The sidebar
+        // row list is only right once that archive has landed.
+        void (async () => {
+          await closing?.dispose();
+          chatsChanged.fire();
+        })();
       });
       live = panel;
       panel.webview.html = chatHtml();
@@ -413,6 +422,33 @@ export function activate(ctx: vscode.ExtensionContext): void {
       // No panel yet: drop any stored conversation, then open fresh.
       await ctx.workspaceState.update(LOG_KEY, []);
       await vscode.commands.executeCommand('plato.openChat');
+    }),
+  );
+
+  // D49bq: the activity-bar launcher. It opens the panel; it is not the panel.
+  const chats = new PlatoChatsProvider(ctx, chatsChanged);
+  const tree = vscode.window.createTreeView('plato.chats', {
+    treeDataProvider: chats,
+  });
+  // The stored list changes while the view is hidden — a chat is archived when
+  // the panel closes — so re-read it every time the view is shown.
+  tree.onDidChangeVisibility((e) => {
+    if (e.visible) {
+      chatsChanged.fire();
+    }
+  });
+  // The provider itself owns nothing to release.
+  ctx.subscriptions.push(tree, chatsChanged);
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('plato.resumeChat', async (id?: unknown) => {
+      if (typeof id !== 'string') {
+        return;
+      }
+      if (!live) {
+        await vscode.commands.executeCommand('plato.openChat');
+      }
+      await host?.resumeSession(id);
     }),
   );
 }
@@ -448,6 +484,93 @@ interface StoredChat {
   title: string;
   ts: string;
   log: Entry[];
+}
+
+/** A short "when" for the sidebar rows. The exact minute stops mattering fast. */
+function whenLabel(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return '';
+  }
+  const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
+  if (mins < 1) {
+    return 'just now';
+  }
+  if (mins < 60) {
+    return `${mins} min ago`;
+  }
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    return `${hours} h ago`;
+  }
+  return d.toLocaleDateString();
+}
+
+/**
+ * D49bq: the activity-bar launcher — Plato's presence beside Git, Search and
+ * Extensions.
+ *
+ * A TREE, not a second webview: it takes the theme's colours for free, carries
+ * no script surface, and every row is a command, so nothing here is reachable
+ * only by clicking. It lists the two ways into the chat and the chats that are
+ * already stored.
+ *
+ * It is deliberately NOT the chat itself. The conversation stays an editor tab,
+ * because the run controls are built on the panel lifecycle (D49bn) — see that
+ * decision for the alternative that was left open.
+ */
+class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+  constructor(
+    private readonly ctx: vscode.ExtensionContext,
+    private readonly changed: vscode.EventEmitter<void>,
+  ) {}
+
+  // A getter, not a field: the emitter is a constructor parameter property, and
+  // field initializers run before the constructor body assigns it.
+  get onDidChangeTreeData(): vscode.Event<void> {
+    return this.changed.event;
+  }
+
+  getTreeItem(el: vscode.TreeItem): vscode.TreeItem {
+    return el;
+  }
+
+  getChildren(el?: vscode.TreeItem): vscode.TreeItem[] {
+    // Every row is a leaf: there is nothing to expand.
+    if (el !== undefined) {
+      return [];
+    }
+    const rows: vscode.TreeItem[] = [
+      this.action('Open Chat', 'plato.openChat', 'comment-discussion'),
+      this.action('New Chat', 'plato.newChat', 'add'),
+    ];
+    for (const s of this.sessions().slice(0, 12)) {
+      const row = new vscode.TreeItem(
+        s.title && s.title.trim().length > 0 ? s.title : 'Untitled chat',
+        vscode.TreeItemCollapsibleState.None,
+      );
+      row.description = whenLabel(s.ts);
+      row.iconPath = new vscode.ThemeIcon('history');
+      row.command = {
+        command: 'plato.resumeChat',
+        title: 'Open this chat',
+        arguments: [s.id],
+      };
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  private sessions(): StoredChat[] {
+    return this.ctx.workspaceState.get<StoredChat[]>(SESSIONS_KEY, []);
+  }
+
+  private action(label: string, command: string, icon: string): vscode.TreeItem {
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    item.command = { command, title: label };
+    item.iconPath = new vscode.ThemeIcon(icon);
+    return item;
+  }
 }
 
 /**
@@ -918,31 +1041,7 @@ class ChatHost {
           return;
         }
         if (m.type === 'resumeChat' && typeof m.id === 'string') {
-          const s = this.sessions().find((x) => x.id === m.id);
-          if (s) {
-            this.log.length = 0;
-            this.log.push(...s.log.slice(-LOG_MAX));
-            void this.ctx.workspaceState.update(LOG_KEY, this.log);
-            // D40: resuming adopts the archived session's title.
-            this.chatTitle = s.title || '';
-            await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
-            // D41: the resumed content is already in History — only
-            // messages sent from here on should archive again.
-            this.archivedUpTo = this.log.length;
-            const decorated = this.log.map((e) =>
-              e.k === 'msg' && e.cls === 'bot'
-                ? { ...e, html: renderMarkdown(e.text) }
-                : e,
-            );
-            void this.panel.webview.postMessage({
-              type: 'restore',
-              log: decorated,
-              hasConnections: readConnections().length > 0,
-              model: this.effectiveModel(),
-              title: this.chatTitle,
-            });
-            this.postModelState();
-          }
+          await this.resumeSession(m.id);
           return;
         }
         if (m.type === 'settings-add' && typeof m.connId === 'string') {
@@ -2669,6 +2768,51 @@ class ChatHost {
       sessions.slice(0, SESSIONS_MAX),
     );
     this.archivedUpTo = this.log.length;
+  }
+
+  /**
+   * D49bq: open a stored conversation in the panel.
+   *
+   * Shared by the webview's History list and the activity-bar launcher, which is
+   * why it is a method rather than inline in the message handler.
+   *
+   * The run guard is new here, and it is new because the sidebar made this
+   * reachable in a state the webview never offered it in: replacing the log
+   * under a live run feeds the model a different conversation, while the run's
+   * own events keep landing in the panel. Refusing is the only honest answer.
+   */
+  async resumeSession(id: string): Promise<void> {
+    if (this.running) {
+      this.send(
+        'notice',
+        'A run is active — wait for it to finish before opening another conversation.',
+      );
+      return;
+    }
+    const s = this.sessions().find((x) => x.id === id);
+    if (!s) {
+      return;
+    }
+    this.log.length = 0;
+    this.log.push(...s.log.slice(-LOG_MAX));
+    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    // D40: resuming adopts the archived session's title.
+    this.chatTitle = s.title || '';
+    await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
+    // D41: the resumed content is already in History — only
+    // messages sent from here on should archive again.
+    this.archivedUpTo = this.log.length;
+    const decorated = this.log.map((e) =>
+      e.k === 'msg' && e.cls === 'bot' ? { ...e, html: renderMarkdown(e.text) } : e,
+    );
+    void this.panel.webview.postMessage({
+      type: 'restore',
+      log: decorated,
+      hasConnections: readConnections().length > 0,
+      model: this.effectiveModel(),
+      title: this.chatTitle,
+    });
+    this.postModelState();
   }
 
   /**

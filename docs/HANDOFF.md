@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-10-07)
+## Current state (verified 2026-10-08)
 
 - **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
   (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
@@ -206,6 +206,31 @@ are now only in PROGRESS.
   says so. **A provider that ends a stream with neither a `[DONE]` nor a `finish_reason` is retried
   and, if it does it every time, fails the run** — a malformed server reported honestly, which is the
   intended trade.
+
+- **Plato has an entry in the activity bar, and the conversation is still an editor tab (D49bq,
+  2026-10-08).** The founder asked why there is no Plato icon beside Git, Search and Extensions. There
+  was none because the manifest contributed no `viewsContainers` and no `views`, and the chat is a
+  `WebviewPanel` in `ViewColumn.Beside` — an editor tab, like an open file. It now contributes a
+  container holding one view, **Chats**: **Open Chat**, **New Chat**, then up to twelve stored chats
+  with a relative time, each one click from being restored. **The icon is Athena's owl (D49bs)** —
+  chosen from twelve marks drawn and rendered at 104, 24 and 16 pixels, because the speech bubble it
+  replaced was the first pass and read as generic. **It is a tree, not a second webview** —
+  theme colours for free, no script surface, and every row is a command. **The chat itself was NOT
+  moved into the sidebar, and that is deferred rather than rejected:** the run controls are built on
+  the panel lifecycle (**closing the panel stops the run**, D49bn), and a `WebviewView` has a
+  different one, in which "closed" never happens — only hidden. D49bq records what that work would
+  need. **One guard came with it:** `resumeSession`, the shared restore path, now **refuses while a
+  run is active**, a state the webview's History never offered and the sidebar does. **Verified in a
+  real window:** the activity bar reads `[…,"Claude Code","Plato","Cline"]`, the view opens as
+  **PLATO: CH…**, and its rows read **["Open Chat","New Chat"]**.
+
+- **The VSIX ships only what runs (D49br, 2026-10-08).** Found while answering how to hand a build to
+  someone: there was **no `.vscodeignore`**, so packaging shipped the entire TypeScript source tree,
+  a duplicate `out/` build and **1.6 MB of source maps** — 25 files, 879 KB. **It held no secrets**
+  (checked, not assumed), but it gave the complete source to anyone who unzipped it, which is more
+  than is intended while the repo is private and D19 is open. **Now 9 files, 206 KB, no source and no
+  maps.** `schemas/` and `examples/` are referenced by nothing and were left alone — declaring them
+  dead is a separate call.
 
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps

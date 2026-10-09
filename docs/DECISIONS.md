@@ -4073,6 +4073,135 @@ is the answer for a deliberate follow-up.
 
 ---
 
+**D49bs — the mark is an owl, and the temple could not be saved (founder, 2026-10-09).**
+
+**The founder asked for something less generic than the speech bubble D49bq shipped, and for the
+pediment to be improved.** A run of marks — nineteen drawn designs across five rounds — was rendered at
+104, 24 and 16 pixels on the real editor grounds, and judged at those sizes rather than as path
+data. **That method is the entry's real content: four ideas that read correctly as paths did not
+survive being drawn**, and the reasoning is below rather than asserted.
+
+**The temple could not be saved, and this was established rather than assumed.** It was drawn again and
+again across the studies — the first study's temple front on three columns with a stepped base, a
+bolder version of it, and a minimal one of a pediment over two fat columns. **Every one read as a
+house.** A triangle over a rectangle is a roof, and changing what sits underneath it does not change
+that — the perception is in the silhouette,
+not in the drawing. **The improvement is therefore subtractive:** keep the raking cornice and the
+stylobate and put nothing between them. Stripped of its columns the shape stops being a building and
+becomes geometry. That is the option the founder was shown for the pediment.
+
+**The mark is Athena's owl.** The bird struck on Athenian coins — the same city, and the same goddess,
+as the Academy. It was the only candidate that stayed distinctive at 16px: the ear tufts
+carry the outline and the two eyes are the only detail left, and the face still reads as a face. It is
+also the only one a person could describe to a colleague from memory, which is what makes it a mark
+rather than a shape.
+
+**Rejected, each for a reason the render produced:**
+
+- **The compass** (geometer's divider — the inscription over the Academy's door) read as a capital
+  **A**: the pivot, the splayed legs and the adjusting bar literally are one. Adding the drawn arc
+  turned it into a delta instead.
+- **The arch with a base bar and a keystone** read as a **padlock** — the bar became the lock body and
+  the keystone the shackle. Removing both fixed it; the plain arch survives as an option.
+- **The column with a ring** read as a **keyhole**, and at small sizes as a person. The ring never
+  fused with the column.
+- **The fluted column** read as a **roman numeral III** at 24px, and the grooves closed into a bar at
+  16px. The flutes were removed.
+- **The Greek key** needs corridor width to turn; at 16px the corridors shut and it became a solid
+  square.
+- **The amphora** was genuinely distinctive at 104px and a grey smudge at 16px — its detail *is* its
+  silhouette, so there was nothing left to simplify.
+
+**The earlier P was rebuilt rather than dropped.** The Form and the Column, which the founder had
+called adequate but unimpressive, became a solid letterform with a quarter-round counter and real
+contrast between stem and bowl. It was offered alongside the owl and the founder chose the owl; **the
+rebuilt P is recorded here as the mark to return to if the owl ever reads as too informal.**
+
+**How it is drawn.** The head is one path with `fill-rule="evenodd"`: the two eyes are its holes and
+the pupils are islands inside them. That is what keeps the face legible small — at 16px the tufts give
+the outline and the eyes are the only thing left to read. **The mark is monochrome in `currentColor`
+by necessity, not preference:** the activity bar recolours whatever it is handed, so any colour would
+be discarded.
+
+---
+
+**D49bq — the activity bar gets a Plato entry; the conversation stays an editor tab (founder,
+2026-10-08).**
+
+**The founder's question was why there is no Plato icon in the left bar, as Claude Code, Git and
+Search have.** There was none, and there could not be: the manifest contributed only commands and
+settings — **no `viewsContainers`, no `views`** — and the chat is a `WebviewPanel` opened in
+`ViewColumn.Beside`, which is an **editor tab**, exactly like an open file. Git, Search and Extensions
+are built into VS Code; Claude Code contributes its own container. An extension that contributes none
+has no icon there, by construction.
+
+**What shipped.** A container in the activity bar — a speech-bubble icon, `media/plato.svg`, drawn
+with `currentColor` so the theme recolours it — holding one view, **Chats**, which lists the ways into
+the conversation and the conversations already stored: **Open Chat**, **New Chat**, then up to twelve
+archived chats with a relative time, each one click from being restored. Both actions are also buttons
+in the view's title bar, and **Open a saved chat** is hidden from the palette (it takes an argument and
+means nothing without one).
+
+> **SUPERSEDED (D49bs, 2026-10-09):** the icon is now **Athena's owl**, not a speech bubble. The
+> container, the view, the rows and everything else this entry records are unchanged — only
+> `media/plato.svg` was swapped.
+
+**It is a TREE, not a second webview.** Three reasons, each of which the alternative gets wrong: it
+takes the theme's colours for free, it carries **no script surface** — a second webview would be a
+second place script runs, for a list of strings — and **every row is a command**, so nothing in it is
+reachable only by clicking. A launcher holds no state, which is what makes it cheap.
+
+**Why the conversation was NOT moved into the sidebar — deferred, not decided against (option A).**
+The run controls are built on the panel lifecycle: **closing the panel stops the run (D49bn)**, and the
+park and resume, the approval cards, the question cards and the transcript all live in that panel. A
+sidebar entry is a `WebviewView`, not a `WebviewPanel` — a different lifecycle, in which "closed" is
+not a thing that happens (**hidden** is, and it can be shown again), `retainContextWhenHidden` means
+something else, and the host must re-decide what it means for a run to outlive its supervision. That
+is a deliberate change to the product's centre, not a contribution point, and it wants its own
+decision. **Recorded as deferred.** The work it would need, if it is ever taken up: a
+`registerWebviewViewProvider`, the view's visibility as the new supervision signal, and an answer to
+what stops a run when the view is hidden rather than closed.
+
+**One guard added, because the sidebar made an unsafe state reachable.** `resumeSession` — the restore
+path, now shared by the webview's History list and this new list — **refuses while a run is active**.
+Replacing the log under a live run feeds the model a different conversation while the run's own events
+keep landing in the panel. The webview's History did not offer that state; the sidebar does. Nothing
+else about restoring changed: it is the same body, lifted out of the message handler so both callers
+share one copy.
+
+**Verified in a real window, not by inspection.** The harness launched VS Code with the packaged VSIX:
+the activity bar reads `["Explorer","Search","Source Control","Run and Debug","Extensions","Claude
+Code","Plato","Cline"]`, the view opens as **PLATO: CH…**, its title bar carries **Plato: Open Chat**
+and **Plato: New Chat**, and the rows read **["Open Chat","New Chat"]**. The passing assertion and the
+screenshot are the evidence; the temporary spike that produced them was deleted rather than committed.
+
+---
+
+**D49br — the VSIX ships only what runs (founder, 2026-10-08).**
+
+**Found while answering "how do I hand this to a user".** There was **no `.vscodeignore`**, so
+`vsce package` shipped whatever was on disk: the whole TypeScript source tree, `out/` (a second,
+duplicate build from `tsc`), **1.6 MB of source maps**, the build config and the build scripts — 25
+files, 879 KB. **It was clean of secrets** — no key material, no transcripts, no local storage, no
+demo-repo data; that was checked rather than assumed — **but it handed the complete source to anyone
+who unzipped it**, which is more than is intended while the repository is private and the license
+decision (D19) is still open. A `.vsix` is a zip; the source was in the payload, not implied by it.
+
+**Now 9 files, 206 KB, no source and no maps.** Only `dist/` is loaded at runtime (`main` points at
+`dist/extension.js`), so the source, the maps, `out/`, `tsconfig.json`, `esbuild.mjs`, the build
+scripts and `package.vsix.json` — a stale v0.1.0 leftover that nothing references — are excluded.
+
+**Two files were kept although nothing references them.** `schemas/` and `examples/` appear in no
+bundle and in no source file; the grep is empty in both directions. They are **not removed here**:
+declaring them dead is a separate call, and a packaging change is the wrong place to make it.
+Recorded so the next person does not have to re-derive it.
+
+**This is a distribution decision, and it belongs to the audit.** D15's secret audit sweeps
+"everything that leaves the machine: repo history, VSIX/npm artifacts, transcripts, docs, screenshots".
+The artifact now carries one fewer thing for that sweep to find.
+
+---
+
 **D49bp — the provider stream says when it was cut, and gives up when it stalls; and a compaction that
 summarised nothing is refused (founder, 2026-10-08).**
 

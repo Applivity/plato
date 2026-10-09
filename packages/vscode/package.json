@@ -37,8 +37,49 @@
       {
         "command": "plato.manageKeys",
         "title": "Plato: Manage API Keys"
+      },
+      {
+        "command": "plato.resumeChat",
+        "title": "Plato: Open a saved chat"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "plato",
+          "title": "Plato",
+          "icon": "media/plato.svg"
+        }
+      ]
+    },
+    "views": {
+      "plato": [
+        {
+          "id": "plato.chats",
+          "name": "Chats"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "plato.openChat",
+          "group": "navigation@1",
+          "when": "view == plato.chats"
+        },
+        {
+          "command": "plato.newChat",
+          "group": "navigation@2",
+          "when": "view == plato.chats"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "plato.resumeChat",
+          "when": "false"
+        }
+      ]
+    },
     "configuration": {
       "title": "Plato",
       "properties": {

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!--
+    D49bs: Athena's owl. Chosen from twelve marks drawn and rendered at 104, 24
+    and 16 pixels (see the mark studies); it was the only candidate that stayed
+    distinctive at the size the activity bar actually uses.
+
+    Monochrome in `currentColor`, as the activity bar requires — it recolours
+    whatever it is given, so any colour here would be discarded.
+
+    The head is one path with `evenodd`: the two eyes are its holes and the
+    pupils are islands inside them. That is what keeps the face legible at 16px,
+    where the tufts read as the outline and the eyes as the only detail left.
+  -->
+  <path fill="currentColor" d="M5.0 5.4 L5.8 1.4 L9.0 4.1 Z"/>
+  <path fill="currentColor" d="M19.0 5.4 L18.2 1.4 L15.0 4.1 Z"/>
+  <path
+    fill="currentColor"
+    fill-rule="evenodd"
+    d="M12 2.8 C6.8 2.8 4.4 7.4 4.4 11.4 C4.4 17.0 7.8 21.2 12 21.2 C16.2 21.2 19.6 17.0 19.6 11.4 C19.6 7.4 17.2 2.8 12 2.8 Z M8.6 7.6 a3.2 3.2 0 1 0 0 6.4 a3.2 3.2 0 1 0 0 -6.4 z M8.6 9.4 a1.4 1.4 0 1 0 0 2.8 a1.4 1.4 0 1 0 0 -2.8 z M15.4 7.6 a3.2 3.2 0 1 0 0 6.4 a3.2 3.2 0 1 0 0 -6.4 z M15.4 9.4 a1.4 1.4 0 1 0 0 2.8 a1.4 1.4 0 1 0 0 -2.8 z"
+  />
+  <path fill="currentColor" d="M12 13.9 L13.5 16.6 L10.5 16.6 Z"/>
+</svg>
