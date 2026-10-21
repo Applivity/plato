@@ -1,14 +1,17 @@
 {
-  "name": "plato-vscode",
-  "version": "0.25.0",
+  "name": "plato",
+  "version": "0.26.4",
   "private": true,
-  "description": "Plato VS Code extension — thin shell over @applivity/plato-core",
+  "license": "Apache-2.0",
+  "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
   "publisher": "applivity",
-  "displayName": "Plato",
+  "displayName": "Plato by Applivity",
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.103.0"
   },
   "categories": [
+    "Machine Learning",
     "Other"
   ],
   "activationEvents": [],
@@ -18,7 +21,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-vscode-0.25.0.vsix --force"
+    "install:vsix": "code --install-extension plato-0.26.4.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -138,10 +141,10 @@
     },
     "configurationDefaults": {
       "yaml.schemas": {
-        "%applivity.plato-vscode/schemas/academy.schema.json": [
+        "%applivity.plato/schemas/academy.schema.json": [
           "ACADEMY.yaml"
         ],
-        "%applivity.plato-vscode/schemas/duo.schema.json": [
+        "%applivity.plato/schemas/duo.schema.json": [
           "DUO.yaml"
         ]
       }

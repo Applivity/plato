@@ -2,6 +2,7 @@
   "name": "@applivity/plato-core",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Plato core agent library — no VS Code imports allowed",
   "type": "module",
   "main": "dist/src/index.js",

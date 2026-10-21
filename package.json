@@ -1,12 +1,12 @@
 {
-  "name": "plato",
+  "name": "plato-workspace",
   "private": true,
   "version": "0.1.0",
   "description": "Plato — AI coding agent with live mid-flight supervision (Applivity)",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "packageManager": "pnpm@11.23.0",
   "scripts": {
-    "build": "tsc -b && pnpm --filter plato-vscode run bundle",
+    "build": "tsc -b && pnpm --filter plato run bundle",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "render": "node scripts/render/run.mjs",
     "render:fast": "SKIP_BUILD=1 node scripts/render/run.mjs",
