@@ -3608,6 +3608,94 @@ export function chatHtml(): string {
       'secrets-add-allow',
     ));
 
+    // ---- 5. MCP servers (D49bt) ----
+    // Before this section, MCP had no UI at all: the file it reads was named
+    // nowhere in the product, so the feature could be found only by reading the
+    // docs and then hand-writing JSON. This is the discovery surface.
+    //
+    // The state shown is CONFIGURATION plus what the LAST RUN did — never a
+    // live reading. Plato starts servers during a run and stops them when it
+    // ends, so between runs there is nothing live to report, and a row says
+    // "not run yet" rather than inventing a count.
+    const mcp = d.mcp || { available: false, servers: [], error: '' };
+    const mcpItems = Array.isArray(mcp.servers) ? mcp.servers : [];
+    const sec5Det = document.createElement('details');
+    sec5Det.className = 'sec';
+    sec5Det.setAttribute('data-sec', 'mcp');
+    sec5Det.appendChild(el('summary', null, mcp.error
+      ? 'MCP servers  —  error'
+      : 'MCP servers  —  ' + mcpItems.length + ' configured'));
+    const mcpBody = el('div', 'secbody');
+    sec5Det.appendChild(mcpBody);
+    wrap.appendChild(sec5Det);
+    // A parse error must never sit inside a closed section.
+    if (mcp.error) { sec5Det.open = true; }
+
+    mcpBody.appendChild(el('p', 'shelp',
+      'Servers Plato starts and reads tools from. Their tools reach the model '
+      + 'as mcp__<server>__<tool>, and are gated like a shell command: plan '
+      + 'refuses them, edit asks, auto allows. A disabled server is skipped at '
+      + 'the next run.'));
+
+    // The .duo wrapper is required, not decorative: beh() returns a div.beh
+    // and the only matching CSS is scoped to .duo.
+    const mcpBox = el('div', 'duo');
+    const mcpHead = el('div', 'dhead');
+    let mcpSrc;
+    if (mcp.error) {
+      mcpSrc = '~/.plato/mcp.json has an error (' + mcp.error
+        + ') - the next change here repairs it.';
+    } else if (mcp.available) {
+      mcpSrc = 'Editing ~/.plato/mcp.json - every change rewrites the whole '
+        + 'file, so comments and ordering added by hand do not survive.';
+    } else {
+      mcpSrc = 'No ~/.plato/mcp.json yet - Open creates it.';
+    }
+    mcpHead.appendChild(iHelp(mcpSrc));
+    mcpHead.appendChild(el('span', 'dsp'));
+    mcpHead.appendChild(sbtn('Open mcp.json', () => {
+      vsapi.postMessage({ type: 'open-mcp' });
+    }, 'secondary'));
+    mcpBox.appendChild(mcpHead);
+
+    if (mcpItems.length === 0) {
+      const b = el('div', 'starter');
+      // The two empty states are different facts, and saying "none configured"
+      // when the file is simply unreadable would be a lie about the file.
+      b.textContent = mcp.error
+        ? 'mcp.json could not be read, so no servers can be listed here.'
+        : 'No MCP servers configured yet - Open mcp.json to add one. A block '
+          + 'copied from any MCP README works as it stands.';
+      mcpBox.appendChild(b);
+    } else {
+      const mcpUl = el('ul', 'plist');
+      for (const s of mcpItems) {
+        const li = el('li', 'plist-row');
+        li.appendChild(el('span', 'plist-name', String(s.name)));
+        let tag;
+        if (s.disabled) { tag = 'disabled'; }
+        else if (s.error) { tag = 'failed'; }
+        else if (s.tools === null || s.tools === undefined) { tag = 'not run yet'; }
+        else { tag = s.tools + (s.tools === 1 ? ' tool' : ' tools'); }
+        li.appendChild(el('span', 'plist-tag', tag));
+        // A failure reason is the actionable part, and as a chat notice it
+        // scrolls away — so it is reachable from the row that carries it.
+        if (s.error) { li.appendChild(iHelp(s.error)); }
+        li.appendChild(beh(!s.disabled, 'Enabled',
+          'Skipped at the next run when off.', (v) => {
+            vsapi.postMessage({
+              type: 'set-mcp-disabled', name: s.name, disabled: !v,
+            });
+          }));
+        mcpUl.appendChild(li);
+      }
+      mcpBox.appendChild(mcpUl);
+      mcpBox.appendChild(el('div', 'note',
+        'A tool count comes from the last run, not from now: Plato starts '
+        + 'servers while a run is going and stops them when it ends.'));
+    }
+    mcpBody.appendChild(mcpBox);
+
     // D47j/D47k: restore what the user had open, then their scroll position, so
     // a re-render caused by an action is invisible. Keyed by the stable
     // data-sec id, never the summary text (which carries a live count).
@@ -3801,7 +3889,7 @@ export function chatHtml(): string {
   let toolWords = {};
   function wordsFor(tool) {
     return toolWords[tool] || toolWords._generic
-      || { noun: 'the tool call', doing: 'using a tool', counted: 'tool calls' };
+      || { noun: 'the tool call', doing: 'using a tool', counted: 'tool calls', countedOne: 'tool call' };
   }
   let slashRows = [];           // rendered rows for keyboard cycling
   let slashActiveIdx = -1;
@@ -4115,8 +4203,13 @@ export function chatHtml(): string {
     // D49ba: "12 files read \u00b7 2 commands run" rather than "read_file x 12 \u00b7
     // shell x 2". The count moves behind the words, which is how a person says
     // it aloud.
-    const parts = Array.from(counts.entries())
-      .map((p) => p[1] + ' ' + wordsFor(String(p[0])).counted);
+    // A tally of ONE reads the singular: "1 file edited", not "1 files edited".
+    // The plural form alone was what the line always used, so every single call
+    // printed the bug.
+    const parts = Array.from(counts.entries()).map((p) => {
+      const w = wordsFor(String(p[0]));
+      return p[1] + ' ' + (p[1] === 1 ? w.countedOne : w.counted);
+    });
     const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
     const text = total + (total === 1 ? ' tool call \u00b7 ' : ' tool calls \u00b7 ')
       + parts.join(' \u00b7 ');

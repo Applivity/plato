@@ -40,7 +40,10 @@ describe('McpServer over real stdio', () => {
     try {
       expect(srv.tools).toHaveLength(1);
       expect(srv.tools[0]?.name).toBe('echo');
-      expect(srv.fullName('echo')).toBe('mcp_fake_echo');
+      // D49bt: the double underscore is the separator production emits; this is
+      // the only assertion on a name the client BUILDS, and the mode and copy
+      // tests feed this same string back in.
+      expect(srv.fullName('echo')).toBe('mcp__fake__echo');
 
       const out = (await srv.callTool('echo', { text: 'hi' })) as {
         text?: string;

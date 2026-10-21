@@ -769,12 +769,65 @@ const RULES = {
     },
   ],
 
-  // 29 — D49bn. Closing the panel stops the run, and the record names the cause
+  // 29 — D49bt. The MCP path, end to end: a configured server becomes a tool,
+  // the tool is gated like a shell command, and a disabled server is ABSENT
+  // rather than merely quiet.
+  //
+  // The absence check is the one that carries weight, because the skip lives in
+  // the host's start loop where no unit test reaches: were `disabled` ignored,
+  // `off` would start, announce itself and offer `mcp__off__echo`, and the run
+  // would still look entirely healthy to every other assertion here.
+  // The start notices are NOT checked here, and the omission is deliberate:
+  // servers start while the run is being prepared, before `run-started`, and the
+  // writer drops a notice that arrives before the record it would land in exists.
+  // The screen is their witness, in the spec. What the record CAN show — the
+  // gate, the call, and the end — is what this rule reads.
+  29: (a) => (a.header?.mode === 'plan'
+    // The PLAN half of the case. Every MCP tool is denied there, so the servers
+    // are not started and the record must show no MCP activity at all — that
+    // absence is the claim.
+    ? [
+        {
+          name: 'a plan run made no MCP tool call',
+          ok: a.toolEvents.every((e) => !/^mcp__/.test(e.tool)),
+          detail: summarise(a.toolEvents.filter((e) => /^mcp__/.test(e.tool))) || 'none',
+        },
+        {
+          name: 'and the run finished',
+          ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+          detail: JSON.stringify(a.completed[0] ?? null),
+        },
+      ]
+    : [
+    {
+      name: 'an MCP tool is gated like a shell command: it raised an approval card',
+      ok: a.cardsFor('mcp__fake__echo').length === 1,
+      detail: `${a.cardsFor('mcp__fake__echo').length} card(s)`,
+    },
+    {
+      name: 'the disabled server offered no tool at all',
+      ok: a.toolEvents.every((e) => !/^mcp__off__/.test(e.tool)),
+      detail: summarise(a.toolEvents.filter((e) => /^mcp__/.test(e.tool))),
+    },
+    {
+      name: 'and the enabled server’s tool actually RAN',
+      ok: a.doneFor('mcp__fake__echo').length >= 1,
+      detail: summarise(a.phasesFor('mcp__fake__echo')),
+    },
+    {
+      name: 'the run finished',
+      ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
+      detail: JSON.stringify(a.completed[0] ?? null),
+    },
+  ]),
+
+  // 32 — D49bn. Closing the panel stops the run, and the record names the cause
   // rather than leaving "cancelled" to be read as the user's own doing.
-  // Renumbered from 28 on 2026-10-08: this case MUST run last, and the cut-stream
-  // case above had to run before it, so 28 went to the cut and the panel close
-  // took 29.
-  29: (a) => [
+  // Renumbered from 28 on 2026-10-08 (28 went to the cut-stream case), and from
+  // 29 on 2026-10-15 when the MCP case took that number — 30 and 31 belong to
+  // the real-model cases. This one MUST still run last: it closes the panel, and
+  // the harness cannot step back into a webview it has closed.
+  32: (a) => [
     {
       name: 'the run stopped',
       ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',

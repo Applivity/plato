@@ -163,9 +163,9 @@ describe('secretRefusal', () => {
   });
 
   it('MCP tools are shell-class: denied in plan, asked in edit, allowed in auto (D06)', () => {
-    expect(decide('mcp_fake_echo', 'plan')).toBe('deny');
-    expect(decide('mcp_fake_echo', 'edit')).toBe('ask');
-    expect(decide('mcp_fake_echo', 'auto')).toBe('allow');
+    expect(decide('mcp__fake__echo', 'plan')).toBe('deny');
+    expect(decide('mcp__fake__echo', 'edit')).toBe('ask');
+    expect(decide('mcp__fake__echo', 'auto')).toBe('allow');
   });
 
   it('unknown non-mcp tools are denied outright', () => {

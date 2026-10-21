@@ -9,11 +9,13 @@ clauses that had no witness at all — **18–21 with the undo and masking work*
 (what undo puts back, what it refuses, and the masked read round trip), **22–23
 with the two halves of D49bc** (a protected file Plato cannot mask is offered
 once, and a command that reaches a protected file indirectly prints no value),
-**and 24–29 with the run controls and the provider stream** (pause says only what
-the run is doing, a pause that never lands says so, a queued follow-up runs when
-the run before it finishes — and does NOT when that run was cancelled — a stream
-the provider cuts is retried rather than reported as a finished run, and closing
-the chat panel stops the run) — see the table below. **Two further cases (30, 31)
+**24–28 and 32 with the run controls and the provider stream** (pause says only
+what the run is doing, a pause that never lands says so, a queued follow-up runs
+when the run before it finishes — and does NOT when that run was cancelled — a
+stream the provider cuts is retried rather than reported as a finished run, and
+closing the chat panel stops the run), **and 29 with the MCP path** (a configured
+server is started, its tool is gated and used, and a disabled one is absent) — see
+the table below. **Two further cases (30, 31)
 cover the queue
 and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
 they are not part of the scripted suite and need the founder's key file.
@@ -105,7 +107,8 @@ Two rules keep the driver honest:
 | 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, the queue is empty after, and **the queued run began only after the run before it had finished** — checked as OVERLAP, not as a count of runs, because the defect this catches started the queued run *first* (D49bo) |
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
 | 28 cut stream | the retried answer is on screen, not the half one the cut sent | the transcript records the **retry** the cut provoked, and the run still finished `complete` **on the second step** (D49bp). The stub ends the response with no `finish_reason` and no `[DONE]` — a proxy timeout's shape — so a build that takes the half answer as a finished turn shows no retry and the wrong text |
-| 29 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08; case 28 runs before it so this one keeps the last slot.) |
+| 29 MCP server | the MCP tool's approval card, and the tool running behind it; then **the Settings page itself** — the MCP section is opened, screenshotted, and `Open mcp.json` is pressed | run 1 (`edit`): a configured server announced its tools, its tool was **gated like a shell command** and then RAN, its result reached the model, and Settings listed both servers **with the tool count the run produced** — while a `disabled: true` server announced **nothing** and offered **no tool**. Run 2 (`plan`): the same config, and **not one MCP tool is offered and no MCP line reaches the chat**, because `plan` denies every MCP tool and the servers are not started at all (D49bt). **Both absences are the load-bearing halves** — the skips live in the host, where no unit test reaches |
+| 32 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, and **32 on 2026-10-15** when the MCP case took 29 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. Case 28 still runs before it, so it keeps the last slot.) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -259,14 +262,16 @@ worse than none:**
   (D49bm/D49bn/D49bo) found three controls that did not mean what they claimed, so
   the list grew from seven to **eight**: clause 8, *"The run controls mean what
   they say — pause, queue, and closing the panel"*, witnessed by cases 24–27 and
-  29. Nothing was restated; the seven that existed are unchanged.
+  32. Nothing was restated; the seven that existed are unchanged.
 - **Clause 5 gained a witness (2026-10-08).** The provider-stream work (D49bp) is
   the same claim that clause already makes — the run's account of itself is
   honest — so case 28 was added to it rather than growing a ninth clause: a stream
   the provider CUT is a failed attempt to retry, not a reply the model chose to
-  end. **Case 28 runs before case 29, and this is why the table's numbers are not
-  all in run order:** the panel-close case must be LAST, so the two were numbered
-  to keep the order ascending around it.
+  end. **Case 28 runs before the panel-close case, and this is why the table's
+  numbers are not all in run order:** the panel-close case must be LAST, so cases
+  are numbered to keep the order ascending around it — and it moved to **32** when
+  the MCP case took 29, because 30 and 31 are the real-model cases and the last
+  scripted case had to sort above them rather than collide.
 
 **Falsified.** Blanking `unfinishedPlanNote` in core makes case 17 fail with
 *"the run ended with 2 of 3 plan steps unfinished and did not say so"*, the judge
@@ -490,7 +495,7 @@ back green is not evidence until you know it could have come back red.*
 `@vscode/vsce` and left a dangling symlink in `packages/vscode/node_modules`, so
 packaging failed with `Cannot find module …/vsce` while the lockfile was correct
 the whole time; `pnpm install` relinks it. After touching the dependency graph,
-re-run `pnpm --filter plato-vscode run package` to confirm.
+re-run `pnpm --filter plato run package` to confirm.
 
 **A re-run needs the demo repo's scratch reset.** Tests 4, 5 and 9 write there, so
 a second run would start with the first run's edits. The launcher refuses to start

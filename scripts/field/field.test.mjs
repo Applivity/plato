@@ -11,11 +11,27 @@
  * Run it with:  node scripts/field/run-field.mjs
  * One case only: FIELD_CASES=5 node scripts/field/run-field.mjs
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
-import { VSBrowser, WebView, Workbench, Notification } from 'vscode-extension-tester';
+import {
+  VSBrowser,
+  WebView,
+  Workbench,
+  Notification,
+  BottomBarPanel,
+  EditorView,
+} from 'vscode-extension-tester';
 
 import { CASES, DEMO_REPO } from './cases.mjs';
 import { Field } from './driver.mjs';
@@ -73,6 +89,44 @@ function clearUndoProbes() {
     } catch {
       /* not there, which is the normal case */
     }
+  }
+}
+
+/**
+ * D49bt: MCP config lives in the founder's REAL home (`~/.plato`), because the
+ * harness runs against a real VS Code and `homePlatoDir()` is `os.homedir()`.
+ * A case that seeds it would otherwise overwrite the founder's own servers —
+ * and, worse, leave them in place, turning every LATER case in the suite into a
+ * run with MCP servers attached. So it is backed up once for the whole suite and
+ * restored in `after`, which mocha runs even when a case fails.
+ */
+const HOME_MCP = join(homedir(), '.plato', 'mcp.json');
+const HOME_MCP_BAK = HOME_MCP + '.plato-field-backup';
+/** D49bt: the schema Plato writes beside the config. */
+const HOME_MP = join(homedir(), '.plato', 'mcp.schema.json');
+
+function backupHomeMcp() {
+  try {
+    if (existsSync(HOME_MCP)) {
+      renameSync(HOME_MCP, HOME_MCP_BAK);
+      console.log('  ~/.plato/mcp.json backed up for the suite');
+    }
+  } catch (e) {
+    throw new Error(`could not back up ${HOME_MCP}: ${e.message}`);
+  }
+}
+
+function restoreHomeMcp() {
+  try {
+    rmSync(HOME_MCP, { force: true });
+    // D49bt: the probe has the product create this one, so it is the harness's
+    // to clear as well — the founder's home must hold what it held before.
+    rmSync(join(homedir(), '.plato', 'mcp.schema.json'), { force: true });
+    if (existsSync(HOME_MCP_BAK)) {
+      renameSync(HOME_MCP_BAK, HOME_MCP);
+    }
+  } catch {
+    /* nothing to put back */
   }
 }
 
@@ -165,6 +219,9 @@ describe('Plato field tests — real VS Code', function () {
   let field;
 
   before(async () => {
+    // D49bt: taken before anything runs, so the founder's own mcp.json survives
+    // a case that seeds one — including a case that fails half way through.
+    backupHomeMcp();
     driver = VSBrowser.instance.driver;
     await new Workbench().executeCommand('Plato: Open Chat');
     await driver.sleep(3000);
@@ -242,7 +299,20 @@ describe('Plato field tests — real VS Code', function () {
           writeFileSync(join(DEMO_REPO, file), content);
           notes.push(`seeded ${file}`);
         }
+        // D49bt: ~/.plato config for the run under test. Removed immediately
+        // after this run — an MCP config left in place would attach servers to
+        // every case that follows, so a later case would be measuring a run the
+        // case before it configured.
+        for (const [file, content] of Object.entries(run.seedHome ?? {})) {
+          mkdirSync(join(homedir(), '.plato'), { recursive: true });
+          writeFileSync(join(homedir(), '.plato', file), content);
+          notes.push(`seeded ~/.plato/${file}`);
+        }
 
+        // D49bt: the chat log persists across the runs of a case, so the plan
+        // half is judged on what IT added. Matching the whole log found the
+        // previous run's notices and reported a server that never started.
+        const logBefore = c.n === 29 && run.mode === 'plan' ? await field.logText() : '';
         const before = await field.send(run.prompt);
         const events = await field.waitRunEnd(before, {
           plan: run.cards,
@@ -521,7 +591,225 @@ describe('Plato field tests — real VS Code', function () {
         // the right witness here for a second reason: the same bus notice is what
         // puts the row in the chat log, so the transcript proves the row was
         // written even though this case cannot look at the panel it was written in.
-        if (c.n === 29) {
+        // D49bt: the MCP path. Two witnesses, because the two claims have
+        // different homes.
+        //
+        // The tool SURFACE is read from the stub's own record of what it was
+        // offered — nothing else can show that a disabled server contributed
+        // nothing, and "it was not called" would pass a run in which it was
+        // offered and simply not chosen.
+        //
+        // The START notices are looked for on the SCREEN. Servers start while the
+        // run is being prepared, before `run-started`, and the transcript writer
+        // drops a notice that arrives before the record it would land in exists
+        // (the rule D49bn records). So the transcript cannot witness them, and it
+        // is not worth restructuring the product to make a test easier.
+        if (c.n === 29 && run.mode === 'plan') {
+          // D49bt: `plan` denies every MCP tool, so the servers are not started
+          // — no tool offered, and nothing said about them in the chat. The
+          // absence is the claim: were the start loop still running, `fake`
+          // would be offered and announced exactly as it is in `edit`.
+          const offered = new Set(
+            (await stubLog()).log
+              .filter((r) => r.toolsOffered > 0)
+              .flatMap((r) => r.toolNames ?? []),
+          );
+          if ([...offered].some((t) => /^mcp__/.test(t))) {
+            notes.push(`MCP: a plan run was offered MCP tools (${[...offered].filter((t) => /^mcp__/.test(t)).join(', ')}) — plan denies every one of them, so the servers should not have started`);
+          } else {
+            notes.push('mcp: a plan run offered no MCP tools — the servers were not started');
+          }
+          const countMcp = (t) => (t.match(/MCP (fake|off)\b/g) || []).length;
+          const added = countMcp(await field.logText()) - countMcp(logBefore);
+          if (added !== 0) {
+            notes.push(`MCP: a plan run added ${added} MCP server line(s) to the chat, so a server was started after all`);
+          } else {
+            notes.push('mcp: a plan run said nothing about MCP servers');
+          }
+        }
+        if (c.n === 29 && i === 0) {
+          const records = (await stubLog()).log.filter((r) => r.toolsOffered > 0);
+          const offered = new Set(records.flatMap((r) => r.toolNames ?? []));
+          if (!offered.has('mcp__fake__echo')) {
+            notes.push('mcp: the configured server’s tool was never offered to the model');
+          } else {
+            notes.push('mcp: the configured server’s tool was on the model’s tool surface');
+          }
+          if (offered.has('mcp__off__echo')) {
+            notes.push('MCP: a DISABLED server’s tool was offered — disabled must contribute nothing at all');
+          } else {
+            notes.push('mcp: the disabled server’s tool was absent from the surface');
+          }
+          const log = await field.logText();
+          if (!/MCP fake: \d+ tools? available/.test(log)) {
+            notes.push('MCP: the chat never said the server was up, or what it offers');
+          } else {
+            notes.push('mcp: the chat named the server and its tool count');
+          }
+          if (/MCP off\b/.test(log)) {
+            notes.push('MCP: a disabled server announced itself on screen');
+          }
+
+          // D49bt: and the Settings page in a REAL window — the one place
+          // `mcpStatus()` runs. Opening it by clicking the gear is the point: the
+          // render suite feeds the view a payload it is HANDED, so no render
+          // assertion can show that the host builds one. This is also the only
+          // check anywhere that the previous run's outcome survives into the
+          // panel, which is the whole of what the section claims to report.
+          //
+          // Closed again immediately, in every path: `body.show-settings` hides
+          // the composer, so leaving it open would fail every case after this one
+          // for a reason with nothing to do with the product.
+          const opened = await field.openSettings();
+          if (!opened) {
+            notes.push('MCP: the Settings page never rendered its MCP section');
+          } else {
+            // Expanded BEFORE the read, so the screenshot shows the rows rather
+            // than a header: a `<details>` keeps its children in the DOM while
+            // collapsed, so a read alone would pass against a section no user
+            // could see.
+            //
+            // And the shot is taken BEFORE the read, because reading a "?" opens
+            // its tooltip and leaves it open — which covered the server names in
+            // the first version of this screenshot. Evidence that hides the thing
+            // it is evidence for is not evidence.
+            await field.expandMcpSection();
+            await field.shot('case-29-settings-mcp');
+            const sec = await field.mcpSection();
+            if (!sec) {
+              notes.push('MCP: Settings opened but the section was not in the DOM');
+            } else {
+              if (!/2 configured/.test(sec.title)) {
+                notes.push(`MCP: Settings headed the section "${sec.title}" — both configured servers should be listed`);
+              } else {
+                notes.push('mcp: Settings listed both configured servers');
+              }
+              const fake = sec.rows.find((r) => r.name === 'fake');
+              const off = sec.rows.find((r) => r.name === 'off');
+              if (!fake || fake.tag !== '1 tool') {
+                notes.push(`MCP: the server that ran reads "${fake ? fake.tag : 'no row'}" — the last run's tool count did not reach the panel`);
+              } else {
+                notes.push('mcp: the panel carried the tool count the last run produced');
+              }
+              if (!off || off.tag !== 'disabled' || off.checked !== false) {
+                notes.push(`MCP: the disabled server reads "${off ? off.tag : 'no row'}" with its switch ${off ? off.checked : 'missing'}`);
+              } else {
+                notes.push('mcp: the disabled server is listed, tagged, and switched off');
+              }
+            }
+          }
+          // D49bt: and "Open mcp.json" — the one control a user has for reaching
+          // the file, and the path that creates it. The config is deleted first so
+          // the press takes the CREATE branch, which is what writes the schema
+          // beside it and puts the `$schema` line in the config.
+          rmSync(HOME_MCP, { force: true });
+          rmSync(HOME_MP, { force: true });
+          await field.clickMcpOpen();
+          await field.shot('case-29-schema-opened');
+
+          await field.leave();
+          try {
+            // The status bar is the witness. The Problems view reported nothing
+            // for a file that was visibly open with a squiggle and a "1" badge on
+            // its tab, so reading it would have reported "no marker" for a file
+            // VS Code was plainly flagging.
+            const errorCount = async () => {
+              const n = await driver.executeScript(`
+                for (const el of document.querySelectorAll('[aria-label]')) {
+                  const label = el.getAttribute('aria-label') || '';
+                  if (/^Errors:/.test(label)) return label.replace(/[^0-9]/g, '');
+                }
+                return null;
+              `);
+              // No such item means NO errors: VS Code removes the status bar entry
+              // at zero rather than showing "0". Reading that as null was the bug
+              // that made an earlier version of this probe call a valid file broken.
+              return n === null || n === '' ? 0 : Number(n);
+            };
+            const waitForCount = async (want, ms) => {
+              const deadline = Date.now() + ms;
+              for (;;) {
+                if (await errorCount() === want) return true;
+                if (Date.now() > deadline) return false;
+                await driver.sleep(1000);
+              }
+            };
+            const schemaStatus = async () => driver.executeScript(`
+              for (const el of document.querySelectorAll('[aria-label]')) {
+                const label = el.getAttribute('aria-label') || '';
+                if (/schema/i.test(label)) return label.replace(/\s+/g, ' ').slice(0, 110);
+              }
+              return null;
+            `);
+            const write = (obj) => writeFileSync(
+              HOME_MCP, JSON.stringify(obj, null, 2) + '\n',
+            );
+            // A BASELINE, because this count is WORKSPACE-WIDE. In a full-suite
+            // run other cases have left deliberate errors in the demo repo, so the
+            // count does not start at zero — an isolated run of this case reads 0
+            // and the full suite read 3, which is what made this pass alone and
+            // fail in the suite. Every check below is a DELTA from here.
+            const base = await errorCount();
+
+            // CONTROL — a JSON syntax error, which cannot depend on any schema. If
+            // this is not seen, nothing below means anything: "no error" is the
+            // answer this probe can produce wrongly.
+            writeFileSync(HOME_MCP, '{ "mcpServers": { ');
+            if (!(await waitForCount(base + 1, 25000))) {
+              notes.push(`SCHEMA: the probe is blind — a JSON syntax error in the open ~/.plato/mcp.json never reached the status bar (baseline ${base}, read ${JSON.stringify(await errorCount())})`);
+            } else {
+              notes.push(`schema control: the editor reported the broken JSON (count rose by one from a baseline of ${base})`);
+
+              // CONTROL 2 — valid and complete. Zero errors, proving the count
+              // tracks THIS file and is not a stale number.
+              write({ mcpServers: { probe: { command: 'node' } } });
+              const clean = await waitForCount(base, 25000);
+              if (!clean) {
+                notes.push(`SCHEMA: a valid mcp.json did not return the count to its baseline of ${base} (read ${JSON.stringify(await errorCount())}), so it cannot be trusted to report the schema question`);
+              } else {
+                notes.push('schema control: valid JSON returned the count to its baseline — the count tracks this file');
+
+                // THE SCHEMA QUESTION, and the answer is no — recorded, not
+                // asserted, because the product no longer ships a schema for this
+                // file. Three deliveries were measured and all three failed the
+                // same way: `contributes.jsonValidation` (bare name, and
+                // `**/mcp.json`), and a `$schema` line in the file with the schema
+                // written beside it. In every case VS Code reported a schema as
+                // CONFIGURED while catching neither a missing required key nor an
+                // unknown one — so it is not validation that is failing to fire,
+                // it is the schema failing to load for a file outside a workspace.
+                //
+                // This note is lowercase on purpose: it is a recorded limitation,
+                // and it is here so that a future VS Code would show up as a change
+                // in what this line reports.
+                const status = await schemaStatus();
+                write({ mcpServers: { probe: { command: 'node', nonsense: true } } });
+                const unknownFlagged = await waitForCount(base + 1, 15000);
+                notes.push(unknownFlagged
+                  ? `schema: VS Code flagged an unknown key in ~/.plato/mcp.json (status "${status}") — the limit recorded in D49bt no longer holds, so a schema could be shipped for this file again`
+                  : `schema: no editor validation for ~/.plato/mcp.json — an unknown key is not flagged, though VS Code still reports "${status}". The limit is recorded in D49bt; the Settings panel is where the format is explained`);
+              }
+            }
+          } catch (e) {
+            notes.push(`SCHEMA: the editor probe could not run — ${String(e?.message ?? e).slice(0, 120)}`);
+          } finally {
+            // `closeAllEditors` was the first attempt and it CLOSED THE CHAT PANEL
+            // — the chat is an editor tab, and closing it stops the run and leaves
+            // a webview this harness cannot step back into, which is exactly why
+            // the panel-close case must run last. So: the one tab this probe
+            // opened, by name, and nothing else.
+            try { await new EditorView().closeEditor('mcp.json'); } catch { /* never opened */ }
+            try { await new BottomBarPanel().closePanel(); } catch { /* already shut */ }
+            await field.enter();
+            await field.closeSettings();
+          }
+        }
+        // D49bt: this reads the SECOND scripted case that must run last, so the
+        // number here follows the renumber — it was 29 until the MCP case took
+        // that slot and this one moved to 32. A check keyed on a case number is
+        // exactly what a renumber breaks, and it fails silently: the notes below
+        // simply stop being written.
+        if (c.n === 32) {
           if (!events.some((e) => e.type === 'notice' && /panel closed/.test(e.text ?? ''))) {
             notes.push('PANEL: the run carries no record that the panel closing is what stopped it');
           }
@@ -928,8 +1216,13 @@ describe('Plato field tests — real VS Code', function () {
         // D49bm/D49bo: `PAUSE`, `QUEUE` and `PANEL` join it in the same breath as
         // the checks that use them, for exactly that reason.
         const failures = notes.slice(mark).filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT|MCP|SCHEMA):/.test(n),
         );
+        // D49bt: the seeded home config goes as soon as this run is over, so the
+        // next case starts from the same empty state this one did.
+        for (const file of Object.keys(run.seedHome ?? {})) {
+          rmSync(join(homedir(), '.plato', file), { force: true });
+        }
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes.slice(mark)) console.log(`    ${n}`);
         // D49at: the manifest is what turns a pile of cases into an executable
@@ -965,6 +1258,7 @@ describe('Plato field tests — real VS Code', function () {
     // than at the end of the case, so a case that fails half way through still
     // leaves the workspace as it found it.
     clearUndoProbes();
+    restoreHomeMcp();
     mkdirSync(join(import.meta.dirname, '..', '..', 'tmp', 'field'), { recursive: true });
     writeFileSync(
       MANIFEST_PATH,

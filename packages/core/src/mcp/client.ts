@@ -2,7 +2,7 @@
  * MCP stdio client (D06, M3): JSON-RPC 2.0 over a child process per
  * configured server. Lifecycle: spawn → initialize handshake →
  * tools/list. Tools surface as canonical declarations named
- * `mcp_<server>_<tool>`. A dead or hung server degrades to zero tools;
+ * `mcp__<server>__<tool>`. A dead or hung server degrades to zero tools;
  * it never breaks the loop.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -17,6 +17,8 @@ export interface McpServerConfig {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /** D49bt: skipped at the next run. Absent means enabled. */
+  disabled?: boolean;
 }
 
 export class McpServer {
@@ -89,9 +91,16 @@ export class McpServer {
     }
   }
 
-  /** Tool name as exposed to the model: mcp_<server>_<tool>. */
+  /**
+   * Tool name as exposed to the model: mcp__<server>__<tool>.
+   *
+   * D49bt: the separator is a DOUBLE underscore, matching Claude Code and Codex.
+   * A single one is ambiguous — a server may be named `a_b` and a tool may be
+   * `b_c`, and the loop keys its tool map by this joined string, so a collision
+   * silently dropped one server's tool with nothing reported anywhere.
+   */
   fullName(tool: string): string {
-    return `mcp_${this.serverName}_${tool}`;
+    return `mcp__${this.serverName}__${tool}`;
   }
 
   async callTool(

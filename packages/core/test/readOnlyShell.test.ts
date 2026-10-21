@@ -366,7 +366,7 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
     // An MCP tool is shell-class and denied in plan; it carries a `command` arg
     // shaped exactly like the one the allowance looks for.
     expect(
-      decideWithArgs('mcp_fake_echo', 'plan', { command: 'git status' }),
+      decideWithArgs('mcp__fake__echo', 'plan', { command: 'git status' }),
     ).toBe('deny');
     expect(decideWithArgs('kill_shell', 'plan', { id: 'x' })).toBe('deny');
   });

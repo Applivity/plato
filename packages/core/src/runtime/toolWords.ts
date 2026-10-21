@@ -11,9 +11,16 @@
  * will not.** Each tool has three forms and they are used by exactly one place
  * each:
  *
- *   - `noun`    — the object of a sentence: *"Plato did not run the command."*
- *   - `doing`   — present tense, for work in progress: *"running a command"*
- *   - `counted` — a plural for a tally: *"2 commands run"*
+ *   - `noun`       — the object of a sentence: *"Plato did not run the command."*
+ *   - `doing`      — present tense, for work in progress: *"running a command"*
+ *   - `counted`    — a plural for a tally: *"2 commands run"*
+ *   - `countedOne` — the same tally at one: *"1 command run"*
+ *
+ * `countedOne` exists because the summary line printed *"1 files edited"*: a
+ * tally of one was reading the plural form, because there was no other form to
+ * read. It is a separate word rather than a rule for the same reason the rest of
+ * this table is written out — "commands run" → "command run" is not a rule that
+ * survives "searches".
  *
  * The forms are written out rather than derived, because English will not let
  * them be: "run"/"running"/"commands run" is not a rule, it is three words. The
@@ -28,29 +35,32 @@ export interface ToolWords {
   doing: string;
   /** A plural, for a count. */
   counted: string;
+  /** The same count at one, for a tally of a single call. */
+  countedOne: string;
 }
 
 const GENERIC: ToolWords = {
   noun: 'the tool call',
   doing: 'using a tool',
   counted: 'tool calls',
+  countedOne: 'tool call',
 };
 
 const WORDS: Record<string, ToolWords> = {
-  read_file: { noun: 'the read', doing: 'reading a file', counted: 'files read' },
-  write_file: { noun: 'the write', doing: 'writing a file', counted: 'files written' },
-  apply_diff: { noun: 'the edit', doing: 'editing a file', counted: 'files edited' },
-  apply_patch: { noun: 'the edit', doing: 'editing files', counted: 'files edited' },
-  list_dir: { noun: 'the listing', doing: 'listing a folder', counted: 'folders listed' },
-  grep: { noun: 'the search', doing: 'searching', counted: 'searches' },
-  glob: { noun: 'the search', doing: 'searching', counted: 'searches' },
-  shell: { noun: 'the command', doing: 'running a command', counted: 'commands run' },
-  bash_output: { noun: 'the output read', doing: 'reading the output', counted: 'outputs read' },
-  kill_shell: { noun: 'the stop', doing: 'stopping a command', counted: 'commands stopped' },
-  git: { noun: 'the git command', doing: 'running git', counted: 'git commands' },
-  web_fetch: { noun: 'the fetch', doing: 'fetching a page', counted: 'pages fetched' },
-  todo_write: { noun: 'the plan', doing: 'writing the plan', counted: 'plans written' },
-  ask_user: { noun: 'the question', doing: 'asking you', counted: 'questions' },
+  read_file: { noun: 'the read', doing: 'reading a file', counted: 'files read', countedOne: 'file read' },
+  write_file: { noun: 'the write', doing: 'writing a file', counted: 'files written', countedOne: 'file written' },
+  apply_diff: { noun: 'the edit', doing: 'editing a file', counted: 'files edited', countedOne: 'file edited' },
+  apply_patch: { noun: 'the edit', doing: 'editing files', counted: 'files edited', countedOne: 'file edited' },
+  list_dir: { noun: 'the listing', doing: 'listing a folder', counted: 'folders listed', countedOne: 'folder listed' },
+  grep: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search' },
+  glob: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search' },
+  shell: { noun: 'the command', doing: 'running a command', counted: 'commands run', countedOne: 'command run' },
+  bash_output: { noun: 'the output read', doing: 'reading the output', counted: 'outputs read', countedOne: 'output read' },
+  kill_shell: { noun: 'the stop', doing: 'stopping a command', counted: 'commands stopped', countedOne: 'command stopped' },
+  git: { noun: 'the git command', doing: 'running git', counted: 'git commands', countedOne: 'git command' },
+  web_fetch: { noun: 'the fetch', doing: 'fetching a page', counted: 'pages fetched', countedOne: 'page fetched' },
+  todo_write: { noun: 'the plan', doing: 'writing the plan', counted: 'plans written', countedOne: 'plan written' },
+  ask_user: { noun: 'the question', doing: 'asking you', counted: 'questions', countedOne: 'question' },
 };
 
 export function toolWords(tool: string): ToolWords {

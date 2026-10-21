@@ -1,4 +1,4 @@
-import { check, page, finish, checkPageClean } from './plib.mjs';
+import { check, page, finish, checkPageClean, TOOL_WORDS_MSG } from './plib.mjs';
 
 /**
  * D49aa: the founder's report — a run ended, a fold ran, and the conversation he
@@ -92,6 +92,42 @@ const snapshot = (p) => p.evaluate(() => {
   check('one dropped entry reads in the singular', b && /^1 older entry /.test(b.head), b);
   check('losing the summary is called out', /no longer remembers/.test(b.body), b);
   checkPageClean(p, 'summary loss');
+  await p.close();
+}
+
+// D. The collapsed activity row counts ONE in the singular. The counted words
+//    are plural, and until now a single call printed "1 files edited" — the line
+//    a user sees after every small edit. The tally is per tool NAME, so one call
+//    to one tool is exactly the case that was wrong.
+const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
+  new MessageEvent('message', { data: x }),
+), msg);
+
+const summary = (p) => p.evaluate(
+  () => (document.querySelector('.msg.tool-summary') || {}).textContent || '',
+);
+
+{
+  const p = await page(760);
+  await post(p, TOOL_WORDS_MSG);
+  await post(p, { type: 'tool', tool: 'apply_diff', phase: 'done' });
+  await p.waitForTimeout(700); // the buffer flushes 500ms after the last event
+  const one = await summary(p);
+  check('a tally of one reads in the singular',
+    one === '1 tool call · 1 file edited', one);
+  checkPageClean(p, 'tool summary, one call');
+  await p.close();
+}
+{
+  const p = await page(760);
+  await post(p, TOOL_WORDS_MSG);
+  await post(p, { type: 'tool', tool: 'apply_diff', phase: 'done' });
+  await post(p, { type: 'tool', tool: 'apply_diff', phase: 'done' });
+  await p.waitForTimeout(700);
+  const two = await summary(p);
+  check('a tally of two still reads in the plural',
+    two === '2 tool calls · 2 files edited', two);
+  checkPageClean(p, 'tool summary, two calls');
   await p.close();
 }
 

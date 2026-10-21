@@ -128,11 +128,11 @@ const CLAUSES = [
     // stopped it; and closing the panel — the run's only supervisor — must stop
     // the run rather than leave it going where nothing can see it.
     text: 'The run controls mean what they say — pause, queue, and closing the panel',
-    cases: [24, 25, 26, 27, 29],
+    cases: [24, 25, 26, 27, 32],
     witness:
       "the button's own label while the run is live (24, 25); the notices read back " +
       'from the transcript; a second transcript with the queued task (26); the queue ' +
-      'still waiting after a cancel (27); run-completed cancelled with the reason on screen (29)',
+      'still waiting after a cancel (27); run-completed cancelled with the reason on screen (32)',
     screen: 'PAUSE',
   },
 ];

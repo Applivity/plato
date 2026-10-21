@@ -20,6 +20,9 @@ import {
   renderMarkdown,
   McpServer,
   loadMcpConfig,
+  parseMcpConfig,
+  withServerDisabled,
+  EMPTY_MCP_CONFIG,
   applyFold,
   isMessageRow,
   lastSummaryIndex,
@@ -833,10 +836,18 @@ class ChatHost {
   private pendingHistory: { title: string; text: string } | null = null;
   /** D44d: a cross-message fold (summary call + log rewrite) is in flight. */
   private folding = false;
-  /** D47: watchers on ~/.plato/{duo,academy}.yaml (armed once Settings opens). */
+  /** D47: watchers on the ~/.plato config files (armed once Settings opens). */
   private homeWatchers: vscode.FileSystemWatcher[] = [];
   /** D47: ms of the last home-file write — swallows our own watcher echoes. */
   private lastHomeWrite = 0;
+  /**
+   * D49bt: what each MCP server did on the LAST run, so Settings can report it
+   * without spawning anything. MCP servers live only for the length of a run —
+   * built at the top of `run()` and stopped in its `finally` — so between runs
+   * there is no live state to read, and this map is the whole of what the panel
+   * is entitled to claim. A server absent from it has not run yet.
+   */
+  private mcpLastRun = new Map<string, { tools: number; error: string }>();
   /**
    * D49av: the editor's own view of the files Plato writes. One per chat panel,
    * because it remembers which files a language server has ever reported on —
@@ -1374,6 +1385,61 @@ class ChatHost {
           }
           return;
         }
+        if (m.type === 'open-mcp') {
+          const file = vscode.Uri.file(join(this.homePlatoDir(), 'mcp.json'));
+          try {
+            await vscode.workspace.fs.stat(file);
+            void vscode.window.showTextDocument(file);
+          } catch {
+            // No file yet: Open materializes an empty mcpServers map so the
+            // button always lands on a real, editable file. Unlike the council
+            // there is no honest starter server to invent — the schema supplies
+            // the field help instead of a commented example, which JSON cannot
+            // carry.
+            try {
+              parseMcpConfig(EMPTY_MCP_CONFIG); // must re-read as a valid config
+              await this.writeHomeFile('mcp.json', EMPTY_MCP_CONFIG);
+              this.ensureHomeWatch();
+              void this.sendSettings();
+              void vscode.window.showTextDocument(file);
+            } catch (e) {
+              void this.sendSettings(
+                `mcp.json could not be created — ${
+                  e instanceof Error ? e.message : 'error'
+                }`,
+              );
+            }
+          }
+          return;
+        }
+        if (
+          m.type === 'set-mcp-disabled' &&
+          typeof m.name === 'string' &&
+          typeof m.disabled === 'boolean'
+        ) {
+          try {
+            const file = vscode.Uri.file(join(this.homePlatoDir(), 'mcp.json'));
+            const text = Buffer.from(
+              await vscode.workspace.fs.readFile(file),
+            ).toString('utf8');
+            const body = withServerDisabled(text, m.name, m.disabled);
+            parseMcpConfig(body); // never write what will not read back
+            await this.writeHomeFile('mcp.json', body);
+            this.ensureHomeWatch();
+            // D49bt: same wording as the council — a toggle mid-run must not
+            // imply it changed the run already going.
+            void this.sendSettings(
+              `${m.name} ${m.disabled ? 'disabled' : 'enabled'} — applies from the next run.`,
+            );
+          } catch (e) {
+            void this.sendSettings(
+              `mcp.json not saved — ${
+                e instanceof Error ? e.message : 'error'
+              }`,
+            );
+          }
+          return;
+        }
         // D45a-3: open-or-create PLATO.md (Settings row and the empty-composer
         // card both land here). Project files always join when present — the
         // includeProjectRules opt-out was removed (file presence is the switch).
@@ -1659,7 +1725,7 @@ class ChatHost {
         }
         void this.sendSettings();
       };
-      for (const name of ['DUO.yaml', 'ACADEMY.yaml']) {
+      for (const name of ['DUO.yaml', 'ACADEMY.yaml', 'mcp.json']) {
         const w = vscode.workspace.createFileSystemWatcher(
           new vscode.RelativePattern(vscode.Uri.file(dir), name),
         );
@@ -2470,6 +2536,10 @@ class ChatHost {
         extra: this.secretSetting('secrets.protect'),
         allow: this.secretSetting('secrets.allow'),
       },
+      // D49bt: MCP configuration + the last run's outcome. A sibling of
+      // `secrets`, deliberately NOT inside `orchestration` — that object is the
+      // Duo/Academy block and putting MCP there would say it is staff.
+      mcp: this.mcpStatus(),
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
@@ -2606,6 +2676,57 @@ class ChatHost {
         available: false,
         name: '',
         members: [],
+        error: e instanceof Error ? e.message : 'error',
+      };
+    }
+  }
+
+  /**
+   * MCP state for the Settings section (D49bt). Mirrors `academyStatus`'s
+   * contract exactly: a missing file is NOT an error, a malformed one is.
+   *
+   * This reports CONFIGURATION plus the outcome of the last run. It deliberately
+   * does not start servers — `sendSettings` is not a once-per-open call (it fires
+   * on every connection change, model fetch and home-file watcher event), and
+   * `McpServer.start` spawns a child process from the user's own config with a
+   * 20-second handshake. Rendering a settings page must not execute the user's
+   * configured commands, repeatedly, or block on a hung one.
+   *
+   * `tools: null` is "has not run yet" and `0` is "ran and exposed nothing" —
+   * the two are different facts and the panel says so.
+   */
+  private mcpStatus(): {
+    available: boolean;
+    servers: {
+      name: string;
+      disabled: boolean;
+      tools: number | null;
+      error: string;
+    }[];
+    error: string;
+  } {
+    try {
+      const cfg = loadMcpConfig(this.homePlatoDir());
+      const names = Object.keys(cfg);
+      if (names.length === 0) {
+        // No file, and an empty file, are the same thing to a user: none
+        // configured. Neither is an error.
+        return { available: false, servers: [], error: '' };
+      }
+      return {
+        available: true,
+        servers: names.map((name) => ({
+          name,
+          disabled: cfg[name]?.disabled === true,
+          tools: this.mcpLastRun.get(name)?.tools ?? null,
+          error: this.mcpLastRun.get(name)?.error ?? '',
+        })),
+        error: '',
+      };
+    } catch (e) {
+      return {
+        available: false,
+        servers: [],
         error: e instanceof Error ? e.message : 'error',
       };
     }
@@ -3651,25 +3772,58 @@ class ChatHost {
       { task, root },
     );
     writer.attach(bus);
-    // MCP servers (D06, D46): read from ~/.plato/mcp.yaml; failures degrade
-    // to zero tools for that server, never break the run.
+    // MCP servers (D06, D46, D49bt): read from ~/.plato/mcp.json; failures
+    // degrade to zero tools for that server, never break the run.
+    //
+    // D49bt: these go to the screen only, and that is not an oversight. Servers
+    // start while the run is being PREPARED — before `run-started` — and the
+    // transcript writer drops a notice that arrives before the record it would
+    // land in exists (the rule D49bn records). Emitting on the bus as well was
+    // tried and is inert; a comment claiming otherwise would be a lie about what
+    // the record holds.
+    const mcpNotice = (text: string) => {
+      this.send('notice', text);
+    };
     const mcpServers: McpServer[] = [];
+    // D49bt: `plan` denies every MCP tool (modes.ts), so the servers are not
+    // started there. Starting them would run the user's configured commands in
+    // the one mode that promises to change nothing, and a hung server costs up
+    // to 20 seconds before the first turn — all for tools that can never be
+    // called in that mode.
+    //
+    // The last run's outcome is deliberately NOT cleared in plan: nothing ran,
+    // so "not run yet" would be a worse answer than the last run that did. A
+    // server removed from the config stops appearing regardless, because the
+    // panel only reports names the file still has.
+    const mcpStartsThisMode = this.mode !== 'plan';
+    if (mcpStartsThisMode) {
+      this.mcpLastRun = new Map();
+    }
     try {
       const cfg = loadMcpConfig(this.homePlatoDir());
       for (const [name, c] of Object.entries(cfg)) {
+        if (!mcpStartsThisMode) {
+          continue;
+        }
+        // D49bt: a disabled server is not started and says NOTHING — no notice,
+        // not even a failure one. Silence is what "off" has to mean.
+        if (c.disabled === true) {
+          continue;
+        }
         const srv = new McpServer(name, c);
         try {
           await srv.start(20_000);
           mcpServers.push(srv);
+          this.mcpLastRun.set(name, { tools: srv.tools.length, error: '' });
           if (srv.tools.length > 0) {
-            this.send(
-              'notice',
-              `MCP ${name}: ${srv.tools.length} tools available`,
-            );
+            mcpNotice(`MCP ${name}: ${srv.tools.length} tools available`);
           }
         } catch (e) {
-          this.send(
-            'notice',
+          this.mcpLastRun.set(name, {
+            tools: 0,
+            error: e instanceof Error ? e.message : 'error',
+          });
+          mcpNotice(
             `MCP ${name} failed to start — ${
               e instanceof Error ? e.message : 'error'
             }`,
@@ -3677,9 +3831,8 @@ class ChatHost {
         }
       }
     } catch (e) {
-      this.send(
-        'notice',
-        `mcp.yaml ignored — ${e instanceof Error ? e.message : 'error'}`,
+      mcpNotice(
+        `mcp.json ignored — ${e instanceof Error ? e.message : 'error'}`,
       );
     }
     // Philosophers (D30 + D32): ACADEMY.yaml members in Academy mode; the

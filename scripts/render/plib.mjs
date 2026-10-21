@@ -41,6 +41,10 @@ const BASE = {
   // D49bc: the built-in protected names, as the host sends them — taken from
   // core so a suite cannot pass against a list the product no longer has.
   secrets: { builtin: [...core.SECRET_DENYLIST], extra: [], allow: [] },
+  // D49bt: MCP state, empty by default so every suite renders the section's
+  // empty state. A throw from it would abort the whole settings render, which is
+  // exactly what each suite's page-clean check is watching for.
+  mcp: { available: false, servers: [], error: '' },
 };
 export const S = (over) => ({ ...BASE, ...(over || {}) });
 
@@ -104,7 +108,7 @@ export const openAll = (p) => p.evaluate(() => {
 }).then(() => p.waitForTimeout(180));
 
 /** Every section that must exist on the Settings page. */
-export const expectSections = ['Providers', 'Orchestration', 'Context', 'Protected files'];
+export const expectSections = ['Providers', 'Orchestration', 'Context', 'Protected files', 'MCP servers'];
 export const checkPageClean = (p, tag) => {
   check(tag + ': no uncaught page errors', p.__errors.length === 0, p.__errors);
 };

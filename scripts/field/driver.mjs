@@ -985,6 +985,110 @@ export class Field {
     return (await this.driver.findElement(By.id('log'))).getText();
   }
 
+  /**
+   * D49bt: open the Settings page by clicking the gear, the way a person does.
+   *
+   * The gear posts `openSettings`, the host answers with a full `settings`
+   * payload, and the view adds `show-settings` to the body. Nothing here reaches
+   * into the host: if the gear stopped working, or the payload failed to build,
+   * the wait below would time out rather than a check quietly passing.
+   */
+  async openSettings(timeoutMs = 20000) {
+    await this.clickElement(await this.driver.findElement(By.id('gear')));
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const shown = await this.driver.executeScript(
+        'return document.body.classList.contains("show-settings");',
+      );
+      if (shown) {
+        // The sections are built synchronously by showSettings, but the MCP
+        // section is appended late in that function — so wait for IT rather than
+        // for the page, or a read can race the section it is looking for.
+        const ready = await this.driver.executeScript(
+          'return !!document.querySelector(\'#sbody .sec[data-sec="mcp"]\');',
+        );
+        if (ready) return true;
+      }
+      await this.driver.sleep(200);
+    }
+    return false;
+  }
+
+  /**
+   * Open the MCP section the way a person would, by clicking its header.
+   *
+   * The sections start collapsed, and a `<details>` keeps its children in the DOM
+   * whether or not they are drawn — so a read passes against a section nobody can
+   * actually see. Opening it is what makes the screenshot evidence rather than
+   * decoration, and it is the same click a user makes.
+   */
+  async expandMcpSection() {
+    await this.driver.executeScript(`
+      const sec = [...document.querySelectorAll('#sbody .sec')]
+        .find((s) => s.getAttribute('data-sec') === 'mcp');
+      if (sec && sec.tagName === 'DETAILS') sec.open = true;
+    `);
+    await this.driver.sleep(300);
+  }
+
+  /**
+   * Press "Open mcp.json" in the MCP section, the way a user would.
+   *
+   * The host answers by calling `showTextDocument` on `~/.plato/mcp.json`, which
+   * is also the only reliable way to get that file open from here: the quick-open
+   * box would not take scripted keystrokes, and it is the product's own path
+   * anyway — so pressing it tests the button as well as opening the file.
+   */
+  async clickMcpOpen() {
+    await this.driver.executeScript(`
+      const sec = [...document.querySelectorAll('#sbody .sec')]
+        .find((s) => s.getAttribute('data-sec') === 'mcp');
+      const btn = [...sec.querySelectorAll('.dhead button')]
+        .find((b) => b.textContent === 'Open mcp.json');
+      if (btn) btn.click();
+    `);
+    await this.driver.sleep(2500);
+  }
+
+  /** Back to the chat. The host is not told (it ignores `settings-closed`). */
+  async closeSettings() {
+    await this.clickElement(await this.driver.findElement(By.id('sback')));
+    await this.driver.sleep(400);
+  }
+
+  /**
+   * The MCP section as it stands on screen, read from the DOM rather than from a
+   * screenshot — the same fields `scripts/render/mcp.mjs` asserts on, so the two
+   * witnesses can be compared.
+   */
+  async mcpSection() {
+    return this.driver.executeScript(`
+      const sec = [...document.querySelectorAll('#sbody .sec')]
+        .find((s) => s.getAttribute('data-sec') === 'mcp');
+      if (!sec) return null;
+      const help = sec.querySelector('.dhead .help');
+      let tip = null;
+      if (help) {
+        help.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+        const t = [...document.querySelectorAll('div')]
+          .find((d) => d.style.position === 'fixed' && d.style.zIndex === '9999');
+        tip = t && t.style.display === 'block' ? t.textContent : null;
+      }
+      return {
+        open: sec.open,
+        title: (sec.querySelector('summary') || {}).textContent.trim(),
+        tip,
+        starter: (sec.querySelector('.starter') || {}).textContent || null,
+        buttons: [...sec.querySelectorAll('.dhead button')].map((b) => b.textContent),
+        rows: [...sec.querySelectorAll('.plist-row')].map((r) => ({
+          name: (r.querySelector('.plist-name') || {}).textContent,
+          tag: (r.querySelector('.plist-tag') || {}).textContent || null,
+          checked: r.querySelector('.beh input') ? r.querySelector('.beh input').checked : null,
+        })),
+      };
+    `);
+  }
+
   /** Card headings currently in the log, in order. */
   async cardHeadings() {
     const out = [];

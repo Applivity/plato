@@ -139,13 +139,13 @@ if (compiled.status !== 0) {
   process.exit(2);
 }
 say('bundling and packaging the extension');
-const bundle = sh('pnpm', ['--filter', 'plato-vscode', 'run', 'bundle'], { cwd: ROOT, stdio: 'inherit' });
+const bundle = sh('pnpm', ['--filter', 'plato', 'run', 'bundle'], { cwd: ROOT, stdio: 'inherit' });
 if (bundle.status !== 0) {
   console.error('bundle failed');
   process.exit(2);
 }
-const pack = sh('pnpm', ['--filter', 'plato-vscode', 'run', 'package'], { cwd: ROOT, stdio: 'inherit' });
-// The package script uses vsce's default name (`plato-vscode-<version>.vsix`), so
+const pack = sh('pnpm', ['--filter', 'plato', 'run', 'package'], { cwd: ROOT, stdio: 'inherit' });
+// The package script uses vsce's default name (`plato-<version>.vsix`), so
 // take whichever .vsix it just wrote rather than assuming a version number.
 const VSIX_DIR = resolve(ROOT, 'packages', 'vscode');
 const packaged = readdirSync(VSIX_DIR)

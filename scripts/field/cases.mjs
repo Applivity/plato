@@ -10,7 +10,18 @@
  * and reports. Where a step carries `calls`, the scripted model is making a tool
  * call, which is what provokes the behaviour being checked.
  */
+import { join } from 'node:path';
+
 export const DEMO_REPO = '/Users/ai/Desktop/HcadPublicAndroid-demo';
+
+/**
+ * D49bt: the fake MCP server case 29 configures. It lives HERE rather than in
+ * the demo repo, because the demo repo is the workspace under observation and
+ * the harness must not leave machinery in it — and the config points at an
+ * absolute path, because Plato spawns the command with whatever working
+ * directory VS Code happens to have.
+ */
+const FAKE_MCP_SERVER = join(import.meta.dirname, 'fake-mcp.mjs');
 
 export const DATE_HELPER = 'app/src/main/java/com/localgsa/hcad/utilities/DateHelper.java';
 export const VIEW_MODEL = 'app/src/main/java/com/localgsa/hcad/activities/submissions_screen/SubmissionsViewModel.java';
@@ -1084,6 +1095,79 @@ export const CASES = [
   },
   {
     n: 29,
+    title: 'An MCP server is started, gated and used — and a disabled one is absent',
+    // D49bt. MCP shipped in 0.6.0 and had never been driven through a real
+    // window: its client, its config and its mode gating were covered by unit
+    // tests and nothing else. This is the only end-to-end evidence for the
+    // feature's core claim — that a server configured in ~/.plato/mcp.json
+    // becomes a tool the model can call, behind the ordinary approval card.
+    //
+    // TWO servers are configured and only one of them should exist. `off` is
+    // `disabled: true`, so it must start nothing, offer nothing and say nothing;
+    // the absence of its notice is as much a claim as the presence of the other
+    // one, and it is the half no unit test can reach because the skip lives in
+    // the host's start loop.
+    //
+    // The tool is called by the model as `mcp__fake__echo` — the double
+    // underscore is what the client BUILDS, so this case also pins the naming the
+    // model is actually offered.
+    runs: [
+      {
+        mode: 'edit',
+        prompt: 'Use the echo tool to send the word hi.',
+        steps: [
+          { calls: [{ tool: 'mcp__fake__echo', args: { text: 'hi' } }] },
+          { text: 'The echo tool returned what I sent it.' },
+        ],
+        // One card, and it is allowed: an MCP tool is shell-class, which in
+        // `edit` means it asks.
+        cards: ['allow'],
+        // Written into the founder's REAL ~/.plato for this run only, and taken
+        // away again by the spec the moment it ends.
+        seedHome: {
+          'mcp.json': JSON.stringify({
+            mcpServers: {
+              fake: { command: process.execPath, args: [FAKE_MCP_SERVER] },
+              off: {
+                command: process.execPath,
+                args: [FAKE_MCP_SERVER],
+                disabled: true,
+              },
+            },
+          }, null, 2) + '\n',
+        },
+        // The result the fake server produced must have reached the model —
+        // without this the call could have "succeeded" into nowhere.
+        expectModelTold: 'echo:hi',
+      },
+      {
+        // D49bt: the SAME config in `plan`, where every MCP tool is denied — so
+        // the servers must not be started at all. Run after the `edit` one on
+        // purpose: it also proves the previous run's outcome survives a plan run
+        // instead of being wiped to "not run yet".
+        mode: 'plan',
+        prompt: 'Which tools do you have for this project?',
+        steps: [
+          { text: 'I can read files and search the project; I cannot change anything.' },
+        ],
+        cards: [],
+        seedHome: {
+          'mcp.json': JSON.stringify({
+            mcpServers: {
+              fake: { command: process.execPath, args: [FAKE_MCP_SERVER] },
+              off: {
+                command: process.execPath,
+                args: [FAKE_MCP_SERVER],
+                disabled: true,
+              },
+            },
+          }, null, 2) + '\n',
+        },
+      },
+    ],
+  },
+  {
+    n: 32,
     title: 'Closing the chat panel stops the run instead of leaving it going',
     // D49bn. The panel is the run's only supervisor: the buttons, the cards and
     // the log all live in it. Closing it used to leave the run calling tools and

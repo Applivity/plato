@@ -64,7 +64,7 @@ describe('approvalHeading', () => {
       'shell',
       'kill_shell',
       'web_fetch',
-      'mcp_filesystem_read_file',
+      'mcp__filesystem__read_file',
       'some_tool_added_next_year',
     ]) {
       const heading = approvalHeading(tool, { path: 'a.ts' });
@@ -76,7 +76,7 @@ describe('approvalHeading', () => {
   it('always ends in a question mark', () => {
     // The answered state is built from this string, and a heading without its
     // question mark would leave a spent card reading like a live one.
-    for (const tool of ['write_file', 'shell', 'web_fetch', 'mcp_x', 'unknown']) {
+    for (const tool of ['write_file', 'shell', 'web_fetch', 'mcp__x__y', 'unknown']) {
       expect(approvalHeading(tool, { path: 'a.ts' }).endsWith('?')).toBe(true);
     }
   });
@@ -99,7 +99,7 @@ describe('approvalAllowAll', () => {
 
   it('falls back to something plain for a tool it does not know', () => {
     expect(approvalAllowAll('some_tool')).toBe('Allow every request this session');
-    expect(approvalAllowAll('mcp_thing_do')).toContain('this tool');
+    expect(approvalAllowAll('mcp__thing__do')).toContain('this tool');
   });
 });
 
