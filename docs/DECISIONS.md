@@ -3969,6 +3969,11 @@ leaves the driver outside a frame it cannot re-enter.
 > **RENUMBERED (2026-10-08, see D49bp).** This case is now **case 29**. A new case had to run *before*
 > it — a cut provider stream — and the cut case took 28 so the numbers stay in run order around the one
 > case that must run last. The claim above is unchanged; only its number moved.
+>
+> **RENUMBERED AGAIN (2026-10-15, see D49bt).** It is now **case 32**. The MCP case needed a slot
+> *before* it and took 29; 30 and 31 are the real-model cases, so rather than collide with them the
+> panel-close case moved above them and still sorts last among the scripted cases. The claim is
+> unchanged; only its number moved, and the rule it exists to protect — it must run last — still holds.
 
 **Two harness routes were tried and both failed in a FULL-suite run while working in isolation**,
 which is a shape worth recognising: `EditorView.closeEditor('Plato Chat')` left the panel open once
@@ -4070,6 +4075,261 @@ is the answer for a deliberate follow-up.
 > `startedAt` against the first transcript's own last-write time — and the chip assertion catches it
 > too, because a queue that drains instantly never shows the chip. **A check that passes against the
 > bug it was written for is worse than no check**, which is the same rule D49at learned about notes.
+
+---
+
+**D49bv — Apache-2.0, with the repository private (founder, 2026-10-20).**
+
+**The decision.** Plato is licensed under Apache-2.0. The repository remains
+private. The VSIX carries `LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md`. The
+website and the extension README say "licensed under the Apache License 2.0,"
+not "open source." The working record is `docs/LICENSING.md`.
+
+**Why a private repository is allowed.** Apache-2.0 does not require a public
+repository, and it does not require source distribution with a binary. Section 4
+requires the license text, the notices, the `NOTICE` file when one exists, and a
+statement of changes when the work is modified. The VSIX is the distribution.
+The repository can stay private. A recipient receives the rights in the license,
+not the repository.
+
+**What the license does not do.** It does not prevent reverse engineering,
+modification, or redistribution. The VSIX contains readable JavaScript;
+minification is a speed bump, not a lock (D49bu). If the founder later needs to
+restrict modification or redistribution, future versions must use a proprietary
+EULA. Versions already published under Apache-2.0 stay under Apache-2.0.
+
+**Wording.** "Licensed under Apache-2.0" is accurate. "Open source" usually
+implies that the source is available. Do not use it while the repository is
+private. If the repository opens later, the same license applies and the term
+becomes accurate without a license change.
+
+**What changed.** `LICENSE` at the root and in `packages/vscode`; `NOTICE` and
+`THIRD-PARTY-NOTICES.md` at both paths; `"license": "Apache-2.0"` in the root,
+core, and extension manifests; `packages/vscode/README.md` for the Marketplace;
+the stale `packages/vscode/package.vsix.json` deleted; the website footer and
+install note updated; `docs/WEBSITE.md`, `docs/HANDOFF.md`, and the website
+handoff updated. The four runtime dependencies remain MIT; their notices are in
+`THIRD-PARTY-NOTICES.md`.
+
+**Extension ID.** The founder chose `applivity.plato` on 2026-10-20. The
+extension package is named `plato`; the root workspace package is named
+`plato-workspace` so the pnpm filters stay unambiguous; the
+`configurationDefaults` schema paths use `%applivity.plato/...`; the VSIX file is
+`plato-<version>.vsix`. The display name is **Plato by Applivity**: the
+Marketplace rejected "Plato" because `iabacus-publisher.plato-code` already uses
+it. Display names are global; the ID is publisher-scoped.
+
+**Verified.** `vsce package` produced `plato-0.26.0.vsix` with 13 files (423,637
+bytes uncompressed); the manifest Identity is `Id="plato" Publisher="applivity"`
+and the display name is `Plato by Applivity`; `LICENSE.txt`, `NOTICE`,
+`THIRD-PARTY-NOTICES.md`, and `readme.md` are present; the packaged manifest says
+`"license": "Apache-2.0"`; no source, tests, or maps are present. The VSIX was
+installed locally as `applivity.plato@0.26.0`; the old
+`applivity.plato-vscode` was uninstalled. The VSIX secret scan found no secrets,
+forbidden files, or local paths.
+
+**Published.** The VSIX was uploaded through the Marketplace management page on
+2026-10-20 and is live at
+`https://marketplace.visualstudio.com/items?itemName=applivity.plato` as
+`applivity.plato`, version 0.26.0, display name `Plato by Applivity`. The public
+API reports `validated, public`; the publisher is `applivity` (verified). The
+listing uses the Marketplace default icon, has no tags, is category `Other`, has
+no Preview badge, and its README install text still describes a local VSIX.
+These are follow-up polish items, not publish blockers.
+
+**Update 0.26.1 is live.** Added a 128x128 owl icon at `media/icon.png` (dark
+ground, light ink, cyan eyes), set `"icon"` in the manifest, rewrote the README
+install section to make the Marketplace primary, and published version 0.26.1.
+The public page serves the 0.26.1 icon asset.
+
+**Update 0.26.2 is live.** The founder asked for the owl itself as the icon, not
+a small owl inside a tile, and for a squarer head, larger ear tufts, and a small
+visible beak. The icon became full-bleed: the cropped `viewBox` makes the owl
+fill the 128x128 canvas, with a squarer head, larger ears, and an olive beak.
+The categories are `Machine Learning` and `Other`; the live listing shows
+`Machine Learning`. `plato-0.26.2.vsix` has 15 files (431,356 bytes).
+
+**Update prepared (0.26.3).** The founder said the full-bleed icon works but is
+not eye-catching enough, and asked that every icon-based asset stay in sync
+because the website uses the same owl in light and dark modes. Four variations
+were rendered. The founder chose **A**: the dark tile with a cyan rim, the large
+light owl, cyan eyes, and an olive beak, with the owl at natural proportions and
+**no horizontal stretch**. The canonical activity-bar mark in `media/plato.svg`
+is the same squarer owl, and `docs/assets/` holds the website asset pack:
+`owl.svg`, `owl-ink.svg`, `owl-accent.svg`, `owl-tile.svg`/`.png`, and
+`favicon-16.png`/`favicon-32.png`. `plato-0.26.3.vsix` has 15 files (432,372
+bytes) and is installed locally as `applivity.plato@0.26.3`. It has not been
+uploaded. The tags, publisher display name, and Preview badge remain
+management-page or later-version items.
+
+**What did not change.** The repository is still private. The CLI is phase 2.
+
+**Why this fits.** Apache-2.0 is the category norm and gives a patent grant, a
+trademark clause, and clear liability language. It allows the repository to open
+later without a license change, and it keeps the option of a paid hosted service
+or separate premium features.
+
+---
+
+**D49bu — the VSIX is minified, which raises the cost of reading it and is not a lock (founder, 2026-10-19).**
+
+**The founder asked whether a published VSIX would be "properly obfuscated and not easily reverse
+engineered", and how fast the Marketplace review is. The first answer was measured; the second
+turned out to be a question with no queue in it.**
+
+**What shipped before.** Unzipping 0.26.0 showed the source tree and the maps were gone (D49br) —
+but the bundle itself was plain readable JavaScript: **20,581 lines, 866 comments, 6,166 distinct
+identifiers, and 95 banner comments naming every module it came from** (`runtime/loop.js`,
+`security/secrets.js`, `tools/execute.js`). Renaming `.vsix` to `.zip` gave anyone the source, minus
+the type annotations. The `.vscodeignore` had done its job; the compiler step had not.
+
+**Two changes.** `minify: true` for the bundle. And because the whole interface ships as one HTML
+template literal that esbuild cannot reach into, a build plugin now extracts the inline `<style>`
+and `<script>`, minifies each, and puts each back as an **interpolation of a module constant**
+rather than as template text. That is the decision worth keeping: re-inserting minified code as
+literal text would have to be escaped for backticks and `${`, and escaping is exactly where such a
+step silently corrupts a page. The constant is built with `JSON.stringify`, so the template
+interpolates a value and no escaping exists to get wrong. The declarations are inserted **after**
+the `"use strict"` directive — inserting at byte zero would have quietly dropped the module out of
+strict mode. If either block ever disappears, the build throws instead of shipping readable source.
+
+**The verification decision matters as much as the change.** The render harness built its HTML from
+`out/webview.js`, the unminified `tsc` output, so every suite would have been testing source that no
+longer ships. The plugin therefore writes the transformed module to `dist/webview.min.js`, and the
+harness loads **that** when it exists. All 24 suites now exercise the bytes in the VSIX. Measured:
+818 KB → **390 KB** for the bundle, the HTML string 255 KB → **132 KB**, the VSIX 215 KB → **122 KB**,
+zero comments and zero module banners in the artifact.
+
+**Checked before mangling was turned on, because mangling breaks code that reads names.**
+`this.name = 'ProviderError'` is a string literal, so it survives; `instanceof` compares bindings,
+not names; there is no `.constructor.name` and no `Function.prototype.toString` on our own
+functions; and esbuild does not mangle property names, so `mcpServers` and the tool schema keys are
+untouched.
+
+**Stated plainly, because the question was about obfuscation: this is not obfuscation.** A VS Code
+extension is ordinary Node.js on the user's machine, and nothing can withhold the code. Minification
+moves the effort from "open it in an editor" to "run a formatter for a few minutes". It also makes
+our own stack traces unreadable, which is why the source map is still built and `.vscodeignore`
+still keeps it out — that leaves a dead `sourceMappingURL` comment in the artifact, accepted rather
+than special-cased. **The real protections are a license and never shipping a secret**, and the
+artifact was checked for both: no key-shaped strings and no absolute home paths.
+
+**The review question has no queue to wait in.** The Marketplace runs automated validation and signs
+the package; an extension is installable within minutes, and Microsoft's own tracker describes the
+absence of a review gate as a known supply-chain risk. Publisher *verification* is separate — five
+business days, and it requires six months of listing history, so it is unavailable at a first
+publish. One dated risk belongs here: global Azure DevOps personal access tokens are retired on
+**2026-12-01**, so publishing should use Entra ID (`vsce publish --azure-credential`) rather than a
+token that has weeks left.
+
+**Files:** `packages/vscode/esbuild.mjs` (minimum: `minify`, plus the webview plugin),
+`packages/vscode/.vscodeignore` (excludes `dist/webview.min.js` from the package),
+`scripts/render/harness.mjs` (loads the minified module when present).
+**Tests:** the full render suite, **24 suites / 700 assertions**, now against the shipped HTML and
+unchanged in count from the unminified run — which is the evidence that minification altered no
+behaviour; `pnpm -r test` 858; field cases 1 and 29 re-run green against the packaged VSIX.
+
+---
+
+**D49bt — MCP becomes discoverable: the config is JSON, and Settings has a section for it (founder, 2026-10-15).**
+
+**The founder's question was blunt — "is there no UI toggle or anything that lets a user know where
+and how to configure it?" — and the answer was that there was nothing at all.** MCP had shipped in
+0.6.0 and the word "mcp" did not appear once in `webview.ts`, which is the whole interface. No
+command, no setting, no view, no panel, no schema: `mcp.yaml` was the only one of the three config
+files without an editor binding, so the feature could be found only by reading a document and then
+hand-writing a format documented nowhere in the product. **Plato's own website told the user to
+configure something and never said where.**
+
+**Nine competitors were surveyed before anything was designed** (VS Code/Copilot, Cursor, Claude Code,
+Codex CLI, Cline, Roo Code, Zed, Devin/Windsurf, Continue.dev). Every maintained product has an
+in-product surface; none relies on documentation alone. The per-server control set has converged
+(toggle, restart, delete, timeout, per-tool allow), the button is always named for the ACTION rather
+than the path ("Configure MCP Servers", "MCP: Open User Configuration"), and the ecosystem has
+converged on an `mcpServers` JSON map. **The one product with no management UI — Continue.dev — has
+since been acquired and archived.** That is a correlation and not a proof, but it is why the omission
+was treated as a defect rather than a backlog item.
+
+**The founder's directive settled the format: there are no users, so build what is most reliable
+going forward and what the industry understands.** That is `{"mcpServers": {...}}`, read and written
+with `JSON.parse`/`JSON.stringify` — and **the change is a DELETION**: ~130 lines of hand-rolled
+line-based parsing go, and with them the indentation rules, the two `args` forms (inline `[a,b]` vs
+block `- item`), the block-only `env` and the quote handling. The old inline form carried a live
+round-trip bug: an argument containing a comma came back as two. **A hand-written emitter was
+designed, built, and then deleted too** — rebuilding the file from our own subset would have silently
+dropped fields Plato does not read, and `"type": "stdio"` is in every Claude Code entry, so the first
+click of a toggle would have quietly rewritten a config the user pasted from somewhere else.
+`withServerDisabled` round-trips the parsed DOCUMENT instead. **The trade is that `~/.plato/` is
+otherwise YAML and `mcp.json` is the odd one out**; accepted, because MCP is the one format where the
+ecosystem has a convention.
+
+**Unknown keys are KEPT, not rejected** — a deliberate reversal of the old parser's `unknown key`
+throw. A strict loader would refuse a config copied from the very tools this shape imitates. A
+JSON Schema was written to put the strictness in the editor instead — and then **REMOVED, because
+it cannot reach the file.** Three deliveries were measured in a real window, each with controls
+proving the file was open and the status bar was being read: `contributes.jsonValidation` with a
+bare `fileMatch`, the same with `**/mcp.json`, and a `$schema` line in the config with the schema
+written beside it. **All three failed identically — VS Code reported a schema as configured while
+catching neither a missing required key nor an unknown one** — and the last of them named the cause
+outright: *"Unable to resolve schema"*. The binding matches the file; the schema does not load for
+a path outside every workspace. Shipping it anyway would have left the product claiming an editor
+affordance it does not have, so **there is no schema, and no editor validation, for `mcp.json`** —
+recorded as a known limit rather than papered over. The Settings panel is where the format is
+explained, and its hover text is what the schema was meant to provide. The runtime does say why a
+`url`-only remote entry cannot be used, because "missing 'command'" alone would not explain it.
+
+**The section reports CONFIGURATION plus the outcome of the last run, and never spawns a server.**
+This is the decision with the most reasoning behind it. `McpServer.start()` executes a command from
+the user's own config with a 20-second handshake, and `sendSettings()` is not a once-per-open call —
+it fires on every connection change, model fetch and home-file watcher event — so a panel that
+started servers to render would run the user's commands repeatedly, invisibly, and could block for
+20 seconds per hung server. **But the decisive fact is structural: MCP servers exist only DURING a
+run.** They are built at the top of `run()` and stopped in its `finally`, so between runs there is
+nothing live to read and a "live state" panel would be reporting dead processes. A row therefore says
+`not run yet` rather than showing a count nobody measured — **the render suite asserts the ABSENCE of
+a digit for that state, not the presence of a phrase**, because the failure being guarded is an
+invented number whatever words sit around it. Recorded cost: a count goes stale until the next run.
+If live state is ever wanted, the only honest mechanism is an explicit "Test servers" button that
+spawns on demand and stops; it is deliberately not built.
+
+**`plan` no longer starts MCP servers at all.** `plan` denies every MCP tool (`modes.ts`), so
+starting them bought nothing: it ran the user's configured commands in the one mode that promises to
+change nothing, and a hung server cost up to 20 seconds before the first turn, for tools that could
+never be called. The last run's outcome is deliberately NOT cleared by a plan run — nothing ran, so
+"not run yet" would be a worse answer than the last run that did, and a server removed from the
+config stops appearing regardless because the panel only reports names the file still has. Asserted
+in the field case by its second run, which is the same config in `plan`: no MCP tool may be offered
+and no MCP line may reach the chat, and removing the skip fails both.
+
+**Three smaller decisions worth keeping.** The tool-name separator is now a DOUBLE underscore
+(`mcp__server__tool`), matching Claude Code and Codex: server names may contain underscores and tool
+names almost always do, and `loop.ts` keys its tool map by the joined string, so a collision silently
+dropped one server's tool with nothing reported anywhere. A field case that needs MCP config must
+touch the founder's REAL `~/.plato`, so the harness backs the file up for the whole suite and restores
+it in `after`, and removes a case's seed the moment that run ends — otherwise every later case would
+run with MCP servers attached. And the two START notices stay on screen only: servers start while the
+run is being PREPARED, before `run-started`, and the writer drops a notice that arrives before the
+record it would land in exists (D49bn's rule). **Emitting them on the bus was tried, measured against
+a real transcript, and reverted as inert** — the field case witnesses them from the screen and says
+so, rather than the product being restructured to make a test easier.
+
+**Two harness facts the work exposed.** The panel-close case was renumbered **29 → 32** (the MCP case
+took 29; 30 and 31 are the real-model cases, so it moved above them rather than colliding) and **a
+hard-coded `c.n === 29` in the spec had to move with it** — a check keyed on a case number fails
+silently, because the notes simply stop being written. And a new render suite must `await
+checkSections()`: calling it un-awaited let `p.close()` land mid-evaluation, which failed
+intermittently and looked like a product defect.
+
+**Files:** `packages/core/src/mcp/config.ts` (rewritten: JSON + validation + `withServerDisabled` +
+`EMPTY_MCP_CONFIG`), `packages/core/src/mcp/client.ts` (`disabled`, the separator),
+`packages/core/src/index.ts`, `packages/vscode/src/extension.ts` (`mcpStatus`, `mcpLastRun`, the
+start-loop skip, `open-mcp` and `set-mcp-disabled`, `mcp.json` added to `ensureHomeWatch`),
+`packages/vscode/src/webview.ts` (the fifth Settings section), `packages/vscode/package.json`
+(0.26.0). **No schema ships** — see the measured limit above.
+**Tests:** `mcp-config.test.ts` (rewritten for JSON, 9), `mcp-write.test.ts` (new, 6),
+`mcp-client.test.ts` and four other suites' `mcp_` literals moved to the new separator,
+`scripts/render/mcp.mjs` (new suite, registered in `SUITES`), `scripts/field/fake-mcp.mjs` (new) and
+field case 29 with `seedHome` plus home backup/restore in `field.test.mjs`.
 
 ---
 
@@ -6179,8 +6439,8 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
   and `local.properties` in its working tree that its own `.gitignore`
   does not cover. If that repo is ever made public: rotate those secrets
   and purge history FIRST.
-- License decision (D19) — **moved OUT of M4 to the publish gate (D49ar, 2026-09-25).**
-  Still the one thing that gates any publish; still the founder's.
+- License decision (D19) — **DECIDED 2026-10-20 (D49bv): Apache-2.0, repository
+  private.** The checklist and the website wording are in `docs/LICENSING.md`.
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
 - Correction (verified during setup): GitHub account `applivity-com` is a
   personal user account, not an Organization. Repo target URL unchanged:

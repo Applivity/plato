@@ -37,7 +37,10 @@ function prepareHtml() {
       cwd: join(REPO, 'packages/vscode'), stdio: 'inherit',
     });
   }
-  const out = join(REPO, 'packages/vscode/out/webview.js');
+  // esbuild.mjs writes the minified webview here. Load that when it exists so
+  // the suites test the HTML that ships; fall back to the tsc output.
+  const min = join(REPO, 'packages/vscode/dist/webview.min.js');
+  const out = existsSync(min) ? min : join(REPO, 'packages/vscode/out/webview.js');
   const html = execFileSync('node', [
     '-e', `import('${out}').then(m=>process.stdout.write(m.chatHtml()))`,
   ], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });

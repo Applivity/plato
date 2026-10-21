@@ -13,12 +13,16 @@ src/**
 scripts/**
 tsconfig.json
 esbuild.mjs
-package.vsix.json
 
 # A duplicate build. `main` points at dist/extension.js, never at out/.
 out/**
 
 # Source maps. These are what carried the source back in.
 **/*.map
+
+# The render harness's copy of the webview module (written by esbuild.mjs). It
+# is already minified, so it leaks nothing the bundle does not, but nothing
+# loads it from the VSIX.
+dist/webview.min.js
 
 node_modules/**

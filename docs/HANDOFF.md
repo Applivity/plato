@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-10-08)
+## Current state (verified 2026-10-19)
 
 - **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
   (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
@@ -84,8 +84,8 @@ are now only in PROGRESS.
   Running the test corrected the test itself: one clause had **no witness at all**, one was **stale
   against a later decision**, and the recorded "clause 4 is not automated" gap is **closed** by a
   harness case that runs a Duo team. It is falsifiable — blanking one product string makes a clause
-  fail and the command exit 1. The trademark sweep and license decision remain the **publish gate**,
-  not milestone work.
+  fail and the command exit 1. The trademark sweep remains the **publish gate**;
+  the license decision is made (Apache-2.0, D49bv), not milestone work.
 
 - **Undo is BUILT: Plato keeps its own copies of what it replaced, and /undo puts them back (D49az,
   built 2026-09-28; decided in D49ax).** It was scoped as *"checkpoints / undo — large, and it
@@ -232,6 +232,16 @@ are now only in PROGRESS.
   maps.** `schemas/` and `examples/` are referenced by nothing and were left alone — declaring them
   dead is a separate call.
 
+- **The artifact is minified, and that is a speed bump rather than a lock (D49bu, 2026-10-19).**
+  `.vscodeignore` had stopped the source and maps leaving, but the bundle itself was still 20,581
+  readable lines with 866 comments and 95 banners naming every module. `minify: true` plus a build
+  plugin for the inline `<style>` and `<script>` — which esbuild cannot reach, because the whole
+  interface is one template literal — takes the bundle **818 KB → 390 KB** and the VSIX **215 KB →
+  122 KB**, with zero comments and zero module banners. The plugin writes `dist/webview.min.js` and
+  the render harness loads it, so the 24 suites now test the shipped bytes. **A VS Code extension
+  is plain Node on the user's machine, so this raises the effort of reading it and guarantees
+  nothing**; what actually protects the work is the license and never shipping a secret.
+
 - **Plato is told what the editor thinks of a file it just changed (D49av, Tier C item 1).** After a
   successful write it collects the language servers' errors for the files that call changed, keeps
   the ones **new since the write**, and appends them to the tool result — so the model learns in the
@@ -264,13 +274,16 @@ are now only in PROGRESS.
   `https://github.com/applivity-com/plato` (private, default branch `main`;
   `applivity-com` is a personal user account, **not** an org).
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
-  imports** — and `packages/vscode` — the extension shell, **v0.25.0**. There is
+  imports** — and `packages/vscode` — the extension shell, **v0.26.4**. There is
   no `packages/cli` yet (phase 2).
-- HEAD = **D49bb + D49ba + D49az** — a protected file now reads with its values masked (D49bb),
-  the whole product moved to Simplified Technical English (D49ba), and **undo shipped** (D49az:
-  Plato keeps its own copies of what it replaced). On top of **D49av** (editor diagnostics) and
-  **D49aw** (a run bounded by repetition), so **Tier C is complete** and Phases 0–6 of the agent
-  capability plan are done (roadmap in DECISIONS **D49**). Push stays with the founder.
+- HEAD = **D49bq + D49br + D49bs** — Plato sits in the activity bar, the VSIX ships only what
+  runs, and the mark is an owl. **Uncommitted on top of it: D49bu** (the shipped artifact is
+  minified, and the render suites now test those bytes) **and D49bt**, which gives MCP a Settings
+  section and moves its config to `~/.plato/mcp.json` (see "Current state"). Behind those,
+  **D49bb** (a protected file reads with its values masked), **D49ba** (Simplified Technical
+  English) and **D49az** (undo), on top of **D49av** (editor diagnostics) and **D49aw** (a run
+  bounded by repetition) — so **Tier C is complete** and Phases 0–6 of the agent capability plan
+  are done (roadmap in DECISIONS **D49**). Push stays with the founder.
 - **A read-only shell command runs with no approval card — in `plan` and `edit` (D49an,
   D49ao).** In `plan` that is a change of character, not just convenience: **plan is no
   longer "runs nothing", it is "changes nothing"** — no write tool, and a command the
@@ -654,7 +667,8 @@ are now only in PROGRESS.
   failure now arrives as a typed `ProviderError` carrying the HTTP status.
 - **What Plato is: a personal pair-programmer that never pollutes the shared
   repo.** Everything Plato owns lives in a flat `~/.plato/`: `ACADEMY.yaml` (the
-  council), `DUO.yaml` (the Duo philosopher), `mcp.yaml`, `PLATO.md` (global
+  council), `DUO.yaml` (the Duo philosopher), `mcp.json` (MCP servers — JSON, the
+  ecosystem's shape, D49bt), `PLATO.md` (global
   default), and `runs/<project-key>/` (transcripts; the key is an 8-char sha1 of
   the workspace root). The repo is only ever **read**: `<repo>/PLATO.md` (project
   override, materialised by `/system-prompt`) and `<repo>/AGENTS.md` / `CLAUDE.md`.
@@ -676,6 +690,23 @@ are now only in PROGRESS.
   as the single store and two-way sync: edits write the file, and a host file
   watcher over `~/.plato/{DUO,ACADEMY}.yaml` re-reads external edits. Editing
   creates the file; a missing `DUO.yaml` runs the built-in Aristotle default.
+- **MCP is configured from Settings, not only from a file (D49bt).** `~/.plato/mcp.json`
+  holds the ecosystem's `{"mcpServers": {...}}` shape, parsed with `JSON.parse`, so a
+  block copied from any server's README works as it stands. Settings has an **MCP servers**
+  section that lists each server with its state, opens the file, and offers a per-server
+  enable/disable switch. **Unknown keys are KEPT, not rejected** — other clients write
+  `type`, and refusing them would refuse a config copied from the tools Plato imitates.
+  **There is NO editor schema for that file, and adding one back will not work:** three
+  deliveries were measured in a real window and all failed — VS Code reports a schema as
+  configured while loading none, because `jsonValidation` and `$schema` resolution are
+  workspace-relative. The Settings panel is where the format is explained. **Whether the same
+  limit applies to the YAML extension's `yaml.schemas` binding — the one `ACADEMY.yaml` and
+  `DUO.yaml` use — is STILL UNVERIFIED:** the field harness's VS Code has no YAML extension, so
+  it cannot be tested there, and PROGRESS has carried that as unverified since 2026-09-17.
+- **MCP servers start only outside `plan` (D49bt).** `plan` denies every MCP tool, so the
+  servers are not started there at all; a plan run leaves the panel showing the last run
+  that did start them. The tool surface names them `mcp__<server>__<tool>` (double
+  underscore) — a single one collided silently because server names may contain it.
 - Git identity: this machine is `ukhan <umair1808@gmail.com>`; commits in this
   repo use `git -c user.name='plato-dev' -c user.email='plato@local'`.
 
@@ -709,8 +740,9 @@ platform.** Until then the test verifies a change by reading, and says so.
 
 **M4 is now TWO things (restated 2026-09-25), and BOTH ARE DONE (2026-09-27).** The trademark sweep
 (D16) and the license decision (D19) **left M4** — they gate a *publish*, not a milestone, and Plato
-is still in development. They are now the **publish gate** — see its own section below, and
-"Open work" for everything else that is not done.
+is still in development. The license is now decided (Apache-2.0, D49bv); the trademark sweep remains
+the **publish gate** — see its own section below, and "Open work" for everything else that is not
+done.
 
 1. **The acceptance test is RESTATED (D49at) and now EXECUTED — 8 of 8 clauses pass.** One command
    runs it: **`node scripts/field/acceptance.mjs --run`** drives the field harness (every scripted case)
@@ -740,19 +772,22 @@ used to claim.
 
 ## The publish gate — last, and not before a public release is actually planned
 
-**Not part of any milestone, and deliberately at the end.** These three are the
-founder's, they cost money or a lawyer, and none of them makes the product better
-— so they wait until a publish is real. **Recorded here so they are not lost, and
-explicitly NOT work item 1 of anything.**
+**Not part of any milestone, and deliberately at the end.** The trademark sweep
+is the founder's and waits until a publish is real. The license decision is made:
+Apache-2.0, with the repository private. **Recorded here so they are not lost,
+and explicitly NOT work item 1 of anything.**
 
 - **Trademark sweep (D16).** Note "Plato" is a common noun and an ancient name, so
   it is a **weak mark** — decide whether that matters before spending on it.
-- **License decision (D19).** Name the license, add the text, and settle the
-  private-vs-public question. **This is the one thing that gates any publish** — no
-  marketplace listing, no public repo, no release before it.
-- **Consequence to keep in mind while building:** the repo stays private and no
-  license text is added until D19 says otherwise. That is a live constraint on
-  every commit, not a future task — see "Non-negotiable safety rules".
+- **License decision (D19) — DECIDED 2026-10-20 (D49bv).** Apache-2.0. The
+  repository remains private. The VSIX must carry `LICENSE`, `NOTICE`, and
+  `THIRD-PARTY-NOTICES.md`. The website says "licensed under Apache-2.0," not
+  "open source." The checklist is in `docs/LICENSING.md`.
+- **Consequence to keep in mind while building:** the repo stays private until
+  the founder decides to open it. The license does not require it to be public.
+  Do not call the product "open source" while the source is private.
+- **Working record:** `docs/LICENSING.md` holds the audit facts, the two
+  publication paths, and the extension/website checklist.
 
 ## Environment prerequisites (verified facts)
 
@@ -903,9 +938,10 @@ before any of it is trusted:**
    **It is hit far more often than it looks, and it is almost always a COMMENT**
    — four times in one session (D49ac/D49ad), **twice more in the D49bj/D49bl
    session, by the same agent that had just read this paragraph**, and **twice more
-   again in the D49bm/D49bo session, in the same file, in the same way** — every
+   again in the D49bm/D49bo session, in the same file, in the same way**, and
+   **once more in the D49bt session, in the new MCP section's comments** — every
    time while writing *about* code, markdown, a glyph or a payload shape, which is
-   exactly when quoting is natural. **The count is now eight.** The fix is never to
+   exactly when quoting is natural. **The count is now nine.** The fix is never to
    quote in that file: write the words, not the syntax (D49bl's fix was the words
    *a bare BACKSLASH*, D49bm's was *the payload is read from m.text*). **A comment
    ABOUT an icon, a CSS property or a message shape is as dangerous as a comment
@@ -1006,11 +1042,11 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 844 in packages/core across 46 files**
-   (verified 2026-10-07). This is the only place in this file that carries the count;
+2. `pnpm -r test` — the unit tests. **Current: 858 in packages/core across 47 files**
+   (verified 2026-10-19). This is the only place in this file that carries the count;
    update it here when it moves.
-3. `pnpm run render` — the real-DOM render suites. **Current: 23 suites / 653
-   assertions** (verified 2026-10-07), or `render:fast` to reuse the bundle. Add an
+3. `pnpm run render` — the real-DOM render suites. **Current: 24 suites / 700
+   assertions** (verified 2026-10-19), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
@@ -1018,7 +1054,7 @@ before any of it is trusted:**
 4. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 5. `cd packages/vscode && pnpm run package` — produces
-   `plato-vscode-0.25.0.vsix`
+   `plato-0.26.4.vsix`
 6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
@@ -1032,7 +1068,7 @@ before any of it is trusted:**
    you write the documentation. When in doubt about what he will see, unpack the VSIX and read
    the built file back rather than trusting the command's own success message.
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the **29** live field cases it is built on — **36 runs**, since a case may carry
+   done) AND the **30** live field cases it is built on — **38 runs**, since a case may carry
    several, and the run count is what the acceptance test reports — driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the eight clauses with a pass or fail each; it exits non-zero unless all eight pass.
@@ -1216,20 +1252,27 @@ all three of their records, which is the duplication D48 exists to stop.**
   applies. **Pause and Cancel cannot: nothing in the startup path can be stalled from a test without
   test-only machinery in the product**, so case 24 exercises that window opportunistically and the
   logic is what carries it.
-  **(3) Field case 29 asserts from the run record only, and must stay LAST.** The harness cannot step
+  **(3) The panel-close field case asserts from the run record only, and must stay LAST.** It is now
+  **case 32** (it was 29 until 2026-10-15, when the MCP case took 29; 30 and 31 are the real-model
+  cases, so it moved past them rather than colliding). The harness cannot step
   back inside a webview panel it has closed (a new one is created but its iframe is never found), so
   the on-screen half is not checked and the spec skips the screen read for that case **by name**; a
   case placed after it would start from a window the driver can no longer reach into. **This is why the
-  case numbers are not all in run order: case 28 (a cut provider stream) runs before 29, and was
-  numbered to keep the order ascending around the one case that must run last** (D49bp). **(4) The queue
+  case numbers are not all in run order: case 28 (a cut provider stream) runs before it, and cases are
+  numbered to keep the order ascending around the one case that must run last** (D49bp, D49bt).
+  **(3b) A field case that needs MCP config touches the founder's REAL `~/.plato`.** `homePlatoDir()`
+  is `os.homedir()/.plato`, and the harness runs a real VS Code, so `scripts/field/field.test.mjs`
+  backs `~/.plato/mcp.json` up once for the suite and restores it in `after` — and removes a case's
+  seeded file the moment that run ends, or every later case would run with MCP servers attached.
+  **(4) The queue
   is in memory.** A window reload loses it, as it loses the run — persisting it would either leave a
   queue that never drains or start a run the moment the panel opened. **Guidance typed during the
   model's final answer still reaches nobody in that run**; the row is recorded and the words carry
   into the next run's history. That is unchanged and is exactly what `/queue` is for.
 
 **Not work at all, and deliberately last:** the **publish gate** — the trademark sweep (D16) and
-the license decision (D19). They gate a public release, not a milestone. See "The publish gate"
-above.
+the license decision (D19, now decided: Apache-2.0, D49bv). The trademark sweep gates a public
+release, not a milestone. See "The publish gate" above.
 
 **Do not reopen without answering the recorded objection:** the per-project command allow/reject
 list. A list that covers most of a project's commands invites the belief that it covers all of
@@ -1263,10 +1306,9 @@ the read-only allowlist (D49an).
   commits.
 - Never send `keystore.properties`, `local.properties`, `.env*`,
   `*.keystore`, or any `.gitignore`d file content to a model.
-- Repo stays private; no public release, license text, or marketplace
-  publish before the founder's license decision (D19). **This is the publish
-  gate, not a milestone task** — it is the founder's, and it waits until a
-  publish is real. See "The publish gate" above.
+- Repo stays private. The license is Apache-2.0 (D49bv). No marketplace publish
+  before the checklist in `docs/LICENSING.md` is complete. Do not call the
+  product "open source" while the source is private.
 
 ## Key external identities
 

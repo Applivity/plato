@@ -52,3 +52,9 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 
+# --- Working notes (not committed by design) ---
+# docs/telemetry-notes.md says in its own header that it is not committed. The
+# durable part moves into DECISIONS.md when the founder decides, and the note
+# goes away.
+docs/telemetry-notes.md
+

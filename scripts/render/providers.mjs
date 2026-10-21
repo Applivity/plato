@@ -18,6 +18,17 @@ for (const w of [420, 900]) {
   await openAll(p);
   await checkSections(p, 'w=' + w);
   checkPageClean(p, 'w=' + w);
+  // The style block is JS template text until the build decodes it. A CSS
+  // minifier that reads those escapes directly paints "u2190" for the back
+  // link, and a wrapped escape string where each section caret belongs.
+  // Check the computed value from the shipped bundle, not the source.
+  const back = await p.evaluate(() => getComputedStyle(document.querySelector('#sback'), '::before').content);
+  check('w=' + w + ' back link paints ←, not its escape text',
+    back.includes('←') && !back.includes('u2190'), back);
+  const marks = await p.evaluate(() => [...document.querySelectorAll('details.sec > summary')]
+    .map((s) => getComputedStyle(s, '::before').content));
+  check('w=' + w + ' section carets paint ▸, not their escape text',
+    marks.length > 0 && marks.every((m) => m.includes('▸') && !m.includes('25B8')), marks);
   await p.close();
 }
 // 0b. "Add connection" must not close the section (D47k). The host replies with

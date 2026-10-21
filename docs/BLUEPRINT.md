@@ -13,13 +13,14 @@ Every decision behind this document is logged with rationale in
 >
 > | Blueprint says | Now |
 > |---|---|
-> | `.aplivity/teams.yaml` (repo) + `~/.applivity/teams.yaml` (global) | flat `~/.plato/` — `ACADEMY.yaml` (council), `DUO.yaml` (Duo philosopher), `mcp.yaml` (D33 → D46 → D47) |
+> | `.aplivity/teams.yaml` (repo) + `~/.applivity/teams.yaml` (global) | flat `~/.plato/` — `ACADEMY.yaml` (council), `DUO.yaml` (Duo philosopher), `mcp.json` (D33 → D46 → D47 → D49bt; JSON now, the ecosystem's `mcpServers` shape, with a section in Settings) |
 > | `profiles:` — `name` / `role` / `model` / `tools` / `supervises` | `philosophers:` — a `TeamMember` with `persona` / `role` / `model` / `powers` / `color` (D47e, D47f) |
 > | "Teams" = coordinator + workers, ordered profiles | **one worker + N philosophers.** Solo / Duo / Academy are the same worker with 0 / 1 / N watchers; cap 5; Plato is always the doer (D45a-3, D47e) |
 > | Preset teams ship as example files (Solo, Architect+Coder, Coder+Observer) | shipped examples are `academy.example.yaml` and `duo.example.yaml`; Solo/Duo/Academy are **modes**, not files |
 > | Non-goal: "visual team editor (config file + schema instead; editor comes later)" | **shipped** in D47 — the Settings UI edits Duo and Academy over the yaml, two-way |
-> | §4 acceptance test (architect → coder → Socrates) | predates the product lock; **must be restated before it can be run**, and it has not been run — see HANDOFF and PROGRESS |
+> | §4 acceptance test (architect → coder → Socrates) | predated the product lock. **Restated and EXECUTED (D49at): 8 of 8 clauses pass**, judged from the run transcripts over the live field cases — see HANDOFF and PROGRESS |
 > | §"Modes: `plan` / `edit` (diffs, no shell) / `act` (per-action approval) / `auto` (hard-capped)" | **THREE modes — `plan` (read-only), `edit` (writes and commands, each approved), `auto` (nothing approved).** `act` was **merged into `edit`**, which now runs commands; and `auto` is **not** hard-capped — the turn cap was deleted (D49ab, D49ak) |
+> | §6 risk: "Marketplace review timing at first publish" | **there is no review queue.** The Marketplace runs automated validation and signs the package; an extension is installable within minutes. Publisher *verification* is the separate five-business-day path, and it needs six months of listing history, so it is unavailable at a first publish (D49bu) |
 >
 > **Still binding and unchanged:** the differentiator (§2 — the event bus, and
 > live mid-flight supervision with a write-back channel), the six-tool surface,
@@ -98,7 +99,7 @@ never be sent to a model context.
 | M1 | Full tool loop + modes/approvals + diff rendering | Single agent fixes a trivial injected bug with approval clicks |
 | M2 | Event bus + persisted transcripts + cost meter + MCP client | Costs visible live during a run; one MCP tool usable |
 | M3 | Teams: `teams.yaml` + presets; architect pipeline, then live observer injection/pause | Observer redirects coder mid-task |
-| M4 | Acceptance test passes; packaged VSIX installs cleanly; release/license decision | The sentence in section 4 |
+| M4 | Acceptance test passes; packaged VSIX installs cleanly (trademark and license moved to the publish gate; license now decided: Apache-2.0) | The sentence in section 4 |
 
 ## 6. Known risks
 
