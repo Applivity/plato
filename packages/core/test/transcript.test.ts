@@ -26,6 +26,25 @@ describe('TranscriptWriter', () => {
       model: 'claude-sonnet-4-5',
       mode: 'edit',
     });
+    // D49ca: a user mode switch is a structured event, so a record can say the
+    // mode changed and between which two modes — the header alone cannot.
+    bus.emit({
+      type: 'mode-changed',
+      runId: 'abc123',
+      from: 'plan',
+      to: 'edit',
+      at: '2026-10-21T12:00:00.000Z',
+      via: 'request',
+    });
+    // D49cb: a declined request has no mode-changed event, so it needs its own
+    // line — and the model's reason must not reach the file.
+    bus.emit({
+      type: 'mode-requested',
+      runId: 'abc123',
+      from: 'plan',
+      to: 'auto',
+      approved: false,
+    });
     bus.emit({ type: 'text', runId: 'abc123', text: 'hello' });
     bus.emit({
       type: 'tool-event',
@@ -80,7 +99,7 @@ describe('TranscriptWriter', () => {
       .filter((l) => l.length > 0)
       .map((l) => JSON.parse(l) as Record<string, unknown>);
 
-    expect(lines).toHaveLength(9);
+    expect(lines).toHaveLength(11);
     expect(lines[0]).toMatchObject({
       kind: 'header',
       schemaVersion: 1,
@@ -90,6 +109,20 @@ describe('TranscriptWriter', () => {
       // what its writes were gated by. Still schemaVersion 1 — the field is
       // added, not redefined, and nothing branches on the number.
       mode: 'edit',
+    });
+    expect(lines[2]).toMatchObject({
+      type: 'mode-changed',
+      runId: 'abc123',
+      from: 'plan',
+      to: 'edit',
+      at: '2026-10-21T12:00:00.000Z',
+      via: 'request',
+    });
+    expect(lines[3]).toMatchObject({
+      type: 'mode-requested',
+      from: 'plan',
+      to: 'auto',
+      approved: false,
     });
     // Secret-safety (D24c): args and previews never reach disk.
     const raw = readFileSync(join(runsDir, name!), 'utf8');

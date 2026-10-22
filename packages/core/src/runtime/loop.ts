@@ -298,6 +298,12 @@ export interface LoopOptions {
    */
   onTextDelta?: (textSoFar: string) => void;
   /**
+   * D49bz: search skips the paths a `.gitignore` excludes. Off by default — a
+   * run sees everything and is TOLD what the repository ignores, because an
+   * agent that silently misses a file is worse than one that sees noise.
+   */
+  respectGitignore?: boolean;
+  /**
    * D49n: images to send with the opening user turn. They must NOT be folded
    * into `task` — the task is emitted on `run-started` and written verbatim to
    * the transcript, so base64 in it would land in every run's JSONL.
@@ -447,6 +453,16 @@ export interface LoopOptions {
       multiple?: boolean;
     }[];
   }) => Promise<string[]>;
+  /**
+   * D49cb: the model asked to change the mode. The HOST owns the card and the
+   * switch; this callback is how the loop reaches it. `ok` means the user
+   * approved and the host has already applied the requested mode, so the note
+   * is the tool result the model reads; a decline returns the mode in force.
+   *
+   * Present only in a host that can draw the card. Its presence also decides
+   * whether `request_mode` is offered to the model at all.
+   */
+  requestMode?: (req: { mode: Mode; reason: string }) => Promise<{ ok: boolean; note: string }>;
   /**
    * Started MCP servers (D06). Their tools join the model's tool list
    * as mcp_<server>_<tool> and route through the mode policy like
@@ -623,6 +639,10 @@ async function runLoop(
   let capNote: string | null = null;
   let truncatedStop = false;
   let autoContinued = false;
+  /** True on the one turn that resumes a reply cut by the output cap. */
+  let resuming = false;
+  /** D49bz: the user hears about `.gitignore` results once, not once per call. */
+  let gitignoreNoted = false;
   let stopAfterTools = false;
   const pendingGuidance: string[] = [];
   // D49aw: the repetition bound. `stuck.ts` explains why it keys on the call AND
@@ -651,6 +671,9 @@ async function runLoop(
     override: opts.role,
     root: opts.root,
     globalConfigDir: opts.globalConfigDir,
+    // D49cb: the instruction matches the tool. A host without the card keeps
+    // the prose-only path, which is what the CLI does until it grows one.
+    modeRequest: opts.requestMode !== undefined,
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`
@@ -667,7 +690,7 @@ async function runLoop(
 
   // Tool surface: built-ins + MCP (mcp_<server>_<tool>) (D06).
   const mcpByTool = new Map<string, { srv: McpServer; tool: string }>();
-  const allTools = toolDeclarations();
+  const allTools = toolDeclarations({ modeRequest: opts.requestMode !== undefined });
   for (const srv of opts.mcpServers ?? []) {
     for (const t of srv.tools) {
       const full = srv.fullName(t.name);
@@ -939,12 +962,31 @@ async function runLoop(
         b.type === 'tool_use',
     );
 
+    // A turn's text follows whatever the last turn said, and a turning point
+    // ("I'll read the file." then, a turn later, the answer) is a new
+    // paragraph. Without the break the accumulated text reads as one sentence
+    // run together, and a reader — or the model, given it back as history —
+    // cannot tell where one turn ended. Blocks within a turn are one message,
+    // so they still join as the provider wrote them.
+    let wroteTextThisTurn = false;
     for (const block of res.content) {
       if (block.type === 'text') {
+        if (
+          !wroteTextThisTurn &&
+          !resuming &&
+          finalText.length > 0 &&
+          !finalText.endsWith('\n')
+        ) {
+          finalText += '\n';
+        }
+        wroteTextThisTurn = true;
         finalText += block.text;
         bus.emit({ type: 'text', runId, text: block.text });
       }
     }
+    // The continuation turn resumes mid-sentence, so it is the one turn that
+    // must join the text before it exactly.
+    resuming = false;
 
     if (toolUses.length === 0) {
       const truncated = res.stopReason === 'max_tokens';
@@ -964,6 +1006,7 @@ async function runLoop(
       // run with the cap note, which is what actually happened.
       if (truncated && res.content.length > 0 && !autoContinued) {
         autoContinued = true;
+        resuming = true;
         messages.push({
           role: 'user',
           content: [
@@ -1106,6 +1149,34 @@ async function runLoop(
       bus.emit({ type: 'tool-event', runId, tool: name, phase: 'allowed', args });
 
       const outcome = await (async () => {
+        // D49cb: request_mode routes through the host's mode card. The loop
+        // never changes the mode: it validates the request, asks the host, and
+        // hands the user's answer back to the model as a tool result.
+        if (name === 'request_mode') {
+          if (!opts.requestMode) {
+            return {
+              ok: false,
+              output: 'request_mode is not available in this host. Say in one sentence what you would do if the mode allowed it.',
+            };
+          }
+          const raw = args['mode'];
+          if (raw !== 'plan' && raw !== 'edit' && raw !== 'auto') {
+            return { ok: false, output: 'request_mode: mode must be plan, edit or auto.' };
+          }
+          if (raw === opts.getMode()) {
+            return { ok: false, output: `request_mode: Plato is already in ${raw} mode.` };
+          }
+          const reason = typeof args['reason'] === 'string' ? args['reason'].slice(0, 300) : '';
+          try {
+            const res = await opts.requestMode({ mode: raw, reason });
+            return { ok: res.ok, output: res.note };
+          } catch (e) {
+            return {
+              ok: false,
+              output: `request_mode failed: ${e instanceof Error ? e.message : 'error'}`,
+            };
+          }
+        }
         // ask_user routes through the shell's user-question UI (D34).
         // The model can ask multiple questions at once.
         if (name === 'ask_user' && opts.askUser) {
@@ -1206,6 +1277,7 @@ async function runLoop(
           shells,
           signal: ctrl.signal,
           vault: opts.secretVault,
+          respectGitignore: opts.respectGitignore === true,
           revealProtected: opts.revealProtected,
           recordWrites: undoStore
             ? (caps) => recordWrites(undoStore.dir, opts.root, runId, caps)
@@ -1225,6 +1297,13 @@ async function runLoop(
       // just broke the file? Only writes, only on success, and a failure here is
       // swallowed: a diagnostics problem must never fail a run.
       let content = outcome.output;
+      if (outcome.note !== undefined) {
+        content = content.length > 0 ? `${content}\n[plato] ${outcome.note}` : `[plato] ${outcome.note}`;
+        if (!gitignoreNoted) {
+          gitignoreNoted = true;
+          bus.emit({ type: 'notice', runId, text: `[plato] ${outcome.note}` });
+        }
+      }
       if (outcome.ok && isWriteTool(name) && opts.afterToolResult) {
         try {
           const suffix = await opts.afterToolResult({

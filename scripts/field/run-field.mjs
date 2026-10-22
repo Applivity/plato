@@ -40,6 +40,10 @@ const SCRATCH_FILES = [
   // D49bc: case 22's unmaskable JSON blob, and case 23's environment file.
   'secrets.plato-probe',
   '.env',
+  // D49ca: cases 34 and 35 write this to prove a write was admitted or refused.
+  'mode-switch-probe.txt',
+  // D49cb: the real-model mode cases write this one.
+  'mode-request-probe.txt',
 ];
 
 import { DATE_HELPER, DEMO_REPO, VIEW_MODEL } from './cases.mjs';

@@ -49,7 +49,13 @@ export interface SeedResult {
 export async function seedVault(root: string, vault: SecretVault): Promise<SeedResult> {
   const before = vault.size();
   let files = 0;
-  for (const rel of listWorkspaceFiles(root, '', { includeSecret: true })) {
+  // `.gitignore` is not consulted here: `local.properties` is ignored in most
+  // Android projects and is exactly the file whose values must be scrubbed, so
+  // a git-based skip would remove a guard rather than noise.
+  for (const rel of listWorkspaceFiles(root, '', {
+    includeSecret: true,
+    respectGitignore: false,
+  })) {
     if (!isSecretPath(rel)) continue;
     let buf: Buffer;
     try {

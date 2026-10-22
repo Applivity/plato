@@ -237,6 +237,19 @@ export function chatHtml(): string {
   /* The cost of the click, in the same full-foreground treatment the undo card
      gives what it cannot put back: the one line the user must not miss. */
   .card .reveal-cost { font-weight:600; }
+  /* D49cb: the mode-request card. The focus colour, because this is a decision
+     about permission rather than an error or a warning. The model's reason is
+     set apart from the card's own words, so the user can tell what Plato is
+     asking from what the card is telling them. */
+  .card.mode-card { border-left:2px solid var(--vscode-focusBorder,#007fd4); }
+  .card.mode-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  .card .mode-why { margin:8px 10px 0; padding:7px 10px; font-size:12.5px;
+                    line-height:1.5; white-space:pre-wrap;
+                    border-left:3px solid var(--pl-border);
+                    background:rgba(128,128,128,.06); }
+  .card .mode-what { padding:8px 10px 0; font-size:11.5px; line-height:1.45;
+                     color:var(--pl-muted); }
+  .card .mode-from { padding:4px 10px 0; font-size:11px; color:var(--pl-muted); }
   .card .undo-list { margin:8px 0 0; padding:0 10px; list-style:none; }
   .card .undo-list li { padding:2px 0; font-size:12.5px; line-height:1.45;
                         font-family:var(--vscode-editor-font-family, monospace);
@@ -1425,6 +1438,8 @@ export function chatHtml(): string {
   let openUndoCard = null;
   /** D49bc: the reveal card — the file Plato cannot mask, offered in full. */
   let openRevealCard = null;
+  /** D49cb: the model's mode request — the only card that can change a mode. */
+  let openModeRequestCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -3696,6 +3711,45 @@ export function chatHtml(): string {
     }
     mcpBody.appendChild(mcpBox);
 
+    // ---- 6. Others (D49bz) ----
+    // The gear is where a user looks for Plato's own behaviour; a switch that
+    // only exists in VS Code's Settings editor is a switch most people will not
+    // find. This section writes the SAME plato.search.respectGitignore value
+    // the editor writes, so there is one setting with two doors and no second
+    // copy to drift.
+    const sec6Det = document.createElement('details');
+    sec6Det.className = 'sec';
+    sec6Det.setAttribute('data-sec', 'others');
+    sec6Det.appendChild(el('summary', null, 'Others'));
+    const othersBody = el('div', 'secbody');
+    sec6Det.appendChild(othersBody);
+    wrap.appendChild(sec6Det);
+    othersBody.appendChild(el('p', 'shelp',
+      'How Plato searches the workspace. A change applies to the next run.'));
+
+    // The .duo wrapper is required for the same reason the MCP section needs
+    // it: beh() returns a div.beh and its CSS is scoped to .duo.
+    const othersBox = el('div', 'duo');
+    const gitIgnoreInput = beh(
+      d.respectGitignore === true,
+      'Skip files that .gitignore lists when searching',
+      'This setting is off by default. When it is off, Plato searches all files. '
+      + 'Plato marks the files that .gitignore lists. When it is on, Plato does '
+      + 'not search these files. A file that you name is always read and edited. '
+      + 'A change applies to the next run.',
+      (v) => vsapi.postMessage({ type: 'settings-respect-gitignore', value: v }),
+    );
+    // A stable handle for the field harness, which drives this switch the way a
+    // person does. It is also the control's accessible name.
+    const gitIgnoreBox = gitIgnoreInput.querySelector('input');
+    if (gitIgnoreBox) {
+      gitIgnoreBox.id = 'respect-gitignore';
+      gitIgnoreBox.setAttribute('aria-label',
+        'Skip files that .gitignore lists when searching');
+    }
+    othersBox.appendChild(gitIgnoreInput);
+    othersBody.appendChild(othersBox);
+
     // D47j/D47k: restore what the user had open, then their scroll position, so
     // a re-render caused by an action is invisible. Keyed by the stable
     // data-sec id, never the summary text (which carries a live count).
@@ -4480,6 +4534,22 @@ export function chatHtml(): string {
       case 'reveal-done':
         dismissReveal();
         break;
+      // D49cb: the model asked for a different mode. The card is the only path
+      // from that request to a switch; it names the cost of the target mode.
+      case 'mode-request':
+        showModeRequest(m);
+        refreshChip();
+        setStatus('waiting for you — change mode?');
+        break;
+      case 'mode-request-done':
+        dismissModeRequest();
+        break;
+      // D49cb: the host changed the mode without a click here — the model asked
+      // and the user approved on the card. The picker's label is the view's, so
+      // the host must tell it rather than let the two disagree.
+      case 'mode-state':
+        if (typeof m.text === 'string') setMode(m.text);
+        break;
       case 'done': {
         flushToolBuffer();
         finish();
@@ -4556,6 +4626,10 @@ export function chatHtml(): string {
       // four cards around it follow.
       case 'question-open': showUserQuestion(t); break;
       case 'question-done': dismissQuestion(); break;
+      // D49cb: rebuilt from the log, so a reload while the host waits for the
+      // mode answer leaves the user a card they can still answer.
+      case 'mode-open': showModeRequest(t); break;
+      case 'mode-done': dismissModeRequest(); break;
       case 'card-done': cardDone(t); break;
       case 'todo': addTodoCard(t.todos); break;
       case 'compact': addCompactBanner(); break;
@@ -5336,6 +5410,77 @@ export function chatHtml(): string {
       const actions = openRevealCard.querySelector('.actions');
       if (actions) actions.remove();
       openRevealCard = null;
+    }
+    clearStatus();
+  }
+
+  // D49cb: the model asked for a different mode. The card states what it wants,
+  // why, and what the target mode means. The click is the ONLY path from the
+  // request to a switch — the model cannot change the mode itself.
+  function showModeRequest(m) {
+    flushToolBuffer();
+    const target = String(m.mode || '');
+    const current = String(m.current || '');
+    const card = document.createElement('div');
+    card.className = 'card mode-card';
+    card.dataset.mode = target;
+
+    const h = document.createElement('h3');
+    h.textContent = 'Switch Plato to ' + target + ' mode?';
+    card.appendChild(h);
+
+    const why = document.createElement('div');
+    why.className = 'mode-why';
+    why.textContent = String(m.reason || 'Plato needs a different mode for this step.');
+    card.appendChild(why);
+
+    const what = document.createElement('div');
+    what.className = 'mode-what';
+    what.textContent = MODE_DESCS[target] || '';
+    card.appendChild(what);
+
+    const from = document.createElement('div');
+    from.className = 'mode-from';
+    from.textContent = 'Plato is in ' + current + ' mode now. You can also change it with the picker.';
+    card.appendChild(from);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const answer = (label, allow, status, primary) => {
+      const b = document.createElement('button');
+      if (!primary) b.className = 'no';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'mode-request-answer', allow });
+        card.classList.add('answered');
+        actions.remove();
+        if (openModeRequestCard === card) openModeRequestCard = null;
+        setStatus(status);
+      });
+      return b;
+    };
+    actions.appendChild(answer('Switch to ' + target, true,
+      'switching to ' + target + ' mode…', true));
+    actions.appendChild(answer('Stay in ' + current, false, '', false));
+    card.appendChild(actions);
+
+    // Only the newest card stays live, the rule every card here follows.
+    if (openModeRequestCard) {
+      openModeRequestCard.classList.add('answered');
+      openModeRequestCard = null;
+    }
+    openModeRequestCard = card;
+    log.appendChild(card);
+    scroll();
+  }
+
+  /** The run moved on. Marked ANSWERED and kept as the record of what was asked. */
+  function dismissModeRequest() {
+    if (openModeRequestCard) {
+      openModeRequestCard.classList.add('answered');
+      const actions = openModeRequestCard.querySelector('.actions');
+      if (actions) actions.remove();
+      openModeRequestCard = null;
     }
     clearStatus();
   }

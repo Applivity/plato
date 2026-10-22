@@ -21,7 +21,7 @@
  * Run with:  PLATO_FIELD_REAL=1 node scripts/field/run-field.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { By, Key, until } from 'selenium-webdriver';
@@ -120,6 +120,9 @@ let beforeRuns = new Set();
 /** D49bo: the follow-up queued mid-run by real case 30. */
 const QUEUED_TASK = 'now say it again in five words';
 
+/** D49cb: the file the real mode-request cases write, and read back. */
+const MODE_PROBE_REAL = 'mode-request-probe.txt';
+
 /**
  * Waits for a run to finish, answering whatever the model raises.
  *
@@ -133,10 +136,13 @@ const QUEUED_TASK = 'now say it again in five words';
  * behaviour (tabs, boxes rather than circles, ticks surviving) is what is under
  * test, so its state is captured while it is live.
  */
-async function drive(field, prompt, during = undefined) {
+async function drive(field, prompt, during = undefined, modeAnswers = undefined) {
   const before = await field.send(prompt);
   return field.waitRunEnd(before, {
     during,
+    // D49cb: the model's mode-request card. Declared answers approve or stay;
+    // an undeclared card is declined by the driver, so a run can never hang.
+    modeAnswers,
     // Approve EVERYTHING. This pass measures whether the gates exist and behave,
     // not whether a denial path works — and a real agent doing real work asks for
     // far more approvals than any hand-written list allows. An earlier version
@@ -386,6 +392,93 @@ describe('Plato field tests — real model', function () {
         return notes;
       },
     },
+    {
+      n: 34,
+      title: 'plan → edit: a real model asks, the card approves, and the write follows',
+      // D49cb against a real model. The model must CHOOSE to ask — the prompt
+      // says it may, and the card exists — so a model that never asks is a
+      // finding about the model, not a failure of the card. Everything after a
+      // real request is a hard check: the switch is recorded, and the write
+      // then lands in the new mode.
+      mode: 'plan',
+      prompt:
+        `Create a file named ${MODE_PROBE_REAL} in the workspace root with the text hello. ` +
+        'If plan mode blocks the write, call request_mode to ask for edit mode, then do the work.',
+      modeAnswers: ['allow'],
+      check: async (events) => {
+        const notes = [];
+        const req = events.find((e) => e.type === 'mode-requested' && e.to === 'edit');
+        if (req === undefined) {
+          notes.push('JUDGEMENT: the model never called request_mode — a finding about the model, not the card');
+          return notes;
+        }
+        if (req.approved !== true) notes.push('MODE: the request was recorded but not as approved');
+        const changed = events.find((e) => e.type === 'mode-changed' && e.via === 'request' && e.to === 'edit');
+        if (changed === undefined) notes.push('MODE: no request-driven mode change was recorded');
+        const wrote = events.some((e) => e.type === 'tool-event'
+          && (e.tool === 'write_file' || e.tool === 'apply_diff' || e.tool === 'apply_patch')
+          && e.phase === 'done' && e.ok === true);
+        const onDisk = existsSync(join(DEMO_REPO, MODE_PROBE_REAL));
+        if (!onDisk) notes.push(`DISK: ${MODE_PROBE_REAL} is not on disk after the approved switch`);
+        const label = await field.modeLabel();
+        if (label !== 'edit') notes.push(`MODE: after the approved switch the picker still reads "${label}"`);
+        notes.push(`mode request: asked=edit approved=${req.approved} switched=${changed !== undefined} picker=${label} write=${wrote} disk=${onDisk}`);
+        return notes;
+      },
+    },
+    {
+      n: 35,
+      title: 'plan → auto: the approved switch lets a real model write with no card',
+      // The second target, and the half that proves the switch reaches the
+      // PERMISSION TABLE rather than only the record: after an approved request
+      // for `auto`, the write needs no approval card at all.
+      mode: 'plan',
+      prompt:
+        `Create a file named ${MODE_PROBE_REAL} in the workspace root with the text hello. ` +
+        'If plan mode blocks the write, call request_mode to ask for auto mode, then do the work.',
+      modeAnswers: ['allow'],
+      check: async (events) => {
+        const notes = [];
+        const req = events.find((e) => e.type === 'mode-requested' && e.to === 'auto');
+        if (req === undefined) {
+          notes.push('JUDGEMENT: the model never called request_mode for auto — a finding about the model, not the card');
+          return notes;
+        }
+        if (req.approved !== true) notes.push('MODE: the request was recorded but not as approved');
+        const changed = events.find((e) => e.type === 'mode-changed' && e.via === 'request' && e.to === 'auto');
+        if (changed === undefined) notes.push('MODE: no request-driven change to auto was recorded');
+        if (field.cardsSeen.length !== 0) {
+          notes.push(`CARDS: expected no write card after the switch to auto, saw ${field.cardsSeen.length}`);
+        }
+        const onDisk = existsSync(join(DEMO_REPO, MODE_PROBE_REAL));
+        if (!onDisk) notes.push(`DISK: ${MODE_PROBE_REAL} is not on disk after the approved switch to auto`);
+        const label = await field.modeLabel();
+        if (label !== 'auto') notes.push(`MODE: after the approved switch the picker still reads "${label}"`);
+        notes.push(`mode request: asked=auto approved=${req.approved} switched=${changed !== undefined} picker=${label} cards=${field.cardsSeen.length} disk=${onDisk}`);
+        return notes;
+      },
+    },
+    {
+      n: 36,
+      title: 'edit: a real model writes the file, and the gate asks once',
+      // The edit half of the trio. No mode request is needed — the point is
+      // that the ordinary gate still asks, and the write lands.
+      mode: 'edit',
+      prompt: `Create a file named ${MODE_PROBE_REAL} in the workspace root with the text hello.`,
+      check: async (events) => {
+        const notes = [];
+        if (field.cardsSeen.length === 0) {
+          notes.push('CARDS: edit mode raised no card for the write, so the gate did not ask');
+        }
+        const wrote = events.some((e) => e.type === 'tool-event'
+          && (e.tool === 'write_file' || e.tool === 'apply_diff' || e.tool === 'apply_patch')
+          && e.phase === 'done' && e.ok === true);
+        const onDisk = existsSync(join(DEMO_REPO, MODE_PROBE_REAL));
+        if (!onDisk) notes.push(`DISK: ${MODE_PROBE_REAL} is not on disk after the approved write`);
+        notes.push(`edit: cards=${field.cardsSeen.length} write=${wrote} disk=${onDisk}`);
+        return notes;
+      },
+    },
   ].filter((c) => only.length === 0 || only.includes(c.n));
 
   for (const c of cases) {
@@ -400,6 +493,12 @@ describe('Plato field tests — real model', function () {
       const before = c.onDisk ? repoDiff() : null;
       beforeRuns = new Set(field.transcripts());
 
+      // D49cb: the three mode cases prove a write by its file, so the probe
+      // starts absent rather than inheriting a previous case's copy.
+      if (c.n === 34 || c.n === 35 || c.n === 36) {
+        rmSync(join(DEMO_REPO, MODE_PROBE_REAL), { force: true });
+      }
+
       await field.setMode(c.mode);
       const startedAt = Date.now();
       // D49bm/D49bo: what a case does while the run is still in flight. Its notes
@@ -408,7 +507,7 @@ describe('Plato field tests — real model', function () {
       const duringNotes = [];
       const events = await drive(field, c.prompt, c.during === undefined
         ? undefined
-        : async () => { await c.during(duringNotes); });
+        : async () => { await c.during(duringNotes); }, c.modeAnswers);
       const secs = Math.round((Date.now() - startedAt) / 1000);
       await field.shot(`real-${c.n}-${c.mode}`);
 
@@ -429,7 +528,7 @@ describe('Plato field tests — real model', function () {
 
       console.log(`  real ${c.n} (${c.mode}): ${field.cardsSeen.length} card(s), ${field.decisions.length} decision(s)`);
       for (const n of notes) console.log(`    ${n}`);
-      const failures = notes.filter((n) => /^(CARDS|TRANSCRIPT|DISK|PLAN|PAUSE|QUEUE|PANEL):/.test(n));
+      const failures = notes.filter((n) => /^(CARDS|TRANSCRIPT|DISK|PLAN|PAUSE|QUEUE|PANEL|MODE):/.test(n));
       if (failures.length > 0) throw new Error(`real ${c.n}: ${failures.join(' | ')}`);
     });
   }

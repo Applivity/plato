@@ -1,4 +1,4 @@
-# Licensing — extension, website, and the deferred CLI
+# Licensing — extension, website, and the CLI
 
 Status: **live 2026-10-20.** Plato is licensed under **Apache-2.0**; the
 extension is published as **`applivity.plato`** under the display name
@@ -6,8 +6,9 @@ extension is published as **`applivity.plato`** under the display name
 "licensed under the Apache License 2.0," not "open source."
 
 This file records what is true, why the private-repository path is allowed, and
-the remaining publish work. The CLI is phase 2. Its npm notes are at the end and
-are not work for now.
+the remaining publish work. **The CLI is phase 2, opened 2026-10-21 (D49bw).**
+Its npm plan and checklist are in section 8. `@applivity/plato` `0.1.0` is
+built and publish-ready; the first publish is the founder's step.
 
 ## 1. What is true today
 
@@ -20,10 +21,10 @@ are not work for now.
 | `packages/vscode/package.json` | `"private": true`, `"license": "Apache-2.0"`, `"name": "plato"`, `"publisher": "applivity"`. |
 | Stale manifest | `packages/vscode/package.vsix.json` is **deleted**. It claimed `SEE LICENSE IN docs/DECISIONS.md`, which contains no license text. |
 | Runtime dependencies | Four packages, all MIT: `@anthropic-ai/sdk` 0.65.0, `json-schema-to-ts` 3.1.1, `@babel/runtime` 7.29.7, `ts-algebra` 2.0.0. No copyleft and no source-available dependency. |
-| Current VSIX (`plato-0.26.4.vsix`) | **Prepared 2026-10-21; not yet uploaded.** 15 files, 432,373 bytes uncompressed. The manifest Identity is `Id="plato" Publisher="applivity" Version="0.26.4"`, the display name is `Plato by Applivity`, and the description is the public-facing sentence. It contains `LICENSE.txt`, `NOTICE`, `THIRD-PARTY-NOTICES.md`, `readme.md`, and `media/icon.png` (128x128 PNG; dark tile, cyan rim, natural-proportion owl with no horizontal stretch). Categories: `Machine Learning`, `Other`. The packaged manifest says `"license": "Apache-2.0"`. No `src/`, `test/`, `out/`, `scripts/`, or `**/*.map`. |
-| Installed locally | `applivity.plato@0.26.4`. The old `applivity.plato-vscode` was uninstalled on 2026-10-20. |
-| Local VSIX history | 21 files, from 0.1.0 to 0.26.0, plus 0.26.1, 0.26.2 (live), 0.26.3 (superseded before upload), and 0.26.4 (prepared). The historical files carry no licence. The 0.26.2 file is the live version. The 0.26.3 file was superseded before upload. The 0.26.4 file is prepared but not uploaded. |
-| Marketplace | **Live** at `https://marketplace.visualstudio.com/items?itemName=applivity.plato`. Display name `Plato by Applivity`; publisher `applivity` (verified); version 0.26.2; category `Machine Learning`; public and validated. **0.26.4 is prepared, pending upload; 0.26.3 was superseded before upload.** |
+| Current VSIX (`plato-0.26.6.vsix`) | **Prepared 2026-10-21; not yet uploaded.** 15 files, 141.38 KB. The manifest Identity is `Id="plato" Publisher="applivity" Version="0.26.6"`, the display name is `Plato by Applivity`, and the description is the public-facing sentence. `0.26.4` is the live version. It contains the `.gitignore` search switch and its panel section, the real `request_mode` request and its card, and the readme line that says Plato can ask for a mode. It carries `LICENSE.txt`, `NOTICE`, `THIRD-PARTY-NOTICES.md`, `readme.md`, and `media/icon.png` (128x128 PNG; dark tile, cyan rim, natural-proportion owl with no horizontal stretch). Categories: `Machine Learning`, `Other`. The packaged manifest says `"license": "Apache-2.0"`. No `src/`, `test/`, `out/`, `scripts/`, or `**/*.map`. |
+| Installed locally | `applivity.plato@0.26.6`. The old `applivity.plato-vscode` was uninstalled on 2026-10-20. |
+| Local VSIX history | 23 files, from 0.1.0 to 0.26.0, plus 0.26.1, 0.26.2, 0.26.3 (superseded before upload), 0.26.4 (live), 0.26.5 (superseded before upload), and 0.26.6 (prepared). The historical files carry no licence. |
+| Marketplace | **Live** at `https://marketplace.visualstudio.com/items?itemName=applivity.plato`. Display name `Plato by Applivity`; publisher `applivity` (verified); **version 0.26.4 is live**; category `Machine Learning`; public and validated. **0.26.6 is prepared, pending upload; 0.26.3 and 0.26.5 were superseded before upload.** |
 | Publication | VS Code Marketplace: live (see above). No npm or Open VSX listing. |
 | Website | A static `index.html` and `styles.css` in `../plato-website`. The stale "no licence" copy was replaced with the Apache-2.0 line on 2026-10-20. |
 
@@ -104,13 +105,16 @@ Remaining:
       category. It is live.
 - [x] Prepare `0.26.3` with the dark tile + cyan rim icon and the canonical owl
       asset pack in `../plato-website/assets/`.
-- [ ] Upload `0.26.4` to the Marketplace.
+- [x] Upload `0.26.4` to the Marketplace. It is live.
+- [ ] Upload `0.26.6` to the Marketplace (the `.gitignore` search switch in
+      Plato's Settings → Others and in VS Code Settings, and the real
+      `request_mode` card the model asks through).
 - [x] Run the secret audit on the VSIX. No secrets, no forbidden files, and no
       local paths were found.
 - [ ] Run the acceptance test.
 - [x] Extension ID: `applivity.plato` (chosen 2026-10-20; see section 6).
 - [x] Publish. The extension was uploaded through the Marketplace management
-      page on 2026-10-20. Version 0.26.2 is live; 0.26.4 is ready to upload.
+      page on 2026-10-20. Version 0.26.4 is live; 0.26.6 is ready to upload.
 
 The extension manifest has no `repository` field while the repository is
 private. `vsce` warns about this but packages the VSIX. Adding the private URL
@@ -232,27 +236,80 @@ Keep these rules:
 - The website's own source and copy are a separate licensing question. The
   footer statement is about the product.
 
-## 8. CLI — phase 2, recorded only
+## 8. CLI — phase 2, opened 2026-10-21
 
-Do not start this work now.
+**Status.** The founder opened phase 2 on 2026-10-21. The CLI is a first-class
+host over the same core. It ships Solo, Duo, and Academy in v1 (D49bw).
+`packages/cli` is complete through M5; M6's packaging half is done, including
+the publish-ready manifest (2026-10-21). The first version is `0.1.0`; the CLI
+keeps its own version line. The first publish is the founder's step.
+
+**Package identity.**
 
 - `plato` is taken on npm (1.7.0, MIT). `plato-cli` is taken (0.0.32, MIT).
-  `@applivity/plato` is available.
-- `npm whoami` returns `ENEEDAUTH` on this machine. The publisher must log in
-  and confirm membership in the `applivity` npm organisation.
-- The first npm publish is public and effectively permanent. A public package
-  cannot be made private again. Unpublish is limited to 72 hours.
-- Apache-2.0 with a private repository is allowed for the CLI too, under the
-  same conditions as section 2. The npm tarball is a distribution. It must carry
-  the license text and notices.
-- Remove `"private": true` from the CLI package. Add
-  `"publishConfig": { "access": "public" }`.
-- Use a `files` allowlist. `packages/core` currently packs 412 files, including
-  `src/` and `test/`, because it has no `files` field. Do not repeat that.
-- A scoped package needs `--access public` on the first publish.
-- `@applivity/plato-core` is private. Either bundle it into the CLI or publish
-  it first. Do not publish a CLI that depends on an unpublished package.
-- Provenance is not available while the repository is private.
+  `@applivity/plato` was available on 2026-10-20. Check it again before the
+  first publish.
+- The package is `@applivity/plato`. The command is `plato`. A scoped package
+  can provide an unscoped `bin` name.
+- Remove `"private": true` from the CLI package.
+- Add `"publishConfig": { "access": "public" }`. A scoped package needs
+  `--access public` on the first publish.
+- Set `"engines": { "node": ">=22" }`. The terminal stack (Ink 8) needs it.
+
+**What the tarball must carry.** The npm tarball is a distribution under
+Apache-2.0. It must include:
+
+- `LICENSE`
+- `NOTICE`
+- `THIRD-PARTY-NOTICES.md`
+- `README.md`
+- the built CLI file and only the files it needs
+
+Use a `files` allowlist. Do not repeat the core package's mistake:
+`packages/core` packs 412 files because it has no `files` field. The extension's
+VSIX lesson applies here too: ship only what runs, keep source and maps out, and
+inspect the tarball before publish.
+
+**Dependency choice.** `@applivity/plato-core` is private. Bundle core into the
+CLI, or publish core first. The plan is to bundle core into the CLI, as the
+extension bundles it into the VSIX. Do not publish a CLI that depends on an
+unpublished package.
+
+**Repository.** The repository stays private. Apache-2.0 with a private
+repository is allowed, under the same conditions as section 2. A public
+repository is not required for npm. Provenance is not available while the
+repository is private. Do not add a `repository` field that points to a private
+URL that users cannot open.
+
+**Publish checklist (in progress).**
+
+- [x] Create `packages/cli` and build it (M0, 2026-10-21).
+- [x] Add `LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md` to the package.
+- [x] Add the `files` allowlist.
+- [x] Remove `"private": true` and add `"publishConfig": { "access": "public" }`.
+      `npm publish --dry-run` accepts the manifest (2026-10-21).
+- [x] Run `npm pack` and confirm the file list. The tarball has 6 files — the
+      bundle, `package.json`, `README.md`, and the three licence files. It has
+      no `src/`, `test/`, maps, keys, or local paths (2026-10-21).
+- [x] Install the tarball into a temporary prefix and run `plato --version` from
+      a clean directory. `plato doctor` also ran from a scratch directory with
+      all three homes redirected.
+- [x] Run the secret audit on the tarball. No key pattern and no local path is
+      present in the bundle (2026-10-21).
+- [ ] `npm whoami` must succeed. The publisher must confirm membership in the
+      `applivity` npm organisation.
+- [ ] Publish `0.1.0` with `--access public`.
+- [ ] Verify the public listing, the install, and
+      `npx @applivity/plato --version`.
+
+**Permanence.** The first npm publish is public and effectively permanent. A
+public package cannot be made private again. Unpublish is limited to 72 hours.
+Do not publish until the local package works and the tarball is inspected.
+
+**Keys.** The CLI does not use VS Code SecretStorage. Key storage follows the
+industry chain in D49bx: environment variables, then the OS keychain, then a
+0600 credential file. Keys never enter the config, logs, transcripts, or the
+tarball.
 
 ## 9. Open decisions and owner actions
 
@@ -263,11 +320,15 @@ Do not start this work now.
 | Website deployment | Founder. "Ready" does not mean "deployed." |
 | Website source licence | Founder. Separate from the product licence. |
 | Open the repository later | Optional. The license does not require it. |
+| CLI package publication (npm) | Founder. Log in, confirm the `applivity` organisation, and approve the first publish. |
+| CLI key storage | Decided (D49bx, approved 2026-10-21): environment, then the OS keychain, then a 0600 file. Setup is one command, and the fallback is automatic. |
+| CLI terminal stack | Decided (D49by, approved 2026-10-21): Ink 8.0.0, with a plain renderer over the same view model. |
 
 ## 10. References
 
 - `docs/DECISIONS.md` — D18 (repository intent), D19 (distribution reality),
-  D49ar (the publish gate), D49bv (this decision).
+  D49ar (the publish gate), D49bv (this decision), and D49bw–D49by (the CLI
+  scope, key storage, and terminal conventions).
 - `docs/HANDOFF.md` — "The publish gate" and "Non-negotiable safety rules."
 - `../plato-website/WEBSITE.md` — the website brief.
 - `../plato-website/index.html` — the install section and the footer.

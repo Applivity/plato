@@ -1,0 +1,798 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { ChatProvider, TurnRequest, TurnResponse } from '@applivity/plato-core';
+import { loadConfig, type PlatoConfig } from '../src/config.js';
+import { Session } from '../src/session.js';
+import { latestSession } from '../src/sessions.js';
+
+const dirs: string[] = [];
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  dirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of dirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function environment(): Record<string, string> {
+  const dir = tempDir('plato-cli-session-state-');
+  return {
+    PLATO_CONFIG_DIR: join(dir, 'config'),
+    PLATO_DATA_DIR: join(dir, 'data'),
+    PLATO_HOME: join(dir, 'home'),
+    PLATO_DISABLE_KEYRING: '1',
+  };
+}
+
+function config(mode: PlatoConfig['mode'] = 'edit'): PlatoConfig {
+  return {
+    connections: [{ id: 'stub', kind: 'openai', baseUrl: 'http://localhost:1/v1' }],
+    model: 'stub:test-model',
+    team: 'solo',
+    mode,
+    reasoning: 'off',
+    compactionThreshold: 0.8,
+    respectGitignore: false,
+  };
+}
+
+type Step = { tool?: { name: string; input: Record<string, unknown> }; text?: string };
+
+function scripted(steps: Step[], onTurn?: (request: TurnRequest) => void): ChatProvider {
+  let step = 0;
+  return {
+    id: 'openai',
+    async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+      onTurn?.(request);
+      const next = steps[step] ?? { text: 'Done.' };
+      step += 1;
+      if (next.tool !== undefined) {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              id: `call-${step}`,
+              name: next.tool.name,
+              input: next.tool.input,
+            },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'tool_use',
+        };
+      }
+      return {
+        content: [{ type: 'text', text: next.text ?? '' }],
+        usage: { inputTokens: 10, outputTokens: 5 },
+        stopReason: 'stop',
+      };
+    },
+  };
+}
+
+const offline = (async () => {
+  throw new Error('offline');
+}) as unknown as typeof fetch;
+
+function session(
+  root: string,
+  env: Record<string, string>,
+  provider: ChatProvider,
+  mode: PlatoConfig['mode'] = 'edit',
+): Session {
+  return new Session({
+    root,
+    config: config(mode),
+    env,
+    provider,
+    fetchImpl: offline,
+  });
+}
+
+async function waitForCard(session: Session, kind: string) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const card = session.getSnapshot().card;
+    if (card !== null && card.kind === kind) {
+      return card;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`no ${kind} card appeared`);
+}
+
+describe('approval card', () => {
+  it('defaults to No and refuses the write', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'x' } } },
+        { text: 'Refused.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    const card = await waitForCard(active, 'approval');
+    expect(card.kind).toBe('approval');
+    if (card.kind === 'approval') {
+      expect(card.options[0]).toBe('No');
+      expect(card.selected).toBe(0);
+    }
+    active.cardConfirm();
+    await done;
+
+    expect(existsSync(join(root, 'note.txt'))).toBe(false);
+  });
+
+  it('allows the write when Yes is chosen', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Written.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardMove(1);
+    active.cardConfirm();
+    await done;
+
+    expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('hello');
+  });
+
+  it('remembers "allow for this session" across calls', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'one.txt', content: '1' } } },
+        { tool: { name: 'write_file', input: { path: 'one.txt', content: '1' } } },
+        { text: 'Written twice.' },
+      ]),
+    );
+    const done = active.submit('write twice');
+    const card = await waitForCard(active, 'approval');
+    if (card.kind === 'approval') {
+      expect(card.options[2]).toContain('for this session');
+    }
+    active.cardMove(2);
+    active.cardConfirm();
+    await done;
+
+    expect(readFileSync(join(root, 'one.txt'), 'utf8')).toBe('1');
+    // The second call found no card: the session remembered the answer.
+    expect(active.getSnapshot().card).toBeNull();
+  });
+});
+
+describe('question card', () => {
+  it('returns the chosen option to the model', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let seen = '';
+    const provider = scripted(
+      [
+        {
+          tool: {
+            name: 'ask_user',
+            input: {
+              questions: [
+                { header: 'Colour', question: 'Pick a colour', options: ['Red', 'Blue'] },
+              ],
+            },
+          },
+        },
+        { text: 'Thanks.' },
+      ],
+      (request) => {
+        if (request.messages.length > 2) {
+          seen = JSON.stringify(request.messages);
+        }
+      },
+    );
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('ask me');
+
+    const card = await waitForCard(active, 'question');
+    if (card.kind === 'question') {
+      expect(card.options).toEqual(['Red', 'Blue']);
+      expect(card.header).toBe('Colour');
+    }
+    active.cardMove(1);
+    active.cardConfirm();
+    await done;
+
+    expect(seen).toContain('Blue');
+  });
+
+  it('joins a multi-select answer with semicolons', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let seen = '';
+    const provider = scripted(
+      [
+        {
+          tool: {
+            name: 'ask_user',
+            input: {
+              questions: [
+                {
+                  question: 'Pick colours',
+                  options: ['Red', 'Blue', 'Green'],
+                  multiple: true,
+                },
+              ],
+            },
+          },
+        },
+        { text: 'Thanks.' },
+      ],
+      (request) => {
+        if (request.messages.length > 2) {
+          seen = JSON.stringify(request.messages);
+        }
+      },
+    );
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('ask me');
+    await waitForCard(active, 'question');
+    active.cardToggle();
+    active.cardMove(1);
+    active.cardToggle();
+    active.cardConfirm();
+    await done;
+
+    expect(seen).toContain('Red; Blue');
+  });
+
+  it('accepts a typed answer on the last row', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let seen = '';
+    const provider = scripted(
+      [
+        {
+          tool: {
+            name: 'ask_user',
+            input: {
+              questions: [{ question: 'Name it', options: ['One', 'Two'] }],
+            },
+          },
+        },
+        { text: 'Thanks.' },
+      ],
+      (request) => {
+        if (request.messages.length > 2) {
+          seen = JSON.stringify(request.messages);
+        }
+      },
+    );
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('ask me');
+    await waitForCard(active, 'question');
+    active.cardMove(2);
+    active.cardConfirm();
+    active.cardType('Custom');
+    active.cardConfirm();
+    await done;
+
+    expect(seen).toContain('Custom');
+  });
+});
+
+describe('reveal card', () => {
+  it('offers a protected text file the masker cannot parse', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'local.properties'), 'a note with no assignments\n');
+    let seen = '';
+    const provider = scripted(
+      [
+        { tool: { name: 'read_file', input: { path: 'local.properties' } } },
+        { text: 'Read.' },
+      ],
+      (request) => {
+        if (request.messages.length > 2) {
+          seen = JSON.stringify(request.messages);
+        }
+      },
+    );
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('read the protected file');
+    const card = await waitForCard(active, 'reveal');
+    if (card.kind === 'reveal') {
+      expect(card.protectedPath).toBe('local.properties');
+    }
+    active.cardMove(1);
+    active.cardConfirm();
+    await done;
+
+    expect(seen).toContain('a note with no assignments');
+  });
+
+  it('refuses when the card says No', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'local.properties'), 'a note with no assignments\n');
+    let seen = '';
+    const provider = scripted(
+      [
+        { tool: { name: 'read_file', input: { path: 'local.properties' } } },
+        { text: 'Refused.' },
+      ],
+      (request) => {
+        if (request.messages.length > 2) {
+          seen = JSON.stringify(request.messages);
+        }
+      },
+    );
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('read the protected file');
+    await waitForCard(active, 'reveal');
+    active.cardConfirm();
+    await done;
+
+    expect(seen).not.toContain('a note with no assignments');
+  });
+});
+
+describe('cancel', () => {
+  it('stops a run whose provider respects the abort signal', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider: ChatProvider = {
+      id: 'openai',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        return await new Promise<TurnResponse>((_, reject) => {
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      },
+    };
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('hang');
+    for (let attempt = 0; attempt < 200 && !active.getSnapshot().running; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    active.cancel();
+    await done;
+
+    expect(active.getSnapshot().running).toBe(false);
+  });
+});
+
+describe('stuck card', () => {
+  it('stops the run when the card says Stop', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const call = { name: 'read_file', input: { path: 'missing.txt' } };
+    const active = session(
+      root,
+      environment(),
+      scripted([{ tool: call }, { tool: call }, { tool: call }, { tool: call }, { tool: call }], undefined),
+      'auto',
+    );
+    const done = active.submit('read a missing file');
+    await waitForCard(active, 'stuck');
+    active.cardConfirm();
+    await done;
+
+    expect(active.getSnapshot().running).toBe(false);
+    expect(active.getSnapshot().rows.some((row) => row.text.includes('stuck'))).toBe(true);
+  });
+});
+
+describe('mode card (D49cb)', () => {
+  it('shows the request, and Switch changes the mode the rest of the run reads', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let seen = '';
+    const provider = scripted(
+      [
+        {
+          tool: {
+            name: 'request_mode',
+            input: { mode: 'edit', reason: 'Plan mode cannot write the fix.' },
+          },
+        },
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'approved' } } },
+        { text: 'Done.' },
+      ],
+      (request) => {
+        seen = JSON.stringify(request.messages);
+      },
+    );
+    const active = session(root, environment(), provider, 'plan');
+    const done = active.submit('fix it');
+    const card = await waitForCard(active, 'mode');
+    if (card.kind === 'mode') {
+      expect(card.current).toBe('plan');
+      expect(card.mode).toBe('edit');
+      expect(card.reason).toBe('Plan mode cannot write the fix.');
+      expect(card.options).toEqual(['Stay in plan', 'Switch to edit']);
+      // Stay is the default, so an unanswered card widens nothing.
+      expect(card.selected).toBe(0);
+    }
+    active.cardMove(1);
+    active.cardConfirm();
+    // In edit mode the write asks, which is the permission table agreeing with
+    // the header: the card the same run raises next is the approval one.
+    await waitForCard(active, 'approval');
+    active.cardMove(1);
+    active.cardConfirm();
+    await done;
+
+    expect(active.getSnapshot().status.mode).toBe('edit');
+    expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('approved');
+    expect(seen).toContain('The user approved. Plato is now in edit mode.');
+    expect(
+      active.getSnapshot().rows.some(
+        (row) => row.text === "Mode: edit — the user approved Plato's request.",
+      ),
+    ).toBe(true);
+  });
+
+  it('Stay and Esc both leave the mode in force', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = scripted([
+      {
+        tool: { name: 'request_mode', input: { mode: 'edit', reason: 'Need to write.' } },
+      },
+      { text: 'Declined.' },
+      {
+        tool: { name: 'request_mode', input: { mode: 'auto', reason: 'Need a command.' } },
+      },
+      { text: 'Declined again.' },
+    ]);
+    const active = session(root, environment(), provider, 'plan');
+
+    const first = active.submit('write it');
+    const card = await waitForCard(active, 'mode');
+    expect(card.kind).toBe('mode');
+    active.cardConfirm();
+    await first;
+    expect(active.getSnapshot().status.mode).toBe('plan');
+
+    const second = active.submit('run it');
+    await waitForCard(active, 'mode');
+    active.cardCancel();
+    await second;
+    expect(active.getSnapshot().status.mode).toBe('plan');
+
+    const notices = active.getSnapshot().rows.map((row) => row.text);
+    expect(notices).toContain('Plato asked to switch to edit — the user declined.');
+    expect(notices).toContain('Plato asked to switch to auto — the user declined.');
+  });
+
+  it('refuses the fourth request in one run, without a card', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let seen = '';
+    const ask = (mode: string): Step => ({
+      tool: { name: 'request_mode', input: { mode, reason: `Need ${mode}.` } },
+    });
+    const provider = scripted(
+      [ask('edit'), ask('auto'), ask('edit'), ask('auto'), { text: 'Done.' }],
+      (request) => {
+        seen = JSON.stringify(request.messages);
+      },
+    );
+    const active = session(root, environment(), provider, 'plan');
+    const cards: string[] = [];
+    active.subscribe(() => {
+      const card = active.getSnapshot().card;
+      if (card !== null) {
+        cards.push(card.kind);
+      }
+    });
+
+    const done = active.submit('ask four times');
+    for (let index = 0; index < 3; index += 1) {
+      await waitForCard(active, 'mode');
+      active.cardConfirm(); // Stay
+    }
+    await done;
+
+    expect(cards.filter((kind) => kind === 'mode')).toHaveLength(3);
+    expect(active.getSnapshot().status.mode).toBe('plan');
+    expect(seen).toContain('The user has answered three mode requests this run.');
+  });
+
+  it('settles a parked card when the run is cancelled', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = scripted([
+      { tool: { name: 'request_mode', input: { mode: 'edit', reason: 'Need to write.' } } },
+      { text: 'Done.' },
+    ]);
+    const active = session(root, environment(), provider, 'plan');
+    const done = active.submit('write it');
+    await waitForCard(active, 'mode');
+    active.cancel();
+    await done;
+
+    expect(active.getSnapshot().running).toBe(false);
+    expect(active.getSnapshot().status.mode).toBe('plan');
+  });
+});
+
+describe('Duo', () => {
+  it('runs a philosopher that guides the worker', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'a.txt'), 'hello');
+    const requests: string[] = [];
+    let turn = 0;
+    const worker: ChatProvider = {
+      id: 'openai',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        requests.push(JSON.stringify(request.messages));
+        turn += 1;
+        // Let the observer's decision land while this turn is in flight.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (turn <= 3) {
+          return {
+            content: [
+              { type: 'tool_use', id: `call-${turn}`, name: 'read_file', input: { path: 'a.txt' } },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'Done.' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const observer: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [
+            { type: 'text', text: '{"action":"guidance","message":"check the nulls"}' },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const active = new Session({
+      root,
+      config: { ...config('auto'), team: 'duo' },
+      env: environment(),
+      provider: worker,
+      observerProvider: () => observer,
+      fetchImpl: offline,
+    });
+
+    await active.submit('read the file');
+
+    const state = active.getSnapshot();
+    expect(state.observers.map((entry) => entry.name)).toEqual(['Aristotle']);
+    expect(state.rows.some((row) => row.text.includes('[Aristotle] watching'))).toBe(true);
+    expect(requests.some((request) => request.includes('[observer guidance] check the nulls'))).toBe(
+      true,
+    );
+    expect(
+      state.rows.some(
+        (row) => row.text.includes('observer') && row.text.includes('intervention'),
+      ),
+    ).toBe(true);
+  });
+
+  it('runs Solo without an observer strip', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'a.txt', content: 'x' } } },
+        { text: 'Done.' },
+      ]),
+      'auto',
+    );
+    await active.submit('write');
+    expect(active.getSnapshot().observers).toEqual([]);
+  });
+});
+
+describe('sessions', () => {
+  it('saves the conversation and resumes it', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const env = environment();
+    const active = session(root, env, scripted([{ text: 'Hello.' }]), 'auto');
+    await active.submit('first task');
+
+    const stored = latestSession(root, env);
+    expect(stored?.history).toEqual([
+      { role: 'user', text: 'first task' },
+      { role: 'assistant', text: 'Hello.' },
+    ]);
+
+    const resumed = new Session({
+      root,
+      config: config('auto'),
+      env,
+      provider: scripted([]),
+      fetchImpl: offline,
+      ...(stored === null ? {} : { stored }),
+    });
+    expect(resumed.getSnapshot().rows.map((row) => row.text)).toEqual([
+      'first task',
+      'Hello.',
+    ]);
+    expect(resumed.history).toEqual(stored?.history);
+  });
+
+  it('puts back a write from the last run', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'note.txt'), 'before');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        {
+          tool: {
+            name: 'write_file',
+            input: { path: 'note.txt', content: 'after', overwrite: true },
+          },
+        },
+        { text: 'Done.' },
+      ]),
+      'auto',
+    );
+    await active.submit('change the note');
+    expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('after');
+
+    await active.handleCommand('/undo');
+    expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('before');
+  });
+
+  it('refuses to undo a file edited since the write', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'note.txt'), 'before');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        {
+          tool: {
+            name: 'write_file',
+            input: { path: 'note.txt', content: 'after', overwrite: true },
+          },
+        },
+        { text: 'Done.' },
+      ]),
+      'auto',
+    );
+    await active.submit('change the note');
+    writeFileSync(join(root, 'note.txt'), 'the user edited it');
+
+    await active.handleCommand('/undo');
+    expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('the user edited it');
+    expect(active.getSnapshot().rows.some((row) => row.text.includes('refused'))).toBe(true);
+  });
+
+  it('says there is nothing to undo when the store is empty', async () => {
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('edit'),
+      env: environment(),
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+    await active.handleCommand('/undo');
+    expect(active.getSnapshot().rows.some((row) => row.text === 'Nothing to undo.')).toBe(true);
+  });
+
+  it('/sessions lists what /new did not delete', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const env = environment();
+    const active = session(root, env, scripted([{ text: 'Hi.' }]), 'auto');
+    await active.submit('first');
+    await active.handleCommand('/new');
+    await active.handleCommand('/sessions');
+    expect(active.getSnapshot().rows.some((row) => row.text.includes('first'))).toBe(true);
+  });
+});
+
+describe('commands and mode', () => {
+  it('cycles plan, edit, auto', () => {
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('plan'),
+      env: environment(),
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+    expect(active.mode).toBe('plan');
+    active.cycleMode();
+    expect(active.mode).toBe('edit');
+    active.cycleMode();
+    expect(active.mode).toBe('auto');
+    active.cycleMode();
+    expect(active.mode).toBe('plan');
+  });
+
+  it('persists /mode and /model to the config', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const env = environment();
+    const active = new Session({
+      root,
+      config: config('edit'),
+      env,
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+
+    expect(await active.handleCommand('/mode auto')).toBe('handled');
+    expect(await active.handleCommand('/model stub:other')).toBe('handled');
+
+    const stored = loadConfig(env);
+    expect(stored.mode).toBe('auto');
+    expect(stored.model).toBe('stub:other');
+  });
+
+  it('turns the .gitignore filter on and off, and saves the choice', async () => {
+    const env = environment();
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('edit'),
+      env,
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+
+    expect(await active.handleCommand('/gitignore on')).toBe('handled');
+    expect(loadConfig(env).respectGitignore).toBe(true);
+    expect(
+      active.getSnapshot().rows.some((row) => row.text.includes('skips .gitignore paths')),
+    ).toBe(true);
+
+    expect(await active.handleCommand('/gitignore off')).toBe('handled');
+    expect(loadConfig(env).respectGitignore).toBe(false);
+
+    await active.handleCommand('/gitignore sideways');
+    expect(
+      active.getSnapshot().rows.some((row) => row.text === 'Usage: /gitignore on|off'),
+    ).toBe(true);
+  });
+
+  it('rejects a model whose connection is not configured', async () => {
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('edit'),
+      env: environment(),
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+    await active.handleCommand('/model missing:gpt-4o');
+    expect(active.getSnapshot().rows.some((row) => row.kind === 'error')).toBe(true);
+    expect(active.model).toBe('stub:test-model');
+  });
+
+  it('starts a new conversation', async () => {
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('edit'),
+      env: environment(),
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+    active.addNotice('hello');
+    await active.handleCommand('/new');
+    expect(active.getSnapshot().rows.map((row) => row.text)).toEqual(['New conversation.']);
+    expect(active.history).toEqual([]);
+  });
+
+  it('exits on /exit', async () => {
+    const active = new Session({
+      root: tempDir('plato-cli-session-root-'),
+      config: config('edit'),
+      env: environment(),
+      provider: scripted([]),
+      fetchImpl: offline,
+    });
+    expect(await active.handleCommand('/exit')).toBe('exit');
+  });
+});

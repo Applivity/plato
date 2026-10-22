@@ -33,7 +33,7 @@ import {
   EditorView,
 } from 'vscode-extension-tester';
 
-import { CASES, DEMO_REPO } from './cases.mjs';
+import { CASES, DEMO_REPO, MODE_PROBE } from './cases.mjs';
 import { Field } from './driver.mjs';
 import { runsDirFor, verdict } from './verdict.mjs';
 
@@ -138,6 +138,23 @@ function restoreHomeMcp() {
  * which case produced it, so a judge over the transcripts alone cannot tell
  * whether clause 6's case ran at all.
  */
+/**
+ * The harness profile's USER settings file — the one VS Code's Settings editor
+ * writes and `ConfigurationTarget.Global` updates. D49bz reads it to prove the
+ * panel switch and the editor's checkbox are one value, not two copies.
+ */
+const USER_SETTINGS = join(
+  import.meta.dirname,
+  '..',
+  '..',
+  'tmp',
+  'field',
+  'storage',
+  'settings',
+  'User',
+  'settings.json',
+);
+
 const MANIFEST = [];
 const MANIFEST_PATH = join(import.meta.dirname, '..', '..', 'tmp', 'field', 'last-manifest.json');
 const RUNS = runsDirFor(DEMO_REPO);
@@ -168,6 +185,30 @@ async function setScript(steps, needles = [], modelsDelayMs = 0) {
 /** What the model was actually asked — the harness's second witness. */
 async function stubLog() {
   return (await fetch(`${STUB}/__log`)).json();
+}
+
+/**
+ * D49ca: waits until a tool result the model has been shown contains `needle`.
+ *
+ * A mid-run switch must be sequenced AFTER the refusal reached the model, and
+ * the transcript cannot be read until the run ends. The stub's log is the only
+ * witness available while the run is still going.
+ */
+async function waitForModelToolResult(driver, needle, timeoutMs = 20000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const log = await stubLog();
+      const seen = (log.log ?? []).some((entry) =>
+        (entry.toolResults ?? []).some((r) => String(r.head ?? '').includes(needle)),
+      );
+      if (seen) return true;
+    } catch {
+      // The stub may still be starting; keep waiting for the caller's clock.
+    }
+    await driver.sleep(200);
+  }
+  return false;
 }
 
 /**
@@ -273,6 +314,11 @@ describe('Plato field tests — real VS Code', function () {
       field.cardsSeen = [];
       field.decisions = [];
       const notes = [];
+      // D49ca: cases 34 and 35 prove that a write was admitted or refused, so
+      // their probe starts ABSENT rather than inheriting a previous run's file.
+      if (c.n === 34 || c.n === 35) {
+        rmSync(join(DEMO_REPO, MODE_PROBE), { force: true });
+      }
 
       for (const [i, run] of c.runs.entries()) {
         const label = c.runs.length > 1 ? `case-${c.n}-run${i + 1}-${run.mode}` : `case-${c.n}-${run.mode}`;
@@ -284,12 +330,55 @@ describe('Plato field tests — real VS Code', function () {
         const mark = notes.length;
         await setScript(run.steps, [], run.modelsDelayMs ?? 0);
         await field.setMode(run.mode);
+        // D49ca: the picker changed the mode and nothing has been sent. If the
+        // product ever resumes a run on the click alone, this is where it shows —
+        // and the case says so rather than leaving the behaviour unrecorded.
+        if (run.afterModeSwitch === 'noResume') {
+          const before = new Set(field.transcripts());
+          await field.driver.sleep(2500);
+          const fresh = field.transcripts().filter((f) => !before.has(f));
+          notes.push(
+            fresh.length === 0
+              ? 'idle switch: no run started by itself'
+              : `MODE: the switch alone started ${fresh.length} run(s) with no message`,
+          );
+        }
         // D49at clause 4: set orchestration EXPLICITLY before every run, not only
         // for the case that needs Duo. The chip is sticky, so a case that left it
         // on duo would quietly turn every later case into a team run — and a
         // run asserted to be solo with a philosopher in it is a case that no
         // longer measures what it says.
         await field.setOrchestration(run.orchestration ?? 'solo');
+
+        // D49bz: the switch has two doors and they share one value. The case
+        // drives BOTH, in that order of importance: Plato's own settings page is
+        // where a user looks, and VS Code's Settings editor is the other door.
+        // Either runs BEFORE the send, because the run reads the value when it
+        // starts.
+        if (run.panelToggle !== undefined) {
+          const after = await field.setRespectGitignore(run.panelToggle);
+          if (after !== run.panelToggle) {
+            notes.push(
+              `IGNORE: Plato's panel switch did not take — it reads ${after} after clicking for ${run.panelToggle}`,
+            );
+          } else {
+            notes.push(`panel switch: set to ${after} from Plato's settings page`);
+          }
+          // The panel and the Settings editor must be one value, not two. The
+          // harness profile's user settings file is what BOTH write to, so this
+          // is the join.
+          const stored = readFileSync(USER_SETTINGS, 'utf8');
+          const storedValue = JSON.parse(stored)?.['plato.search.respectGitignore'];
+          if (storedValue !== run.panelToggle) {
+            notes.push(
+              `IGNORE: Plato's panel switch did not reach plato.search.respectGitignore (found ${JSON.stringify(storedValue)})`,
+            );
+          } else {
+            notes.push('panel switch: the VS Code setting holds the same value');
+          }
+          // The hint is read on screen, because the copy is what a user meets.
+          await field.shotSettingsHint();
+        }
 
         // D49bb: files the HARNESS owns, written from outside Plato before the
         // run starts. A protected file has to exist before the model can ask for
@@ -312,7 +401,12 @@ describe('Plato field tests — real VS Code', function () {
         // D49bt: the chat log persists across the runs of a case, so the plan
         // half is judged on what IT added. Matching the whole log found the
         // previous run's notices and reported a server that never started.
-        const logBefore = c.n === 29 && run.mode === 'plan' ? await field.logText() : '';
+        const logBefore =
+          (c.n === 29 && run.mode === 'plan') || c.n === 32 ? await field.logText() : '';
+        // D49bz: the stub's log accumulates across runs, so the model-side half
+        // of case 32 has to be read as a DELTA. `expectModelTold` reads the whole
+        // log and cannot answer "what did THIS run tell the model".
+        const modelLogBefore = c.n === 32 ? (await stubLog()).log.length : 0;
         const before = await field.send(run.prompt);
         const events = await field.waitRunEnd(before, {
           plan: run.cards,
@@ -338,6 +432,9 @@ describe('Plato field tests — real VS Code', function () {
           // card declares how the user answers it; a case that does not gets the
           // safe answer so the run can finish.
           revealAnswer: run.revealAnswer,
+          // D49cb: the model's mode request card, answered like every other
+          // parked card. Undeclared, the driver stays — the safe answer.
+          modeAnswers: run.modeAnswers,
           // D49bm/D49bo: the ONE moment a case acts on a run that is still in
           // flight — clicking Pause, queueing a follow-up, closing the panel.
           // The scripts live here rather than in `cases.mjs` because this is
@@ -383,6 +480,24 @@ describe('Plato field tests — real VS Code', function () {
               const q = await field.queueState();
               notes.push(`queue: ${q.names.length} message(s) waiting before the cancel`);
               await field.cancel();
+            } else if (run.during === 'switchModeAfterDenial') {
+              // D49ca: the switch must happen AFTER the refusal reached the
+              // model. The stub's next step is held for four seconds, which is
+              // the window this lives in. Reading the stub's log is the only
+              // witness available mid-run — the transcript appears only on disk
+              // and its ending has not been written yet.
+              await field.waitForRunStart();
+              const refused = await waitForModelToolResult(
+                field.driver,
+                'not permitted in plan mode',
+                20000,
+              );
+              notes.push(
+                refused
+                  ? 'mid-run switch: the refusal reached the model before the switch'
+                  : 'MODEL: the plan-mode refusal never reached the model, so the switch was not sequenced after it',
+              );
+              await field.setMode('edit');
             } else if (run.during === 'closePanel') {
               await field.waitForRunStart();
               await field.closeChat();
@@ -805,11 +920,11 @@ describe('Plato field tests — real VS Code', function () {
           }
         }
         // D49bt: this reads the SECOND scripted case that must run last, so the
-        // number here follows the renumber — it was 29 until the MCP case took
-        // that slot and this one moved to 32. A check keyed on a case number is
-        // exactly what a renumber breaks, and it fails silently: the notes below
-        // simply stop being written.
-        if (c.n === 32) {
+        // number here follows the renumber — it was 29, then 32 when the MCP case
+        // took that slot, and 33 on 2026-10-21 when the .gitignore case took 32.
+        // A check keyed on a case number is exactly what a renumber breaks, and
+        // it fails silently: the notes below simply stop being written.
+        if (c.n === 33) {
           if (!events.some((e) => e.type === 'notice' && /panel closed/.test(e.text ?? ''))) {
             notes.push('PANEL: the run carries no record that the panel closing is what stopped it');
           }
@@ -1053,6 +1168,95 @@ describe('Plato field tests — real VS Code', function () {
           }
         }
 
+        // --- D49bz: what the .gitignore switch does --------------------------
+        //
+        // Two runs, two different claims, and the model-side half is read as a
+        // DELTA of the stub's log: the log accumulates across runs, so the whole
+        // log would carry run 1's hit into run 2 and the negative check would be
+        // meaningless. The screen is read as a delta for the same reason.
+        if (c.n === 32) {
+          const log = await stubLog();
+          const heads = log.log
+            .slice(modelLogBefore)
+            .flatMap((r) => (r.toolResults ?? []).map((t) => String(t.head ?? '')))
+            .join('\n');
+          const onScreen = screen.slice(logBefore.length);
+          if (i === 0) {
+            if (!heads.includes('HcadPublicAndroid.iml')) {
+              notes.push('IGNORE: the ignored file never reached the model, so the default is hiding it');
+            }
+            if (!heads.includes('.gitignore excludes')) {
+              notes.push('IGNORE: the model was not told the result is in a .gitignore path');
+            }
+            if (!/paths that \.gitignore excludes/.test(onScreen)) {
+              notes.push('IGNORE: the user was never told the result is in a .gitignore path');
+            }
+            notes.push(`ignore: default — found=${heads.includes('HcadPublicAndroid.iml')} labelled=${heads.includes('.gitignore excludes')}`);
+          } else {
+            if (heads.includes('HcadPublicAndroid.iml')) {
+              notes.push('IGNORE: with the setting on, the ignored file still reached the model');
+            }
+            if (!/no files match/i.test(heads)) {
+              notes.push('IGNORE: with the setting on, the search did not report an empty result');
+            }
+            if (/paths that \.gitignore excludes/.test(onScreen)) {
+              notes.push('IGNORE: with the setting on, the run still warned about ignored paths');
+            }
+            notes.push(`ignore: setting on — hid=${!heads.includes('HcadPublicAndroid.iml')} empty=${/no files match/i.test(heads)}`);
+          }
+        }
+
+        // --- D49ca: the mode switch, on screen and on disk -------------------
+        //
+        // The transcript verdict proves the permission table used the new mode.
+        // These two are the halves only a real window can show: the copy says
+        // WHEN the switch applies, and the write that was refused under `plan`
+        // really exists (or does not) once the mode has changed.
+        if (c.n === 34 || c.n === 35) {
+          const onDisk = existsSync(join(DEMO_REPO, MODE_PROBE));
+          if (c.n === 34) {
+            if (run.mode === 'plan') {
+              if (onDisk) notes.push('DISK: the plan-mode run created the probe file');
+              notes.push(`disk: plan left the probe ${onDisk ? 'present' : 'absent'}`);
+            } else {
+              if (!onDisk) notes.push('DISK: the edit run did not create the probe file after the switch');
+              const says = /applies from your next message/.test(screen);
+              if (!says) notes.push('MODE: the idle switch notice did not say it applies from the next message');
+              notes.push(`mode copy: idle — next-message=${says} disk=${onDisk ? 'written' : 'missing'}`);
+            }
+          } else {
+            if (!onDisk) notes.push('DISK: the run did not create the probe file after the mid-run switch');
+            const says = /applies from the next tool call/.test(screen);
+            if (!says) notes.push('MODE: the mid-run switch notice did not say it applies from the next tool call');
+            notes.push(`mode copy: live — next-call=${says} disk=${onDisk ? 'written' : 'missing'}`);
+          }
+        }
+
+        // --- D49cb: the model's mode request, on the real card --------------
+        if (c.n === 36) {
+          const onDisk = existsSync(join(DEMO_REPO, MODE_PROBE));
+          if (i === 0) {
+            const cardSeen = /Switch Plato to edit mode\?/.test(screen)
+              && /Switch me to edit and I will write it/.test(screen);
+            if (!cardSeen) notes.push('MODE: the mode card did not show the target and the model’s reason');
+            const approved = /the user approved Plato's request/.test(screen);
+            if (!approved) notes.push('MODE: the approved switch left no line on screen');
+            // The picker is the view's own account of the mode. A host-side
+            // switch that does not reach it leaves the chip and the permission
+            // table disagreeing — caught in the first screenshot of real 34.
+            const label = await field.modeLabel();
+            if (label !== 'edit') notes.push(`MODE: after the approved switch the picker still reads "${label}"`);
+            if (!onDisk) notes.push('DISK: the write after the approved switch did not land');
+            notes.push(`mode request: card=${cardSeen} approved=${approved} picker=${label} disk=${onDisk ? 'written' : 'missing'}`);
+          } else {
+            const cardSeen = /Switch Plato to auto mode\?/.test(screen);
+            if (!cardSeen) notes.push('MODE: the declined request’s card was not drawn');
+            const declined = /Plato asked to switch to auto — the user declined/.test(screen);
+            if (!declined) notes.push('MODE: the declined request left no line on screen');
+            notes.push(`mode request: declined-card=${cardSeen} line=${declined}`);
+          }
+        }
+
         // --- what the MODEL was told ---------------------------------------
         if (run.expectModelTold) {
           const log = await stubLog();
@@ -1202,6 +1406,18 @@ describe('Plato field tests — real VS Code', function () {
           notes.push(`plannote: says-unfinished=${says}`);
         }
 
+        // D49bz: a case that changed a setting puts it back, so the next case
+        // starts from the same defaults this one did. Not fatal: the case's own
+        // claims are read by here, and a Settings trip that failed would say so.
+        if (run.panelToggle !== undefined) {
+          const restored = await field.setRespectGitignore(false);
+          notes.push(
+            restored === false
+              ? 'panel switch: restored to off from Plato\'s settings page'
+              : 'setting: the panel switch could not be restored — later cases may inherit it',
+          );
+        }
+
         // D49at: `STUCK`, `GUIDANCE` and the clause prefixes above are FATAL. The
         // stuck cases' screen checks were written as notes and were NOT in this
         // list, so "no stuck card was ever detected" — the check that gives cases
@@ -1216,7 +1432,7 @@ describe('Plato field tests — real VS Code', function () {
         // D49bm/D49bo: `PAUSE`, `QUEUE` and `PANEL` join it in the same breath as
         // the checks that use them, for exactly that reason.
         const failures = notes.slice(mark).filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT|MCP|SCHEMA):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT|MCP|SCHEMA|IGNORE|MODE):/.test(n),
         );
         // D49bt: the seeded home config goes as soon as this run is over, so the
         // next case starts from the same empty state this one did.

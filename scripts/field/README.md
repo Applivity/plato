@@ -9,16 +9,28 @@ clauses that had no witness at all — **18–21 with the undo and masking work*
 (what undo puts back, what it refuses, and the masked read round trip), **22–23
 with the two halves of D49bc** (a protected file Plato cannot mask is offered
 once, and a command that reaches a protected file indirectly prints no value),
-**24–28 and 32 with the run controls and the provider stream** (pause says only
+**24–28 and 33 with the run controls and the provider stream** (pause says only
 what the run is doing, a pause that never lands says so, a queued follow-up runs
 when the run before it finishes — and does NOT when that run was cancelled — a
 stream the provider cuts is retried rather than reported as a finished run, and
 closing the chat panel stops the run), **and 29 with the MCP path** (a configured
-server is started, its tool is gated and used, and a disabled one is absent) — see
-the table below. **Two further cases (30, 31)
+server is started, its tool is gated and used, and a disabled one is absent),
+**and 32 with the .gitignore search switch** (an ignored file is found and
+labelled by default, and the search comes back empty once the setting is on),
+**and 34–35 with the user's mode switch** (a plan run hands the work back and the
+idle click starts nothing; a switch made mid-run applies at the next tool call),
+**and 36 with the model's mode request** (the model asks on a card the user answers,
+and the same run continues in the approved mode) — see the table below. **Two further cases (30, 31)
 cover the queue
 and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
 they are not part of the scripted suite and need the founder's key file.
+
+**Case 32's first run failed, and the failure was a product defect.** The case flips the .gitignore
+switch in Plato's own settings page and checks that the same search then finds nothing. Run 1 passed the model half — the ignored file arrived with the note — and failed the
+screen half: the chat showed no notice at all. The notice WAS in the transcript, so the engine had
+raised it; the extension persisted loop notices but never posted them, and they appeared only after
+a reload. `extension.ts` now does both. **A harness note is not a pass** — this one was written as
+`IGNORE:` in the fatal list from the start.
 
 **This directory is also the M4 acceptance test's machine.** The eight clauses
 (D49at) are executed by `acceptance.mjs`, which maps each clause onto the cases
@@ -82,7 +94,7 @@ Two rules keep the driver honest:
 | 1 secret guard | no card at all | **run 1** the shell is refused · **run 2** the read completes and the model is handed a MASKED view (D49bb) |
 | 2 plan mode | no card at all | reads allowed, the build `denied` |
 | 3 edit mode | one card, for the build | a card, then an approved run |
-| 4 write refused / asks | plan: no card · edit: card | `denied` · user `declined` |
+| 4 write refused / asks | plan: no card · edit: card | `denied` · user `declined` · **each run's record opens with the `mode-changed` the harness's picker produced (D49ca)** — run 1 `edit→plan`, run 2 `plan→edit`, with the click's `at` before that run's `startedAt` |
 | 5 multi-file patch | exactly one card + the session notice | one card, two calls, second not gated |
 | 6 question card | tabs, boxes vs circles, ticks survive a tab round-trip | `ask_user` not gated, answer delivered |
 | 7 plan card | exactly one step in progress | plan writes not gated |
@@ -108,7 +120,11 @@ Two rules keep the driver honest:
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
 | 28 cut stream | the retried answer is on screen, not the half one the cut sent | the transcript records the **retry** the cut provoked, and the run still finished `complete` **on the second step** (D49bp). The stub ends the response with no `finish_reason` and no `[DONE]` — a proxy timeout's shape — so a build that takes the half answer as a finished turn shows no retry and the wrong text |
 | 29 MCP server | the MCP tool's approval card, and the tool running behind it; then **the Settings page itself** — the MCP section is opened, screenshotted, and `Open mcp.json` is pressed | run 1 (`edit`): a configured server announced its tools, its tool was **gated like a shell command** and then RAN, its result reached the model, and Settings listed both servers **with the tool count the run produced** — while a `disabled: true` server announced **nothing** and offered **no tool**. Run 2 (`plan`): the same config, and **not one MCP tool is offered and no MCP line reaches the chat**, because `plan` denies every MCP tool and the servers are not started at all (D49bt). **Both absences are the load-bearing halves** — the skips live in the host, where no unit test reaches |
-| 32 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, and **32 on 2026-10-15** when the MCP case took 29 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. Case 28 still runs before it, so it keeps the last slot.) |
+| 32 gitignore switch | run 1: the model was told the ignored path and the chat **says** it is excluded · run 2: the switch is flipped in **Plato's own settings page** (Others), and the chat carries **no** such line | run 1 recorded a `.gitignore excludes` notice and run 2 did not, decided by the task text rather than by the notice. The case also reads the profile's user settings file after the flip, because that file is what VS Code's Settings editor shows — one value, two doors (D49bz) |
+| 34 mode switch, idle | the plan run's write is refused with no card; the switch notice says *"applies from your next message"*; the click starts **no run**; the next message's write asks once and lands | run 1 (plan) `write_file:denied` and no card · run 2 (edit) carries `mode-changed plan→edit` with the click **before** its `startedAt`, then `write_file` done through one card (D49ca) |
+| 35 mode switch, mid-run | the switch is made through the real picker while the run is live; the notice says *"applies from the next tool call"*; the retried write asks once and the probe file lands | one run, header `plan`: `write_file:denied` → `mode-changed` to edit (click **after** `startedAt`) → `write_file` done through one card, in that order (D49ca) |
+| 36 mode request (real card) | the model's mode card names the target, the current mode and its reason; the driver approves, and the same run's write then asks once and lands | run 1 (plan): `mode-requested` edit **approved** → `mode-changed` **via request** → `write_file` done through one card · run 2 (plan): `mode-requested` auto **declined** → no request-driven change, no write, no card (D49cb) |
+| 33 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, **32 on 2026-10-15** when the MCP case took 29, and **33 on 2026-10-21** when the .gitignore case took 32 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. **Cases 32, 34, 35 and 36 are placed AHEAD of it in the array, so it keeps the last slot; the numbers are labels and the ARRAY order is the rule.**) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -269,7 +285,7 @@ worse than none:**
   the provider CUT is a failed attempt to retry, not a reply the model chose to
   end. **Case 28 runs before the panel-close case, and this is why the table's
   numbers are not all in run order:** the panel-close case must be LAST, so cases
-  are numbered to keep the order ascending around it — and it moved to **32** when
+  are numbered to keep the order ascending around it — and it moved to **33** when
   the MCP case took 29, because 30 and 31 are the real-model cases and the last
   scripted case had to sort above them rather than collide.
 

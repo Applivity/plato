@@ -1,6 +1,6 @@
 {
   "name": "plato",
-  "version": "0.26.4",
+  "version": "0.26.6",
   "private": true,
   "license": "Apache-2.0",
   "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
@@ -21,7 +21,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-0.26.4.vsix --force"
+    "install:vsix": "code --install-extension plato-0.26.6.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -92,12 +92,34 @@
           "description": "Named OpenAI-compatible/Anthropic connections (D26a, D43: nothing is pre-seeded). Example: [{\"id\":\"litellm\",\"kind\":\"openai\",\"baseUrl\":\"http://localhost:4000/v1\",\"models\":[\"gpt-4o\"]}]",
           "items": {
             "type": "object",
-            "required": ["id", "kind"],
+            "required": [
+              "id",
+              "kind"
+            ],
             "properties": {
-              "id": { "type": "string", "description": "Connection id used in model refs, e.g. litellm" },
-              "kind": { "type": "string", "enum": ["anthropic", "openai"], "description": "Wire protocol of the endpoint" },
-              "baseUrl": { "type": "string", "description": "OpenAI-compatible base URL (openai kind only)" },
-              "models": { "type": "array", "items": { "type": "string" }, "description": "The models this connection offers, in this order. Written by Fetch models; every entry is selectable. Omit only if the connection has never been fetched." }
+              "id": {
+                "type": "string",
+                "description": "Connection id used in model refs, e.g. litellm"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "anthropic",
+                  "openai"
+                ],
+                "description": "Wire protocol of the endpoint"
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "OpenAI-compatible base URL (openai kind only)"
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The models this connection offers, in this order. Written by Fetch models; every entry is selectable. Omit only if the connection has never been fetched."
+              }
             }
           }
         },
@@ -108,13 +130,22 @@
         },
         "plato.reasoning": {
           "type": "string",
-          "enum": ["off", "low", "medium", "high"],
+          "enum": [
+            "off",
+            "low",
+            "medium",
+            "high"
+          ],
           "default": "off",
           "description": "Reasoning effort for models that support it (o4-mini, Claude extended thinking). Ignored otherwise."
         },
         "plato.orchestration": {
           "type": "string",
-          "enum": ["solo", "duo", "academy"],
+          "enum": [
+            "solo",
+            "duo",
+            "academy"
+          ],
           "default": "solo",
           "description": "Orchestration mode: solo = Plato alone; duo = Plato + one philosopher; academy = Plato + the council defined in ACADEMY.yaml."
         },
@@ -127,15 +158,25 @@
         },
         "plato.secrets.protect": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "D49bb: extra file names to protect, on top of the built-in list (`keystore.properties`, `local.properties`, `.env*`, `*.keystore`, `*.jks`, `secrets.*`). A name matches the file's last path segment, and `*` is allowed at the start or the end (`*.pem`). Plato never sends a protected file's values to a model: it shows the file with each value replaced by a placeholder."
         },
         "plato.secrets.allow": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "markdownDescription": "D49bb: exact workspace-relative paths to take OFF the protected list, so Plato shows them in full. Use this for a file that matches a built-in name but holds no secret in this project, for example `local.properties` or `.env.example`. One path per entry, from the workspace root."
+        },
+        "plato.search.respectGitignore": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "markdownDescription": "Skip the files that your `.gitignore` file lists when Plato searches. **Off by default.** When off, Plato searches all files and marks the files that `.gitignore` lists. When on, Plato does not search these files. A file that you name is always read and edited. A change applies to the next run."
         }
       }
     },

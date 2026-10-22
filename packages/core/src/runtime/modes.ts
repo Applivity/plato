@@ -80,7 +80,12 @@ export function decide(tool: string, mode: Mode): Decision {
   // anything to gate: an approval card for "write down your plan" would be
   // friction with nothing behind it, and `plan` mode is where a plan is most
   // useful, so denying it there would be exactly backwards.
-  if (tool === 'ask_user' || tool === 'todo_write') return 'allow';
+  //
+  // D49cb: `request_mode` joins them, and the reason is sharper. The tool does
+  // not switch anything — the HOST draws its card and only the user's answer
+  // changes the mode. Denying the request in `plan` would silence the model in
+  // the one mode where it most needs to ask, which is the opposite of the gate.
+  if (tool === 'ask_user' || tool === 'todo_write' || tool === 'request_mode') return 'allow';
   const kind = TOOL_KIND[tool as ToolName] ?? (tool.startsWith('mcp_') ? 'shell' : undefined);
   if (kind === undefined) {
     return 'deny';

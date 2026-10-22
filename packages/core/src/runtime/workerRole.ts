@@ -48,6 +48,12 @@ export interface BuildWorkerRoleOpts {
   globalConfigDir?: string;
   /** Override the per-layer cap; tests pass smaller values. */
   maxLayerChars?: number;
+  /**
+   * D49cb: the host can draw a REAL mode card and switch on its Yes. The
+   * instruction is appended only then; a host without the card keeps the
+   * prose-only fallback, so the prompt never names a tool it cannot offer.
+   */
+  modeRequest?: boolean;
 }
 
 export interface BuildWorkerRoleResult {
@@ -71,11 +77,9 @@ drive one task at a time with the provided tools, and you are the one who
 acts; philosophers may watch and advise, but the work, the approvals, and the
 final summary are yours. Modes gate how edits are approved (plan = read-only,
 edit = writes and commands with your approval, auto = trusted) and the host
-enforces them. The mode is the user's to change and you cannot change it: if a
-call comes back refused because of the mode, say in one sentence what you would
-do if it were permitted and let the user decide. Never put a mode change on a
-question card — the card cannot make the change, and its answer would tell you
-the user agreed when nothing changed. Never read or send secret-bearing files
+enforces them. The mode is the user's to change and you cannot change it
+yourself. Never put a mode change on a question card — the card cannot make the
+change, and its answer would tell you the user agreed when nothing changed. Never read or send secret-bearing files
 (the host enforces a deny-list) and never ignore errors silently. If the
 context grows large, older turns fold into a running summary automatically, or
 when the user asks with /compact.
@@ -351,7 +355,19 @@ export async function buildWorkerRole(
     if (l.layer === 'plato' && l.present) parts.push(platoBody);
     if (l.layer === 'agents' && l.present) parts.push(agentsBody);
   }
-  const system = parts.join('\n\n');
+  // D49cb: the way to ask for a mode is a HOST capability, so it is appended
+  // rather than baked into the body. PLATO.md can replace the body, but a host
+  // fact must survive that replacement.
+  const modeParagraph = opts.modeRequest
+    ? `When the current mode blocks a call you need to finish the task, call
+request_mode with the mode you need and one sentence saying why. The user sees
+a card and decides; you cannot change the mode yourself. If the user declines,
+do not ask again for that mode: say in one sentence what you would do if it
+were permitted, and continue with what the mode allows. Use request_mode, not
+ask_user, for a mode change.`
+    : `If a call comes back refused because of the mode, say in one sentence what
+you would do if it were permitted and let the user decide.`;
+  const system = [...parts, modeParagraph].join('\n\n');
   return { system, layers };
 }
 

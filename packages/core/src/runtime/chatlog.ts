@@ -142,6 +142,15 @@ export function digestToolCall(
       parts.push(n === 1 ? '1 question' : n + ' questions');
       break;
     }
+    case 'request_mode': {
+      // D49cb: the TARGET only. The reason is model prose written for a card,
+      // and the digest is persisted and replayed into folds — a reason could
+      // quote anything the model had in front of it, so it stays out of the
+      // record exactly as tool arguments do.
+      const mode = one(args['mode'], 20);
+      if (mode.length > 0) parts.push(mode);
+      break;
+    }
     case 'todo_write': {
       // D49ah: the plan's SHAPE, not its text. A fold or a later run should know
       // a plan exists, how far it got, and what was in hand — but ten item lines

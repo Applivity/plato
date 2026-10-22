@@ -657,6 +657,15 @@ type Entry =
   | { k: 'question-open'; questions: AskQuestion[] }
   /** D49bg: the questions were answered or the run was cancelled — closes it. */
   | { k: 'question-done' }
+  /**
+   * D49cb: the model's mode request, recorded for the same reason as the five
+   * cards above — the host is parked on the answer. The reason is stored here
+   * because the card is rebuilt from this row; it is model prose, which the chat
+   * log already holds for every reply, and it stays out of the transcript.
+   */
+  | { k: 'mode-open'; current: Mode; mode: Mode; reason: string }
+  /** D49cb: answered, or the run was cancelled — closes the card on a reload. */
+  | { k: 'mode-done' }
   | { k: 'card-done'; title: string; preview: string }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
@@ -741,6 +750,26 @@ class ChatHost {
    * record to write to.
    */
   private currentRunId = '';
+  /**
+   * D49ca: mode switches made while no run was live, waiting for the next run
+   * to name. A transcript is per run and is opened by `run-started`, so there
+   * is no file to write to at the moment of the click — but the next record
+   * must still say the mode changed, and when.
+   */
+  private pendingModeChanges: { from: Mode; to: Mode; at: string; via: 'picker' | 'request' }[] = [];
+  /**
+   * D49cb: the mode card's answer. The loop awaits it through `requestMode`;
+   * null means no card is open. Cancel resolves it FALSE — the safe answer, the
+   * same rule every parked card follows.
+   */
+  private pendingModeRequest: ((allow: boolean) => void) | null = null;
+  /**
+   * D49cb: how many times the model has asked this run. A deny is an answer,
+   * and asking again with a new sentence is how a model gets around the
+   * repetition bound — a small cap ends it without counting anything the user
+   * did. The card is still the gate; this only stops a nag.
+   */
+  private modeRequestsThisRun = 0;
   private replyBuffer = '';
   /**
    * D49j: the current turn's text as it arrives, and the pending throttle
@@ -880,23 +909,26 @@ class ChatHost {
     this.panel.webview.onDidReceiveMessage(
       async (m: { type?: string; [k: string]: unknown }) => {
         if (m.type === 'mode' && typeof m.value === 'string') {
-          this.mode = m.value as Mode;
-          this.sessionWrites.clear();
-          this.sessionApprovals.clear();
-          // D49bj: the choice outlives the panel, as the model choice does.
-          void this.ctx.workspaceState.update(MODE_KEY, this.mode);
-          // D49bj: the switch is part of the conversation's story, so it is
-          // WRITTEN DOWN and not only shown. It used to be a live line alone —
-          // a reload dropped it, and no run record named the mode at all, so a
-          // transcript could not tell a write let through by a card from one
-          // that ran free in `auto`. The same push-then-send pair the stuck
-          // nudge uses: one line live, one on replay.
-          const line = `Mode: ${this.mode}`;
-          this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: line });
-          // The run's own record is reached only by the bus, and only while a
-          // run is live. Between runs there is nothing to file it under.
-          this.runBus?.emit({ type: 'notice', runId: this.currentRunId, text: line });
-          this.send('notice', line);
+          // D49bj validated the STORED value because it comes off disk. This
+          // message is the other boundary that reaches the permission table, and
+          // an unrecognised value falls through `decide` as `auto` — a
+          // permission it never earned. Accept only the three the picker offers.
+          const next = MODES.find((x) => x === m.value);
+          if (next === undefined) return;
+          this.applyMode(next, 'picker');
+          return;
+        }
+        // D49cb: the answer to the model's mode request. Only `true` approves,
+        // so a malformed message can never switch the permission table.
+        if (m.type === 'mode-request-answer') {
+          const resolve = this.pendingModeRequest;
+          this.pendingModeRequest = null;
+          // Closes the card on a replay, whether the answer was yes or no.
+          if (resolve !== null) this.push({ k: 'mode-done' });
+          resolve?.(m.allow === true);
+          // The view has already marked its card answered; this clears the
+          // status line and keeps the dismissal in one place, as every card does.
+          this.send('mode-request-done');
           return;
         }
         // D40: user renamed the conversation title from the header chip.
@@ -1128,6 +1160,13 @@ class ChatHost {
           }
           // The key may unblock the model list, so refresh it like Add does.
           void this.fetchAndStoreModels(m.connId);
+          return;
+        }
+        // D49bz: the gear's switch. It writes the CONTRIBUTED setting, not a
+        // second copy, and then re-pushes the payload so the switch shows what
+        // was stored rather than what was clicked.
+        if (m.type === 'settings-respect-gitignore') {
+          await this.setRespectGitignore(m.value === true);
           return;
         }
         if (m.type === 'settings-fetch' && typeof m.connId === 'string') {
@@ -1621,6 +1660,133 @@ class ChatHost {
         }
       },
     );
+  }
+
+  /**
+   * D49cb: the model's one sanctioned way to ask for a different mode.
+   *
+   * The change happens HERE and only after the card is answered, so the model
+   * cannot switch anything — it can ask. The note is the tool result it reads:
+   * a yes names the mode now in force, which is what ends the stale belief a
+   * run otherwise carries until its next refused call.
+   */
+  private async requestMode(req: {
+    mode: Mode;
+    reason: string;
+  }): Promise<{ ok: boolean; note: string }> {
+    const from = this.mode;
+    if (req.mode === from) {
+      return { ok: false, note: `request_mode: Plato is already in ${from} mode.` };
+    }
+    if (this.pendingModeRequest !== null) {
+      return { ok: false, note: 'request_mode: a mode request is already open. Wait for the user.' };
+    }
+    if (this.modeRequestsThisRun >= 3) {
+      return {
+        ok: false,
+        note: 'request_mode: the user has answered three mode requests this run. Do not ask again; say in one sentence what you would do if the mode allowed it.',
+      };
+    }
+    this.modeRequestsThisRun += 1;
+    const allow = await this.askModeRequest({ mode: req.mode, reason: req.reason });
+    this.runBus?.emit({
+      type: 'mode-requested',
+      runId: this.currentRunId,
+      from,
+      to: req.mode,
+      approved: allow,
+    });
+    if (!allow) {
+      // The card is gone; the conversation keeps the decision. Without this a
+      // reload loses the fact that Plato asked at all.
+      const declined = `Plato asked to switch to ${req.mode} — the user declined.`;
+      this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: declined });
+      // D49bz's rule: a notice that is persisted but never posted appears only
+      // after a reload. The user must see the answer now.
+      this.send('notice', declined);
+      return {
+        ok: false,
+        note: `The user declined. Plato is still in ${from} mode. Do not ask again for ${req.mode} in this run; say in one sentence what you would do if it were permitted, and continue with what this mode allows.`,
+      };
+    }
+    this.applyMode(req.mode, 'request');
+    return {
+      ok: true,
+      note: `The user approved. Plato is now in ${this.mode} mode. Continue the task.`,
+    };
+  }
+
+  /** Draws the mode card and resolves with the user's answer. */
+  private askModeRequest(req: { mode: Mode; reason: string }): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      this.pendingModeRequest = resolve;
+      // Recorded BEFORE the promise, as the question card's row is, so a reload
+      // rebuilds the card the host is still waiting on.
+      this.push({ k: 'mode-open', current: this.mode, mode: req.mode, reason: req.reason });
+      void this.panel.webview.postMessage({
+        type: 'mode-request',
+        current: this.mode,
+        mode: req.mode,
+        reason: req.reason,
+      });
+    });
+  }
+
+  /**
+   * D49cb: the one place the mode changes, whether the user picked it or
+   * approved the model's request. Returns whether it actually changed.
+   *
+   * A click on the row already in force is NOT a switch, so it writes no line
+   * and records no event — a record that invented a change would be worse than
+   * a silent no-op.
+   */
+  private applyMode(next: Mode, via: 'picker' | 'request'): boolean {
+    const from = this.mode;
+    if (next === from) return false;
+    this.mode = next;
+    this.sessionWrites.clear();
+    this.sessionApprovals.clear();
+    // D49bj: the choice outlives the panel, as the model choice does.
+    void this.ctx.workspaceState.update(MODE_KEY, next);
+    // D49cb: a switch the MODEL asked for changes host state without a click in
+    // this view, so the picker has to be told. Without this message the chip
+    // still read `plan` while the permission table was `edit` — the same silent
+    // disagreement D49bj removed for reloads, through a different door. A picker
+    // click sends it too; setMode is idempotent, so the echo costs nothing.
+    this.send('mode-state', next);
+    // D49ca: the line says when the change takes effect. The mode is read at
+    // every tool decision, so a live run picks it up at its next call — but a
+    // card already on screen keeps its verdict, and an idle click starts
+    // nothing. D49cb adds the third case: a request the user approved is a
+    // different story from the user's own click, and the line says so.
+    const live = this.runBus !== null && this.currentRunId !== '';
+    const line = via === 'request'
+      ? `Mode: ${next} — the user approved Plato's request.`
+      : live
+        ? `Mode: ${next} — applies from the next tool call.`
+        : `Mode: ${next} — applies from your next message.`;
+    // D49bj: the switch is part of the conversation's story, so it is WRITTEN
+    // DOWN and not only shown. The same push-then-send pair the stuck nudge
+    // uses: one line live, one on replay.
+    this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: line });
+    // D49ca: the run's own record is a structured event, not a notice. Between
+    // runs the transcript does not exist yet, so the change waits for the next
+    // one and is emitted after its header.
+    const at = new Date().toISOString();
+    if (live) {
+      this.runBus?.emit({
+        type: 'mode-changed',
+        runId: this.currentRunId,
+        from,
+        to: next,
+        at,
+        via,
+      });
+    } else {
+      this.pendingModeChanges.push({ from, to: next, at, via });
+    }
+    this.send('notice', line);
+    return true;
   }
 
   private send(type: string, text?: unknown, meta?: Record<string, unknown>): void {
@@ -2429,6 +2595,13 @@ class ChatHost {
     this.pendingReveal = null;
     rv?.(false);
     this.send('reveal-done');
+    // D49cb: and the mode card. The loop is parked on it through `requestMode`,
+    // and "no" is the safe answer — the permission table does not change.
+    const mr = this.pendingModeRequest;
+    this.pendingModeRequest = null;
+    if (mr !== null) this.push({ k: 'mode-done' });
+    mr?.(false);
+    this.send('mode-request-done');
   }
 
   /** D34: ask_user — posts stacked question cards (one per question). */
@@ -2454,6 +2627,50 @@ class ChatHost {
    * change, including a model fetch that lands a network round trip after the
    * user has already gone back to the chat.
    */
+  /**
+   * D49bz: writes the .gitignore switch to the target that already holds a
+   * value — the folder or workspace override if there is one, otherwise the
+   * user settings. Writing Global while a workspace override exists would
+   * change nothing visible and read as a broken switch.
+   */
+  private async setRespectGitignore(value: boolean): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration('plato');
+    const current = cfg.inspect<boolean>('search.respectGitignore');
+    const hasFolder = (vscode.workspace.workspaceFolders ?? []).length > 0;
+    const target =
+      current?.workspaceFolderValue !== undefined && hasFolder
+        ? vscode.ConfigurationTarget.WorkspaceFolder
+        : current?.workspaceValue !== undefined
+          ? vscode.ConfigurationTarget.Workspace
+          : vscode.ConfigurationTarget.Global;
+    // `update` resolving is not the configuration having changed: a payload
+    // built immediately afterwards can still read the old value, and the switch
+    // then re-renders in the state the user just clicked away from. Wait for the
+    // change event (bounded) before the panel re-reads.
+    const applied = new Promise<void>((resolve) => {
+      const done = (): void => {
+        clearTimeout(timer);
+        sub.dispose();
+        resolve();
+      };
+      const sub = vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration('plato.search.respectGitignore')) done();
+      });
+      const timer = setTimeout(done, 1000);
+    });
+    try {
+      await cfg.update('search.respectGitignore', value, target);
+    } catch (e) {
+      void this.sendSettings(
+        'Could not save the search setting — ' +
+          (e instanceof Error ? e.message : String(e)),
+      );
+      return;
+    }
+    await applied;
+    void this.sendSettings();
+  }
+
   private async sendSettings(flash?: string, open = false): Promise<void> {
     const userRaw = new Set(rawUserConnections().map((u) => u.id));
     const connections = [];
@@ -2499,6 +2716,11 @@ class ChatHost {
       reasoning: vscode.workspace
         .getConfiguration('plato')
         .get<string>('reasoning', 'off'),
+      // D49bz: the same value the Settings editor shows, so the gear's switch
+      // and the editor's checkbox can never disagree — one setting, two doors.
+      respectGitignore: vscode.workspace
+        .getConfiguration('plato')
+        .get<boolean>('search.respectGitignore', false),
       presets: PROVIDER_PRESETS.map((p) => ({
         value: p.id,
         label: p.label,
@@ -3737,6 +3959,9 @@ class ChatHost {
       ? this.advertisedLimits(conn, parts.model)
       : undefined;
     this.replyBuffer = '';
+    // D49cb: the count is per run. A model may ask once, twice, three times at
+    // most; a new request needs a new run.
+    this.modeRequestsThisRun = 0;
     // D49j: drop anything the previous run left in the streaming preview, and
     // the pending repaint with it — a timer firing into a fresh run would post
     // the old turn's text over the new one.
@@ -3772,6 +3997,23 @@ class ChatHost {
       { task, root },
     );
     writer.attach(bus);
+    // D49ca: a switch made between runs belongs to the next record. The writer
+    // is attached above, so the event lands after the header; a switch made
+    // while this run was still being PREPARED takes the same path, because no
+    // `run-started` exists yet to name before it.
+    bus.on((e) => {
+      if (e.type !== 'run-started' || this.pendingModeChanges.length === 0) return;
+      for (const c of this.pendingModeChanges.splice(0)) {
+        bus.emit({
+          type: 'mode-changed',
+          runId: e.runId,
+          from: c.from,
+          to: c.to,
+          at: c.at,
+          via: c.via,
+        });
+      }
+    });
     // MCP servers (D06, D46, D49bt): read from ~/.plato/mcp.json; failures
     // degrade to zero tools for that server, never break the run.
     //
@@ -4089,7 +4331,12 @@ class ChatHost {
           )} tokens)`,
         });
       } else if (e.type === 'notice') {
+        // D49bz: a run's own notice — a stopped shell, a stuck nudge, a result in
+        // a .gitignore path — was PERSISTED but never posted, so it appeared only
+        // after a reload. `context-compacted` above has always done both; this is
+        // the same two lines, for every other notice the loop raises.
         this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: e.text });
+        this.send('notice', e.text);
       }
     });
     // Chronological reply segmentation (founder UX feedback): the reply was
@@ -4143,9 +4390,17 @@ class ChatHost {
       const result = await runAgentLoop({
         root,
         task: modelTask,
+        // D49bz: read per run, not at activation, so a change in Settings
+        // applies to the next run without reloading the window. Off by default:
+        // an ignored file is found and labelled rather than silently missed.
+        respectGitignore: vscode.workspace
+          .getConfiguration('plato')
+          .get<boolean>('search.respectGitignore', false),
         ...(runImages.length > 0 ? { images: runImages } : {}),
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
+        // D49cb: the model can ask; the user's card is what changes anything.
+        requestMode: (req) => this.requestMode(req),
         bus,
         controller: this.controller,
         askUser: async (req) => {

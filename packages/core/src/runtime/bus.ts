@@ -35,9 +35,52 @@ export type RefusalReason = 'secret' | 'containment';
 export type AgentEvent =
   // D49bj: the mode the run STARTED in. Required, not optional, so an emitter
   // that forgets it is a compile error rather than a run record that cannot say
-  // what its own writes were gated by. A mid-run switch is a `notice` on this
-  // same bus (see the host), so the two together read as the run's whole story.
+  // what its own writes were gated by. A switch is the `mode-changed` event
+  // below (D49ca), so the two together read as the run's whole mode story.
   | { type: 'run-started'; runId: string; task: string; model: string; mode: Mode }
+  /**
+   * D49ca: the USER changed the mode. Emitted by the host, never by the loop —
+   * the model cannot switch the mode and the loop has nothing to add.
+   *
+   * The run header names the mode the run BEGAN in, which cannot answer
+   * "was the mode I am looking at the one it ran under?". This event answers
+   * it: `from` and `to` are the two modes in force either side of the click,
+   * and `at` is the click, which for a switch made between runs predates the
+   * transcript's own `startedAt`.
+   *
+   * A switch made while no run is live is held by the host and emitted at the
+   * start of the next run, so the next record carries it rather than losing it
+   * with the panel.
+   */
+  | {
+      type: 'mode-changed';
+      runId: string;
+      from: Mode;
+      to: Mode;
+      at: string;
+      /**
+       * D49cb: who asked. `picker` is the user's own control; `request` is the
+       * model's request that the user approved on its card. The two are
+       * different stories and the record should not make them read alike.
+       */
+      via: 'picker' | 'request';
+    }
+  /**
+   * D49cb: the model asked for a mode, and the user answered. Emitted whether
+   * the answer was yes or no, so a declined request is in the record too — the
+   * mode-changed event only exists for the yes.
+   *
+   * The model's REASON is deliberately absent. It is prose written for a card,
+   * and a transcript never carries model prose that could quote what was in
+   * front of it; the card shows the reason, the record keeps the decision.
+   */
+  | {
+      type: 'mode-requested';
+      runId: string;
+      from: Mode;
+      to: Mode;
+      approved: boolean;
+    }
   | { type: 'turn-started'; runId: string; turn: number }
   | { type: 'text'; runId: string; text: string }
   | {

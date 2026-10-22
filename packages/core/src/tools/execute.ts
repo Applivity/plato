@@ -24,7 +24,7 @@ import {
   unmaskableRefusal,
   unknownPlaceholderRefusal,
 } from '../runtime/secretCopy.js';
-import { listWorkspaceFiles } from './files.js';
+import { isGitignored, listWorkspace, type WorkspaceListing } from './files.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
 import { matchGlob } from './glob.js';
 import { htmlToText, isPrivateHostname, isTextualContentType } from './web.js';
@@ -39,6 +39,12 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 export interface ToolOutcome {
   ok: boolean;
   output: string;
+  /**
+   * A fact about what the tool SAW, not about what it did — today, that some
+   * results are in paths a `.gitignore` excludes. The loop appends it to what
+   * the model reads and raises it once per run for the user.
+   */
+  note?: string;
 }
 
 export type ToolArgs = Record<string, unknown>;
@@ -88,6 +94,12 @@ export interface ToolContext {
    * is refused as it was before, which keeps this additive.
    */
   revealProtected?: (rel: string) => Promise<boolean>;
+  /**
+   * D49bz: when true, search skips the paths a `.gitignore` excludes. Off by
+   * default — the tools see everything and say what the repository ignores.
+   */
+  respectGitignore?: boolean;
+
 }
 
 function fail(output: string): ToolOutcome {
@@ -216,7 +228,7 @@ async function dispatch(
 ): Promise<ToolOutcome> {
   switch (name) {
     case 'read_file':
-      return readFileTool(root, args, ctx);
+      return annotateIgnoredFile(root, args, ctx, await readFileTool(root, args, ctx));
     case 'write_file':
       return writeFileTool(root, args, ctx);
     case 'apply_diff':
@@ -230,11 +242,11 @@ async function dispatch(
     case 'kill_shell':
       return killShellTool(args, ctx);
     case 'list_dir':
-      return listDirTool(root, args);
+      return listDirTool(root, args, ctx);
     case 'grep':
-      return grepTool(root, args);
+      return grepTool(root, args, ctx);
     case 'glob':
-      return globTool(root, args);
+      return globTool(root, args, ctx);
     case 'web_fetch':
       return webFetchTool(args, ctx);
     case 'git':
@@ -809,11 +821,18 @@ async function killShellTool(
   return r.ok ? { ok: true, output: r.output } : fail(r.output);
 }
 
-async function listDirTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function listDirTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const raw = typeof args['path'] === 'string' ? args['path'].trim() : '';
   // No path: the whole workspace, as before.
   if (raw.length === 0) {
-    return { ok: true, output: listWorkspaceFiles(root).join('\n') };
+    const listing = listWorkspace(root, '', { respectGitignore: ctx.respectGitignore });
+    const output = listing.files.join('\n');
+    const note = ignoredNote(listing, listing.files);
+    return note === undefined ? { ok: true, output } : { ok: true, output, note };
   }
   const target = resolveTarget(root, raw);
   if ('err' in target) return fail(target.err);
@@ -828,29 +847,61 @@ async function listDirTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
     return fail(`no such directory: ${rel}`);
   }
   if (!isDir) return fail(`not a directory: ${rel}`);
-  const files = listWorkspaceFiles(root, rel);
-  return {
-    ok: true,
-    output: files.length > 0 ? files.join('\n') : `(no files under ${rel})`,
-  };
+  const listing = listWorkspace(root, rel, { respectGitignore: ctx.respectGitignore });
+  const output =
+    listing.files.length > 0 ? listing.files.join('\n') : `(no files under ${rel})`;
+  const note = ignoredNote(listing, listing.files);
+  return note === undefined ? { ok: true, output } : { ok: true, output, note };
+}
+
+/**
+ * One line naming what a `.gitignore` excluded from these results, or undefined
+ * when the walk excluded nothing. The paths are named so the model can discount
+ * them — generated output reads like source otherwise — and so the user can see
+ * what the setting is doing.
+ */
+function ignoredNote(listing: WorkspaceListing, results: string[]): string | undefined {
+  if (listing.ignored.size === 0) {
+    return undefined;
+  }
+  const matched = [...new Set(results)].filter((path) => listing.ignored.has(path));
+  if (matched.length === 0) {
+    return undefined;
+  }
+  const names = matched.slice(0, 3).join(', ');
+  const more = matched.length > 3 ? ` and ${matched.length - 3} more` : '';
+  return (
+    `${matched.length} of ${results.length} results ${matched.length === 1 ? 'is' : 'are'} in ` +
+    `paths that .gitignore excludes: ${names}${more}`
+  );
 }
 
 /** Files whose names match `pattern`, for the `glob` tool and `grep`'s filter. */
 const GLOB_MAX_PATHS = 500;
 
-async function globTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function globTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const pattern = args['pattern'];
   if (typeof pattern !== 'string' || pattern.length === 0) {
     return fail('missing pattern');
   }
-  const matches = listWorkspaceFiles(root).filter((p) => matchGlob(pattern, p));
+  const listing = listWorkspace(root, '', { respectGitignore: ctx.respectGitignore });
+  const matches = listing.files.filter((p) => matchGlob(pattern, p));
   if (matches.length === 0) return { ok: true, output: 'no files match' };
   const shown = matches.slice(0, GLOB_MAX_PATHS);
   const note =
     matches.length > shown.length
       ? `\n[${matches.length} files match; showing the first ${shown.length}]`
       : '';
-  return { ok: true, output: shown.join('\n') + note };
+  const ignored = ignoredNote(listing, shown);
+  const outcome: ToolOutcome = { ok: true, output: shown.join('\n') + note };
+  if (ignored !== undefined) {
+    outcome.note = ignored;
+  }
+  return outcome;
 }
 
 const GREP_DEFAULT_LIMIT = 100;
@@ -858,7 +909,11 @@ const GREP_MAX_LIMIT = 1_000;
 
 type GrepMode = 'content' | 'files_with_matches' | 'count';
 
-async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function grepTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const pattern = args['pattern'];
   if (typeof pattern !== 'string' || pattern.length === 0) {
     return fail('missing pattern');
@@ -895,7 +950,8 @@ async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
     Math.max(1, readInt(args['limit']) ?? GREP_DEFAULT_LIMIT),
   );
 
-  const files = listWorkspaceFiles(root).filter(
+  const listing = listWorkspace(root, '', { respectGitignore: ctx.respectGitignore });
+  const files = listing.files.filter(
     (p) => filter === null || matchGlob(filter, p),
   );
 
@@ -906,12 +962,18 @@ async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
   let truncated = false;
 
   for (const rel of files) {
-    let text: string;
+    let buf: Buffer;
     try {
-      text = await readFile(join(root, rel), 'utf8');
+      buf = await readFile(join(root, rel));
     } catch {
-      continue; // binary or unreadable
+      continue; // unreadable
     }
+    // A binary does not throw on a UTF-8 decode — it becomes replacement
+    // characters, and the search then returns lines of it. `read_file` has
+    // always asked isPlainText; a search walks files the reader was never
+    // pointed at, so it has to ask too.
+    if (!isPlainText(buf)) continue;
+    const text = buf.toString('utf8');
     let fileHits = 0;
     const lines = text.split('\n');
     for (let i = 0; i < lines.length; i++) {
@@ -942,7 +1004,7 @@ async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
       matchedFiles.length > shown.length
         ? `\n[${matchedFiles.length} files matched; showing ${shown.length} — raise limit or narrow with glob]`
         : '';
-    return { ok: true, output: shown.join('\n') + note };
+    return withNote({ ok: true, output: shown.join('\n') + note }, ignoredNote(listing, shown));
   }
 
   if (mode === 'count') {
@@ -952,17 +1014,54 @@ async function grepTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
       counts.length > shown.length
         ? `\n[${counts.length} files matched; showing ${shown.length}]`
         : '';
-    return {
-      ok: true,
-      output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}`,
-    };
+    const counted = shown.map((line) => line.slice(0, line.lastIndexOf(':')));
+    return withNote(
+      {
+        ok: true,
+        output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}`,
+      },
+      ignoredNote(listing, counted),
+    );
   }
 
   if (content.length === 0) return { ok: true, output: 'no matches' };
   const note = truncated
     ? `\n[stopped at ${limit} hits — raise limit, or narrow with glob]`
     : '';
-  return { ok: true, output: content.join('\n') + note };
+  const hitFiles = content.map((line) => line.slice(0, line.indexOf(':')));
+  return withNote(
+    { ok: true, output: content.join('\n') + note },
+    ignoredNote(listing, hitFiles),
+  );
+}
+
+/** Attaches the note when there is one; keeps the plain shape when there is not. */
+function withNote(outcome: ToolOutcome, note: string | undefined): ToolOutcome {
+  return note === undefined ? outcome : { ...outcome, note };
+}
+
+/**
+ * `read_file` names one path, so it asks about that path instead of walking.
+ * The note is given whichever way the switch is set: opening a file the
+ * repository ignores is exactly the case where saying so helps, and the switch
+ * decides what a SEARCH returns, not what is true.
+ */
+function annotateIgnoredFile(
+  root: string,
+  args: ToolArgs,
+  _ctx: ToolContext,
+  outcome: ToolOutcome,
+): ToolOutcome {
+  if (!outcome.ok) {
+    return outcome;
+  }
+  const rel = argPath(args).replace(/^\.\//, '');
+  if (rel.length === 0 || rel.startsWith('/') || rel.split('/').includes('..')) {
+    return outcome;
+  }
+  return isGitignored(root, rel)
+    ? withNote(outcome, 'this file is excluded by .gitignore')
+    : outcome;
 }
 
 async function gitTool(root: string, args: ToolArgs): Promise<ToolOutcome> {

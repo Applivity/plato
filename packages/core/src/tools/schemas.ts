@@ -10,8 +10,51 @@
  */
 import type { CanonicalTool } from '../providers/types.js';
 
+export interface ToolDeclarationOpts {
+  /**
+   * D49cb: the host implements a REAL mode request — a card whose Yes changes
+   * the mode. The tool is offered only to a host that can honour it; a host
+   * without the card would return an error to a model that asked correctly,
+   * which is worse than not offering the tool.
+   */
+  modeRequest?: boolean;
+}
+
+/**
+ * D49cb: the model's one sanctioned way to ask for a different mode.
+ *
+ * It is a REQUEST, not a switch: the host draws a card, and only the user's
+ * answer changes anything. That is the condition D49bk left for bringing the
+ * card back — its answer is no longer a lie, because the host now acts on it.
+ */
+function requestModeTool(): CanonicalTool {
+  return {
+    name: 'request_mode',
+    description:
+      'Ask the user to change Plato\'s mode. Use this when the current mode refuses a call you need to finish the task — for example, a change that plan mode blocks, or commands that edit mode asks about one by one. The user sees a card with your reason and decides. You cannot change the mode yourself. Ask once per mode you need: if the user declines, do not ask again for the same mode; say in one sentence what you would do if it were permitted and continue with what the mode allows. Never put a mode change on an ask_user question card.',
+    parameters: {
+      type: 'object',
+      properties: {
+        mode: {
+          type: 'string',
+          enum: ['plan', 'edit', 'auto'],
+          description:
+            'The mode you need. plan looks and cannot change anything; edit changes files and runs commands with the user\'s approval; auto asks nothing.',
+        },
+        reason: {
+          type: 'string',
+          maxLength: 300,
+          description:
+            'One sentence, shown on the card, saying what the current mode blocks and what you will do in the new mode. Write it for the user, not for the log.',
+        },
+      },
+      required: ['mode', 'reason'],
+    },
+  };
+}
+
 /** Declares all M1 tools to the model. */
-export function toolDeclarations(): CanonicalTool[] {
+export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[] {
   return [
     {
       name: 'read_file',
@@ -286,6 +329,9 @@ export function toolDeclarations(): CanonicalTool[] {
         required: ['questions'],
       },
     },
+    // D49cb: after ask_user because both are ways to stop and let the user
+    // decide — but this one is the only one that can actually change a mode.
+    ...(opts.modeRequest ? [requestModeTool()] : []),
     {
       name: 'web_fetch',
       description:

@@ -182,5 +182,25 @@ const label = (p) => p.evaluate(() => {
   await p.close();
 }
 
+// D49cb: a mode the HOST changed — the model asked, the user approved on the
+// card — must reach the picker. Without it the chip read `plan` while the
+// permission table was `edit`, and the screenshot of the first real run caught
+// the disagreement.
+{
+  const p = await page(760);
+  const post = (msg) => p.evaluate(
+    (x) => window.dispatchEvent(new MessageEvent('message', { data: x })), msg);
+  check('the picker starts on its own default', (await label(p)) === 'edit', await label(p));
+  await post({ type: 'mode-state', text: 'auto' });
+  await p.waitForTimeout(200);
+  const after = await label(p);
+  check('a host-side switch moves the picker label', after === 'auto', after);
+  const rows = await openPicker(p);
+  check('and the active row follows it',
+    rows.find((r) => r.active)?.mode === 'auto', rows.map((r) => [r.mode, r.active]));
+  checkPageClean(p, 'host mode state');
+  await p.close();
+}
+
 console.log('');
 await finish('mode picker');

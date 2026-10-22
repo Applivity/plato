@@ -97,6 +97,10 @@ export function analyse(events) {
     decisions: of('approval-decided'),
     toolEvents: of('tool-event'),
     notices: of('notice').map((e) => e.text),
+    /** D49ca: the user's mode switches, with the click's own time. */
+    modeChanges: of('mode-changed'),
+    /** D49cb: the model's requests, and whether the user approved each. */
+    modeRequests: of('mode-requested'),
     completed: of('run-completed'),
     failed: of('run-failed'),
     /** Approval cards for one tool. */
@@ -210,7 +214,148 @@ const RULES = {
         !(a.decisions.some((d) => d.allowed === false) && a.toolEvents.some((e) => (e.tool === 'write_file' || e.tool === 'apply_diff') && e.phase === 'done')),
       detail: `decisions: ${a.decisions.map((d) => `${d.tool}=${d.allowed}`).join(', ') || 'none'}`,
     },
+    // D49ca: the edit run always follows the plan run, and the harness switches
+    // through the real picker between them. So its record must open with the
+    // switch that produced it — and the click must predate the run, which is
+    // the between-runs fact the header alone cannot state. The plan run is not
+    // asserted: whether it records a switch depends on the mode the case before
+    // it left behind, which is not this case's claim.
+    ...(a.header?.mode === 'edit'
+      ? [{
+          name: 'the record carries the between-runs switch into edit, before the run',
+          ok: a.modeChanges.some((m) => m.to === 'edit' && String(m.at) <= String(a.header.startedAt)),
+          detail: a.modeChanges.length > 0
+            ? a.modeChanges.map((m) => `${m.from}→${m.to} at ${m.at}`).join(', ')
+            : 'no mode-changed event',
+        }]
+      : []),
   ],
+
+  // 34 — plan hands the work back; the switch alone starts nothing (D49ca).
+  //
+  // Two runs, and each is judged by its own header. The plan run must refuse
+  // the write without a card. The edit run must carry the switch the driver
+  // made BETWEEN runs — its click time before the run's start — and the same
+  // write must then be admitted through one card.
+  34: (a) => {
+    if (a.header?.mode === 'plan') {
+      return [
+        {
+          name: 'the plan run refused the write',
+          ok: a.phasesFor('write_file').some((e) => e.phase === 'denied'),
+          detail: summarise(a.phasesFor('write_file')),
+        },
+        {
+          name: 'and raised no card for it',
+          ok: a.approvals.length === 0,
+          detail: `${a.approvals.length} card(s)`,
+        },
+      ];
+    }
+    return [
+      {
+        name: 'the record carries the between-runs switch into edit, before the run',
+        ok: a.modeChanges.some(
+          (m) => m.to === 'edit' && String(m.at) <= String(a.header?.startedAt ?? ''),
+        ),
+        detail: a.modeChanges.length > 0
+          ? a.modeChanges.map((m) => `${m.from}→${m.to} at ${m.at}`).join(', ')
+          : 'no mode-changed event',
+      },
+      {
+        name: 'the write plan refused was admitted in edit',
+        ok: a.doneFor('write_file').length >= 1,
+        detail: summarise(a.phasesFor('write_file')),
+      },
+      {
+        name: 'and it asked once',
+        ok: a.approvals.length === 1 && a.cardsFor('write_file').length === 1,
+        detail: `${a.approvals.length} card(s): ${a.approvals.map((e) => e.tool).join(', ') || 'none'}`,
+      },
+    ];
+  },
+
+  // 35 — a switch made DURING a run applies at the next tool call (D49ca).
+  //
+  // The order is the claim: the same call was refused, then the user switched,
+  // then the call was admitted through a card. A record that carries the events
+  // in any other order — or a mode change that happened before the run — fails.
+  35: (a) => {
+    const ordered = a.turns.flatMap((t) => t.events);
+    const at = (pred) => ordered.findIndex(pred);
+    const denied = at((e) => e.type === 'tool-event' && e.tool === 'write_file' && e.phase === 'denied');
+    const changed = at((e) => e.type === 'mode-changed' && e.to === 'edit');
+    const done = at((e) => e.type === 'tool-event' && e.tool === 'write_file' && e.phase === 'done' && e.ok === true);
+    const change = a.modeChanges.find((m) => m.to === 'edit');
+    return [
+      {
+        name: 'the run started in plan',
+        ok: a.header?.mode === 'plan',
+        detail: String(a.header?.mode ?? 'no header'),
+      },
+      {
+        name: 'the write was refused, then the switch, then the write completed — in that order',
+        ok: denied >= 0 && changed > denied && done > changed,
+        detail: `denied=${denied} mode-changed=${changed} done=${done}`,
+      },
+      {
+        name: 'the switch happened during the run, not before it',
+        ok: change !== undefined && String(change.at) >= String(a.header?.startedAt ?? ''),
+        detail: change ? `${change.from}→${change.to} at ${change.at}` : 'no mode-changed event',
+      },
+      {
+        name: 'the second call asked through one card',
+        ok: a.cardsFor('write_file').length === 1,
+        detail: `${a.cardsFor('write_file').length} card(s)`,
+      },
+    ];
+  },
+
+  // 36 — the model asks for a mode; the user's card decides (D49cb).
+  //
+  // Two runs, and the decision tells them apart. An APPROVED request must have
+  // switched the mode (via `request`) and the write must then have landed. A
+  // DECLINED request must have changed nothing, and no write may follow — the
+  // card is the only path from the request to the permission table.
+  36: (a) => {
+    const approved = a.modeRequests.find((r) => r.approved === true);
+    if (approved !== undefined) {
+      return [
+        {
+          name: 'the record says the model asked for edit and the user approved',
+          ok: approved.to === 'edit',
+          detail: `${approved.from}→${approved.to} approved=${approved.approved}`,
+        },
+        {
+          name: 'the approved request is the switch that changed the mode',
+          ok: a.modeChanges.some((m) => m.via === 'request' && m.to === 'edit'),
+          detail: a.modeChanges.map((m) => `${m.from}→${m.to} via ${m.via ?? '?'}`).join(', ') || 'none',
+        },
+        {
+          name: 'the same run then wrote the file through one card',
+          ok: a.doneFor('write_file').length >= 1 && a.cardsFor('write_file').length === 1,
+          detail: `${summarise(a.phasesFor('write_file'))}; ${a.cardsFor('write_file').length} card(s)`,
+        },
+      ];
+    }
+    return [
+      {
+        name: 'the record says the model asked for auto and the user declined',
+        ok: a.modeRequests.some((r) => r.approved === false && r.to === 'auto'),
+        detail: a.modeRequests.map((r) => `${r.from}→${r.to} approved=${r.approved}`).join(', ') || 'none',
+      },
+      {
+        name: 'a declined request changed no mode',
+        ok: !a.modeChanges.some((m) => m.via === 'request'),
+        detail: a.modeChanges.map((m) => `${m.from}→${m.to} via ${m.via ?? '?'}`).join(', ') || 'none',
+      },
+      {
+        name: 'and nothing was written after it',
+        ok: a.phasesFor('write_file').length === 0 && a.approvals.length === 0,
+        detail: `${summarise(a.phasesFor('write_file'))}; ${a.approvals.length} card(s)`,
+      },
+    ];
+  },
 
   // 5 — one card covers the multi-file patch, then that file stops asking.
   //
@@ -821,13 +966,46 @@ const RULES = {
     },
   ]),
 
-  // 32 — D49bn. Closing the panel stops the run, and the record names the cause
+  // 32 — D49bz. The .gitignore switch, judged from the record.
+  //
+  // The record CAN see this, unlike most tool-result claims: the note the engine
+  // raises is a `notice` event, and notices are written to the transcript. So run
+  // 1 must carry it and run 2 must not. Which run is which comes from the task,
+  // which names the setting — the notice itself cannot be used to decide what
+  // the run was supposed to do, or the rule would pass on whichever behaviour it
+  // found.
+  32: (a) => {
+    const settingOn = /setting ON/.test(a.task);
+    const noticed = a.notices.some((t) => /paths that \.gitignore excludes/.test(t));
+    const globRan = a.doneFor('glob').length >= 1;
+    return [
+      {
+        name: 'the glob search ran',
+        ok: globRan,
+        detail: summarise(a.toolEvents),
+      },
+      settingOn
+        ? {
+            name: 'the setting was on, and the record carries no .gitignore notice',
+            ok: !noticed,
+            detail: a.notices.join(' · ') || 'no notices',
+          }
+        : {
+            name: 'the default run recorded the .gitignore notice',
+            ok: noticed,
+            detail: a.notices.join(' · ') || 'no notices',
+          },
+    ];
+  },
+
+  // 33 — D49bn. Closing the panel stops the run, and the record names the cause
   // rather than leaving "cancelled" to be read as the user's own doing.
-  // Renumbered from 28 on 2026-10-08 (28 went to the cut-stream case), and from
-  // 29 on 2026-10-15 when the MCP case took that number — 30 and 31 belong to
-  // the real-model cases. This one MUST still run last: it closes the panel, and
+  // Renumbered from 28 on 2026-10-08 (28 went to the cut-stream case), from
+  // 29 on 2026-10-15 when the MCP case took that number, and from 32 on
+  // 2026-10-21 when the .gitignore case took it — 30 and 31 belong to the
+  // real-model cases. This one MUST still run last: it closes the panel, and
   // the harness cannot step back into a webview it has closed.
-  32: (a) => [
+  33: (a) => [
     {
       name: 'the run stopped',
       ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',

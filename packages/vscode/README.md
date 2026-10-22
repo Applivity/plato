@@ -43,6 +43,8 @@ You supply the key and pay the model provider.
 - Pauses at the next safe point. It cannot stop a model call already in flight.
 - `plan` is read-only. `edit` asks before writes and shell commands. `auto` runs
   them.
+- If a mode blocks the work, Plato can ask to switch. You decide on a card; it
+  cannot switch by itself.
 - Keeps undo copies of files Plato wrote. A terminal command, or a change you
   made yourself, cannot be undone.
 - Reads protected files with their values masked. A value reaches a model only

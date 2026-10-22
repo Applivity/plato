@@ -255,6 +255,21 @@ function seedTree(): string {
 }
 
 describe('grep (D49l)', () => {
+  it('skips a binary file instead of searching its decoded bytes', async () => {
+    // A binary decodes to replacement characters rather than throwing, so a
+    // search that only catches read errors walks it as text and can return
+    // lines of it. A `.jks` is skipped by name; a `.bin` is not.
+    const root = tempRoot();
+    writeFileSync(join(root, 'notes.txt'), 'needle in text\n');
+    writeFileSync(
+      join(root, 'blob.bin'),
+      Buffer.from([0x00, 0xfe, 0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0xff, 0x00]),
+    );
+    const r = await executeTool(root, 'grep', { pattern: 'needle' });
+    expect(r.output).toContain('notes.txt');
+    expect(r.output).not.toContain('blob.bin');
+  });
+
   it('matches a literal pattern by default, across files', async () => {
     const r = await executeTool(seedTree(), 'grep', { pattern: 'const x = 1' });
     expect(r.ok).toBe(true);
@@ -656,5 +671,92 @@ describe('background shells through the tool surface (D49m)', () => {
     expect(
       (await executeTool(root, 'bash_output', { id: '1' }, {})).output,
     ).toContain('unavailable');
+  });
+});
+
+describe('the .gitignore switch governs search, not access', () => {
+  it('edits a file the user names, even while search skips it', async () => {
+    // The switch answers "which files does a SEARCH return". A file the user
+    // names is a different question, and the answer must not change: Plato
+    // reads and writes it. Otherwise turning the switch on would quietly make
+    // a generated file un-editable.
+    const root = tempRoot();
+    mkdirSync(join(root, 'vendor'), { recursive: true });
+    writeFileSync(join(root, '.gitignore'), 'vendor/\n');
+    writeFileSync(join(root, 'vendor', 'lib.ts'), 'old\n');
+
+    const write = await executeTool(
+      root,
+      'write_file',
+      { path: 'vendor/lib.ts', content: 'new\n', overwrite: true },
+      { respectGitignore: true },
+    );
+    expect(write.ok).toBe(true);
+    expect(readFileSync(join(root, 'vendor', 'lib.ts'), 'utf8')).toBe('new\n');
+
+    // And the same setting still hides it from a search.
+    const search = await executeTool(root, 'grep', { pattern: 'new' }, { respectGitignore: true });
+    expect(search.output).toBe('no matches');
+
+    const open = await executeTool(
+      root,
+      'read_file',
+      { path: 'vendor/lib.ts' },
+      { respectGitignore: true },
+    );
+    expect(open.ok).toBe(true);
+    expect(open.output).toContain('new');
+  });
+});
+
+describe('ignored paths are visible by default and labelled', () => {
+  function tree(): string {
+    const root = tempRoot();
+    mkdirSync(join(root, 'src'), { recursive: true });
+    mkdirSync(join(root, 'vendor'), { recursive: true });
+    writeFileSync(join(root, '.gitignore'), 'vendor/\n*.log\n');
+    writeFileSync(join(root, 'src', 'a.ts'), 'const needle = 1;\n');
+    writeFileSync(join(root, 'vendor', 'lib.ts'), 'const needle = 2;\n');
+    writeFileSync(join(root, 'debug.log'), 'needle in a log\n');
+    return root;
+  }
+
+  it('searches ignored files and says they are ignored', async () => {
+    const r = await executeTool(tree(), 'grep', { pattern: 'needle' });
+    expect(r.output).toContain('vendor/lib.ts');
+    expect(r.note).toContain('paths that .gitignore excludes');
+    expect(r.note).toContain('vendor/lib.ts');
+  });
+
+  it('skips them, with no note, when the switch is on', async () => {
+    const r = await executeTool(tree(), 'grep', { pattern: 'needle' }, { respectGitignore: true });
+    expect(r.output).not.toContain('vendor/lib.ts');
+    expect(r.note).toBeUndefined();
+  });
+
+  it('labels a glob whose results are ignored', async () => {
+    const r = await executeTool(tree(), 'glob', { pattern: '*.log' });
+    expect(r.output).toContain('debug.log');
+    expect(r.note).toContain('debug.log');
+  });
+
+  it('labels a listing that includes ignored files', async () => {
+    const r = await executeTool(tree(), 'list_dir', {});
+    expect(r.output).toContain('debug.log');
+    expect(r.note).toContain('debug.log');
+  });
+
+  it('says so when a named file is ignored, whichever way the switch is set', async () => {
+    const open = await executeTool(tree(), 'read_file', { path: 'debug.log' });
+    expect(open.note).toBe('this file is excluded by .gitignore');
+    const strict = await executeTool(
+      tree(),
+      'read_file',
+      { path: 'debug.log' },
+      { respectGitignore: true },
+    );
+    expect(strict.note).toBe('this file is excluded by .gitignore');
+    const plain = await executeTool(tree(), 'read_file', { path: 'src/a.ts' });
+    expect(plain.note).toBeUndefined();
   });
 });

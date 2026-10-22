@@ -4078,6 +4078,318 @@ is the answer for a deliberate follow-up.
 
 ---
 
+**D49bw — Phase 2 opens: the CLI is a first-class host, and Duo and Academy ship in v1 (founder, 2026-10-21).**
+
+**The instruction.** The extension is live. The next release is a command-line version,
+published on npm. The founder stated that professional users prefer a CLI. Therefore the CLI
+must be a polished product, not an afterthought. This entry replaces the earlier "CLI is phase 2,
+recorded only; do not start this work now" note in `docs/LICENSING.md`.
+
+**Scope: the prime feature ships in v1.** The CLI v1 includes Solo, Duo, and Academy. A Solo-only
+first release was considered and rejected: Duo and Academy are the product's differentiator, and a
+CLI without them is a weaker product. The three modes (`plan`, `edit`, `auto`), approvals with
+session memory, questions, the stuck card, the protected-file reveal card, masked reads, the secret
+vault, undo, transcripts, MCP, images, streaming, and session resume are also in v1.
+
+**One engine, two hosts.** `packages/cli` is a new host over `@applivity/plato-core`. It does not
+fork the loop, the tools, the permission table, or the security checks. The loop's options are the
+host contract: approve, get-mode, ask-user, stuck, reveal, provider, model, root, and task. A second
+engine was rejected because it would fork the safety behaviour, and the security work is the part
+that must not drift.
+
+**Not in v1.** Editor diagnostics: a terminal has no language server. Subagents, hooks, skills, and
+notebooks remain deferred under the existing decisions.
+
+**Distribution.** The package is `@applivity/plato`; the command is `plato`. The unscoped names
+`plato` and `plato-cli` are taken. The scoped name was verified available on 2026-10-20. The first
+version is `0.1.0`. The CLI has its own version; it does not follow the extension's `0.26.x` line.
+The release posture is the same as the extension: Apache-2.0, a private repository, and the licence
+and notices inside the tarball. A public repository is not required. Provenance is not available
+while the repository is private.
+
+**Shared state.** Both hosts use `~/.plato`. Run transcripts, undo copies, `mcp.json`,
+`DUO.yaml`, `ACADEMY.yaml`, and `PLATO.md` are shared. The project key is the same: the first 8 hex
+characters of the SHA-1 of the workspace root. A run started in the extension is visible to the
+CLI, and the reverse is true.
+
+**Owner actions.** The founder controls the npm login, the first publish, and every push.
+
+**Files:** `packages/cli/`, `packages/cli/package.json`, `packages/cli/PLAN.md`,
+`docs/LICENSING.md` §8. **The phased plan with milestone exit criteria is
+`packages/cli/PLAN.md`.**
+**Verification:** unit tests for the host, a scripted-provider end-to-end run, a
+real-model run on the proving-ground repo, and `npm pack` inspection before publish.
+
+---
+
+**D49bx — CLI keys: environment first, OS keychain second, a 0600 file last — never the config (founder, 2026-10-21).**
+
+**The question.** The extension stores keys in VS Code SecretStorage. A CLI cannot use that store.
+The founder asked what comparable tools do and what is standard in the industry. **He approved the
+keychain on 2026-10-21 with one condition: setup must not be cumbersome.**
+
+**What the six comparable tools do.**
+
+| Product | Key sources, in order | Where a stored key lives |
+|---|---|---|
+| Claude Code | `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_API_KEY`; `apiKeyHelper`; stored OAuth | macOS Keychain (`Claude Code-credentials`); fallback `~/.claude/.credentials.json` mode 0600. Linux and Windows use the 0600 file |
+| opencode | environment; `auth.json` | `~/.local/share/opencode/auth.json` (XDG data dir), mode 0600, plaintext. The `opencode auth` group has `login`, `list`, and `logout` |
+| Codex CLI | environment; stored login | `auth.json` mode 0600 under `CODEX_HOME`. The storage mode is `file`, `keyring`, `auto`, or `ephemeral`; `auto` prefers the OS keyring |
+| Gemini CLI | `GEMINI_API_KEY` or `.env`; OAuth for Google accounts | OAuth tokens are cached under `~/.gemini/`. The settings file is not the key store |
+| Aider | environment or `.env`; CLI flags | `.env` or the config file. The docs recommend `.env` and warn that the YAML file is often committed by accident |
+| Goose | environment; system keyring; `secrets.yaml` | System keyring. `secrets.yaml` mode 0600 is the fallback. `GOOSE_DISABLE_KEYRING` forces the file for headless use |
+
+**The pattern.** Every tool puts the environment first, because CI and containers use it. Every tool
+that persists a key keeps it in a separate credential store, not in the main config. Most use the OS
+keychain when one is available. All of them fall back to a 0600 file. Each has an `auth` command
+group and a documented headless path.
+
+**The decision.**
+
+1. **Resolution order:** `PLATO_KEY_<CONNECTION_ID>` > the provider-standard variable for that
+   connection kind (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) > the OS keychain entry (service
+   `plato`, account `<connection-id>`) > `~/.local/share/plato/auth.json` with mode 0600.
+   `PLATO_DATA_DIR` overrides the data directory. **A known preset uses its own vendor variable**
+   (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, and so on), and a connection whose kind disagrees with its
+   vendor name falls back to the variable for its kind. This keeps an OpenAI key from being sent to
+   OpenRouter.
+2. **No key in the config.** `~/.config/plato/config.json` holds connections, the default model, the
+   mode, orchestration, and compaction. It never holds a key. `PLATO_CONFIG_DIR` overrides the
+   config directory.
+3. **Commands:** `plato auth login|status|logout|list`. `login` writes to the OS keychain by
+   default. `--no-keyring`, or `PLATO_DISABLE_KEYRING=1`, writes the 0600 file and says so.
+   `status` reports which source resolved the key and whether the file has mode 0600. It never
+   prints the key.
+4. **Keychain backend:** `@napi-rs/keyring` (2.1.2). It has prebuilt binaries for macOS, Linux, and
+   Windows, and no compiler is needed. `keytar` was rejected because it is unmaintained.
+5. **The environment trap stays closed.** The Anthropic SDK reads `ANTHROPIC_BASE_URL` and
+   `ANTHROPIC_AUTH_TOKEN` on its own. The CLI passes the endpoint and the token explicitly, as the
+   extension does (D49u). Reading `ANTHROPIC_API_KEY` is deliberate. Letting an ambient
+   `ANTHROPIC_BASE_URL` move a connection is not.
+6. **Never on another path.** Keys do not enter logs, transcripts, error output, or the config. The
+   transcript writer already uses a field whitelist.
+
+**Setup must be one command.** The founder's condition is part of the decision. The normal flow is:
+
+```
+$ plato auth login
+? Provider: Anthropic / OpenAI / OpenRouter / LiteLLM / Custom
+? Connection name: litellm
+? Base URL: http://localhost:4000/v1
+? API key: ********
+✓ Saved to the OS keychain.
+```
+
+`plato auth login anthropic` skips the provider question. For a standard provider, the flow is one
+prompt: `plato auth login anthropic` asks for the key and nothing else. The provider and connection
+name have defaults, and the base URL is asked only for a custom endpoint. The user never edits JSON,
+never names a keychain service, and never handles a file path. Provider presets supply the wiring.
+If no key is present on the first run, the CLI offers this flow once and names the command. `plato auth status`
+prints one line per connection and its source (`keychain`, `env:NAME`, or `file`), never the key.
+`plato auth logout <connection>` removes it. `plato doctor` checks the keychain, the config, and the
+resolved source. **Headless:** `echo "$KEY" | plato auth login anthropic` reads the key from a pipe,
+so a container never prompts and the key never appears in a shell history.
+
+**When the keychain is not available.** The fallback is automatic and stated once. The user is not
+asked to install anything. `--no-keyring` and `PLATO_DISABLE_KEYRING=1` are explicit choices, not
+requirements. The keychain module is an optional dependency; if it fails to load, the CLI continues
+with environment variables and the file. On Linux, the keyutils backend is not used for a saved key
+because it does not survive a reboot. Secret Service is used when present, and the file when it is
+not.
+
+**Stated boundary.** A 0600 file is plaintext. Any process that runs as the user can read it. The
+keychain raises the effort, but it does not protect a compromised account. `plato auth status` names
+the source, so the user knows which protection is in use.
+
+**Files (planned):** `packages/cli/src/keys.ts`, `packages/cli/src/auth.ts`,
+`packages/cli/src/config.ts`.
+**Verification (planned):** unit tests for precedence and file mode; a test that an ambient
+`ANTHROPIC_BASE_URL` does not move a configured connection; a headless run with
+`PLATO_DISABLE_KEYRING=1`.
+
+---
+
+**D49by — The CLI follows the terminal conventions professional users already know (founder, 2026-10-21).**
+
+**The instruction.** The founder asked the CLI to follow the standards and conventions of Claude
+Code, opencode, and similar tools. Professional users expect a polished tool. A terminal UI that
+looks improvised will lose them.
+
+**Command shape.**
+
+- `plato` opens the interactive terminal UI in the current directory.
+- `plato "task"` opens the interactive UI with the first task filled in.
+- `plato -p "task"` runs one task and exits. `-p` matches Claude Code's `--print`.
+- `plato -c` continues the most recent session for this project. `plato -r <id>` resumes a named
+  session.
+- `plato auth ...`, `plato models`, `plato sessions ...`, `plato mcp ...`, and `plato doctor` are the
+  noun-based command groups.
+
+**Machine-readable output.** `--output-format text|json|stream-json`. `text` is the default. `json`
+prints one result object at the end. `stream-json` prints one JSON object per line for text, tool
+events, and notices. Results go to stdout. Logs and progress go to stderr. Exit code 0 means the
+run completed. 1 means a failure, a refusal, or a cancel. 2 means a usage error.
+
+**Interactive conventions.**
+
+- `/` opens the command menu with completion.
+- `@` mentions a file and offers path completion.
+- `Shift+Tab` cycles `plan`, `edit`, and `auto`.
+- `Esc` interrupts the current turn. `Ctrl+C` interrupts; a second `Ctrl+C` exits. `Ctrl+D` exits.
+- `Ctrl+R` searches history. `Ctrl+L` redraws. `\` followed by Enter, or `Shift+Enter`, adds a new
+  line.
+- `?` on an empty prompt shows the shortcuts.
+- `!` shell passthrough is deferred. Direct output could carry a value the secret scrub has not
+  seen. Define that rule before shipping the feature.
+
+**Permission prompts.** The default answer is No. The choices are Yes; Yes, do not ask again for this
+file or session; and No. A write shows its diff. `Esc` declines. The copy and the session-memory
+rules come from core, so the terminal and the panel say the same words. Fetch approvals stay keyed
+on `tool:host`.
+
+**Terminal UI stack: Ink 8, pinned to `8.0.0`.** The founder delegated the choice on 2026-10-21
+with three criteria: flexible, reliable, and painless long term. Ink meets them.
+
+- **Flexible.** The host is split into a pure view model and a renderer. A plain-text renderer and a
+  JSON renderer use the same view model, so the TUI is replaceable. Product state, copy, and
+  decisions stay in core and in the view model, never in a component.
+- **Reliable.** Pure JavaScript. No native build, no platform binaries, no compiler. The same
+  tarball runs on macOS, Linux, and Windows. Ink is the renderer used by tools in this class, and
+  `ink-testing-library` drives real keystrokes.
+- **Painless long term.** One dependency tree, a stable public API, and a pinned version. The first
+  release stays on `8.0.0` until a later 8.x patch line has proven itself. Ink 8's four breaking
+  changes are avoided by design: no percentage widths on `Box`, `useWindowSize()` for terminal size,
+  no reliance on mouse or focus sequences, and React 19.3.x.
+
+OpenTUI was rejected because it needs Node 26.4, experimental FFI, and native Zig binaries. Raw
+`readline` was rejected because Duo and Academy need a live multi-agent feed, and building that by
+hand would cost more than the dependency. This is a recorded exception to the project rule that a
+new framework needs a reason.
+
+**Duo and Academy on screen.** A persistent observer strip shows each philosopher's name and colour.
+Observer notices appear inline. Guidance, pause, and cancel work as they do in the extension. The
+closing line reports checks and interventions. State stays legible without colour.
+
+**Status line.** The mode, the model, the context used, the cost, and the observers.
+
+**Headless and accessibility.** The CLI detects a non-TTY. It respects `NO_COLOR`. A flat
+screen-reader mode is recorded for later; it is not in v1.
+
+**Testing.** The host is split into a pure view model and a thin renderer. `ink-testing-library`
+drives keystrokes. The plain renderer is exercised in CI without a terminal. A scripted provider
+drives full runs, so the tests need no network. The existing core tests are not duplicated.
+
+**The escape hatch.** If Ink ever becomes the problem, the plain renderer is not a stub: it is the
+same view model with a different output layer. Replacing it touches one directory, not the host or
+the engine.
+
+**Files (planned):** `packages/cli/src/tui/`, `packages/cli/src/host.ts`,
+`packages/cli/src/session.ts`.
+**Verification (planned):** view-model tests, keystroke tests, a scripted-provider end-to-end run,
+and a manual session with a real model in Duo and Academy.
+
+---
+
+**D49bz — The trace names its target, the search obeys `.gitignore`, and `doctor` replaces the debug log (2026-10-21).**
+
+Three questions came from running the CLI on the proving-ground Android repo, not from the test
+fixtures.
+
+**The live trace names what a call touched.** The trace printed `→ grep` and `✓ read_file`. On an
+eighteen-turn run that is a list of verbs: the user cannot tell which file was read or what was
+searched for. It also broke the product's own rule from D49ba — a user should never have to decode a
+tool identifier.
+
+- The wording comes from the existing `toolWords` table (`doing`), so there is still one table and
+  no second list that must agree with it.
+- The target is one identifying value read from the call's arguments: a path, a pattern (with its
+  `glob` scope), a command, a URL, a git verb, or the paths of an `apply_patch`. A tool with no such
+  value prints no target rather than falling back to its first string — `write_file`'s other string
+  is the file's CONTENT and `todo_write`'s is the plan.
+- `→` carries the target, `✓` confirms without repeating it, and a failure repeats it because that
+  is the one line a reader needs. Long targets are cut to 60 characters with the middle elided, so
+  a path keeps its filename.
+- The arguments are read from the event the loop already emits and are still never written to the
+  transcript (D24c).
+
+**The search obeys the repository's `.gitignore`, when the user turns that on (founder, amended
+2026-10-21).** The walker had a fixed directory list (`.git`, `node_modules`, `build`, `.gradle`,
+`.idea`, `.vscode`, `dist`, `out`), which cannot know that a project's `vendor/`, `target/`, or a
+generated tree beside it is noise.
+
+The first version of this filtered by default and said nothing. The founder corrected the default:
+**an agent that silently misses a file its repository owner ignored is worse than one that sees
+noise**, and the user must be able to choose. So:
+
+- **Off by default.** Search sees every file, and a tool that returns an ignored one LABELS it:
+  the model reads `[plato] 4 of 37 results are in paths that .gitignore excludes: dist/a.js, …`
+  with the result, and the user is told once per run. A file named directly (`read_file`) says it
+  is ignored whichever way the switch is set — the switch decides what a SEARCH returns, not what
+  is true. **It also does not restrict access:** a file the user names is still read and EDITED with
+  the switch on, which is the question this rule exists to answer. Turning search off must not
+  quietly make a generated file un-editable. The protected-file guard is separate and unchanged:
+  a protected file still reads masked, and a shell command that names one is still refused.
+- **On by request.** `plato config set respectGitignore true`, `/gitignore on` in a session, and
+  `plato doctor` prints which way it is set. The extension gets the same switch as
+  `plato.search.respectGitignore`; the engine work is shared, and the setting is read there.
+- The fixed directory list above is NOT part of the switch. It must stay: without it, "off" would
+  mean walking `.git`.
+- The matcher is `ignore@7`, the package that implements git's own rules, rather than a second
+  implementation of gitignore syntax that would drift from git's.
+- Root and nested `.gitignore` files both apply, the deepest opinion wins, and a walk that starts in
+  a subdirectory still reads the files above it.
+- **The forms are checked against git 2.50 itself, not against a reading of the spec:** a name
+  pattern at any depth (`*.log`), an anchored path (`/root-only.txt`), a path with a slash
+  (`docs/*.md`), a directory (`build/`), `?`, `[abc]`, `**/temp/**`, a negation (`!keep.log`), a
+  comment, a blank line, and a nested `.gitignore` scoped to its own directory. 21/21 paths agree
+  with `git check-ignore`.
+- **A directory's exclusion is inherited.** A file inside an excluded directory stays excluded
+  however a later rule spells its name — git's rule, and the first version of this got it wrong by
+  asking only about the file. Re-including the directory itself (`build/*` then `!build/keep/`) does
+  bring its contents back, and that distinction is a test.
+- An ignored DIRECTORY is not entered when the switch is on, for the same reason.
+- Seeding the secret map always ignores the switch. `local.properties` is gitignored in most
+  Android projects and is exactly the file whose values must be scrubbed; a git-based skip there
+  would remove a guard rather than noise.
+
+**`doctor` replaces `--debug`; there is no second log.** The M6 plan called for a `--debug` log in
+`~/.plato/logs/`. The transcript already records every turn, its usage, its tool events, and its
+context, and the CLI never prints a stack trace — a second file would duplicate the first and could
+drift from it. Instead the one command a user already runs first now answers the two questions that
+matter: can Plato write its three homes (a probe that creates the directory and writes one file,
+because a file left owned by another user is the common failure that `access` misses), and what did
+the last run in THIS directory do (its age, how it ended, its turn count, and the path to the
+transcript). A run that has no outcome recorded is reported as interrupted rather than hidden.
+
+**The extension toggle is shipped, in Plato's own settings page, with the VS Code setting as the one
+storage (founder correction, 2026-10-21).** `plato.search.respectGitignore` is a contributed setting
+— boolean, default false, resource scope — read inside each run rather than at activation, so a
+change applies without a reload. The founder's intent was the **gear's page**, not the workbench
+Settings editor, so the first version (an editor-only toggle) was corrected: a new **Others** section
+in `showSettings` carries the switch, using the same `beh()` row the MCP section uses, and the host
+writes the SAME setting. One value, two doors: the gear, and `settings.json`/the editor for anyone
+who prefers it. The panel writes to whichever target already holds a value (folder, workspace, then
+user), because writing Global under a workspace override would change nothing visible and read as a
+broken switch. **Two defects were found and fixed while proving it.** (1) The extension PERSISTED the
+loop's notices but never posted them, so a stopped shell, a stuck nudge, or this note appeared only
+after a reload; the notice branch now does both, as `context-compacted` always had. (2) A payload
+built immediately after `update()` could read the OLD value, so the switch re-rendered in the state
+the user had just clicked away from; the writer now waits (bounded) for the configuration change
+event before re-reading. Field case 32 drives the switch where a user looks for it — opens the gear,
+opens Others, clicks, reads it back, closes — and then reads the profile's user settings file,
+because that file is what the editor shows. Falsified the way this directory requires: with the
+setting read hardcoded to `false`, the second run fails in all four places that can see it — the
+model's result, the empty-result claim, the user-facing notice, and the transcript rule.
+
+**Verification.** Core 877 (a turn boundary in `finalText` and a binary skipped by grep were found
+in the same session); CLI 159; e2e 6/6; the real-model matrix 19/19; the pty proof; field case 32
+passes in a real window and was falsified; case 33 (the panel close, renumbered from 32 so it stays
+last) still passes after it; and the three behaviours were re-checked against the repo itself: the
+trace names each pattern, `local.properties` is invisible to `glob`, and `doctor` reports the last
+run.
+
+---
+
 **D49bv — Apache-2.0, with the repository private (founder, 2026-10-20).**
 
 **The decision.** Plato is licensed under Apache-2.0. The repository remains
@@ -4163,6 +4475,7 @@ uploaded. The tags, publisher display name, and Preview badge remain
 management-page or later-version items.
 
 **What did not change.** The repository is still private. The CLI is phase 2.
+**Update 2026-10-21:** phase 2 is now open (D49bw).
 
 **Why this fits.** Apache-2.0 is the category norm and gives a patent grant, a
 trademark clause, and clear liability language. It allows the repository to open
@@ -4526,6 +4839,322 @@ false-positive on a real stream, and it did not. The idle window is 120s of tota
 header/body deadline 300s — generous on purpose, because a slow first token is not a stall. A server
 that ends a stream with neither `[DONE]` nor a `finish_reason` is now retried and, if it does it every
 time, fails the run: that is a malformed server being reported honestly, not a working one being broken.
+
+---
+
+**D49ce — the CLI has a start screen: the owl from the mark, a wordmark, and one line of wayfinding (2026-10-22).**
+
+**Why.** The founder's report: *"the start screen is very blank-ish"*, and after the first draft,
+*"the logo looks unimpressive and the word PLATO looks more like RLATO."* Both were fair. A terminal
+that is the front door to the product opened with one grey line and a cursor.
+
+**The owl is drawn from the mark, not sketched.** The extension's icon is a rounded head with two ear
+tufts, two big eyes and a small beak. The art was **rasterised from the same geometry** — corner
+tables, not hand-typed characters — at two pixels per character row with `▀▄█`, so the curves are
+round and the eyes are true circles. The eyes are CUT (the terminal background shows through) with
+the pupils left filled, and the beak is painted in its own colour, so the face reads at a glance.
+Two earlier hand-drawn drafts were rejected by inspection: one had eyes that read as goggles, and
+one put the beak in the chin as a sliver that looked like a tongue.
+
+**The wordmark was rebuilt twice, and the second rebuild came from critique.** The first draft's P
+was `█▀▀▄ / █▀▀▄ / ▀  ▀` — the bottom row's two feet made it an R, exactly what the founder saw. The
+repair made it four thin rows, and the founder's next note was that it still looked weak beside a
+solid owl. Three independent reviews (typography, competitor research, terminal rendering) then
+agreed on the cause: one-pixel strokes are 18% of the owl's ink and 31% of its height, so the word is
+a caption. **The final mark is six rows of full blocks with two-pixel stems and bars, 35 columns
+wide, 46% of the owl's height.** The P closes its bowl and carries two rows of stem with no ink under
+the bowl's right side — the cue that reads as R — the A has a full crossbar, the T a two-wide stem,
+and the O is closed. `bold` was removed from the block art: it does not thicken block glyphs, and in
+some terminals it brightens instead, which was part of why the old word sat thin.
+
+**Three forms, chosen by the window.** Side by side (owl + wordmark, 66 columns) when the window is
+at least **68 columns and 24 rows** — two columns of slack, because a line exactly as wide as the
+window can wrap; the wordmark alone from 37 columns; one line below that. At
+24 rows the side form drops the path line rather than the owl, and it fits exactly with the header,
+status, and composer still on screen — measured, not assumed. The path is shortened with `~`, the
+middle dropped, and capped at the window's width; the tips shorten at 64 and 40 columns so they
+never wrap mid-word.
+
+**It shows only on an empty conversation.** Once there is a row, every line belongs to the work; a
+banner would cost space in every scrollback for the rest of the session. A resumed session has rows
+already, a `plato "task"` start runs at once, and `plato -p` and `--plain` have no Ink screen at all.
+`/new` clears the rows and the screen returns — verified.
+
+**Colour, and one measured gap.** Cyan owl and wordmark, yellow beak — no new palette, the brand's
+own accent. **`NO_COLOR` is honoured by this screen** (cyan spans drop from 18 to 2 — the two that
+remain belong to the header), but **Ink's own `Text` colours ignore `NO_COLOR` in this build**: the
+mode colour and the card borders stay coloured. The plan has claimed since M3 that `NO_COLOR` is
+respected; that claim is true of this screen and false of the rest, and is recorded here rather than
+quietly fixed, because disabling colour everywhere in the renderer is its own change.
+
+**What the critiques changed, and what they did not.** Adopted: full-block glyphs only where the
+mark is solid (Monaco ships `█` but not `▀`/`▄`, so a half-block wordmark could fragment), two-pixel
+strokes, optical rather than geometric vertical centring (the owl's ink is bottom-heavy, so the mark
+moves down one row), no `bold`, and the wider guards above. Rejected: enlarging the owl's eyes and
+re-cutting the beak. Those critiques read the dark eye sockets as background and the cyan centres as
+the whole eye, so their "small eyes" were the pupils — the opposite of the art. The screenshot is the
+evidence, not the text transcription.
+
+**Verified.** Unit tests for the layout thresholds and the path shortening; CLI **175/175**;
+`tsc -b --force` clean. **Driven in a real pty at four sizes** — 100×40 and 80×24 draw the owl, the
+wordmark and the tagline with no clipping; 40×30 and 30×30 fall back without a wrapped word; `/help`
+retires the screen and `/new` brings it back; `NO_COLOR=1` removes the owl's and beak's colour and
+keeps bold. The bundle is still six tarball files.
+
+---
+
+**D49cd — the composer's `/` menu: one table, a filtered list, and ten rows that scroll (2026-10-22).**
+
+**What it does.** A slash at the start of the composer opens the command list. Typing after the
+slash filters it by name prefix, case-insensitively. `↑`/`↓` move the selection, `Tab` fills the
+command into the line, `Enter` selects — and for a command that takes no arguments, runs it, because
+a second Enter to say "yes, that one" is noise. A command that takes arguments is filled in with a
+trailing space and waits for them. `Esc` closes the menu until the text changes; a space ends the
+name and closes it, so the menu never competes with argument typing. `↑`/`↓` fall back to prompt
+history whenever the menu is closed.
+
+**The list is capped at ten rows, and it scrolls with the selection.** Ten is what fits above the
+composer without hiding the conversation; a longer list moves one row at a time as the selection
+reaches either edge, and the footer reads `3–12 of 14` so a missing command is visibly a scroll
+away. The cap is a constant (`MENU_ROWS`), not a layout accident.
+
+**One command table.** `completion.ts` holds name, argument form, and one-line summary. The menu
+draws from it, `/help` is generated from it, and a test asserts the help names every command. A
+second list would have drifted the first time a command was added; there is now no second list.
+
+**Why the state is in the App, not the session view model.** The menu follows the composer buffer,
+and that buffer has always been the App's (`editor.ts` is pure, `App.tsx` owns the buffer). Putting
+completion in the session would copy every keystroke into the view model to serve a control that
+only the Ink renderer has. `completion.ts` is pure and fully tested, which is what the D49bw
+principle actually asks for; the plain renderer has no menu and needs none.
+
+**Verified in the real terminal.** At 80 columns in a `screen` session: `/` drew all ten commands in
+declared order with Stay-style selection on the first, `/m` narrowed to `/mode` and `/model`, the
+down arrow moved the highlight, `Esc` closed the menu with the text intact, `/he` narrowed to
+`/help`, `Tab` completed it, `Enter` ran it (the derived help rendered), and `/mo` + `Enter` filled
+in `/mode `, after which `edit` + `Enter` switched the mode. The pty harness cannot deliver DEL, so
+backspace was verified by the editor's own tests, not here. Six unit tests cover the query rules,
+prefix filtering, the ten-row window at every edge, the Enter/Tab split, and the help/menu agreement;
+the CLI suite is 173/173.
+
+---
+
+**D49cc — the CLI offers the mode request, and its mode is read live (2026-10-21).**
+
+**The boundary D49cb left, and why it was open.** D49cb said the CLI keeps the prose fallback until it
+grows an equivalent card. There were two reasons, and a card alone would have fixed only one: the CLI
+had no card, **and** its loop read `options.mode`, a run-start snapshot. A card that changed
+`Session.mode` would have left the permission table in the old mode — the same silent disagreement the
+extension's screenshot caught during D49cb.
+
+**What changed in the host contract.**
+
+- **`ExecuteOptions.getMode`** is the loop's live read. `executeTask` uses
+  `options.getMode ?? (() => options.mode)`, so a host without one keeps the old behaviour and a
+  host with one gets a switch at the next tool call. `options.mode` still decides `startMcpServers`,
+  which is a run-start decision and not a permission.
+- **`RunSink.requestMode`** is the card. `executeTask` passes the callback to the loop **only when
+  the sink has it** — and that alone is what makes core offer `request_mode` and add the prompt
+  paragraph. No second switch, no duplicated schema.
+- **The record is emitted in `executeTask`,** around the sink call, because the host owns the bus:
+  `mode-requested` on both answers with `from`, `to` and `approved`, and `mode-changed` only on a yes
+  with `via: 'request'`. The run id comes from `run-started` rather than being guessed. **The
+  model's reason is not recorded**, for the reason D49cb gives.
+
+**What the terminal does.** A `mode` card: the target in the heading, the model's reason as its own
+line, the target mode's meaning, the mode in force, *Stay in …* and *Switch to …*, **Stay selected by
+default**. Only the second choice calls `setMode`, which updates the header and the status line and
+saves the config. The notes and the three-per-run cap are the extension's, word for word, so the two
+hosts say the same thing. **Cancel and Ctrl+C answer Stay** — Ctrl+C was ignored while a card was
+open, which is the one moment the run is waiting on the user, so it is now the same as Esc.
+
+**A defect this exposed in the CLI, fixed here.** `Session.cancel()` stopped the loop but left any
+parked card's promise unresolved. The loop awaits a card with nothing that can interrupt the wait, so
+a cancel with a card on screen did not unwind — the extension's D49aq fault, through the CLI's door.
+Cancel now settles the open card with its safe answer (No, Stop, Stay, or the empty question) before
+stopping the controller.
+
+**Both other hosts still decline to offer it, deliberately.** `plato -p` draws no card, so a request
+there could only be refused; offering the tool and then failing it would be the exact lie D49bk
+removed. `--plain` has no card either and leaves `requestMode` undefined. It passes a live `getMode`
+all the same, so its own `/mode` command is honest — it simply never advertises a request.
+
+**Verified.** Host (4 new tests): the tool appears in the provider's list only for a sink with the
+callback, and **not** through the one-shot sink `plato -p` builds; an approved request asks the sink
+with the right target, reason and current mode, the note reaches the model, and the transcript carries
+both events with the reason absent; the live read — a write refused in `plan` is approved in the
+**same run** after the switch, with one approval proving the second call reached the gate; a decline
+changes nothing, writes nothing, and records `approved: false` with no `mode-changed`. Session (4 new
+tests): the card's fields and default, Switch updating the status line and the next write raising
+edit's approval card, Stay and Esc leaving the mode with the decline line, the fourth request refused
+without a card, and cancel settling a parked card. **The regression is proven by mutation**: with
+`getMode` reverted to `options.mode`, three of the new tests fail and the rest pass. **The TUI under a
+pty** (built file, scripted provider): both cards render, Switch moves the header to `edit` and the
+next write raises the approval card, Ctrl+C leaves `plan` with the decline line and no write, the
+transcript records each answer, and the reason never reaches it. **The real model
+(`deepseek-flash`)**: plan, asked to create a file — it tried the write, was refused, called
+`request_mode` with its reason, the card was approved, it wrote the file through edit's approval card,
+and verified the content. **Nothing was published, and nothing was committed.**
+
+---
+
+**D49cb — the mode request is real: the model asks, the user's card decides, and the run continues
+(founder, 2026-10-21).**
+
+**The decision.** After reading the D49ca evidence and the competitor research, the founder chose the
+request channel and rejected auto-resume on the picker: *"ignore my alternative. and go for Make the
+mode request real."* The condition D49bk left is now met — the card acts on its own answer.
+
+**What the model gets.** A `request_mode` tool, offered only to a host that can draw its card. It
+takes `mode` (plan, edit or auto) and a one-sentence `reason`. The description says the user decides,
+that a decline must not be repeated, and that a mode change never goes on an `ask_user` card. **Core
+validates and never switches anything**: it refuses an unknown or already-current mode without
+reaching the host, then hands the request to the host and returns the host's note as the tool result.
+**The note on a yes names the mode now in force** — that is what ends the stale belief a run used to
+carry until its next refused call.
+
+**What the user gets.** A dedicated card: the target in the heading, the model's reason set apart as
+its own block, the target mode's own description, and the mode in force now. The buttons are *Switch
+to edit* and *Stay in plan*; only `allow === true` approves. **Cancel and panel close answer NO**, by
+the same `releaseParkedCards` rule as every other parked card — the permission table must not change
+because a run was stopped. A declined request leaves a line in the conversation, so a reload keeps
+the fact that Plato asked. **Three requests per run** is the cap; asking again with a new sentence was
+the way around the repetition bound, and the cap ends the nag without counting anything the user did.
+
+**The record and the prompt.** `mode-requested` carries `from`, `to` and `approved` — so a DECLINED
+request is in the file too, which `mode-changed` alone could not show. `mode-changed` gains `via`
+(`picker` or `request`). **The reason is deliberately not recorded**: it is model prose written for
+a card, and the transcript's rule is that model prose that could quote what was in front of it stays
+out. The prompt now tells the model to use `request_mode` when the mode blocks a call. **The
+instruction is appended as a host capability, not baked into the bundled body**: a host without the
+card (the CLI, today) keeps the old prose-only paragraph and is never told about a tool it cannot
+honour.
+
+**One defect the first real screenshot caught, and the fix.** After an approved switch the transcript
+said `edit` while the picker at the bottom still read `plan`: the host had changed the mode without
+telling the view. `applyMode` now sends `mode-state` to the view — the picker was the view's own
+account of the mode, and the two must not disagree. The scripted field case, the real cases and the
+render suite all assert the label now.
+
+**Boundary: the CLI does not offer the tool yet.** `request_mode` is declared only when the host
+passes a `requestMode` callback, and the CLI does not until it grows an equivalent card; its mode is
+also a run-start snapshot today, so a card there would not be honest. That is a capability for the
+CLI milestone, not a defect in this one, and the prompt is already written to the host's capability.
+
+**Verified.** Core: `request_mode` is allowed in every mode (the card is the gate); it is offered only
+with the callback; a yes, a no, an unknown mode and the already-current mode each behave, and the
+note reaches the model (five loop tests). The prompt names the tool only for a capable host (two
+worker-role tests). The transcript carries both new events (one test). Render: a new **mode card**
+suite (**35 checks**: the target, the reason, the target's meaning, the current mode, two answers, the
+boolean answer, text-not-markup, dismissal, one live card, and the rebuild from the log on a reload)
+plus **three checks in the mode suite** for a host-side switch moving the picker label and its active
+row; **all render suites pass** (the mode suite is 31 checks). **Scripted field case 36** in real VS
+Code: run 1 approves edit, the record is `mode-requested` → `mode-changed via request` → the write
+through one card, the picker reads `edit`, the file is on disk; run 2 declines auto, no
+request-driven change, no write, and the decline line is on screen. **Real model
+(`deepseek-v4-flash`)**: all three pass. **Plan → edit:** the model tried the write, was refused, said
+*"The write is blocked by plan mode, as expected. Requesting edit mode."*, called `request_mode`,
+the card was approved, and it wrote and verified the file. **Plan → auto:** same shape, and the write
+needed **no card** — the switch reached the permission table. **Edit:** the write asked and landed.
+The picker read the approved mode in both switch cases. **This was the founder's credential file, run
+because he asked for it explicitly; the key was read inside the harness and never printed.** A model
+that does not ask is reported as a finding about the model, not a failure of the card — the prompt
+invites the request but does not require it.
+
+---
+
+**D49ca — a mode switch is recorded, and the line says when it takes effect (founder, 2026-10-21).**
+
+**The report, from the first real use of the product.** A user worked in `plan`, and Plato told them
+the patch it would apply "the moment writes are permitted", with switching to `edit` as the unblock.
+The user then either switched and expected Plato to resume, or believed they had switched while Plato
+still acted as if in `plan`. They could not tell us which, and **the run record could not either** —
+which is the defect this entry fixes.
+
+**What the code actually does, and it is not a detection failure.** The permission table reads the
+mode at **every tool call** (`getMode`), the picker is never disabled, and the host accepts a switch
+at any moment (D49bj). A run that is still live does use the new mode at its next call. Two different
+facts produced the observation:
+
+- **A switch made after the run ends starts nothing.** The model's last turn handed the decision back
+  to the user, which is how a run normally ends. Clicking the picker then changes the mode for the
+  next request; it does not resume the request that just finished. The line said `Mode: edit` and
+  named no consequence, so the customer expected the run to continue — a fair reading of a line that
+  did not say what it meant.
+- **The model is never told the mode.** This is deliberate (D49bk): the prompt names the three modes
+  and never says which is active, so a model learns where it stands only when a call is refused. A
+  model whose previous turn said *"switch to edit and I will apply it"* has no later event that tells
+  it the switch happened. It has to try a write to find out, and a cautious model may ask again
+  instead — the exact loop the customer described.
+
+**What was built, and it is the record half only.**
+
+- **`mode-changed` is now a structured transcript event** — `from`, `to`, the click's `at`, and the
+  run it belongs to. It is emitted when the click lands during a live run, and **held and emitted
+  after the next run's header** when no run is live, because a transcript is per run and does not
+  exist between them. The header still names only the mode the run BEGAN in; that fact did not
+  change. A reader can now tell a switch during a run from one before it, which is the question this
+  report could not answer.
+- **The chat line says when the switch applies**: *"applies from the next tool call"* during a run,
+  and *"applies from your next message"* when idle. The second sentence is the expectation the
+  customer did not get. A card already on screen keeps its verdict (D49bj), so the live wording names
+  the next call rather than the rest of the run.
+- **The mode message is validated against the three the picker offers.** D49bj validated the STORED
+  value because it comes off disk; the message is the other boundary into the permission table, and
+  an unrecognised value fell through `decide` as `auto` — a permission it never earned. Ignoring a bad
+  value is the safe answer, and the picker offers nothing else.
+
+**What the competitors do — researched 2026-10-21 because the founder asked whether Claude Code and
+Cline continue by themselves, and it is NOT auto-resume on the picker.**
+
+- **Claude Code:** switching permission mode by hand (Shift+Tab) changes the posture **for the next
+  turn** and does not send a message. **Approving `ExitPlanMode` does continue automatically** — the
+  approval is a tool result that tells the model the plan is approved, and it exits plan mode, so the
+  model goes straight on to editing. The automatic half belongs to the model's REQUEST, not to the
+  user's toggle.
+- **Cline / Roo Code:** the `switch_mode` tool lets the model **request** a mode change, with a
+  reason and an optional target; **the user must approve it**, and then the model continues. Its Plan
+  & Act documentation describes the manual toggle with the conversation carried over, not a toggle
+  that starts a run. The model-initiated switching users complained about in
+  [cline#10497](https://github.com/cline/cline/issues/10497) — *"it will just switch automatically to
+  act mode and start implementing"* — is a different, newer behaviour, which the maintainer called
+  expected while saying they would *"re-think this approach"*.
+
+**So the pattern the founder remembered is a real request from the model that the user approves.**
+None of the three auto-sends on a manual mode switch. That makes auto-resume-on-the-picker a
+Plato-specific choice, and the competitor evidence points instead at **making the mode request real
+again** — the condition D49bk left: the host accepts a mode request and switches on a Yes. That is a
+posture choice for the founder, not a defect, and it is NOT built.
+
+**Two things were deliberately NOT done, and they are the founder's call.** **An idle switch does not
+auto-resume the last task** — a click has never been a request to spend a model call, and the user may
+have switched to do something else. The founder raised auto-resume on 2026-10-21; it is recorded as
+an open choice, not built. And **the model still is not told the active mode**; that is D49bk's
+posture, and this entry does not quietly reverse it. The diagnosis above says putting the mode in the
+run's prompt would end the stale-belief half; it also says the record and the copy are what could be
+done without changing that posture. **If the stale belief recurs in real use, the prompt line is the
+repair to decide then.**
+
+**Verified.** The transcript test pins the event and its fields, and fails without the whitelist
+change (the class this test exists for). The mode message's validation is host-side and has no unit
+test; the field harness drives the real picker. **Field case 4 switches `plan` → `edit` between its
+two runs, and both transcripts now carry the event before their first turn** — run 1 records
+`edit → plan` at 16:53:57.265 with its header stamped 16:53:57.847, and run 2 records `plan → edit`
+at 16:54:00.416 with its header stamped 16:54:01.035. **The click's `at` precedes each run's
+`startedAt`, which is the between-runs fact the header alone could never state**, and it was read
+back from the files rather than inferred.
+
+**The customer's story is now two field cases, run in a real window on 2026-10-21.** **Case 34** is
+the idle half: the plan run's `write_file` is refused with no card and the probe file stays absent;
+the driver then switches to `edit` through the real picker **and sends nothing for 2.5 seconds**, and
+no run starts — the transcript set is unchanged. The message after it produces one card, the write
+lands, and the screen says *"applies from your next message"*. **Case 35** is the live half: the run
+starts in `plan`, the write is refused, and the driver waits until the refusal has reached the model
+(the stub's log is the mid-run witness) before switching to `edit`. The record's order is exact —
+`write_file:denied` at index 4, the `mode-changed` at 6, `write_file:done` at 13 — the click is
+*after* `startedAt`, and the retried call asks through one card. **The model's words in both cases are
+scripted**, because the scripted suite replaces the model; the real-model pass is the founder's to
+run, and no claim here rests on what a real model would say.
 
 ---
 

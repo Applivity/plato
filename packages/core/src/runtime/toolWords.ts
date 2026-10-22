@@ -61,6 +61,9 @@ const WORDS: Record<string, ToolWords> = {
   web_fetch: { noun: 'the fetch', doing: 'fetching a page', counted: 'pages fetched', countedOne: 'page fetched' },
   todo_write: { noun: 'the plan', doing: 'writing the plan', counted: 'plans written', countedOne: 'plan written' },
   ask_user: { noun: 'the question', doing: 'asking you', counted: 'questions', countedOne: 'question' },
+  // D49cb: a request that the user decides; the words name that, not a switch
+  // the model made.
+  request_mode: { noun: 'the mode request', doing: 'asking for a mode change', counted: 'requests', countedOne: 'request' },
 };
 
 export function toolWords(tool: string): ToolWords {

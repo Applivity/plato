@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgentLoop, resolveRecommended } from '../src/runtime/loop.js';
@@ -58,6 +58,52 @@ describe('runAgentLoop truncation handling', () => {
     expect(r.finalText).toContain('saveHttpHeaderValues');
     // Two API calls happened: the truncation + one continuation.
     expect(p.seenMaxTokens.length).toBe(2);
+  });
+
+  it('keeps the resumed text in the sentence it was cut in', async () => {
+    // The continuation is not a new paragraph: it is the same sentence, so the
+    // accumulated text must not gain a break the model never wrote.
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: provider([
+        {
+          content: [{ type: 'text', text: 'The top bug is ' }],
+          usage: { inputTokens: 10, outputTokens: 16384 },
+          stopReason: 'max_tokens',
+        },
+        {
+          content: [{ type: 'text', text: 'in saveHttpHeaderValues.' }],
+          usage: { inputTokens: 20, outputTokens: 5 },
+          stopReason: 'stop',
+        },
+      ]),
+    });
+    expect(r.finalText).toBe('The top bug is in saveHttpHeaderValues.');
+  });
+
+  it('starts a new turn on its own line, so two turns do not read as one', async () => {
+    // Turn 1 is narration before a tool call; turn 2 is the answer. Run
+    // together, "I'll read the file.It is a …" is one broken sentence — and a
+    // session saved from it cannot be told apart from a turn that never acted.
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: provider([
+        {
+          content: [
+            { type: 'text', text: "I'll read the file." },
+            { type: 'tool_use', id: 'call-1', name: 'read_file', input: { path: 'a.txt' } },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'tool_use',
+        },
+        {
+          content: [{ type: 'text', text: 'It is a helper class.' }],
+          usage: { inputTokens: 20, outputTokens: 5 },
+          stopReason: 'stop',
+        },
+      ]),
+    });
+    expect(r.finalText).toBe("I'll read the file.\nIt is a helper class.");
   });
 
   it('reports a double-truncated answer as a token-cap, never silent complete', async () => {
@@ -2342,5 +2388,231 @@ describe('the run record names the mode it began in (D49bj)', () => {
     // And the mode was genuinely re-read after the run started, which is what
     // makes those two facts different rather than one.
     expect(reads).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * D49cb: `request_mode` is the model's sanctioned way to ask. Core validates
+ * the request and reaches the host, but it never changes the mode itself — the
+ * host's card does that, and its answer comes back as the tool result.
+ */
+describe('the model can ask for a mode, and only the host can change it (D49cb)', () => {
+  const ask = {
+    type: 'tool_use' as const,
+    id: 't1',
+    name: 'request_mode',
+    input: { mode: 'edit', reason: 'plan cannot write the file' },
+  };
+
+  function recording(turns: TurnResponse[]): {
+    p: ChatProvider;
+    requests: TurnRequest[];
+  } {
+    const requests: TurnRequest[] = [];
+    let i = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req): Promise<TurnResponse> {
+        requests.push(req);
+        if (i >= turns.length) throw new Error('unexpected extra turn');
+        return turns[i++]!;
+      },
+    };
+    return { p, requests };
+  }
+
+  function lastToolResult(req: TurnRequest): string {
+    for (let i = req.messages.length - 1; i >= 0; i -= 1) {
+      for (const b of req.messages[i]?.content ?? []) {
+        if (b.type === 'tool_result') return b.content;
+      }
+    }
+    return '';
+  }
+
+  const stop: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+  const toolTurn: TurnResponse = {
+    content: [ask],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  };
+
+  it('offers the tool in plan mode and hands the host’s answer back to the model', async () => {
+    const seen: { mode: string; reason: string }[] = [];
+    const { p, requests } = recording([toolTurn, stop]);
+    const r = await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan' as const,
+      provider: p,
+      requestMode: async (req) => {
+        seen.push(req);
+        return {
+          ok: true,
+          note: 'The user approved. Plato is now in edit mode. Continue the task.',
+        };
+      },
+    });
+    expect(r.reason).toBe('complete');
+    // Offered where it is needed most: the mode that refuses the work.
+    expect(requests[0]!.tools.some((t) => t.name === 'request_mode')).toBe(true);
+    expect(seen).toEqual([{ mode: 'edit', reason: 'plan cannot write the file' }]);
+    // The host's note is the tool result, so the model learns the mode changed.
+    expect(lastToolResult(requests[1]!)).toContain('The user approved');
+    expect(lastToolResult(requests[1]!)).toContain('edit mode');
+  });
+
+  it('does not offer the tool to a host without the card', async () => {
+    const { p, requests } = recording([stop]);
+    await runAgentLoop({ ...BASE, provider: p });
+    expect(requests[0]!.tools.some((t) => t.name === 'request_mode')).toBe(false);
+  });
+
+  it('a decline reaches the model and core changes nothing', async () => {
+    const { p, requests } = recording([toolTurn, stop]);
+    const r = await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan' as const,
+      provider: p,
+      requestMode: async () => ({
+        ok: false,
+        note: 'The user declined. Plato is still in plan mode.',
+      }),
+    });
+    expect(r.reason).toBe('complete');
+    expect(lastToolResult(requests[1]!)).toContain('The user declined');
+    expect(lastToolResult(requests[1]!)).toContain('still in plan mode');
+  });
+
+  it('refuses an unknown mode without asking the host at all', async () => {
+    let called = 0;
+    const { p, requests } = recording([
+      { ...toolTurn, content: [{ ...ask, input: { mode: 'sudo', reason: 'x' } }] },
+      stop,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan' as const,
+      provider: p,
+      requestMode: async () => {
+        called += 1;
+        return { ok: true, note: 'should not happen' };
+      },
+    });
+    expect(called).toBe(0);
+    expect(lastToolResult(requests[1]!)).toContain('mode must be plan, edit or auto');
+  });
+
+  it('does not ask the host for the mode already in force', async () => {
+    let called = 0;
+    const { p, requests } = recording([
+      { ...toolTurn, content: [{ ...ask, input: { mode: 'plan', reason: 'x' } }] },
+      stop,
+    ]);
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan' as const,
+      provider: p,
+      requestMode: async () => {
+        called += 1;
+        return { ok: true, note: 'should not happen' };
+      },
+    });
+    expect(called).toBe(0);
+    expect(lastToolResult(requests[1]!)).toContain('already in plan mode');
+  });
+});
+
+describe('a run that sees .gitignore paths', () => {
+  function ignoredRoot(): string {
+    const root = mkdtempSync(join(tmpdir(), 'plato-ignored-'));
+    mkdirSync(join(root, 'vendor'), { recursive: true });
+    writeFileSync(join(root, '.gitignore'), 'vendor/\n');
+    writeFileSync(join(root, 'vendor', 'lib.ts'), 'const needle = 1;\n');
+    writeFileSync(join(root, 'src.ts'), 'const other = 2;\n');
+    return root;
+  }
+
+  it('tells the model with the result, and the user once per run', async () => {
+    const root = ignoredRoot();
+    const seen: string[] = [];
+    let turn = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        turn += 1;
+        seen.push(JSON.stringify(req.messages));
+        if (turn === 1 || turn === 2) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: `call-${turn}`,
+                name: 'grep',
+                input: { pattern: 'needle' },
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'Done.' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'notice') notices.push(e.text);
+    });
+
+    await runAgentLoop({ ...BASE, root, provider: p, bus });
+
+    // The model is told with each result — twice here.
+    expect(seen[1]).toContain('paths that .gitignore excludes');
+    expect(seen[2]).toContain('paths that .gitignore excludes');
+    // The user is told once, not once per call.
+    const ignoreNotices = notices.filter((n) => n.includes('.gitignore'));
+    expect(ignoreNotices).toHaveLength(1);
+    expect(ignoreNotices[0]).toContain('vendor/lib.ts');
+  });
+
+  it('says nothing when the switch is on', async () => {
+    const root = ignoredRoot();
+    const bus = new AgentBus();
+    const notices: string[] = [];
+    bus.on((e) => {
+      if (e.type === 'notice') notices.push(e.text);
+    });
+    let turn = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        turn += 1;
+        if (turn === 1) {
+          return {
+            content: [
+              { type: 'tool_use', id: 'call-1', name: 'grep', input: { pattern: 'needle' } },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'Done.' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({ ...BASE, root, provider: p, bus, respectGitignore: true });
+    expect(r.finalText).toBe('Done.');
+    expect(notices.join('\n')).not.toContain('.gitignore');
   });
 });

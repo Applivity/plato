@@ -162,6 +162,11 @@ export class Field {
     this.lastPrompt = null;
   }
 
+  /** D49cb: what the picker's label says — the view's account of the mode. */
+  async modeLabel() {
+    return (await this.driver.findElement(By.id('modeBtnLabel')).getText()).trim();
+  }
+
   /** Switches mode through the real picker, exactly as a user would. */
   async setMode(mode) {
     await this.clearToasts();
@@ -420,6 +425,47 @@ export class Field {
     await this.clickElement(btn);
     this.log(`  answered the reveal card: ${label}`);
     await this.driver.sleep(SETTLE_MS);
+  }
+
+  /**
+   * D49cb: the mode card that is waiting for an answer, or null.
+   *
+   * By CLASS and the `answered` marker, the rule every card here follows: the
+   * heading is copy and a settled card stays on screen as the record.
+   */
+  async modeRequestState() {
+    const cards = await this.driver.findElements(By.css('.card.mode-card'));
+    for (const c of cards) {
+      const cls = (await c.getAttribute('class')) || '';
+      if (!/\banswered\b/.test(cls)) {
+        return {
+          mode: (await c.getAttribute('data-mode')) || '',
+          text: (await c.getText()).trim(),
+        };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * D49cb: answers the mode card. The first button is the switch, the second is
+   * staying — both are located INSIDE `.card.mode-card`, so this can never
+   * click an approval card sitting in the same conversation.
+   */
+  async answerModeRequest(allow) {
+    const cards = await this.driver.findElements(By.css('.card.mode-card'));
+    for (const c of cards) {
+      const cls = (await c.getAttribute('class')) || '';
+      if (/\banswered\b/.test(cls)) continue;
+      const buttons = await c.findElements(By.css('button'));
+      const btn = allow ? buttons[0] : buttons[1];
+      if (btn === undefined) throw new Error('the mode card has fewer than two answers');
+      await this.clickElement(btn);
+      this.log(`  answered the mode card: ${allow ? 'switch' : 'stay'}`);
+      await this.driver.sleep(SETTLE_MS);
+      return;
+    }
+    throw new Error('no live mode card to answer');
   }
 
   /**
@@ -825,7 +871,7 @@ export class Field {
    * recorded, denied, and the run allowed to finish. An array means click those
    * decisions in that order, one per card.
    */
-  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '', revealAnswer = undefined, during = undefined } = {}) {
+  async waitRunEnd(before, { plan = undefined, timeoutMs = 180000, tag = '', question = undefined, cancelOnQuestion = false, stuckStop = false, stuckGuidance = '', revealAnswer = undefined, modeAnswers = undefined, during = undefined } = {}) {
     const started = Date.now();
     let step = 0;
     let didDuring = false;
@@ -837,6 +883,7 @@ export class Field {
     this.questionSeen = false;
     this.stuckSeen = false;
     this.revealSeen = false;
+    this.modeRequests = [];
     this.lastWatch = null;
     this.watchLines = 0;
 
@@ -910,6 +957,22 @@ export class Field {
           this.log('  UNEXPECTED stuck card — telling it to continue so the run can finish');
           await this.answerStuck('continue');
         }
+      }
+
+      // D49cb: the model asked for a mode and the card is waiting. A declared
+      // case answers it; an UNDECLARED one is told to stay, which is the safe
+      // answer and the one that lets the run finish — the rule every other card
+      // here follows, and the reason the run never parks until the clock runs out.
+      const asked = finished === null ? await this.modeRequestState() : null;
+      if (asked !== null) {
+        const want = Array.isArray(modeAnswers) ? modeAnswers[this.modeRequests.length] : undefined;
+        this.modeRequests.push({ tag, mode: asked.mode, answer: want === 'allow' ? 'allow' : 'deny' });
+        if (want === 'allow' || want === 'deny') {
+          this.log(`  mode card -> ${want} (${asked.mode})`);
+        } else {
+          this.log(`  UNEXPECTED mode card for ${asked.mode} — staying so the run can finish`);
+        }
+        await this.answerModeRequest(want === 'allow');
       }
 
       // D49bc: the run is parked on a protected file Plato cannot mask. A
@@ -1054,6 +1117,61 @@ export class Field {
   async closeSettings() {
     await this.clickElement(await this.driver.findElement(By.id('sback')));
     await this.driver.sleep(400);
+  }
+
+  /**
+   * D49bz: the switch's hover hint, captured as a person sees it. The copy is
+   * the thing being checked — a tooltip nobody can read is the defect this
+   * answers.
+   */
+  async shotSettingsHint(name = 'settings-others-hint') {
+    await this.openSettings();
+    await this.driver.executeScript(`
+      const sec = document.querySelector('.sec[data-sec="others"]');
+      if (sec) sec.open = true;
+    `);
+    await this.driver.sleep(200);
+    const help = await this.driver.findElement(
+      By.css('.sec[data-sec="others"] .help'),
+    );
+    await this.driver.actions().move({ origin: help }).perform();
+    await this.driver.sleep(500);
+    await this.shot(name);
+    await this.driver.actions().move({ origin: help, x: 0, y: 200 }).perform();
+    await this.driver.sleep(200);
+    await this.closeSettings();
+  }
+
+  /**
+   * D49bz: the .gitignore switch in Plato's own settings page, driven the way a
+   * person drives it — open the gear, click the switch, read it back, close.
+   *
+   * The host re-renders the page from the value it stored, so the state read
+   * afterwards is the host's answer and not the click's. Returns that value.
+   */
+  async setRespectGitignore(value) {
+    await this.openSettings();
+    // The section is a collapsed <details> on first open, so its switch is in
+    // the DOM but not reachable by a click. Opening it is setup, not evidence.
+    await this.driver.executeScript(`
+      const sec = document.querySelector('.sec[data-sec="others"]');
+      if (sec) sec.open = true;
+    `);
+    await this.driver.sleep(200);
+    const box = await this.driver.findElement(By.id('respect-gitignore'));
+    if ((await box.isSelected()) !== value) {
+      await this.clickElement(box);
+      // The host writes the setting, re-pushes the payload and re-renders.
+      await this.driver.sleep(900);
+    }
+    const after = await this.driver
+      .findElement(By.id('respect-gitignore'))
+      .isSelected();
+    // The page as a person sees it, for the record: the switch must look like
+    // the other sections' switches, not like something bolted on.
+    await this.shot(`settings-others-${after ? 'on' : 'off'}`);
+    await this.closeSettings();
+    return after;
   }
 
   /**

@@ -24,6 +24,13 @@ export const DEMO_REPO = '/Users/ai/Desktop/HcadPublicAndroid-demo';
 const FAKE_MCP_SERVER = join(import.meta.dirname, 'fake-mcp.mjs');
 
 export const DATE_HELPER = 'app/src/main/java/com/localgsa/hcad/utilities/DateHelper.java';
+
+/**
+ * D49ca: the file cases 34 and 35 write. A scratch name, not a source file, so
+ * a write that is allowed is observable without coupling the case to a line an
+ * earlier case may already have changed. The launcher removes it after a run.
+ */
+export const MODE_PROBE = 'mode-switch-probe.txt';
 export const VIEW_MODEL = 'app/src/main/java/com/localgsa/hcad/activities/submissions_screen/SubmissionsViewModel.java';
 
 // Real snippets from the demo repo — the writes must actually apply, because
@@ -1168,6 +1175,168 @@ export const CASES = [
   },
   {
     n: 32,
+    title: 'A search finds what .gitignore excludes, says so, and stops finding it when the setting is on',
+    // D49bz. Two runs, because the switch has two jobs and only the pair proves
+    // it: the default must FIND an ignored file and SAY so, and the setting must
+    // make the same search come back empty. The file is real and in the demo
+    // repo's .gitignore (`*.iml`), so nothing has to be seeded.
+    //
+    // The task text names which way the setting is, because the transcript has
+    // to be able to tell the two runs apart when it votes — see verdict.mjs,
+    // case 32. The prompt is what a person would type; the phrase is the fact.
+    //
+    // The switch is flipped where a user looks for it: Plato's own settings
+    // page, under Others. The case also reads the profile's user settings file
+    // afterwards, because that file is what VS Code's Settings editor shows —
+    // one value with two doors, never two copies.
+    runs: [
+      {
+        mode: 'plan',
+        prompt:
+          'Which .iml files does this workspace contain? Use the glob tool with the pattern *.iml, with the .gitignore search setting OFF (the default).',
+        steps: [
+          { calls: [{ tool: 'glob', args: { pattern: '*.iml' } }] },
+          {
+            text: 'The glob found HcadPublicAndroid.iml, and Plato says that path is excluded by .gitignore.',
+          },
+        ],
+        cards: [],
+      },
+      {
+        mode: 'plan',
+        prompt:
+          'Which .iml files does this workspace contain? Use the glob tool with the pattern *.iml, with the .gitignore search setting ON.',
+        steps: [
+          { calls: [{ tool: 'glob', args: { pattern: '*.iml' } }] },
+          { text: 'The glob returned no files, because the setting now skips .gitignore paths.' },
+        ],
+        cards: [],
+        // Flipped in Plato's settings page (Others) before this run is sent,
+        // and flipped back after the case, so neither direction is assumed.
+        panelToggle: true,
+      },
+    ],
+  },
+  {
+    n: 34,
+    title: 'Plan mode hands the work back, and the switch alone starts nothing',
+    // D49ca, from the first real-use report: a user planned in `plan`, was told
+    // to switch to `edit`, and could not tell us whether Plato had seen it.
+    //
+    // This case is that story, twice. Run 1 is the refused write and the sentence
+    // that hands the decision back. Run 2 flips the mode through the real picker
+    // BEFORE it sends anything, and the driver waits to see whether the click
+    // started a run by itself. It must not: a mode click has never been a request
+    // to spend a model call. The message that follows is what resumes the work,
+    // and that is the expectation the old copy did not set.
+    runs: [
+      {
+        mode: 'plan',
+        prompt: `Create a file named ${MODE_PROBE} with the text hello.`,
+        steps: [
+          { calls: [{ tool: 'write_file', args: { path: MODE_PROBE, content: 'hello\n' } }] },
+          {
+            text:
+              'I cannot write in plan mode. Switch to Edit and send me a message; I will create the file.',
+          },
+        ],
+        cards: [],
+      },
+      {
+        mode: 'edit',
+        prompt: 'Go ahead.',
+        // The driver checks, between the picker and the send, that no run started.
+        afterModeSwitch: 'noResume',
+        steps: [
+          { calls: [{ tool: 'write_file', args: { path: MODE_PROBE, content: 'hello\n' } }] },
+          { text: 'Created mode-switch-probe.txt.' },
+        ],
+        cards: ['allow'],
+      },
+    ],
+  },
+  {
+    n: 35,
+    title: 'A switch made during a run applies at the next tool call',
+    // D49ca's other half. The run starts in `plan` and the first write is
+    // refused. The driver waits until that refusal has reached the model, then
+    // switches to `edit` while the run is still live. The model's scripted next
+    // turn is the SAME call, held for four seconds so the switch lands first —
+    // it must now raise a card rather than be refused. One run, two verdicts on
+    // the same tool, and the record must show the denial BEFORE the switch and
+    // the write AFTER it.
+    runs: [
+      {
+        mode: 'plan',
+        prompt: `Create a file named ${MODE_PROBE} with the text hello.`,
+        steps: [
+          { calls: [{ tool: 'write_file', args: { path: MODE_PROBE, content: 'hello\n' } }] },
+          // The delay is how the harness gets inside the run: the first call has
+          // been refused, and the switch happens before the reply is sent.
+          { delayMs: 4000, calls: [{ tool: 'write_file', args: { path: MODE_PROBE, content: 'hello\n' } }] },
+          { text: 'Created the file after the mode changed.' },
+        ],
+        cards: ['allow'],
+        during: 'switchModeAfterDenial',
+      },
+    ],
+  },
+  {
+    n: 36,
+    title: 'The model can ask for a mode; the user’s card is what changes it',
+    // D49cb. Run 1 is the whole point: the model asks for `edit` while the run
+    // is live, the harness approves on the real card, the host switches, and the
+    // SAME run then writes through edit's ordinary approval. Run 2 asks for
+    // `auto` and is declined: the mode must not change and no write may follow.
+    //
+    // The card is answered by the driver inside `waitRunEnd`, like every parked
+    // card — an UNDECLARED mode card is declined so a run can never hang.
+    runs: [
+      {
+        mode: 'plan',
+        prompt: `Create a file named ${MODE_PROBE} with the text hello. If the mode blocks you, ask me to switch.`,
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'request_mode',
+                args: {
+                  mode: 'edit',
+                  reason: 'Plan mode cannot create the probe file. Switch me to edit and I will write it.',
+                },
+              },
+            ],
+          },
+          { calls: [{ tool: 'write_file', args: { path: MODE_PROBE, content: 'hello\n' } }] },
+          { text: 'Created the file after you approved edit mode.' },
+        ],
+        cards: ['allow'],
+        modeAnswers: ['allow'],
+      },
+      {
+        mode: 'plan',
+        prompt: `Leave ${MODE_PROBE} as it is. If you need a wider mode, ask me.`,
+        steps: [
+          {
+            calls: [
+              {
+                tool: 'request_mode',
+                args: {
+                  mode: 'auto',
+                  reason: 'Auto would let me verify the file without asking.',
+                },
+              },
+            ],
+          },
+          { text: 'I asked for auto mode and you declined, so I changed nothing.' },
+        ],
+        cards: [],
+        modeAnswers: ['deny'],
+      },
+    ],
+  },
+  {
+    n: 33,
     title: 'Closing the chat panel stops the run instead of leaving it going',
     // D49bn. The panel is the run's only supervisor: the buttons, the cards and
     // the log all live in it. Closing it used to leave the run calling tools and
@@ -1175,9 +1344,12 @@ export const CASES = [
     // are no cards, so nothing would even ask.
     //
     // **THIS CASE MUST STAY LAST, and it is why the numbers here are not all in
-    // the order they run.** It closes the chat panel, and the harness cannot step
-    // back inside a webview panel once it has been closed — the new panel's
-    // iframe is never found. The case's own claims are read from the run record,
+    // the order they run.** (Renumbered from 32 on 2026-10-21 when the
+    // .gitignore case took 32; it was 28 before that, then 29. **Cases 34, 35 and
+    // 36 are placed AHEAD of it in this array for the same reason, so they run
+    // before it despite their higher numbers.**) It closes the chat panel, and
+    // the harness cannot step back inside a webview panel once it has been
+    // closed — the new panel's iframe is never found. The case's own claims are read from the run record,
     // so it passes; a case placed AFTER it would start from a window the driver
     // can no longer reach into, and would fail for a reason that has nothing to
     // do with the product. (Case 28 was moved ahead of it for exactly this

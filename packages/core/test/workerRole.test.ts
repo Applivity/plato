@@ -293,33 +293,42 @@ describe('the worker prompt says what to do with the editor’s errors (D49av)',
 });
 
 /**
- * D49bk. The mode is the user's, and the model cannot change it — so the one
- * channel that could imply otherwise has to be closed by name.
+ * D49bk, extended by D49cb. The mode is the user's, and the model cannot change
+ * it — so a mode change must never ride a question card, whose answer would tell
+ * the model the user agreed while nothing changed.
  *
- * **Why this is a prompt rule and not a guard.** There is nothing to enforce:
- * the model has no mode tool and core is handed a read-only getter, so it can
- * never switch anything. What it CAN do is put a mode change on a question card,
- * and that card's answer comes back to the model as a tool result — so a "Yes"
- * would tell the model the user agreed while the mode was unchanged, and its
- * next move would rest on a permission it does not hold. **The false belief is
- * the defect**, and it is created by wording, so it is fixed by wording.
+ * **D49cb makes the honest channel real.** A host that can draw a mode card
+ * offers `request_mode`; the model asks, the user decides, and the host switches.
+ * A host without that card keeps the prose-only fallback, so the prompt never
+ * names a tool the host cannot honour.
  */
-describe('the worker prompt closes the mode-change card (D49bk)', () => {
+describe('the worker prompt says how to ask for a mode (D49bk, D49cb)', () => {
   it('says the mode is the user’s and the model cannot change it', () => {
     expect(DEFAULT_PLATO_BODY).toContain("The mode is the user's to change and you cannot change it");
-  });
-
-  // The positive half: what to do instead. A rule that only forbade the card
-  // would leave a model that hit a refusal with nothing to say, and the refusal
-  // is exactly when the user most needs to hear what is blocked.
-  it('says to name what would happen if it were permitted', () => {
-    expect(DEFAULT_PLATO_BODY).toContain('say in one sentence what you would');
-    expect(DEFAULT_PLATO_BODY).toContain('let the user decide');
   });
 
   it('forbids the card by name, with the reason', () => {
     expect(DEFAULT_PLATO_BODY).toContain('Never put a mode change on a');
     expect(DEFAULT_PLATO_BODY).toContain('its answer would tell you');
     expect(DEFAULT_PLATO_BODY).toContain('the user agreed when nothing changed');
+  });
+
+  it('a host without a mode card keeps the prose-only fallback', async () => {
+    const r = await buildWorkerRole({ root: dir });
+    // The paragraph is wrapped for reading; the claim is about its words.
+    const one = r.system.replace(/\s+/g, ' ');
+    expect(one).toContain(
+      'say in one sentence what you would do if it were permitted and let the user decide',
+    );
+    expect(one).not.toContain('request_mode');
+  });
+
+  it('a host with a real mode card names the tool and the user’s decision', async () => {
+    const r = await buildWorkerRole({ root: dir, modeRequest: true });
+    const one = r.system.replace(/\s+/g, ' ');
+    expect(one).toContain('request_mode');
+    expect(one).toContain('The user sees a card and decides');
+    expect(one).toContain('you cannot change the mode yourself');
+    expect(one).toContain('Use request_mode, not ask_user, for a mode change');
   });
 });

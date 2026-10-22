@@ -12,7 +12,7 @@ here are binding unless a DECISIONS.md entry supersedes them.
 > | Here | Now |
 > |---|---|
 > | `src/eventbus/`, `src/cost/` | the bus is `core/src/runtime/bus.ts` and cost is `core/src/runtime/cost.ts` — neither has its own directory (D24) |
-> | `packages/cli/` (phase 2) | **does not exist.** `packages/` is `core` + `vscode` only |
+> | `packages/cli/` (phase 2) | **built 2026-10-21** — `@applivity/plato` `0.1.0`, a terminal host over the same core (D49bw). It uses the same `~/.plato` state as the extension |
 > | `Profile {name, rolePrompt, model, allowedTools[], permissions}` | `TeamMember` / philosopher (D47e) |
 > | `Team` = ordered set of profiles; Solo = team-of-one | one worker + N philosophers; Solo/Duo/Academy are modes over the same worker (D45a-3) |
 > | `.aplivity/teams.yaml` + `~/.applivity/teams.yaml` | `~/.plato/ACADEMY.yaml` for the council, `~/.plato/DUO.yaml` for Duo (D33, D46, D47) |

@@ -1,0 +1,39 @@
+{
+  "name": "@applivity/plato",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "An AI coding agent for the terminal that shows its work, lets you steer mid-run, and stops at a safe point.",
+  "type": "module",
+  "bin": {
+    "plato": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist/cli.js",
+    "LICENSE",
+    "NOTICE",
+    "THIRD-PARTY-NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsc -b && node esbuild.mjs",
+    "bundle": "node esbuild.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@applivity/plato-core": "workspace:*",
+    "@types/react": "19.3.0",
+    "esbuild": "0.25.10",
+    "ink": "8.0.0",
+    "react": "19.3.1",
+    "typescript": "5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "2.1.2"
+  }
+}

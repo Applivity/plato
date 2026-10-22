@@ -21,7 +21,48 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (verified 2026-10-19)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21)
+
+- **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the
+  founder has opened phase 2. The CLI is a first-class host over the same core, not an afterthought.
+  **v1 includes Solo, Duo, and Academy.** The package is `@applivity/plato`, the command is `plato`,
+  and the first version is `0.1.0`. The scope is **D49bw**; key storage is **D49bx** (approved
+  2026-10-21, with one-command login and an automatic file fallback); the terminal conventions are
+  **D49by** (approved 2026-10-21: Ink 8.0.0, with a plain renderer over the same view model).
+  **The phased plan with milestone exit criteria is `packages/cli/PLAN.md`.** M0 through M5 are
+  done (2026-10-21): the built file answers `--version` and `--help`; login is one command; keys
+  resolve through the environment, the keychain, or a 0600 file; `models` and `doctor` work;
+  `plato -p` runs one task with a transcript and machine-readable output; the Ink terminal renders
+  the transcript, streaming, and all four parked cards; and Solo, Duo, and Academy run from the
+  same team files as the extension; and sessions, undo, MCP, and image attachments work. M6's
+  packaging half is done (README, six-file tarball, clean install), the manifest is publish-ready
+  (`"private"` removed, `"publishConfig": { "access": "public" }` added, and `npm publish
+  --dry-run` accepts it), and the tarball passed the secret audit with no key pattern and no local
+  path in the bundle. The real-model matrix passes 19/19 against both live providers (twice), with
+  the Ink terminal proven under a pty (`scripts/pty-real.py`), and the trace, `.gitignore`
+  handling, and `doctor`'s last-run report came from running it on the proving-ground repo
+  (D49bz). **The mode request is built too (D49cc, 2026-10-21):** the terminal offers
+  `request_mode` with the same card, cap, and copy as the extension, and its loop reads the mode
+  live, so an approved switch reaches the next tool call in the same run; `plato -p` and `--plain`
+  still decline to offer it. **The npm publish is the founder's step; `0.1.0` has not been
+  published.**
+
+  **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
+  settings page.** A new **Others** section (the gear) carries the switch, written with the same
+  `beh()` row as the MCP section; it writes the SAME `plato.search.respectGitignore` setting the
+  workbench Settings editor shows (boolean, default false, resource scope), so there is one value
+  with two doors. Field case 32 proves it in a real window: run 1 finds a gitignored file and shows
+  the notice; the case opens the gear, flips the switch, checks the profile's user settings file
+  holds the same value, and run 2 finds nothing. The
+  case found a real defect on its first run — the extension persisted loop notices but never posted
+  them, so they appeared only after a reload; `extension.ts` now does both. **The VSIX still needs
+  the founder's upload**: `0.26.4` is **live** on the Marketplace; `0.26.6` is packaged and
+  prepared with the switch, its plain-language copy, the panel section, and the real mode request.
+  `0.26.5` was superseded before upload. Nothing newer than `0.26.4` has been uploaded. The matrix found two prompt defects
+  that are now fixed: a prompt whose input closes already threw out of an approval, and a pending
+  question whose input closed hung the CLI forever; both now count as no answer. The npm
+  publish is the founder's. Every other
+  statement below describes the extension only.
 
 - **A protected file is READABLE, and its values are not — the secret is guarded where it MOVES
   (D49bb, built 2026-09-28).** The deny-list used to refuse every call that named a protected file,
@@ -270,20 +311,30 @@ are now only in PROGRESS.
   Found by listing ignored-but-present files — the one check that sees a file the repository does
   not have.
 
+- **The CLI offers the mode request, and its mode is read live (D49cc, 2026-10-21).**
+  The extension's `request_mode` has the terminal equivalent D49cb left open: a live
+  `getMode` on `ExecuteOptions`, a `RunSink.requestMode` the TUI implements, the
+  `mode` card with Stay as the default, the extension's cap and copy, and both
+  record events emitted by `executeTask`. **`plato -p` and `--plain` still do not
+  offer the tool** — neither can draw a card, and a request that can only be
+  refused is a lie.
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
   `https://github.com/applivity-com/plato` (private, default branch `main`;
   `applivity-com` is a personal user account, **not** an org).
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
-  imports** — and `packages/vscode` — the extension shell, **v0.26.4**. There is
-  no `packages/cli` yet (phase 2).
-- HEAD = **D49bq + D49br + D49bs** — Plato sits in the activity bar, the VSIX ships only what
-  runs, and the mark is an owl. **Uncommitted on top of it: D49bu** (the shipped artifact is
-  minified, and the render suites now test those bytes) **and D49bt**, which gives MCP a Settings
-  section and moves its config to `~/.plato/mcp.json` (see "Current state"). Behind those,
-  **D49bb** (a protected file reads with its values masked), **D49ba** (Simplified Technical
-  English) and **D49az** (undo), on top of **D49av** (editor diagnostics) and **D49aw** (a run
-  bounded by repetition) — so **Tier C is complete** and Phases 0–6 of the agent capability plan
-  are done (roadmap in DECISIONS **D49**). Push stays with the founder.
+  imports** — `packages/vscode` — the extension shell, **v0.26.6 prepared, 0.26.4 live** — and
+  `packages/cli` — `@applivity/plato` `0.1.0`, **built through M5 and publish-ready**
+  (phase 2 opened 2026-10-21; D49bw–D49by).
+- HEAD = **e1052f5 — D49bu + 0.26.4** (the shipped artifact is minified, and the render suites
+  now test those bytes). **Uncommitted on top of it: the CLI (`packages/cli`) and D49bz** (the
+  `.gitignore` search switch in both hosts, the live tool trace, `doctor`'s last-run report, and
+  the `0.26.6` VSIX). Committed behind it: **D49bv** (Apache-2.0
+  with a private repository), **D49bt** (MCP has a Settings section and its config moved to
+  `~/.plato/mcp.json`), **D49bq–D49bs** (the activity bar, the lean VSIX, and the owl), **D49bb**
+  (a protected file reads with its values masked), **D49ba** (Simplified Technical English), and
+  **D49az** (undo), on top of **D49av** (editor diagnostics) and **D49aw** (a run bounded by
+  repetition). **Tier C is complete** and Phases 0–6 of the agent capability plan are done
+  (roadmap in DECISIONS **D49**). Push stays with the founder.
 - **A read-only shell command runs with no approval card — in `plan` and `edit` (D49an,
   D49ao).** In `plan` that is a change of character, not just convenience: **plan is no
   longer "runs nothing", it is "changes nothing"** — no write tool, and a command the
@@ -316,6 +367,14 @@ are now only in PROGRESS.
   correction in D49ao before repeating the generalisation. **`auto` fetches without asking** — the founder's call, amending D49p. **Any doc or comment that still
   lists four modes is stale**; the two architecture documents keep their bodies verbatim
   by design (D48) and carry superseded-map rows instead.
+- **A mode switch is now recorded as a structured event, and the line says when it applies (D49ca).**
+  `mode-changed` carries `from`, `to` and the click's `at`; it is emitted at the click during a live
+  run, and held until after the next run's header when no run is live — so a switch made *between*
+  runs is in the next record rather than nowhere. The chat line now reads *"applies from the next
+  tool call"* (live) or *"applies from your next message"* (idle); the second is the expectation a
+  customer lacked when they switched and waited for a finished run to continue. **The model is still
+  not told the active mode (D49bk), and an idle switch still does not auto-resume** — both are
+  recorded in D49ca as the founder's call, not oversights.
 - **The mode is read live at every tool call, and it is now remembered and recorded (D49bj).**
   The live read is deliberate and old: the mode is not snapshotted at run start, so a switch takes
   effect on the model's **next tool call**, in the same turn — this is the fix the founder's own
@@ -334,20 +393,22 @@ are now only in PROGRESS.
   gave), **and the model can ASK for a looser mode mid-run** (*"switch to auto"*) since `auto` is live
   — it still needs the user's click, and there is no mode tool and no setter, so a model can ask,
   never switch. Freezing the mode for a run's duration was rejected: it would undo the live switch.
-- **A mode change never goes on a question card, and the prompt now says so (D49bk).** The mode is the
-  user's to change and the model cannot change it; if a call comes back **refused because of the
-  mode**, the model says in one sentence what it would do if the call were permitted and lets the user
-  decide. **The card was closed for a sharper reason than "it would do nothing":** a card's answer
-  travels back to the model **as a tool result**, so a card reading *"switch to auto?"* would return
-  **"Yes"** to a model whose mode was unchanged — **telling it the user agreed to something that did
-  not happen**, and letting its next move rest on a permission it does not hold. **Two facts to keep
-  straight when reasoning about this, because both were got wrong once in conversation: the prompt
-  DOES name all three modes and what they mean, and it never says which one is ACTIVE** (the mode is
-  not passed into `buildWorkerRole` at all) — so the model knows the vocabulary and not where it
-  stands, and learns where it stands only by being refused, whose message names the mode (`blocked:
-  <tool> is not permitted in plan mode`). **There is no detection in Plato and no suggestion
-  machinery: there is a refusal, and a model that can read it.** Wording rather than a guard, because
-  there is nothing to enforce — the only defective channel is the wording the model chooses.
+- **A mode change never goes on a question card; the honest channel is `request_mode` (D49bk, made
+  real by D49cb).** **D49bk closed the question card** because its answer travels back to the model
+  as a tool result: a card reading *"switch to auto?"* would return **"Yes"** to a model whose mode
+  was unchanged, telling it the user agreed to something that did not happen. **D49cb then made the
+  request real**, which is the condition D49bk left: the model calls `request_mode` with a target and
+  a reason, the **host** draws a card (*Switch to edit* / *Stay in plan*), and only the user's answer
+  changes anything. On a yes the host switches, records `mode-changed` with `via: request`, tells the
+  picker (`mode-state`), and returns a tool result naming the mode now in force — so the run continues
+  in the new mode without a stale belief. On a no the mode stays, the decline is recorded and shown,
+  and the model is told not to ask again; **three requests per run** is the cap. **Cancel and panel
+  close answer no**, like every parked card. **The tool is offered only to a host that can draw the
+  card**; the CLI does not yet, so it keeps the prose-only fallback and the prompt does not name the
+  tool there. **The prompt still does not state the ACTIVE mode at run start** — the model learns it
+  from a refusal, or now from the result of its own approved request. Full evidence, including the
+  real-model runs, is in D49cb; the stale-label defect the first real screenshot caught is recorded
+  there too.
 - **The 2026-09-23/24 repairs are history, and PROGRESS is their home (D49r–D49ag).** They were a
   long run of real-use faults found by running Plato on the trial ground below, and this file used
   to narrate all of them — which is the duplication D48 exists to stop. **Two changed the product's
@@ -843,6 +904,11 @@ and explicitly NOT work item 1 of anything.**
   chat `run()` loop orchestration, conversation-title generation,
   session archiving). `src/webview.ts` is a **single giant template
   literal** containing the entire webview HTML + CSS + inline JS.
+- `packages/cli` — **phase 2, D49bw; M0–M5 built and M6 packaging done
+  (2026-10-21), first publish pending.** It is a second host over the same
+  core, with no engine fork. It shares `~/.plato` with the extension, so runs,
+  undo, MCP, teams, and `PLATO.md` are common to both. The phased plan is
+  `packages/cli/PLAN.md`; the publish checklist is `docs/LICENSING.md` §8.
 - `packages/vscode/scripts/extract-inline.cjs` — repo gate: extracts the
   inline `<script>` from the webview bundle and runs `node --check`
   against it.
@@ -1042,19 +1108,25 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 858 in packages/core across 47 files**
-   (verified 2026-10-19). This is the only place in this file that carries the count;
-   update it here when it moves.
+2. `pnpm -r test` — the unit tests. **Current: 878 in `packages/core` across 47 files
+   and 159 in `packages/cli` across 15 files** (verified 2026-10-21). This is the only
+   place in this file that carries the count; update it here when it moves.
 3. `pnpm run render` — the real-DOM render suites. **Current: 24 suites / 700
    assertions** (verified 2026-10-19), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
 3b. `node scripts/smoke-stream.mjs` — when the change touches a provider
    adapter, run the check the mocked unit tests cannot make: the real SDK against
    a local stub. See "Environment prerequisites".
+3c. **When the change touches the CLI**, in addition to step 2:
+   `node packages/cli/scripts/real.mjs` — the 19-case real-model matrix against
+   both live providers; it needs the founder's key file and fails closed without
+   it; `python3 packages/cli/scripts/pty-real.py` — the Ink terminal under a pty;
+   and `(cd packages/cli && npm pack --dry-run)` — the tarball must stay at 6
+   files with no source, tests, or maps.
 4. `cd packages/vscode && pnpm run bundle && node scripts/extract-inline.cjs
    && node --check ../../tmp/plato-inline.js` — bundle + inline JS syntax
 5. `cd packages/vscode && pnpm run package` — produces
-   `plato-0.26.4.vsix`
+   `plato-0.26.6.vsix` (0.26.4 is the live release; 0.26.6 is prepared)
 6. `cd packages/vscode && pnpm run install:vsix` — installs into the
    running VS Code
 7. Reload the VS Code window (Cmd+Shift+P → "Developer: Reload Window")
@@ -1135,14 +1207,20 @@ gaps are what the repairs answer.)
   plan steps unfinished*. Test 7's fourteen-minute run that completed zero steps is
   the case this exists for.
 
-## Open work — nothing here is queued; each item needs a decision
+## Open work — the CLI is the next milestone; the rest needs a decision
 
-**Tier C is complete, so there is no head of the queue.** The ordered capability list held three
+**The head of the queue is the CLI (phase 2, opened 2026-10-21).** The plan is **D49bw–D49by**: a
+first-class host over the same core, with Solo, Duo, and Academy in v1. **`packages/cli` is built
+through M5, the carried-forward mode request is built (D49cc), and its `0.1.0` tarball is
+publish-ready (2026-10-21).** The remaining step is the founder's: `npm whoami`, the `applivity`
+organisation, and the first publish. The rest of this
+section is the recorded backlog, and each item needs a decision rather than a handover.
+
+**Tier C is complete.** The ordered capability list held three
 items and all three are built and verified end to end: editor diagnostics (D49av), bounding `auto`
 by repetition (D49aw), and **undo (D49az)**. Phases 0–6 of the M5 plan are done, and **Phase 7 is
 recorded-not-built by design** — subagents, hooks, skills and notebooks each need their own
-decision first. **What follows is the recorded backlog, and picking from it needs a decision
-rather than a handover.** Each item is named once here so the list is visible in one place;
+decision first. Each item is named once here so the list is visible in one place;
 **PROGRESS → "Deferred / backlog (do not lose these)" carries the detail**, and closed items are
 in PROGRESS's change log and in DECISIONS. **The three tiers that got here — A (D49as), B (M4
 closeout: D49at, D49au) and C (D49av, D49aw, D49az) — are complete, and this file used to restate
@@ -1222,22 +1300,19 @@ all three of their records, which is the duplication D48 exists to stop.**
 - **History run-detail view**, and three small wins: title regenerate, title-call token metering.
 - **Deferred by decision (D46):** a per-project council override, and moving conversation history
   to `~/.plato/history/` (it is in VS Code `workspaceState` today).
-- **Two stated boundaries from the mode work (D49bj/D49bk), neither a to-do.** **No field case covers a
-  mid-run mode switch** — the harness sets a case's mode *before* the run and drives no switch
-  during one, so the live read is proved by unit and render tests and by M1's own history, not by a
-  real window. And **the model can ask to be loosened** — with `auto` live and reachable, a model can
-  write *"switch to auto"* mid-run and one click removes the card from every remaining write and
-  fetch. Nothing is bypassed (the user still clicks, and can decline), and a model cannot switch the
-  mode itself: there is no mode tool and the setter is host state reached only from the picker. It is
-  left as prose rather than fixed because the fix considered — freezing the mode for a run's duration
-  — would undo the live switch M1 exists to have. **The one channel that made it worse than a
-  suggestion is closed (D49bk): a mode change never goes on a question card**, since the card's answer
-  returns to the model as a tool result and would read as agreement to a change that did not happen.
-  **A card already on screen is also not reconsidered when the mode changes**, deliberately: the user
-  is the one clicking, and auto-answering it would grant an approval they never gave. **If the card is
-  ever wanted back, it has to be made real** — the host accepting a mode request and switching on a
-  Yes — which is a posture choice, not a defect, and it hands the model a sanctioned way to ask for
-  its own loosening.
+- **The mode work's boundaries, updated (D49bj/D49bk/D49ca/D49cb).** **Field cases 34 and 35 now cover
+  the switches the harness could not drive before** — an idle picker switch that starts nothing until
+  the next message, and a switch made mid-run that applies at the next tool call — and **case 36 covers
+  the model's request** on the real card, in a real window. **The model can ask to be loosened**, and
+  that is now a sanctioned channel rather than prose: `request_mode` draws a card, the user decides,
+  the host switches only on a Yes, and the run continues. Nothing is bypassed, the user can decline,
+  and the cap is three requests per run. **A mode change still never goes on a question card (D49bk)**,
+  because its answer would read as agreement to a change that did not happen. **A card already on
+  screen is still not reconsidered when the mode changes**, deliberately: the user is the one clicking,
+  and auto-answering it would grant an approval they never gave. **The CLI offers the same card since
+  D49cc (2026-10-21)**, with the same cap and copy, and its loop reads the mode live; `plato -p` and
+  `--plain` still do not, because neither can draw one. Putting the active mode in the run's prompt is
+  still NOT done: the model learns it from a refusal or from an approved request's result.
 - **Four stated boundaries from the run-control work (D49bm/D49bn/D49bo), none a to-do.** **(1) A
   pause cannot stop a model call already in flight** — the loop only reaches a safe point between
   turns and between tool calls, and the button now says so instead of implying otherwise. **Do not
@@ -1306,9 +1381,9 @@ the read-only allowlist (D49an).
   commits.
 - Never send `keystore.properties`, `local.properties`, `.env*`,
   `*.keystore`, or any `.gitignore`d file content to a model.
-- Repo stays private. The license is Apache-2.0 (D49bv). No marketplace publish
-  before the checklist in `docs/LICENSING.md` is complete. Do not call the
-  product "open source" while the source is private.
+- Repo stays private. The license is Apache-2.0 (D49bv). No Marketplace or npm
+  publish before the checklist in `docs/LICENSING.md` is complete. Do not call
+  the product "open source" while the source is private.
 
 ## Key external identities
 
@@ -1317,4 +1392,5 @@ the read-only allowlist (D49an).
 | GitHub org | applivity-com |
 | Marketplace publisher | `applivity` (alias parked: `applivityllc`) |
 | npm org | `applivity` |
+| npm package (built, not published) | `@applivity/plato`, command `plato` (D49bw) |
 | Proving-ground repo | `/Users/ai/Desktop/HcadPublicAndroid-demo` |

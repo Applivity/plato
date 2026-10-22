@@ -59,6 +59,26 @@ describe('decide', () => {
   });
 
   /**
+   * D49cb: the mode request is ALLOWED in every mode, because the table is not
+   * its gate. The host's card is: the tool changes nothing until the user says
+   * yes. Denying it in `plan` would silence the model in the one mode where it
+   * most needs to ask.
+   */
+  it('allows the mode request in every mode — the card is the gate (D49cb)', () => {
+    for (const m of ['plan', 'edit', 'auto'] as const) {
+      expect(decide('request_mode', m)).toBe('allow');
+    }
+  });
+
+  it('offers request_mode only to a host that can draw its card (D49cb)', () => {
+    expect(toolDeclarations().some((t) => t.name === 'request_mode')).toBe(false);
+    const offered = toolDeclarations({ modeRequest: true });
+    expect(offered.some((t) => t.name === 'request_mode')).toBe(true);
+    const tool = offered.find((t) => t.name === 'request_mode');
+    expect(tool?.parameters.required).toEqual(['mode', 'reason']);
+  });
+
+  /**
    * D49ak, which AMENDS D49p. D49p made egress ask in every mode including
    * `auto`, because a request cannot be un-sent. **The founder overrode that on
    * 2026-09-24: `auto` fetches without asking.** The assertions are written as
