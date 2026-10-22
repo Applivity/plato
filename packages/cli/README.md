@@ -4,7 +4,7 @@ Plato is an AI coding agent for the terminal. It shows its work, lets you steer
 mid-run, and stops at a safe point. The same engine powers the
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=applivity.plato).
 
-**Pre-release.** This is `0.1.0`. The core of the agent is the same code the
+**Pre-release.** This is `0.1.1`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
 
 ## Install
@@ -27,13 +27,21 @@ The key goes to the operating system's keychain when one is available. If it is
 not, Plato writes `~/.local/share/plato/auth.json` with mode 0600 and says so.
 The config file never holds a key.
 
-`plato auth login` alone asks which provider. `other` providers use their own
-variable, so `OPENROUTER_API_KEY` works without any login at all. The full
-order is:
+`plato auth login` alone asks for the provider. It offers `anthropic`, `openai`,
+`openrouter` and `litellm`, and accepts any other name — for a name it does not
+know it asks for the wire protocol and the base URL. The **connection** it saves
+is what tells Plato where to send requests; pressing Enter at the key prompt
+saves the connection and no key.
 
-1. `PLATO_KEY_<CONNECTION_ID>`
-2. the provider's own variable (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-   `OPENROUTER_API_KEY`, and so on)
+That is how an environment variable works: the connection still has to exist, so
+run the login once with an empty key (or add the connection to the config), then
+export the variable. The key is looked up in this order:
+
+1. `PLATO_KEY_<CONNECTION_ID>` — the connection's id, uppercased, with anything
+   that is not a letter or a digit replaced by `_`: `openai-real` becomes
+   `PLATO_KEY_OPENAI_REAL`
+2. the provider's own variable — `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+   `OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`, and the rest of the built-in list
 3. the OS keychain
 4. the 0600 file
 

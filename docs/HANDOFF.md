@@ -51,7 +51,10 @@ are now only in PROGRESS.
   staged-publishing gate applies, so a release waits in the approval queue
   until the founder approves it on npmjs.com. **One README fix landed after the
   publish** (the `.gitignore` notice example quoted text the product never
-  prints); the npm page carries the 0.1.0 README until the next release.
+  prints). The founder's read of the auth section found a second one — it
+  implied an environment variable needed no setup, when a connection must exist
+  first — and that is corrected too. **0.1.1 is prepared and waits on the same
+  approval**; the npm page carries the 0.1.0 README until it is published.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same
