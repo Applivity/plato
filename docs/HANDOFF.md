@@ -54,9 +54,11 @@ are now only in PROGRESS.
   prints). The founder's read of the auth section found a second one — it
   implied an environment variable needed no setup, when a connection must exist
   first — and that is corrected too. **0.1.1 is live (2026-10-22, 14:37:53Z)** and the
-  registry serves its README. **0.1.2 is prepared** with the README's new opening line, the
-  fuller Teams section, and the version bump; it also rebuilds the npm page, which still showed
-  "no README" for 0.1.1 after the approval.
+  registry serves its README. **0.1.2 is live (2026-10-22, 15:03:55Z)** with the README's new
+  opening line, the fuller Teams section, and the version bump. Its served README is
+  byte-identical to the repository file. The npmjs.com page still showed "no README" for 0.1.1
+  after its approval, and the registry was correct then too; npmjs.com answers 403 to this
+  environment, so the page itself can only be checked in a browser.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same
