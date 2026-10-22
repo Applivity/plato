@@ -4,7 +4,12 @@ Plato is an AI coding agent for the terminal. It shows its work, lets you steer
 mid-run, and stops at a safe point. The same engine powers the
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=applivity.plato).
 
-**Pre-release.** This is `0.1.1`. The core of the agent is the same code the
+**Plan, edit, or auto. Solo, duo, or academy. You hold the switch.**
+
+[plato.applivity.com](https://plato.applivity.com) · [Install](#install) ·
+[Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands)
+
+**Pre-release.** This is `0.1.2`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
 
 ## Install
@@ -93,15 +98,35 @@ you agree, and the same run continues.
 
 ### Teams
 
+Plato is always the one doing the work. The team decides who is watching.
+
+| Team | Who is watching |
+|---|---|
+| `solo` | Nobody. The default, and the cheapest to run. |
+| `duo` | One philosopher, with its own role and permissions. |
+| `academy` | Up to five, each watching for something different. |
+
 ```sh
-plato --team duo       # Plato plus one philosopher
-plato --team academy   # the council in ~/.plato/ACADEMY.yaml
+plato --team duo                 # Plato plus one philosopher
+plato --team academy             # the council in ~/.plato/ACADEMY.yaml
+plato -p "fix the test" --team duo
 ```
 
-A philosopher watches the run and can inject guidance, pause it, or stop it. It
-never approves a tool call. Duo uses `~/.plato/DUO.yaml`; Academy uses
-`~/.plato/ACADEMY.yaml`. Both files are shared with the extension, and a
-missing file runs the built-in default.
+A philosopher reads the run and can do one of four things: leave it alone, send
+a short correction, pause the run and hand it back to you, or stop it. It never
+approves a tool call. Permissions are per watcher, so you can allow a pause and
+refuse a stop. A run allows five interventions in total, however many are
+watching, and a watcher that errors or answers with nonsense is counted and
+ignored — it cannot hang the run.
+
+Each watcher has its own model in the file, so it need not be the model doing
+the work. Duo uses `~/.plato/DUO.yaml`; Academy uses `~/.plato/ACADEMY.yaml`.
+Both are shared with the extension, and a missing file runs the built-in
+default: Aristotle for Duo, and Aristotle and Pythagoras for Academy, seeded
+with the working model.
+
+Change it in a session with `/team duo`, or with `plato config set team duo`.
+Both are saved, so the next run uses it too.
 
 ### Search and `.gitignore`
 
