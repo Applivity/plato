@@ -9,7 +9,7 @@ mid-run, and stops at a safe point. The same engine powers the
 [plato.applivity.com](https://plato.applivity.com) · [Install](#install) ·
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands)
 
-**Pre-release.** This is `0.1.2`. The core of the agent is the same code the
+**Pre-release.** This is `0.1.3`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
 
 ## Install
@@ -200,6 +200,13 @@ is covered by the same scrubbing wherever the value goes.
 
 A 0600 file is plaintext. The keychain raises the effort; it does not protect a
 compromised account. `plato auth status` names the source in use.
+
+## Support
+
+Questions, bug reports, and feature requests:
+[plato-feedback@applivity.com](mailto:plato-feedback@applivity.com).
+
+Plato is made by [Applivity](https://applivity.com).
 
 ## Licence
 

@@ -58,7 +58,9 @@ are now only in PROGRESS.
   opening line, the fuller Teams section, and the version bump. Its served README is
   byte-identical to the repository file. The npmjs.com page still showed "no README" for 0.1.1
   after its approval, and the registry was correct then too; npmjs.com answers 403 to this
-  environment, so the page itself can only be checked in a browser.
+  environment, so the page itself can only be checked in a browser. **0.1.3 is prepared and waits
+  on the founder's publish**: a Support section (`plato-feedback@applivity.com` and the Applivity
+  link) and a `homepage` field, so the npm page carries a back link outside the README.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same
