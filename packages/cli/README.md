@@ -98,9 +98,10 @@ missing file runs the built-in default.
 ### Search and `.gitignore`
 
 By default Plato searches every file, including the paths your repository's
-`.gitignore` excludes, and tells you when a result comes from one of them
-(`! 4 results are in .gitignore paths: dist/app.js, …`). Seeing a generated file
-and discounting it is better than silently missing one.
+`.gitignore` excludes, and tells you when results come from one of them
+(`[plato] 4 of 9 results are in paths that .gitignore excludes: dist/app.js and
+1 more`). Seeing a generated file and discounting it is better than silently
+missing one.
 
 To skip them instead:
 

@@ -44,8 +44,14 @@ are now only in PROGRESS.
   (D49bz). **The mode request is built too (D49cc, 2026-10-21):** the terminal offers
   `request_mode` with the same card, cap, and copy as the extension, and its loop reads the mode
   live, so an approved switch reaches the next tool call in the same run; `plato -p` and `--plain`
-  still decline to offer it. **The npm publish is the founder's step; `0.1.0` has not been
-  published.**
+  still decline to offer it. **`0.1.0` is published on npm (2026-10-22)** — `latest`
+  is `0.1.0`, the published tarball's shasum matches the audited build, a clean
+  install and `npx @applivity/plato --version` work, and the registry serves the
+  package README byte for byte. The account needs 2FA for writes and npm's
+  staged-publishing gate applies, so a release waits in the approval queue
+  until the founder approves it on npmjs.com. **One README fix landed after the
+  publish** (the `.gitignore` notice example quoted text the product never
+  prints); the npm page carries the 0.1.0 README until the next release.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same

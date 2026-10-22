@@ -7,8 +7,8 @@ extension is published as **`applivity.plato`** under the display name
 
 This file records what is true, why the private-repository path is allowed, and
 the remaining publish work. **The CLI is phase 2, opened 2026-10-21 (D49bw).**
-Its npm plan and checklist are in section 8. `@applivity/plato` `0.1.0` is
-built and publish-ready; the first publish is the founder's step.
+Its npm plan and checklist are in section 8. **`@applivity/plato` `0.1.0` is
+published (2026-10-22)**; the registry, a clean install, and `npx` verify it.
 
 ## 1. What is true today
 
@@ -241,8 +241,12 @@ Keep these rules:
 **Status.** The founder opened phase 2 on 2026-10-21. The CLI is a first-class
 host over the same core. It ships Solo, Duo, and Academy in v1 (D49bw).
 `packages/cli` is complete through M5; M6's packaging half is done, including
-the publish-ready manifest (2026-10-21). The first version is `0.1.0`; the CLI
-keeps its own version line. The first publish is the founder's step.
+the publish-ready manifest (2026-10-21). **`0.1.0` was published on 2026-10-22**
+and passed the post-publish verification (registry metadata, a clean install of
+the published tarball, every documented command, the TUI, and `npx`). The CLI
+keeps its own version line. npm's staged-publishing gate applies to this
+account: the first `npm publish` created a `0.0.0-stage` placeholder and the
+release went live when the founder approved it.
 
 **Package identity.**
 
@@ -296,11 +300,14 @@ URL that users cannot open.
       all three homes redirected.
 - [x] Run the secret audit on the tarball. No key pattern and no local path is
       present in the bundle (2026-10-21).
-- [ ] `npm whoami` must succeed. The publisher must confirm membership in the
-      `applivity` npm organisation.
-- [ ] Publish `0.1.0` with `--access public`.
-- [ ] Verify the public listing, the install, and
-      `npx @applivity/plato --version`.
+- [x] `npm whoami` succeeds as `applivity`, the scope's owner (2026-10-22).
+- [x] Publish `0.1.0` with public access. The account requires 2FA for writes,
+      and staged publishing placed the release in an approval queue; it went
+      live at 14:13:40Z when the founder approved it (2026-10-22).
+- [x] Verify the public listing, the install, and
+      `npx @applivity/plato --version`. `latest` is `0.1.0`; the tarball's
+      shasum matches the audited build (`75beb7d1…`), it has 6 files, and the
+      README served by the registry is byte-identical to the package's.
 
 **Permanence.** The first npm publish is public and effectively permanent. A
 public package cannot be made private again. Unpublish is limited to 72 hours.

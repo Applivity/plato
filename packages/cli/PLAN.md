@@ -4,8 +4,8 @@ Status: **in progress** — M0 through M5 are done (2026-10-21); M6's packaging
 half is done, including the publish-ready manifest and the secret audit, the
 real-model matrix passes 19/19 against both live providers, and the TUI passes
 under a pty. **The carried-forward mode request is built (D49cc): the terminal
-offers `request_mode`, and its loop reads the mode live.** The publish is
-pending. The scope and the locked choices are in `docs/DECISIONS.md`
+offers `request_mode`, and its loop reads the mode live.** **`0.1.0` is
+published (2026-10-22)**; see D49ce's sibling record and `docs/LICENSING.md` §8. The scope and the locked choices are in `docs/DECISIONS.md`
 (D49bw–D49by). This file is the implementation plan. The user-facing package
 README is `README.md`.
 
@@ -424,4 +424,4 @@ A user on a clean machine can:
 | M3 — Interactive terminal | done 2026-10-21 |
 | M4 — Solo, Duo, and Academy | done 2026-10-21 (scripted runs; the real-model Duo run waits on a key) |
 | M5 — Sessions, undo, MCP, images, compact | done 2026-10-21 |
-| M6 — Hardening, packaging, publish | in progress — README, tarball, clean install, publish-ready manifest (`"private"` removed, `publishConfig` added, `npm publish --dry-run` accepted), secret audit, and the real-model matrix (19/19 against both live providers, twice) plus the pty proof of the TUI are done; the `--debug` log is REPLACED by `doctor` reporting the last run (D49bz), the final copy review remains, and publish is pending |
+| M6 — Hardening, packaging, publish | in progress — README, tarball, clean install, publish-ready manifest (`"private"` removed, `publishConfig` added, `npm publish --dry-run` accepted), secret audit, and the real-model matrix (19/19 against both live providers, twice) plus the pty proof of the TUI are done; the `--debug` log is REPLACED by `doctor` reporting the last run (D49bz), the final copy review remains; **`0.1.0` was published on 2026-10-22** and passed the post-publish verification (registry, clean install, every documented command, TUI, `npx`) |
