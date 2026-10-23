@@ -33,12 +33,17 @@ are now only in PROGRESS.
   existing VS Code IDE host runs outside VS Code through `packages/vs/host/shim/vscode.ts`; it
   produced the chat HTML, ran three scripted runs (a write with an approval card, undo, a question
   card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
-  whole host type-checks against the shim, core is 886/886, the CLI is 175/175, and all 25 render
-  suites pass. **M0 code is owned by the Plato CLI worker on this Mac; the Windows machine worker
-  verifies M0 on Windows and owns M2. M2 may start in parallel with M0 (the first run uses
-  `write_file` / `read_file`, not the shell); no parity or release until M0 is green.** The shim
-  proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The platform facts, the two
-  extension models, the Credential Manager choice, and the open Marketplace questions are in
+  whole host type-checks against the shim, and the render suites pass. **M0 is DONE and verified
+  on Windows (2026-10-23):** the Mac suite is core 908/1 skipped and CLI 180; the Windows suite is
+  core 907/2 skipped and CLI 177/3 skipped; the real Windows command/background/MCP run passed.
+  **M2 is IN PROGRESS** in `C:\src\plato`; there is no checkpoint bundle yet. The Windows machine
+  has **VS 2026 18.11.1 Community** with the extension workload, but Microsoft supports VS 2026 on
+  Windows 11 only; the final acceptance belongs on Windows 11. The code travels by SSH bundle
+  because SMB guest logons are blocked. **The CLI 0.1.4 release candidate is branch `plato-bugs`**
+  (M0 + four terminal fixes + VS Code Duo parity); the Visual Studio work is branch `vs/m1`. The
+  stable branches are on GitHub. The shim proof lives in `packages/vs/host/` and
+  `packages/vs/test/spike.mjs`. The platform facts, the two extension models, the Credential
+  Manager choice, and the open Marketplace questions are in
   D49cf. The CLI state below is unchanged and remains the current release record.
 
 - **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the

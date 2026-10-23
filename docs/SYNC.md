@@ -26,12 +26,16 @@ The Windows machine clones the bare repository to a **local** path, for example
 | `main` | The stable base, at the last published commit | founder |
 | `vs/m1` | M1 shim spike, the Visual Studio plan, and the Windows brief | VS lead |
 | `windows/m0` | The shared-core Windows shell/process repair | Plato CLI worker |
+| `plato-bugs` | M0 + the four CLI fixes + the VS Code Duo parity; the 0.1.4 release candidate | Plato CLI bugs |
 | `vs/m2` | The C# VSIX shell, WebView2, sidecar, and parity | Windows worker |
+
+The short-lived `vs/vscode-team` branch was merged into `plato-bugs` and retired.
 
 Rules:
 
 - Never edit `main` directly.
-- Do not push to GitHub until the founder says the work has taken shape.
+- The stable branches are on GitHub: `vs/m1`, `windows/m0`, and `plato-bugs`.
+  WIP branches stay LAN-only until the founder reviews them.
 - Each worker works on a branch. The bare repo is the LAN rendezvous.
 - Merge into `main` only after the founder reviews it.
 - The original repository is not a remote. It is the source of the stable
@@ -93,11 +97,30 @@ Windows 10.
   `set "PATH=C:\Users\DummyUser\AppData\Local\nvm\v22.20.0;%PATH%"`.
 - **pnpm 11.23.0** is installed in that Node 22 directory.
 - **Claude Code 2.1.226** is installed.
-- **M1 spike:** passes on Windows.
-- **M0:** the branch `windows/m0` is pushed. The Mac tests are green (core
-  908/908, CLI 180/180). The Windows verification is pending.
+- **M1 spike:** passes on both macOS and Windows.
+- **M0:** **DONE and verified on Windows.** The Mac suite is core 908/1 skipped
+  and CLI 180; the Windows suite is core 907/2 skipped and CLI 177/3 skipped;
+  the real Windows command/background/MCP run passed. Branch `windows/m0`
+  (`246c3e7`), included in `plato-bugs`.
+- **M2:** **IN PROGRESS (2026-10-23).** The Windows agent is running in
+  `C:\src\plato` on `vs/m2` from `vs/m1`. The installed template is an SDK-style
+  net472 project with VSSDK BuildTools 18.9.820; the manifest covers VS 18.x.
+  No `C:\src\vs-m2.bundle` checkpoint exists yet.
 - **SMB:** blocked from Windows 10 to the Mac share (guest logon). Use SSH
   bundles.
+
+### Returning M2 code
+
+The Windows agent creates a Git bundle at `C:\src\vs-m2.bundle` when it reaches
+a checkpoint. The Mac pulls it:
+
+```sh
+scp omega@192.168.4.62:C:/src/vs-m2.bundle /tmp/vs-m2.bundle
+git -C /Users/ai/Desktop/plato-bugs fetch /tmp/vs-m2.bundle 'refs/heads/*:refs/remotes/win/*'
+git -C /Users/ai/Desktop/plato-bugs push origin refs/remotes/win/vs/m2:refs/heads/vs/m2
+```
+
+Then review and merge. The Windows agent does not push to GitHub.
 
 Then, for M2:
 

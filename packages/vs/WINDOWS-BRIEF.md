@@ -38,14 +38,20 @@ Read first:
 - **M1 spike:** passes on Windows. The existing host runs through the shim,
   produces the chat HTML, completes three scripted runs, and writes three
   transcripts.
-- **M0 (the shared-core Windows repair):** the Mac tests are green — core
-  908/908 and CLI 180/180, including `shellPlatform.test.ts` and the Windows
-  path tests. The Windows verification is still pending.
+- **M0 (the shared-core Windows repair):** **DONE and verified on Windows.**
+  Mac core 908/1 skipped, CLI 180; Windows core 907/2 skipped, CLI 177/3
+  skipped; the real Windows command/background/MCP run passed. Branch
+  `windows/m0` (`246c3e7`), included in `plato-bugs`.
 - **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
   SMB logons). Use SSH bundles, not SMB.
 - **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
 
-## M2 — start now
+## M2 — IN PROGRESS (started 2026-10-23)
+
+The read-only planner confirmed the installed VSIX template is an SDK-style
+**net472** project with **VSSDK BuildTools 18.9.820**; the manifest range covers
+**VS 18.x**; the templates are installed; NuGet is reachable; and the
+**WebView2 SDK** is available. Use the installed template.
 
 The first run uses `write_file` and `read_file`, not the shell tool, so M2 does
 not wait for M0.
@@ -72,23 +78,21 @@ The VSIX must remain compatible with both VS 2022 and VS 2026. The extension
 model is the same. The final acceptance run belongs on a Windows 11 machine
 with VS 2026.
 
-## M0 verification (when the Mac branch is ready)
+## M0 verification — DONE (2026-10-23)
 
-The Plato CLI worker is changing `packages/core/src/tools/` and `packages/cli`.
-When its branch is available:
+The checks that passed on Windows:
 
-1. `pnpm install`, `pnpm build`, `pnpm test` with Node 22 on `PATH`.
-2. Run a real CLI task on Windows with:
-   - a `shell` command;
-   - a background shell;
-   - an MCP `npx` server.
-3. Check the policy:
+1. `pnpm install`, `pnpm exec tsc -b`, `pnpm test` with Node 22 on `PATH`.
+2. A real CLI task on Windows with:
+   - a `cmd.exe` `shell` command;
+   - a background shell, read and killed;
+   - a fake MCP stdio server's `echo` tool.
+3. The policy:
    - `plan` denies every shell command and draws no card;
    - `edit` asks for every shell command;
    - `auto` runs without asking;
    - macOS/Linux behavior is unchanged.
-4. Report the transcript, the commands, and any failure. Do not claim Windows
-   is verified from a Mac.
+4. The transcript carried all five required events.
 
 ## Report
 

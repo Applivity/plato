@@ -4944,6 +4944,18 @@ missing API member is a compile error. Core is 886/886, CLI is 175/175, and all 
 pass. **The bridge is not needed for the shim gate**; it remains the fallback if a later parity item
 cannot be expressed through the shim. The proof is `packages/vs/test/spike.mjs`.
 
+**M0 and M2 (2026-10-23).** M0 is **DONE and verified on Windows**: Mac core 908/1 skipped and
+CLI 180; Windows core 907/2 skipped and CLI 177/3 skipped; a real `cmd.exe` command, a background
+shell read and killed, and the fake MCP `echo` tool passed with 5/5 transcript checks. The first
+Windows run found 21 core and 3 CLI failures (POSIX command strings and file-mode assumptions); all
+were fixed, and `resolveInRoot` now returns forward slashes on Windows. **M2 is IN PROGRESS** in
+`C:\src\plato`; the read-only planner confirmed the installed VSIX template is an SDK-style
+**net472** project with **VSSDK BuildTools 18.9.820** and a **VS 18.x** manifest range. There is no
+`C:\src\vs-m2.bundle` checkpoint yet. **VS 2026 18.11.1 Community is installed on Windows 10;
+Microsoft supports VS 2026 on Windows 11 only, so the final acceptance belongs on Windows 11.**
+The CLI 0.1.4 release candidate (`plato-bugs`) contains M0, the four terminal fixes, and the VS Code
+Duo parity.
+
 **Open items.** The Marketplace VSIX size limit, signing requirement, and review time; the item id
 (`applivity.plato-vs` is the working name); the privacy policy; diagnostics after a write (the
 Error List API for third parties is not clearly documented; report "not checked" if unavailable);
