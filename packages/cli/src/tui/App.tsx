@@ -1,11 +1,15 @@
-import { Box, Static, Text, useInput } from 'ink';
+import { Box, Static, Text, useInput, useWindowSize } from 'ink';
 import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react';
 import {
   EMPTY_EDITOR,
   backspace,
   deleteForward,
+  deleteWordBack,
+  deleteWordForward,
   insertText,
   moveCursor,
+  moveWordLeft,
+  moveWordRight,
   setText,
   toEnd,
   toStart,
@@ -13,6 +17,8 @@ import {
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { formatCount } from '../host.js';
+import { stripTerminalEscapes, tailWithinRows } from '../format/terminal.js';
+import { Markdown } from './Markdown.js';
 import { Welcome } from './Welcome.js';
 import {
   accepted,
@@ -42,8 +48,12 @@ const MODE_MEANING: Record<SessionStatus['mode'], string> = {
   auto: 'Auto mode writes and runs commands without asking.',
 };
 
+/** Ink's colours ignore NO_COLOR in this build (measured), so the TUI checks it. */
+const COLOURS = process.env.NO_COLOR === undefined;
+
 export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   const state: ViewState = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  const { columns, rows } = useWindowSize();
   const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
   const [submitted, setSubmitted] = useState<string[]>([]);
   const [historyAt, setHistoryAt] = useState<number | null>(null);
@@ -260,12 +270,15 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       }
       return;
     }
+    // Ctrl (and Alt, which is what a Mac terminal sends for the same keys)
+    // moves by word. Ink reports both on the key, so the terminal's own
+    // sequence decides the movement, not the App.
     if (key.leftArrow) {
-      setEditor(moveCursor(editor, -1));
+      setEditor(key.ctrl || key.meta ? moveWordLeft(editor) : moveCursor(editor, -1));
       return;
     }
     if (key.rightArrow) {
-      setEditor(moveCursor(editor, 1));
+      setEditor(key.ctrl || key.meta ? moveWordRight(editor) : moveCursor(editor, 1));
       return;
     }
     if (key.home || (key.ctrl && input === 'a')) {
@@ -276,12 +289,19 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       setEditor(toEnd(editor));
       return;
     }
+    // Ctrl+W is the shell's word-delete, and some terminals send it for
+    // Ctrl+Backspace. A terminal that sends 0x08 for Ctrl+Backspace reports a
+    // plain Backspace, which cannot be told apart from the key itself.
+    if (key.ctrl && input === 'w') {
+      setEditor(deleteWordBack(editor));
+      return;
+    }
     if (key.backspace) {
-      setEditor(backspace(editor));
+      setEditor(key.ctrl || key.meta ? deleteWordBack(editor) : backspace(editor));
       return;
     }
     if (key.delete) {
-      setEditor(deleteForward(editor));
+      setEditor(key.ctrl || key.meta ? deleteWordForward(editor) : deleteForward(editor));
       return;
     }
     if (key.ctrl || key.meta || input === '\r' || input === '\n') {
@@ -297,9 +317,11 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       <Header mode={state.status.mode} running={state.running} />
       {showWelcome ? <Welcome /> : null}
       <Static items={state.rows}>
-        {(row: Row) => <RowView key={row.id} row={row} />}
+        {(row: Row) => <RowView key={row.id} row={row} columns={columns} />}
       </Static>
-      {state.streaming.length > 0 ? <Text>{state.streaming}</Text> : null}
+      {state.streaming.length > 0 ? (
+        <LiveAnswer text={state.streaming} columns={columns} rows={rows} />
+      ) : null}
       {state.card !== null ? <CardView card={state.card} /> : null}
       {state.observers.length > 0 ? <ObserverStrip observers={state.observers} /> : null}
       <StatusLine status={state.status} running={state.running} />
@@ -322,12 +344,33 @@ function Header({ mode, running }: { mode: SessionStatus['mode']; running: boole
   );
 }
 
-function RowView({ row }: { row: Row }): ReactElement {
+export function RowView({ row, columns }: { row: Row; columns: number }): ReactElement {
   switch (row.kind) {
     case 'user':
-      return <Text color="cyan">› {row.text}</Text>;
+      return (
+        <Box marginTop={1}>
+          <Text color="cyan">› {row.text}</Text>
+        </Box>
+      );
     case 'assistant':
-      return <Text>{row.text}</Text>;
+      // The left rule is the extension's own vocabulary: the panel draws the
+      // reply behind a neutral rule and the user's turn behind the accent.
+      return (
+        <Box marginTop={1}>
+          <Box
+            flexDirection="column"
+            borderStyle="single"
+            borderTop={false}
+            borderRight={false}
+            borderBottom={false}
+            borderLeft
+            borderColor={COLOURS ? 'gray' : undefined}
+            paddingLeft={1}
+          >
+            <Markdown text={row.text} columns={Math.max(20, columns - 2)} />
+          </Box>
+        </Box>
+      );
     case 'tool':
       return <Text dimColor>{row.text}</Text>;
     case 'notice':
@@ -335,6 +378,47 @@ function RowView({ row }: { row: Row }): ReactElement {
     case 'error':
       return <Text color="red">{row.text}</Text>;
   }
+}
+
+/**
+ * The answer as it arrives. It shows only the tail that fits: a frame taller
+ * than the window cannot be redrawn in place, and every frame then becomes
+ * another copy in the scrollback.
+ */
+function LiveAnswer({
+  text,
+  columns,
+  rows,
+}: {
+  text: string;
+  columns: number;
+  rows: number;
+}): ReactElement {
+  // Header, status, composer, and their margins take about nine rows; the tail
+  // budget leaves room for them and for the line that says rows were cut.
+  const budget = Math.max(1, rows - 13);
+  const tail = tailWithinRows(stripTerminalEscapes(text), budget, columns);
+  return (
+    <Box marginTop={1}>
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderTop={false}
+        borderRight={false}
+        borderBottom={false}
+        borderLeft
+        borderColor={COLOURS ? 'gray' : undefined}
+        paddingLeft={1}
+      >
+        {tail.hidden > 0 ? (
+          <Text dimColor>
+            … {tail.hidden} earlier {tail.hidden === 1 ? 'line' : 'lines'}
+          </Text>
+        ) : null}
+        <Text>{tail.text}</Text>
+      </Box>
+    </Box>
+  );
 }
 
 function StatusLine({

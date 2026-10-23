@@ -44,6 +44,67 @@ export function moveCursor(state: EditorState, delta: number): EditorState {
   return cursor === state.cursor ? state : { ...state, cursor };
 }
 
+/**
+ * Ctrl+Left and Ctrl+Right. A word is a run of non-space characters, so
+ * punctuation stays with the word it touches, as a terminal user expects when
+ * jumping across a path or a flag.
+ */
+export function moveWordLeft(state: EditorState): EditorState {
+  let cursor = state.cursor;
+  while (cursor > 0 && /\s/.test(state.text[cursor - 1] ?? '')) {
+    cursor -= 1;
+  }
+  while (cursor > 0 && !/\s/.test(state.text[cursor - 1] ?? '')) {
+    cursor -= 1;
+  }
+  return cursor === state.cursor ? state : { ...state, cursor };
+}
+
+export function moveWordRight(state: EditorState): EditorState {
+  let cursor = state.cursor;
+  while (cursor < state.text.length && /\s/.test(state.text[cursor] ?? '')) {
+    cursor += 1;
+  }
+  while (cursor < state.text.length && !/\s/.test(state.text[cursor] ?? '')) {
+    cursor += 1;
+  }
+  return cursor === state.cursor ? state : { ...state, cursor };
+}
+
+/** Ctrl+Backspace: the word behind the cursor, and the spaces before it. */
+export function deleteWordBack(state: EditorState): EditorState {
+  const from = moveWordLeft(state).cursor;
+  if (from === state.cursor) {
+    return state;
+  }
+  return {
+    text: state.text.slice(0, from) + state.text.slice(state.cursor),
+    cursor: from,
+  };
+}
+
+/**
+ * Ctrl+Delete: the word ahead of the cursor, and the spaces after it. This is
+ * not `moveWordRight`'s destination: the cursor stops at a word's end, but the
+ * deletion must also take the gap so the next word does not slide over.
+ */
+export function deleteWordForward(state: EditorState): EditorState {
+  let to = state.cursor;
+  while (to < state.text.length && !/\s/.test(state.text[to] ?? '')) {
+    to += 1;
+  }
+  while (to < state.text.length && /\s/.test(state.text[to] ?? '')) {
+    to += 1;
+  }
+  if (to === state.cursor) {
+    return state;
+  }
+  return {
+    text: state.text.slice(0, state.cursor) + state.text.slice(to),
+    cursor: state.cursor,
+  };
+}
+
 export function toStart(state: EditorState): EditorState {
   return state.cursor === 0 ? state : { ...state, cursor: 0 };
 }

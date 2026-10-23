@@ -44,7 +44,7 @@ import {
   promptBreakdown,
   shouldAutoCompact,
 } from './context.js';
-import { buildWorkerRole } from './workerRole.js';
+import { buildWorkerRole, type TeamContext } from './workerRole.js';
 import {
   askNote,
   continueText,
@@ -409,6 +409,11 @@ export interface LoopOptions {
   /** Extra system text appended for this run (D31: team coder role). */
   role?: string;
   /**
+   * The observers that started for this run. Appended to the worker prompt so
+   * a model cannot conclude the team is blind when it is not.
+   */
+  team?: TeamContext;
+  /**
    * D46: Plato's global config dir (`~/.plato`). Feeds the worker-prompt join
    * as the PLATO.md fallback when the project has none.
    */
@@ -680,6 +685,7 @@ async function runLoop(
     // D49cb: the instruction matches the tool. A host without the card keeps
     // the prose-only path, which is what the CLI does until it grows one.
     modeRequest: opts.requestMode !== undefined,
+    ...(opts.team === undefined ? {} : { team: opts.team }),
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`

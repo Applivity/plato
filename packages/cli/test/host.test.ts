@@ -689,3 +689,38 @@ describe('the live tool trace', () => {
     expect(shortTarget('line one\nline two')).toBe('line one line two');
   });
 });
+
+describe('the worker is told about its team', () => {
+  it('names the watcher that started, so the model cannot claim the team is blind', async () => {
+    const root = tempDir('plato-cli-team-root-');
+    let workerSystem = '';
+    const worker = scripted([{ text: 'Done.' }], (request) => {
+      workerSystem = request.system;
+    });
+    const observer: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: '{"action":"noop"}' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await executeTask(
+      {
+        root,
+        task: 'do the work',
+        mode: 'edit',
+        config: { ...config(), team: 'duo' },
+        env: environment(),
+        provider: worker,
+        observerProvider: () => observer,
+        fetchImpl: offline,
+      },
+      testSink(),
+    );
+    expect(workerSystem).toContain('1 philosopher (Aristotle) is watching this run');
+    expect(workerSystem).toContain('same Plato process');
+  });
+});

@@ -397,6 +397,9 @@ export async function executeTask(
     result = await runAgentLoop({
       root: options.root,
       task: options.task,
+      // The worker is told which watchers actually started, so its account of
+      // the team matches the one the user sees.
+      team: { mode: config.team, watchers: handles.map((handle) => handle.name) },
       ...(attached.images.length === 0 ? {} : { images: attached.images }),
       getMode,
       approve: (request) => sink.approve(request),
