@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2 verified 2026-10-23)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2 and M3a verified 2026-10-23)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -48,7 +48,17 @@ are now only in PROGRESS.
   shell is `packages/vs/src/Plato.Vs/`; the sidecar entry is `packages/vs/host/main.ts`; packaging
   is `packages/vs/scripts/package-vsix.ps1`. **Two defects found by the run are fixed:** a UTF-8
   BOM made the sidecar reject `settings.json`, and a timed-out UI request killed the sidecar
-  through an unhandled rejection. **What remains for phase 3:** M3 parity, then M4. The platform
+  through an unhandled rejection. **M3a, the settings half of M3, PASSED (2026-10-23):** the
+  shared Settings page renders in the tool window; connections add/list/remove, Fetch models
+  against a local stub, the model picker, reasoning, compaction, protected files, and Others all
+  persist to `%APPDATA%\Plato\settings.json` in the extension's schema; keys are in Credential
+  Manager and never in that file; every value survives a Visual Studio reload and a tool-window
+  close/reopen. **Two defects are fixed:** the settings payload omitted `compaction`, so the
+  Context slider always rendered the 0.8 default, and VS 2026's light theme returns a near-white
+  Accent family, so primary buttons and an ON switch were illegible (the shell now uses the system
+  highlight pair). The durable test is `packages/vs/test/settings.test.mjs`, falsified by removing
+  the compaction field. **What remains for phase 3:** M3b (modes, approvals, teams, history),
+  then M4. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active

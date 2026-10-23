@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE, M1 PASSED, M2 PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
+Status: **M0 DONE, M1, M2 AND M3a PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3 parity is next. The founder approved this plan.
@@ -681,6 +681,32 @@ Done when:
 
 - Every item has a witness in a real Visual Studio window.
 - The same copy as the VS Code extension appears (cards, refusals, notices).
+
+**Status: M3a PASSED (2026-10-23); M3b remains.** This milestone is split for the
+Windows worker: **M3a** is the settings page and API keys; **M3b** is modes,
+approvals, teams, and history. M3a evidence, in a real Visual Studio 2026
+18.11.1 window:
+
+- The shared Settings page (the unchanged `webview.ts`) renders in the tool
+  window. Connections add, list, and remove; Fetch models returns `o4-mini`
+  and `stub-model` from a local stub; the model picker writes `plato.model`;
+  reasoning, the compaction threshold, a protected name, and the Others switch
+  all persist to `%APPDATA%\Plato\settings.json`.
+- Keys are in Windows Credential Manager (`plato.providers.localhost.apiKey`);
+  the settings file contains no key material. The card reads **Ready** after a
+  full Visual Studio restart and after a tool-window close/reopen.
+- Defects fixed: the `settings` payload omitted `compaction` (the page always
+  showed the 0.8 default, so a stored 0.7 displayed as 80%); and VS 2026's light
+  theme returns near-white values for the Accent family, making primary buttons
+  and an ON switch illegible (the system highlight pair is used now).
+- Tests: `packages/vs/test/settings.test.mjs` covers the payload, discovery,
+  persistence across a sidecar restart, and the no-key-in-file rule. It was
+  falsified by removing the compaction field, then restored.
+- Evidence: `C:\src\plato-vs-field\evidence\m3a\`.
+
+**M3b** (modes, approvals with session memory, queue and run controls, Solo /
+Duo / Academy, observer strip, History and session resume, title generation and
+folding) is not started.
 
 ### M4 — Parity, part 2: agent features and editor
 

@@ -2727,6 +2727,11 @@ class ChatHost {
         kind: p.kind,
         baseUrl: p.baseUrl,
       })),
+      // D37/D44d: the Settings page's Context slider reads `d.compaction`.
+      // This payload used to omit it, so every render fell back to 0.8 and a
+      // stored 0.7 was displayed as 80% while the file held 0.7. The ring read
+      // the same state from `postModelState`; both surfaces now get one value.
+      compaction: this.compactionState(),
       orchestration: {
         mode: vscode.workspace
           .getConfiguration('plato')

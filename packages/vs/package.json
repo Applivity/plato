@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/gen-defaults.mjs && node esbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs"
+    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs && node test/settings.test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.3.1",

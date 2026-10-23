@@ -29,6 +29,16 @@ import { createServer } from 'node:http';
 
 const PORT = Number(process.env['PLATO_STUB_PORT'] ?? 4599);
 
+/**
+ * The model list `/models` returns. The default is the single model every
+ * existing case assumes. A caller that needs a different list — the M3a
+ * settings run needs a reasoning-capable name — sets PLATO_STUB_MODELS.
+ */
+const MODELS = (process.env['PLATO_STUB_MODELS'] ?? 'stub-model')
+  .split(',')
+  .map((id) => id.trim())
+  .filter((id) => id.length > 0);
+
 /** Cursor into the current script, plus the log of what we were asked. */
 let steps = [];
 let cursor = 0;
@@ -146,7 +156,9 @@ const server = createServer(async (req, res) => {
       await new Promise((r) => setTimeout(r, modelsDelayMs));
       if (res.writableEnded || res.destroyed) return;
     }
-    return json(res, 200, { data: [{ id: 'stub-model', object: 'model' }] });
+    return json(res, 200, {
+      data: MODELS.map((id) => ({ id, object: 'model' })),
+    });
   }
 
   if (!url.endsWith('/chat/completions') || req.method !== 'POST') {

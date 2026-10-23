@@ -51,7 +51,13 @@ namespace Plato.Vs.Native
             var background = VSColorTheme.GetThemedColor(EnvironmentColors.ToolWindowBackgroundColorKey);
             var foreground = VSColorTheme.GetThemedColor(EnvironmentColors.ToolWindowTextColorKey);
             var gray = VSColorTheme.GetThemedColor(EnvironmentColors.SystemGrayTextColorKey);
-            var accent = VSColorTheme.GetThemedColor(EnvironmentColors.AccentMediumColorKey);
+            // VS 2026's light theme returns a near-white neutral for the whole
+            // Accent family (#eeeef2 / #cccedb / #f5f5f5), so a primary button
+            // was white on near-white and the switch's track looked off while
+            // it was on. The system highlight is the accessible accent pair in
+            // both themes (#006cbe with #ffffff text in the light theme).
+            var accent = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightColorKey);
+            var accentText = VSColorTheme.GetThemedColor(EnvironmentColors.SystemHighlightTextColorKey);
 
             var colors = new Dictionary<string, string>(StringComparer.Ordinal)
             {
@@ -63,7 +69,11 @@ namespace Plato.Vs.Native
                 ["--vscode-input-foreground"] = Hex(VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxTextColorKey)),
                 ["--vscode-input-border"] = Hex(VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxBorderColorKey)),
                 ["--vscode-button-background"] = Hex(accent),
-                ["--vscode-button-foreground"] = "#FFFFFF",
+                ["--vscode-button-foreground"] = Hex(accentText),
+                ["--vscode-button-hoverBackground"] = Hex(
+                    Luminance(background) < 0.5
+                        ? Blend(accent, System.Drawing.Color.White, 0.12)
+                        : Blend(accent, System.Drawing.Color.Black, 0.12)),
                 ["--vscode-button-secondaryBackground"] = Hex(Blend(background, foreground, 0.14)),
                 ["--vscode-button-secondaryForeground"] = Hex(foreground),
                 ["--vscode-editorWidget-background"] = Hex(Blend(background, foreground, 0.04)),
@@ -80,6 +90,21 @@ namespace Plato.Vs.Native
             };
 
             return colors;
+        }
+
+        private static double Luminance(System.Drawing.Color color)
+        {
+            double Channel(byte value)
+            {
+                var s = value / 255.0;
+                return s <= 0.03928
+                    ? s / 12.92
+                    : Math.Pow((s + 0.055) / 1.055, 2.4);
+            }
+
+            return (0.2126 * Channel(color.R))
+                + (0.7152 * Channel(color.G))
+                + (0.0722 * Channel(color.B));
         }
 
         private static System.Drawing.Color Blend(System.Drawing.Color a, System.Drawing.Color b, double amount)
