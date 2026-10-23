@@ -1,11 +1,10 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **OPEN — M1 AND M2 PASSED (2026-10-23).** Phase 3 opened 2026-10-23. The
-shim gate is green: the existing VS Code host runs outside VS Code. **M0 code is
-owned by the Plato CLI worker on this Mac; the Windows machine worker verifies
-M0 on Windows and owns M2. M2 may start in parallel with M0 because it does not
-need M0's shell code; no parity or release until M0 is green.**
-The founder approved this plan. The decision record is D49cf in
+Status: **M0 DONE, M1 PASSED, M2 PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
+M0 is verified on Windows (unit and real run), and the shim gate is green: the
+existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
+Visual Studio 2026 window. M3 parity is next. The founder approved this plan.
+The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
 
@@ -130,17 +129,20 @@ go/no-go gates so you do not discover this after months of work.
 
 ## Environment
 
-- **Windows 11 x64**, Visual Studio 2026 with the **Visual Studio extension
-  development** workload.
-- **Clone the repository locally on Windows.** Do not build, run, or open the
-  solution from the SMB share. SMB causes file-lock, symlink, file-watch,
-  long-path, and performance problems with pnpm and MSBuild. Use the share as a
-  Git remote or a transfer directory.
-- **Node 22 LTS** (pin the exact version in the build). The repo's TypeScript
-  target is `node22`.
-- Windows SDK and .NET Framework targeting pack, as required by the VS SDK.
-- A second “clean” Windows VM for the final install test. It must have no Node
-  installed and no repository.
+- **Windows 10 22H2 (19045) development machine**, Visual Studio 2026
+  18.11.1 Community with the **Visual Studio extension development** workload
+  (`C:\Program Files\Microsoft Visual Studio\18\Community`). Microsoft supports
+  VS 2026 on Windows 11 only; this machine is a development and smoke-test
+  proxy. **The final acceptance VM must be Windows 11.**
+- **Clone the repository locally on Windows** at `C:\src\plato`. Do not build,
+  run, or open the solution from the SMB share. SMB guest logons are blocked on
+  this machine; the code travels as a Git bundle over SSH.
+- **Node 22.20.0** at `C:\Users\DummyUser\AppData\Local\nvm\v22.20.0`, with
+  pnpm 11.23.0. The default `node` is 21.7.3; put the Node 22 directory first.
+- Windows SDK and .NET Framework 4.8 targeting pack, as required by the VS SDK.
+  Both are present.
+- A second “clean” **Windows 11** VM for the final install test. It must have no
+  Node installed and no repository.
 - The macOS field harness is not replaced. It stays the regression suite for the
   engine and the UI. The Windows suite is added beside it.
 
@@ -515,6 +517,15 @@ M0 gate applies before parity and release, not before the shell skeleton.
 
 **Estimate:** 1–2 weeks.
 
+**Status: DONE (2026-10-23).** The Mac suite is core 908 passed / 1 skipped and
+CLI 180; the Windows suite is core 907 passed / 2 skipped and CLI 177 passed /
+3 skipped. The real Windows run passed: a `cmd.exe` command wrote its marker, a
+background shell was read with `bash_output` and stopped with `kill_shell`, and
+the fake MCP server's `echo` tool ran. The first Windows run found 21 core and
+3 CLI failures (POSIX command strings and file-mode assumptions); all were
+fixed, and `resolveInRoot` now returns forward slashes on Windows. The branch was
+`windows/m0` (`246c3e7`); it is merged into `main` and deleted.
+
 Deliverables:
 
 - `shellPlatform.ts`, process-tree kill, MCP `.cmd` handling, Windows paths,
@@ -587,6 +598,12 @@ parity item cannot be expressed through the shim. The proof lives in
 `write_file` / `read_file` for the first run; shell parity waits for M0.
 
 **Estimate:** 2–3 weeks.
+
+**Status: IN PROGRESS (2026-10-23).** The Windows agent has started in
+`C:\src\plato` on branch `vs/m2` from `vs/m1`. It confirmed the installed VSIX
+template is an SDK-style net472 project with VSSDK BuildTools 18.9.820, and the
+manifest range covers VS 18.x. No checkpoint bundle (`C:\src\vs-m2.bundle`)
+exists yet.
 
 Deliverables:
 

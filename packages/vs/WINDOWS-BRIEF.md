@@ -1,9 +1,9 @@
 # Windows worker brief — Plato for Visual Studio
 
-You are the Windows machine worker. You own **M2 onward** (the Visual Studio
-extension) and the **Windows verification of M0** (the shared-core shell
-repair). The Plato CLI worker owns the M0 code on the Mac. The VS lead owns the
-shim, the plan, and the integration.
+You are the Windows machine worker. You own **M3 onward** (Visual Studio parity)
+on the Windows machine. **M2 is passed**, and the **Windows verification of M0**
+is done. The Plato CLI worker owns the Mac release. The VS lead owns the shim,
+the plan, and the integration.
 
 Read first:
 
@@ -34,61 +34,72 @@ Read first:
 - **.NET Framework 4.8** targeting pack is present. .NET SDKs 3.1–9.0 are
   installed.
 - **Disk:** about 282 GB free.
-- **Code:** `C:\src\plato`, branch `vs/m1`. It was cloned from a Git bundle.
+- **Code:** `C:\src\plato`, branch `vs/m2`. It was cloned from a Git bundle.
 - **M1 spike:** passes on Windows. The existing host runs through the shim,
   produces the chat HTML, completes three scripted runs, and writes three
   transcripts.
-- **M0 (the shared-core Windows repair):** the Mac tests are green — core
-  908/908 and CLI 180/180, including `shellPlatform.test.ts` and the Windows
-  path tests. The Windows verification is still pending.
+- **M0 (the shared-core Windows repair):** **DONE and verified on Windows.**
+  Mac core 908/1 skipped, CLI 180; Windows core 907/2 skipped, CLI 177/3
+  skipped; the real Windows command/background/MCP run passed. Branch
+  `windows/m0` (`246c3e7`) is merged into `main` and deleted.
 - **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
   SMB logons). Use SSH bundles, not SMB.
 - **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
 
-## M2 — start now
+## M2 — PASSED (2026-10-23)
 
-The first run uses `write_file` and `read_file`, not the shell tool, so M2 does
+The shell is built and witnessed in a real Visual Studio 2026 18.11.1 window.
+Commit `5d4cdcc` is on `vs/m2`; the bundle is `C:\src\vs-m2.bundle`; evidence
+is in `C:\src\plato-vs-field\evidence`. The tool window loads the chat, the
+scripted `write_file` task draws the approval card and writes the file, the
+transcript is under `~/.plato`, light and dark screenshots exist, and the
+sidecar exits when Visual Studio closes.
+
+The read-only planner confirmed the installed VSIX template is an SDK-style
+**net472** project with **VSSDK BuildTools 18.9.820**; the manifest range covers
+**VS 18.x**; the templates are installed; NuGet is reachable; and the
+**WebView2 SDK** is available. The installed template was used.
+
+The first run used `write_file` and `read_file`, not the shell tool, so M2 did
 not wait for M0.
 
-1. Build the VSIX skeleton: C# in-process VSPackage, WPF `ToolWindowPane`,
-   WebView2, the VSIX v3 manifest, and the VSCT commands.
-2. Bundle `node.exe` (Node 22 LTS, Windows x64) and `plato-host.cjs` from the
-   M1 build. Start and stop the sidecar; speak newline-delimited JSON over
-   stdio.
-3. Inject `acquireVsCodeApi` and the message bridge with
-   `AddScriptToExecuteOnDocumentCreatedAsync`. Load the chat HTML with
+What was built:
+
+1. The VSIX skeleton: C# in-process VSPackage, WPF `ToolWindowPane`, WebView2,
+   the VSIX v3 manifest, and the VSCT commands.
+2. The sidecar: `node.exe` (Node 22 LTS, Windows x64) and `plato-host.cjs` from
+   the M1 build, started and stopped by the shell, speaking newline-delimited
+   JSON over stdio.
+3. The page: `acquireVsCodeApi` and the message bridge injected with
+   `AddScriptToExecuteOnDocumentCreatedAsync`; the chat HTML loaded with
    `NavigateToString`.
-4. Map the Visual Studio theme colors to the CSS custom properties listed in
-   the plan. Credential Manager for keys. Open file and file picker. Solution
-   root. Commands and menu.
-5. Prove a real Visual Studio window: open the tool window, load the chat, run a
-   scripted task with `write_file`, approve the write, confirm the file on
-   disk, and take light and dark screenshots.
+4. Visual Studio theme mapping, Credential Manager for keys, open file, file
+   picker, solution root, commands, and menu.
+5. A real Visual Studio window: the tool window loaded the chat, a scripted
+   `write_file` task drew the approval card, the write was approved, the file
+   was confirmed on disk, and light and dark screenshots were taken.
 
-Do not add parity features until the shell loads the page and runs the
-scripted task.
+The gate is met, so M3 parity can start.
 
-The VSIX must remain compatible with both VS 2022 and VS 2026. The extension
-model is the same. The final acceptance run belongs on a Windows 11 machine
-with VS 2026.
+The VSIX manifest currently accepts VS 2022 and VS 2026, but VS 2022 is
+untested and not in v1. The final acceptance run belongs on a Windows 11
+machine with VS 2026.
 
-## M0 verification (when the Mac branch is ready)
+## M0 verification — DONE (2026-10-23)
 
-The Plato CLI worker is changing `packages/core/src/tools/` and `packages/cli`.
-When its branch is available:
+The checks that passed on Windows:
 
-1. `pnpm install`, `pnpm build`, `pnpm test` with Node 22 on `PATH`.
-2. Run a real CLI task on Windows with:
-   - a `shell` command;
-   - a background shell;
-   - an MCP `npx` server.
-3. Check the policy:
+1. `pnpm install`, `pnpm exec tsc -b`, `pnpm test` with Node 22 on `PATH`.
+2. A real CLI task on Windows with:
+   - a `cmd.exe` `shell` command;
+   - a background shell, read and killed;
+   - a fake MCP stdio server's `echo` tool.
+3. The policy:
    - `plan` denies every shell command and draws no card;
    - `edit` asks for every shell command;
    - `auto` runs without asking;
    - macOS/Linux behavior is unchanged.
-4. Report the transcript, the commands, and any failure. Do not claim Windows
-   is verified from a Mac.
+4. The transcript carried all five required events.
 
 ## Report
 

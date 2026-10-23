@@ -1,8 +1,8 @@
 # Local sync — Mac and Windows workers
 
-This is the private LAN sync for the Visual Studio work. It is **separate from
-the published repository**. The original working repo's branches, remotes, and
-history are not changed by this setup.
+This is the private LAN sync for the Visual Studio work. `main` is the published
+truth on GitHub; the LAN repository mirrors it and is the rendezvous for the
+Windows machine.
 
 ## Layout
 
@@ -12,9 +12,9 @@ history are not changed by this setup.
   plato.git/         bare Git repository (the LAN rendezvous)
 ```
 
-The original repository stays at `/Users/ai/Desktop/plato`. It is not used as a
-remote and gets no new branches. The checkpoint is made in a throwaway clone
-under `/tmp` and pushed to the bare repository.
+The main working tree is `/Users/ai/Desktop/plato`. Its `main` is the release
+source and matches GitHub. The LAN bare repository is the rendezvous for the
+Windows machine.
 
 The Windows machine clones the bare repository to a **local** path, for example
 `C:\src\plato`. Do not build from SMB.
@@ -23,16 +23,21 @@ The Windows machine clones the bare repository to a **local** path, for example
 
 | Branch | Purpose | Owner |
 |---|---|---|
-| `main` | The stable base, at the last published commit | founder |
-| `vs/m1` | M1 shim spike, the Visual Studio plan, and the Windows brief | VS lead |
-| `windows/m0` | The shared-core Windows shell/process repair | Plato CLI worker |
-| `vs/m2` | The C# VSIX shell, WebView2, sidecar, and parity | Windows worker |
+| `main` | The published truth: CLI 0.1.4 and VS Code extension 0.26.7 at `1696dd2` | founder |
+| `vs/m2` | The active Visual Studio work: C# VSIX shell, WebView2, sidecar, and parity | Windows worker |
+
+`windows/m0` and `plato-bugs` are merged and deleted. `vs/m1` is merged into
+`vs/m2`; its remote copy is retired when `vs/m2` is pushed. `vs/m2` is the only
+active work branch.
 
 Rules:
 
+- `main` is the only published truth. Both GitHub and the LAN repository point
+  at it.
+- A work branch is temporary. `vs/m2` is the one active exception. It is pushed
+  to both remotes after review and deleted when it reaches `main`.
 - Never edit `main` directly.
-- Do not push to GitHub until the founder says the work has taken shape.
-- Each worker works on a branch. The bare repo is the LAN rendezvous.
+- Each worker works on a branch. The bare repository is the LAN rendezvous.
 - Merge into `main` only after the founder reviews it.
 - The original repository is not a remote. It is the source of the stable
   commit and the working tree of the VS lead.
@@ -57,7 +62,7 @@ From the Windows machine:
 cd C:\src
 git clone plato-sync.bundle plato
 cd plato
-git checkout vs/m1
+git checkout vs/m2
 git branch -a
 ```
 
@@ -66,7 +71,7 @@ For later updates, create a new bundle on the Mac, copy it over, then:
 ```powershell
 cd C:\src\plato
 git fetch C:\src\plato-sync.bundle "refs/heads/*:refs/remotes/sync/*"
-git merge --ff-only sync/vs/m1
+git merge --ff-only sync/vs/m2
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
@@ -93,41 +98,62 @@ Windows 10.
   `set "PATH=C:\Users\DummyUser\AppData\Local\nvm\v22.20.0;%PATH%"`.
 - **pnpm 11.23.0** is installed in that Node 22 directory.
 - **Claude Code 2.1.226** is installed.
-- **M1 spike:** passes on Windows.
-- **M0:** the branch `windows/m0` is pushed. The Mac tests are green (core
-  908/908, CLI 180/180). The Windows verification is pending.
+- **M1 spike:** passes on both macOS and Windows.
+- **M0:** **DONE and verified on Windows.** The Mac suite is core 908/1 skipped
+  and CLI 180; the Windows suite is core 907/2 skipped and CLI 177/3 skipped;
+  the real Windows command/background/MCP run passed. Branch `windows/m0`
+  (`246c3e7`) is merged into `main` and deleted.
+- **M2:** **PASSED (2026-10-23), commit `5d4cdcc` on `vs/m2`.** The Windows
+  agent built and installed the VSIX in a real Visual Studio 2026 18.11.1
+  window; the chat loaded, a scripted `write_file` drew the approval card and
+  wrote the file, the transcript landed in `~/.plato`, and the shell was
+  captured in light and dark. The bundle is `C:\src\vs-m2.bundle`. Evidence is
+  `C:\src\plato-vs-field\evidence`. M3 parity is next.
 - **SMB:** blocked from Windows 10 to the Mac share (guest logon). Use SSH
   bundles.
 
-Then, for M2:
+### Returning M2 code
+
+The Windows agent creates a Git bundle at `C:\src\vs-m2.bundle` at each
+checkpoint. The Mac pulls it into the main working tree:
+
+```sh
+scp omega@192.168.4.62:C:/src/vs-m2.bundle /tmp/vs-m2.bundle
+git -C /Users/ai/Desktop/plato fetch /tmp/vs-m2.bundle 'refs/heads/*:refs/remotes/win/*'
+git -C /Users/ai/Desktop/plato log --oneline win/vs/m2
+```
+
+Review the commit and run the tests before pushing. After review:
+
+```sh
+git -C /Users/ai/Desktop/plato push origin vs/m2
+git -C /Users/ai/Desktop/plato push /Users/ai/Desktop/plato-sync/plato.git vs/m2
+```
+
+The Windows agent does not push to GitHub. Delete the bundle after the fetch.
+
+Then verify a checkpoint on Windows:
 
 ```powershell
 cd C:\src\plato
-git checkout vs/m1
+git checkout vs/m2
 pnpm install
 pnpm exec tsc -b
-node packages/vs/esbuild.mjs
-node packages/vs/test/spike.mjs
+pnpm --dir packages/vs typecheck
+pnpm --dir packages/vs test
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
 is on `192.168.4.62`. SSH routes between them. SMB does not.
 
-For the M0 Windows verification, use a separate clone so `vs/m1` stays intact:
-
-```powershell
-cd C:\src
-git clone plato-sync.bundle plato-m0
-cd plato-m0
-git checkout windows/m0
-pnpm install
-pnpm test
-```
+The M0 Windows verification is complete; its evidence is in PROGRESS. The
+`windows/m0` branch is merged and deleted, so a fresh clone uses `main`.
 
 
 ## Mac checkpoint procedure
 
-This is how `vs/m1` was made without touching the original repo:
+Historical record: this is how `vs/m1` was made. It is now merged into `vs/m2`
+and is retired.
 
 ```sh
 git init --bare --initial-branch=main /Users/ai/Desktop/plato-sync/plato.git
@@ -163,10 +189,10 @@ so non-interactive commands can run; it is readable only by the Mac user.
 
 ## Ownership
 
-- **Plato CLI worker** (Mac): `windows/m0` only. It does not edit `packages/vs`
-  or the docs.
+- **Plato CLI worker** (Mac): `main` and the CLI release. It does not edit
+  `packages/vs` or the Visual Studio docs.
 - **Windows worker** (Windows machine): `vs/m2` onward, and the Windows
-  verification of `windows/m0`. It does not edit `windows/m0` code.
-- **VS lead** (this session): `vs/m1`, the plan, the briefs, the integration,
-  and the gates.
+  verification of each checkpoint.
+- **VS lead** (this session): the plan, the briefs, the integration, and the
+  gates.
 - **Founder**: `main`, GitHub pushes, and every public release.

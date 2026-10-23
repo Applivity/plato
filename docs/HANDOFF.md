@@ -33,23 +33,30 @@ are now only in PROGRESS.
   existing VS Code IDE host runs outside VS Code through `packages/vs/host/shim/vscode.ts`; it
   produced the chat HTML, ran three scripted runs (a write with an approval card, undo, a question
   card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
-  whole host type-checks against the shim, core is 886/886, the CLI is 175/175, and all 25 render
-  suites pass. **M0 code is owned by the Plato CLI worker on this Mac; the Windows machine worker
-  verifies M0 on Windows and owns M2. M2 has PASSED (2026-10-23); its first run used
-  `write_file`, so it did not wait for M0. No parity or release until M0 is green.** The shim
-  proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. **M2, the Visual Studio
-  shell, is built and witnessed:** a real Visual Studio 2026 18.11.1 window loads the unchanged
-  chat UI in a WebView2 tool window, a scripted `write_file` task draws the approval card, the
-  approved file lands on disk, the transcript is under `~/.plato/runs`, the tool window is
-  captured in light and dark, and the Node sidecar stops when Visual Studio closes. Credential
-  Manager, the native file picker, open file, and a message box are witnessed too. The shell is
-  `packages/vs/src/Plato.Vs/`; the sidecar entry is `packages/vs/host/main.ts`; packaging is
-  `packages/vs/scripts/package-vsix.ps1`. **Two defects found by the run are fixed:** a UTF-8 BOM
-  made the sidecar reject `settings.json`, and a timed-out UI request killed the sidecar through an
-  unhandled rejection. **What remains for phase 3:** M0 must be verified on Windows, then M3
-  parity. The platform facts, the two extension models, the Credential Manager choice, and the
-  open Marketplace questions are in D49cf. The CLI state below is unchanged and remains the
-  current release record.
+  whole host type-checks against the shim. **M1, the host-shim spike, PASSED:** the existing
+  VS Code IDE host runs outside VS Code, produced the chat HTML, ran three scripted runs (a write
+  with an approval card, undo, a question card, and a mode request), persisted the mode, wrote
+  three transcripts, and disposed cleanly. The M1-era suite was core 886/886 and CLI 175/175, and
+  all 25 render suites pass. **M0, the Windows shell and process repair, is DONE and verified on
+  Windows (2026-10-23):** the Mac suite is core 908/1 skipped and CLI 180; the Windows suite is
+  core 907/2 skipped and CLI 177/3 skipped; the real Windows command/background/MCP run passed.
+  **M2, the Visual Studio shell, PASSED (2026-10-23):** a real Visual Studio 2026 18.11.1 window
+  loads the unchanged chat UI in a WebView2 tool window, a scripted `write_file` task draws the
+  approval card, the approved file lands on disk, the transcript is under `~/.plato/runs`, the
+  tool window is captured in light and dark, and the Node sidecar stops when Visual Studio closes.
+  Credential Manager, the native file picker, open file, and a message box are witnessed too. The
+  shell is `packages/vs/src/Plato.Vs/`; the sidecar entry is `packages/vs/host/main.ts`; packaging
+  is `packages/vs/scripts/package-vsix.ps1`. **Two defects found by the run are fixed:** a UTF-8
+  BOM made the sidecar reject `settings.json`, and a timed-out UI request killed the sidecar
+  through an unhandled rejection. **What remains for phase 3:** M3 parity, then M4. The platform
+  facts, the two extension models, the Credential Manager choice, and the open Marketplace
+  questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
+  from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active
+  Visual Studio branch is `vs/m2`. **The Windows machine has VS 2026 18.11.1 Community with the
+  extension workload, but Microsoft supports VS 2026 on Windows 11 only; the final acceptance
+  belongs on Windows 11.** The code travels by SSH bundle because SMB guest logons are blocked.
+  The shim proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The CLI state below
+  is unchanged and remains the current release record.
 
 - **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the
   founder has opened phase 2. The CLI is a first-class host over the same core, not an afterthought.
