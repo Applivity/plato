@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Extern href="stdidcmd.h" />
+  <Extern href="vsshlids.h" />
+
+  <Commands package="guidPlatoPackage">
+    <Buttons>
+      <Button guid="guidPlatoCmdSet" id="cmdidOpenChat" priority="0x0100" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Strings>
+          <ButtonText>Plato: Open Chat</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidPlatoCmdSet" id="cmdidNewChat" priority="0x0101" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Strings>
+          <ButtonText>Plato: New Chat</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidPlatoCmdSet" id="cmdidSetApiKey" priority="0x0102" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Strings>
+          <ButtonText>Plato: Set API Key</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidPlatoCmdSet" id="cmdidManageKeys" priority="0x0103" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Strings>
+          <ButtonText>Plato: Manage API Keys</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="guidPlatoPackage" value="{F847572D-4D51-4FFA-BEA4-8D41ABA11C98}" />
+    <GuidSymbol name="guidPlatoCmdSet" value="{63D248E4-AF07-4A5F-B5A3-86F13D404ECD}">
+      <IDSymbol name="cmdidOpenChat" value="0x0100" />
+      <IDSymbol name="cmdidNewChat" value="0x0101" />
+      <IDSymbol name="cmdidSetApiKey" value="0x0102" />
+      <IDSymbol name="cmdidManageKeys" value="0x0103" />
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

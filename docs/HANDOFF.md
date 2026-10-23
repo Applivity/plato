@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2 verified 2026-10-23)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -35,11 +35,21 @@ are now only in PROGRESS.
   card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
   whole host type-checks against the shim, core is 886/886, the CLI is 175/175, and all 25 render
   suites pass. **M0 code is owned by the Plato CLI worker on this Mac; the Windows machine worker
-  verifies M0 on Windows and owns M2. M2 may start in parallel with M0 (the first run uses
-  `write_file` / `read_file`, not the shell); no parity or release until M0 is green.** The shim
-  proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The platform facts, the two
-  extension models, the Credential Manager choice, and the open Marketplace questions are in
-  D49cf. The CLI state below is unchanged and remains the current release record.
+  verifies M0 on Windows and owns M2. M2 has PASSED (2026-10-23); its first run used
+  `write_file`, so it did not wait for M0. No parity or release until M0 is green.** The shim
+  proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. **M2, the Visual Studio
+  shell, is built and witnessed:** a real Visual Studio 2026 18.11.1 window loads the unchanged
+  chat UI in a WebView2 tool window, a scripted `write_file` task draws the approval card, the
+  approved file lands on disk, the transcript is under `~/.plato/runs`, the tool window is
+  captured in light and dark, and the Node sidecar stops when Visual Studio closes. Credential
+  Manager, the native file picker, open file, and a message box are witnessed too. The shell is
+  `packages/vs/src/Plato.Vs/`; the sidecar entry is `packages/vs/host/main.ts`; packaging is
+  `packages/vs/scripts/package-vsix.ps1`. **Two defects found by the run are fixed:** a UTF-8 BOM
+  made the sidecar reject `settings.json`, and a timed-out UI request killed the sidecar through an
+  unhandled rejection. **What remains for phase 3:** M0 must be verified on Windows, then M3
+  parity. The platform facts, the two extension models, the Credential Manager choice, and the
+  open Marketplace questions are in D49cf. The CLI state below is unchanged and remains the
+  current release record.
 
 - **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the
   founder has opened phase 2. The CLI is a first-class host over the same core, not an afterthought.

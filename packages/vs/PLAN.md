@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **OPEN — M1 PASSED (2026-10-23).** Phase 3 opened 2026-10-23. The
+Status: **OPEN — M1 AND M2 PASSED (2026-10-23).** Phase 3 opened 2026-10-23. The
 shim gate is green: the existing VS Code host runs outside VS Code. **M0 code is
 owned by the Plato CLI worker on this Mac; the Windows machine worker verifies
 M0 on Windows and owns M2. M2 may start in parallel with M0 because it does not
@@ -612,6 +612,38 @@ Done when:
 **Go/no-go:** If the shell cannot host the page and the sidecar in this
 milestone, fix the shell before adding features. Do not build parity on a
 broken foundation.
+
+**Status: PASSED (2026-10-23).** The shell is built and witnessed in a real
+Visual Studio 2026 18.11.1 window on Windows 10. Evidence:
+
+- `packages/vs/scripts/package-vsix.ps1` builds `Plato.Vs.vsix` (33 MB,
+  including Node 22.20.0 and `plato-host.cjs`); `VSIXInstaller /quiet /force`
+  installs it with exit 0.
+- The tool window loads the unchanged chat HTML through WebView2. A scripted
+  `write_file` task draws the approval card; **Allow once** writes `probe.txt`
+  to disk; the run reports `done in 11s`.
+- The transcript is
+  `~/.plato/runs/b45e2fdd/2026-10-23T14-47-18-725Z-mvl335x12tim.jsonl`.
+- Screenshots: `C:\src\plato-vs-field\evidence\dark.png` and `light.png`.
+- The sidecar exits 0 when Visual Studio closes.
+- Native services are witnessed: Credential Manager (the picker reads
+  "Key status for stub: ● set"), the file picker, open file
+  (`~/.plato/mcp.json` in the editor), and the message box
+  ("Plato needs an API key for stub.").
+
+Two defects found by the run are fixed. A UTF-8 BOM in `settings.json` was
+rejected; the sidecar now strips it. A timed-out UI request reached Node as an
+unhandled rejection and **killed the sidecar**; a dialog with no answer is now a
+cancel, and a last-line `unhandledRejection` guard protects the process. The
+protocol test and a real-window test with a 2-second timeout pin both.
+
+Limits recorded: Windows 10 is not supported for Visual Studio 2026, so the
+final acceptance run belongs on Windows 11. A file picker held open beyond the
+plan's 30-second UI timeout now returns a cancel to the extension, while the
+dialog stays open and its late answer is ignored; this needs a longer,
+picker-specific timeout in M3. The test machine's Visual Studio user settings
+were reset to choose the light theme; the original hive is kept at
+`%LOCALAPPDATA%\Microsoft\VisualStudio\18.0_535315d0.plato-original`.
 
 ### M3 — Parity, part 1: control and configuration
 

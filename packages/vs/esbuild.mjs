@@ -6,12 +6,15 @@ const here = dirname(fileURLToPath(import.meta.url));
 const shim = join(here, 'host/shim/vscode.ts');
 
 /**
- * M1: bundle the EXISTING VS Code host with `vscode` replaced by the shim.
+ * Bundle the EXISTING VS Code host with `vscode` replaced by the shim.
  * The extension source is not changed. The compiled `out/` files are used so
  * esbuild sees the same CommonJS the VS Code VSIX ships.
+ *
+ * The entry is `host/main.ts`: it re-exports `start` for the M1 spike and
+ * runs the stdio protocol when executed as the sidecar.
  */
 await esbuild.build({
-  entryPoints: [join(here, 'host/entry.ts')],
+  entryPoints: [join(here, 'host/main.ts')],
   bundle: true,
   platform: 'node',
   target: 'node22',

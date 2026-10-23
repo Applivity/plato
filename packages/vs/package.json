@@ -3,11 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Visual Studio 2026 host for Plato — shim spike (M1)",
+  "description": "Visual Studio 2026 host for Plato — sidecar and VSIX",
   "scripts": {
-    "build": "node esbuild.mjs",
+    "build": "node scripts/gen-defaults.mjs && node esbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node esbuild.mjs && node test/spike.mjs"
+    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.3.1",

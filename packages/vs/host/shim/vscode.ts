@@ -9,6 +9,7 @@
 import { promises as fsp, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { DEFAULTS } from '../defaults.ts';
 
 export interface ShimTransport {
   setHtml(html: string): void;
@@ -22,7 +23,15 @@ export interface ShimConfig {
   root: string;
   stateDir: string;
   settings: Record<string, unknown>;
+  /** In-memory seed for the M1 spike. */
   secrets: Record<string, string>;
+  /**
+   * Credential Manager-backed store (M2). When present it replaces the
+   * in-memory `secrets` map.
+   */
+  secretStore?: SecretStorageLike;
+  /** Per-project chat log file (M2); defaults to stateDir/workspace-state.json. */
+  workspaceStateFile?: string;
   transport: ShimTransport;
 }
 
@@ -235,17 +244,6 @@ export type ProviderResult<T> =
   | Thenable<T | undefined | null>;
 
 /* ---------------------------------------------------------------- defaults */
-
-const DEFAULTS: Record<string, unknown> = {
-  'plato.connections': [],
-  'plato.model': 'anthropic:claude-sonnet-4-5',
-  'plato.reasoning': 'off',
-  'plato.orchestration': 'solo',
-  'plato.compaction.threshold': 0.8,
-  'plato.secrets.protect': [],
-  'plato.secrets.allow': [],
-  'plato.search.respectGitignore': false,
-};
 
 const configChanged = new EventEmitter<{
   affectsConfiguration(section: string): boolean;
@@ -632,6 +630,69 @@ export interface WindowApi {
   };
 }
 
+function quickPickLabels(items: readonly unknown[]): Array<{
+  label: string;
+  description?: string;
+  detail?: string;
+}> {
+  return items.map((item) => {
+    if (typeof item === 'string') {
+      return { label: item };
+    }
+    const source = (item ?? {}) as {
+      label?: unknown;
+      description?: unknown;
+      detail?: unknown;
+    };
+    return {
+      label: String(source.label ?? ''),
+      ...(typeof source.description === 'string'
+        ? { description: source.description }
+        : {}),
+      ...(typeof source.detail === 'string' ? { detail: source.detail } : {}),
+    };
+  });
+}
+
+function stringParam(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * A UI request the host could not answer is a cancel, not a failure the
+ * extension must handle. A timeout is the host's; VS Code's dialogs are all
+ * cancellable, so the shim reports the same "no answer" the user would give.
+ */
+async function uiRequest(
+  method: string,
+  params: Record<string, unknown>,
+): Promise<Record<string, unknown> | undefined> {
+  try {
+    return (await cfg().transport.request(method, params)) as
+      | Record<string, unknown>
+      | undefined;
+  } catch (error) {
+    console.error(`vscode shim: ${method} failed: ${String(error)}`);
+    return undefined;
+  }
+}
+
+async function showMessage(
+  kind: 'info' | 'warning' | 'error',
+  message: string,
+  actions: Array<string | { modal?: boolean; [key: string]: unknown }>,
+): Promise<string | undefined> {
+  const labels = actions.filter(
+    (action): action is string => typeof action === 'string',
+  );
+  const result = (await uiRequest('ui.message', {
+    kind,
+    message,
+    actions: labels,
+  })) as { action?: unknown } | undefined;
+  return typeof result?.action === 'string' ? result.action : undefined;
+}
+
 export const window: WindowApi = {
   createWebviewPanel(
     viewType: string,
@@ -656,23 +717,70 @@ export const window: WindowApi = {
     };
   },
 
-  async showQuickPick(): Promise<undefined> {
-    return undefined;
+  async showQuickPick<T>(
+    items: readonly T[],
+    options?: { placeHolder?: string; [key: string]: unknown },
+  ): Promise<T | undefined> {
+    const result = (await uiRequest('ui.quickPick', {
+      items: quickPickLabels(items),
+      placeHolder: stringParam(options?.placeHolder),
+    })) as { index?: unknown } | undefined;
+    const index = typeof result?.index === 'number' ? result.index : -1;
+    return index >= 0 && index < items.length ? items[index] : undefined;
   },
-  async showInputBox(): Promise<undefined> {
-    return undefined;
+  async showInputBox(options?: {
+    prompt?: string;
+    password?: boolean;
+    ignoreFocusOut?: boolean;
+    [key: string]: unknown;
+  }): Promise<string | undefined> {
+    const result = (await uiRequest('ui.inputBox', {
+      prompt: stringParam(options?.prompt),
+      password: options?.password === true,
+      placeHolder: stringParam(options?.placeHolder),
+      value: stringParam(options?.value),
+    })) as { value?: unknown } | undefined;
+    return typeof result?.value === 'string' ? result.value : undefined;
   },
-  async showOpenDialog(): Promise<undefined> {
-    return undefined;
+  async showOpenDialog(options?: unknown): Promise<Uri[] | undefined> {
+    const source = (options ?? {}) as {
+      canSelectMany?: boolean;
+      canSelectFiles?: boolean;
+      canSelectFolders?: boolean;
+      openLabel?: string;
+      defaultUri?: Uri;
+    };
+    const result = (await uiRequest('ui.openDialog', {
+      canSelectMany: source.canSelectMany === true,
+      canSelectFiles: source.canSelectFiles !== false,
+      canSelectFolders: source.canSelectFolders === true,
+      openLabel: stringParam(source.openLabel),
+      defaultPath: source.defaultUri?.fsPath,
+    })) as { paths?: unknown } | undefined;
+    if (!Array.isArray(result?.paths)) {
+      return undefined;
+    }
+    return result.paths.filter(
+      (path): path is string => typeof path === 'string',
+    ).map((path) => Uri.file(path));
   },
-  async showInformationMessage(): Promise<undefined> {
-    return undefined;
+  async showInformationMessage(
+    message: string,
+    ...actions: Array<string | { modal?: boolean; [key: string]: unknown }>
+  ): Promise<string | undefined> {
+    return await showMessage('info', message, actions);
   },
-  async showErrorMessage(): Promise<undefined> {
-    return undefined;
+  async showErrorMessage(
+    message: string,
+    ...actions: Array<string | { modal?: boolean; [key: string]: unknown }>
+  ): Promise<string | undefined> {
+    return await showMessage('error', message, actions);
   },
-  async showWarningMessage(): Promise<undefined> {
-    return undefined;
+  async showWarningMessage(
+    message: string,
+    ...actions: Array<string | { modal?: boolean; [key: string]: unknown }>
+  ): Promise<string | undefined> {
+    return await showMessage('warning', message, actions);
   },
 
   async showTextDocument(documentOrUri: any): Promise<unknown> {
@@ -681,7 +789,7 @@ export const window: WindowApi = {
       documentOrUri?.fsPath ??
       (typeof documentOrUri === 'string' ? documentOrUri : '');
     if (file.length > 0) {
-      await cfg().transport.request('editor.open', { path: file });
+      await uiRequest('editor.open', { path: file });
     }
     return { document: documentOrUri };
   },
@@ -707,7 +815,7 @@ export const commands: any = {
   },
   async executeCommand(id: string, ...args: any[]): Promise<unknown> {
     if (id === 'workbench.action.closeActiveEditor') {
-      await cfg().transport.request('editor.closeActive');
+      await uiRequest('editor.closeActive', {});
       return undefined;
     }
     const callback = commandMap.get(id);
@@ -739,24 +847,31 @@ export const languages: LanguagesApi = {
 export function __configure(next: ShimConfig): void {
   config = next;
   mkdirSync(next.stateDir, { recursive: true });
+  __setRoot(next.root);
+  livePanel = null;
+  commandMap.clear();
+}
+
+/** The Visual Studio solution/folder changed (solution.changed). */
+export function __setRoot(root: string): void {
   workspace.workspaceFolders = [
     {
-      uri: Uri.file(next.root),
-      name: basename(next.root),
+      uri: Uri.file(root),
+      name: basename(root),
       index: 0,
     },
   ];
-  livePanel = null;
-  commandMap.clear();
 }
 
 export function __createContext(): any {
   const c = cfg();
   return {
     subscriptions: [] as Disposable[],
-    workspaceState: new Memento(join(c.stateDir, 'workspace-state.json')),
+    workspaceState: new Memento(
+      c.workspaceStateFile ?? join(c.stateDir, 'workspace-state.json'),
+    ),
     globalState: new Memento(join(c.stateDir, 'global-state.json')),
-    secrets: new SecretStorage(c.secrets),
+    secrets: c.secretStore ?? new SecretStorage(c.secrets),
     extensionUri: Uri.file(c.root),
     extensionPath: c.root,
     asAbsolutePath: (relative: string) => join(c.root, relative),
