@@ -240,13 +240,14 @@ Keep these rules:
 
 **Status.** The founder opened phase 2 on 2026-10-21. The CLI is a first-class
 host over the same core. It ships Solo, Duo, and Academy in v1 (D49bw).
-`packages/cli` is complete through M5; M6's packaging half is done, including
-the publish-ready manifest (2026-10-21). **`0.1.0` was published on 2026-10-22**
-and passed the post-publish verification (registry metadata, a clean install of
-the published tarball, every documented command, the TUI, and `npx`). The CLI
-keeps its own version line. npm's staged-publishing gate applies to this
-account: the first `npm publish` created a `0.0.0-stage` placeholder and the
-release went live when the founder approved it.
+`packages/cli` is complete through M6. **`0.1.0` through `0.1.3` are published**
+and passed the post-publish checks (registry metadata, a clean install, every
+documented command, the TUI, and `npx`). **`0.1.4` is the release candidate on
+branch `plato-bugs`**: it adds Windows support for commands, background shells,
+and MCP, and fixes four terminal defects. The publish remains the founder's.
+The CLI keeps its own version line. npm's staged-publishing gate applies to
+this account: the first `npm publish` created a `0.0.0-stage` placeholder and
+the release went live when the founder approved it.
 
 **Package identity.**
 

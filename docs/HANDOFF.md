@@ -58,9 +58,15 @@ are now only in PROGRESS.
   opening line, the fuller Teams section, and the version bump. Its served README is
   byte-identical to the repository file. The npmjs.com page still showed "no README" for 0.1.1
   after its approval, and the registry was correct then too; npmjs.com answers 403 to this
-  environment, so the page itself can only be checked in a browser. **0.1.3 is prepared and waits
-  on the founder's publish**: a Support section (`plato-feedback@applivity.com` and the Applivity
-  link) and a `homepage` field, so the npm page carries a back link outside the README.
+  environment, so the page itself can only be checked in a browser. **`0.1.3` is live on npm**
+  (a Support section, `plato-feedback@applivity.com`, and a `homepage` field).
+  **`0.1.4` is the release candidate on branch `plato-bugs`:** the Windows shell/process/MCP
+  repair, four terminal fixes (a bounded live answer, terminal Markdown, Ctrl+word keys, and the
+  Duo observer prompt), and the VS Code Duo parity. Core is 914 passed / 1 skipped, CLI 216, the
+  Windows suite is 907 passed / 2 skipped and 177 passed / 3 skipped, and a real Windows
+  command/background/MCP run passed. **The npm publish remains the founder's.** **Visual Studio
+  2026 support is on branch `vs/m1` and is not part of this CLI release**; M1 passes and M2 is in
+  progress on the Windows machine.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same
