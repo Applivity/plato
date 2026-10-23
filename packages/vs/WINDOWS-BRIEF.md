@@ -1,7 +1,7 @@
 # Windows worker brief — Plato for Visual Studio
 
 You are the Windows machine worker. You own **M2 onward** (the Visual Studio
-extensions) and the **Windows verification of M0** (the shared-core shell
+extension) and the **Windows verification of M0** (the shared-core shell
 repair). The Plato CLI worker owns the M0 code on the Mac. The VS lead owns the
 shim, the plan, and the integration.
 
@@ -12,21 +12,34 @@ Read first:
 2. [`../../docs/HANDOFF.md`](../../docs/HANDOFF.md) — current state.
 3. [`../../docs/DECISIONS.md`](../../docs/DECISIONS.md) — D49cf.
 
-## Get the code
+## Machine facts (verified 2026-10-23)
 
-The Mac project directory is shared over SMB. **Copy it to a local Windows
-clone. Do not build or run from the SMB share.** pnpm symlinks, MSBuild file
-locks, file watchers, and long paths are unreliable there.
+- **OS:** Windows 10 22H2 (build 19045). **Visual Studio 2026 requires Windows
+  11**, so this machine cannot run VS 2026. Do not attempt to install it.
+- **Visual Studio 2022 Community 17.14.27** is installed at
+  `C:\Program Files\Microsoft Visual Studio\2022\Community`.
+  The **Visual Studio extension development workload is NOT installed yet.**
+  M2 cannot build until it is added. The VS lead/founder will decide whether
+  this machine is the VS 2022 development proxy or whether a Windows 11 machine
+  with VS 2026 is used instead.
+- **Node 22.20.0** is installed under
+  `C:\Users\DummyUser\AppData\Local\nvm\v22.20.0`. The default `node` is still
+  21.7.3. Put the Node 22 directory first on `PATH` for every build:
+  `set "PATH=C:\Users\DummyUser\AppData\Local\nvm\v22.20.0;%PATH%"`.
+- **pnpm 11.23.0** is installed in that Node 22 directory.
+- **Claude Code 2.1.226** is at `C:\Users\Omega-PC\.local\bin\claude.exe`.
+- **.NET Framework 4.8** targeting pack is present. .NET SDKs 3.1–9.0 are
+  installed.
+- **Disk:** about 282 GB free.
+- **Code:** `C:\src\plato`, branch `vs/m1`. It was cloned from a Git bundle.
+- **M1 spike:** passes on Windows. The existing host runs through the shim,
+  produces the chat HTML, completes three scripted runs, and writes three
+  transcripts.
+- **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
+  SMB logons). Use SSH bundles, not SMB.
+- **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
 
-- Copy the whole repository, including `.git`, to a local path such as
-  `C:\src\plato`.
-- The M1 shim spike is in `packages/vs/`. It is not committed or pushed.
-- The Plato CLI worker is editing `packages/core` and `packages/cli` for M0.
-  Do not edit those files at the same time; coordinate through the VS lead.
-- Do not push to GitHub. The founder pushes when the work has taken shape. Use
-  a local branch and report the diff.
-
-## M2 — start now (parallel with M0)
+## M2 — start after the extension workload exists
 
 The first run uses `write_file` and `read_file`, not the shell tool, so M2 does
 not wait for M0.
@@ -42,19 +55,23 @@ not wait for M0.
 4. Map the Visual Studio theme colors to the CSS custom properties listed in
    the plan. Credential Manager for keys. Open file and file picker. Solution
    root. Commands and menu.
-5. Prove a real VS 2026 window: open the tool window, load the chat, run a
+5. Prove a real Visual Studio window: open the tool window, load the chat, run a
    scripted task with `write_file`, approve the write, confirm the file on
    disk, and take light and dark screenshots.
 
 Do not add parity features until the shell loads the page and runs the
 scripted task.
 
+The VSIX must remain compatible with both VS 2022 and VS 2026. The extension
+model is the same. The final acceptance run belongs on a Windows 11 machine
+with VS 2026.
+
 ## M0 verification (when the Mac branch is ready)
 
 The Plato CLI worker is changing `packages/core/src/tools/` and `packages/cli`.
-When its branch is available on the shared folder or a local remote:
+When its branch is available:
 
-1. `pnpm install`, `pnpm build`, `pnpm test`.
+1. `pnpm install`, `pnpm build`, `pnpm test` with Node 22 on `PATH`.
 2. Run a real CLI task on Windows with:
    - a `shell` command;
    - a background shell;

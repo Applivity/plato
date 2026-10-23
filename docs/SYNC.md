@@ -37,18 +37,59 @@ Rules:
 - The original repository is not a remote. It is the source of the stable
   commit and the working tree of the VS lead.
 
-## Windows clone
+## Windows clone (actual, 2026-10-23)
 
-From the Windows machine, one of these:
+**SMB does not work from this Windows machine.** It is Windows 10, which refuses
+guest SMB logons; `dir \\10.0.10.119\Desktop\...` returns “The user name or
+password is incorrect.” SSH works, so the code travels as a Git bundle.
+
+From the Mac:
+
+```sh
+git --git-dir=/Users/ai/Desktop/plato-sync/plato.git \
+  bundle create /tmp/plato-sync.bundle --all
+scp /tmp/plato-sync.bundle omega@192.168.4.62:C:/src/plato-sync.bundle
+```
+
+From the Windows machine:
 
 ```powershell
-# Direct UNC path (Git for Windows supports it)
-git clone \\10.0.10.119\Desktop\plato-sync\plato.git C:\src\plato
-
-# Or map the share first, which is more reliable for some tools
-net use Z: \\10.0.10.119\Desktop
-git clone Z:\plato-sync\plato.git C:\src\plato
+cd C:\src
+git clone plato-sync.bundle plato
+cd plato
+git checkout vs/m1
+git branch -a
 ```
+
+For later updates, create a new bundle on the Mac, copy it over, then:
+
+```powershell
+cd C:\src\plato
+git fetch C:\src\plato-sync.bundle "refs/heads/*:refs/remotes/sync/*"
+git merge --ff-only sync/vs/m1
+```
+
+The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
+is `192.168.4.62`. SSH routes between them. If SMB is wanted, a macOS sharing
+user and a credentialed `net use` are required; guest access is blocked by
+Windows 10.
+
+## Windows machine facts (2026-10-23)
+
+- **OS:** Windows 10 22H2 (19045). **Visual Studio 2026 requires Windows 11**, so
+  this machine cannot run VS 2026. Do not attempt to install it here.
+- **Visual Studio 2022 Community 17.14.27** is installed at
+  `C:\Program Files\Microsoft Visual Studio\2022\Community`. The **extension
+  development workload is not installed** yet. M2 cannot build until it is.
+- **Node 22.20.0** is under
+  `C:\Users\DummyUser\AppData\Local\nvm\v22.20.0`. The default `node` is still
+  21.7.3. Put the Node 22 directory first on `PATH`:
+  `set "PATH=C:\Users\DummyUser\AppData\Local\nvm\v22.20.0;%PATH%"`.
+- **pnpm 11.23.0** is installed in that Node 22 directory.
+- **Claude Code 2.1.226** is installed.
+- **M1 spike:** passes on Windows.
+- **Open decision:** use VS 2022 as the development proxy and verify on a
+  Windows 11 machine with VS 2026, or move M2 to a Windows 11 machine now.
 
 Then:
 
