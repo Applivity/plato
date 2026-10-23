@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 with its correction round, and M3b checkpoints 2a and 2b verified 2026-10-23; M3 complete)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 with its correction round, M3b checkpoints 2a and 2b, M4a and M4b verified 2026-10-24; M3 and M4 complete)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -121,8 +121,20 @@ are now only in PROGRESS.
   desktop is locked, so `SendInput` is denied and the field helper fills the native file
   dialog with Win32 messages (it is still the real dialog); the editor surface does not render
   through `PrintWindow` on that desktop, so DTE `activeDocument` is the witness that
-  `mcp.json` opened. **What remains for phase 3:** M4b (`/` commands, plan/todos, open-file
-  links, diagnostics after a write, optional Chats tree), then M5. The platform
+  `mcp.json` opened. **M4b, the editor and interaction half, PASSED (2026-10-24):** slash commands
+  and completion, plan and todos (`todo_write`), open-file actions, and the diagnostics gap were
+  driven through the real controls in a real Visual Studio 2026 window. All five slash commands
+  were listed in the `/` popover and `/q` filtered dynamically to `/queue`; `todo_write` rendered
+  plan cards with the exact glyphs (`✓`, `▸`, `○`), and unfinished steps were reported honestly in
+  the closing note (`2 of 3 plan steps unfinished`) while a completed plan had no warning;
+  `/system-prompt` created `PLATO.md` from the bundled default and opened it in VS (`activeDocument`),
+  and Settings' Open buttons for `mcp.json`, `DUO.yaml`, and `ACADEMY.yaml` plus History's `openRun`
+  detail view opened their files (existing open actions verified, clickable path links deferred per
+  Option 2); and after a write, `editorDiag.collect()` reported `not-analysed`, emitting the honest
+  notice `diagnostics: not checked in probe-diag-m4b.txt — no language server reported on it`. The
+  Chats tree window is deferred for v1 per plan. The host test `packages/vs/test/m4b.test.mjs`
+  pins all items and was falsified four times. Evidence: `C:\src\plato-vs-field\evidence\m4\checkpoint-b\`.
+  **M4 is COMPLETE, and the parity checklist is closed. M5 (Release) is next.** The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active

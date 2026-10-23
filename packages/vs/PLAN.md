@@ -1,12 +1,13 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE; M1, M2, M3a AND M3b (CHECKPOINTS 1, 2a AND 2b) PASSED (2026-10-23), SO M3 IS COMPLETE. M4a, THE AGENT-FEATURES HALF OF M4, PASSED (2026-10-24); M4b IS NEXT.** Phase 3 opened 2026-10-23.
+Status: **M0 DONE; M1, M2, M3a, M3b, M4a AND M4b PASSED (2026-10-24), SO M3 AND M4 ARE COMPLETE. M5 (RELEASE) IS NEXT.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
-Visual Studio 2026 window. M3a (settings and keys) and M3b (modes, approvals,
-teams, history) passed; M4a (MCP, images and attachments, undo, masking/reveal,
-and the stuck card) passed and M4b is next. The founder approved this plan.
-The decision record is D49cf in
+Visual Studio 2026 window. M3a (settings and keys), M3b (modes, approvals,
+teams, history), M4a (MCP, images and attachments, undo, masking/reveal,
+and the stuck card), and M4b (/ commands, plan/todos, open-file actions, and
+diagnostics gap) passed. The parity checklist is complete and M5 is next. The
+founder approved this plan. The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
 
@@ -792,10 +793,39 @@ and was falsified four times; the exact-copy render assertions are in
 `scripts/render/` for the lead on macOS. **One real defect was found and fixed
 (D49ci): an MCP server whose command cannot spawn killed the Node sidecar.**
 Its core and host regressions are falsified. Evidence:
-`C:\src\plato-vs-field\evidence\m4\checkpoint-a\`. **M4b — `/` commands and
-completion, plan/todos, open-file links, diagnostics after a write (or the
-documented “not checked” gap), and the optional Chats tree — is next. M5 is
-not started.**
+`C:\src\plato-vs-field\evidence\m4\checkpoint-a\`.
+
+**M4b, the editor and interaction half, PASSED (2026-10-24).** Slash commands and
+completion, plan and todos (`todo_write`), open-file actions, and diagnostics
+after a write (the documented gap) were driven through the real controls in a
+real Visual Studio 2026 window:
+1. `/` commands and completion: the `/` button opened the popover with all five
+   canonical commands (`compact`, `history`, `system-prompt`, `undo`, `queue`),
+   with their labels, usage syntax and blurbs; typing `/q` in the composer
+   filtered the menu dynamically to `/queue <message>`.
+2. Plan and todos (`todo_write`): the model called `todo_write` with three steps;
+   the plan card rendered with exact glyphs (`✓`, `▸`, `○`); at run completion,
+   the done row reported `"2 of 3 plan steps unfinished"`; a subsequent run with
+   all steps marked completed finished with no unfinished note.
+3. Open-file actions: `/system-prompt` created `PLATO.md` from the bundled default
+   in the workspace root and opened it in Visual Studio (`activeDocument`);
+   Settings' **Open mcp.json**, **Open DUO.yaml**, and **Open ACADEMY.yaml** opened
+   their respective files in Visual Studio; and History's `openRun` opened the
+   run detail view. Per user decision (Option 2), existing open actions from chat
+   were verified and clickable path links in conversational prose were deferred
+   (no shared code has them; adding them would be a new capability, not parity).
+4. Diagnostics after a write (documented gap): after a write, `editorDiag.collect()`
+   reported `not-analysed` (the documented gap: VS has no public in-process third-party
+   LSP diagnostics API), emitting the honest notice `"diagnostics: not checked in
+   probe-diag-m4b.txt — no language server reported on it"`, which was recorded in
+   both the chat log and transcript.
+5. Chats tree window: optional for v1; deferred per plan (the in-panel History
+   page provides complete chat listing, resume, and transcript viewing).
+
+The new host test `packages/vs/test/m4b.test.mjs` pins all items and was falsified
+four times. Evidence: `C:\src\plato-vs-field\evidence\m4\checkpoint-b\` (22 screenshots,
+3 transcripts, `field-run.log`, `transcript-summary.txt`, `evidence.txt`).
+**M4 is COMPLETE. The parity checklist is closed. M5 (Release) is next.**
 
 ### M5 — Release
 
@@ -835,44 +865,44 @@ window, a transcript, or both.
 
 | Area | Item | Done |
 |---|---|---|
-| Chat | Streaming reply | |
-| Chat | Markdown and code blocks | |
-| Chat | Tool activity and tool words | |
-| Chat | Status line, timer, context ring | |
-| Chat | Plan/todos card | |
-| Control | Plan/edit/auto modes | |
-| Control | Mode picker and live switch | |
-| Control | Mode request card | |
-| Control | Approval cards and session memory | |
-| Control | Question card | |
+| Chat | Streaming reply | yes (M2) |
+| Chat | Markdown and code blocks | yes (M2) |
+| Chat | Tool activity and tool words | yes (M2, M4b) |
+| Chat | Status line, timer, context ring | yes (M3a, M3b) |
+| Chat | Plan/todos card | yes (M4b) |
+| Control | Plan/edit/auto modes | yes (M3b 1) |
+| Control | Mode picker and live switch | yes (M3b 1) |
+| Control | Mode request card | yes (M3b 1) |
+| Control | Approval cards and session memory | yes (M3b 1) |
+| Control | Question card | yes (M3b 1) |
 | Control | Stuck card | yes (M4a) |
 | Control | Undo card and undo | yes (M4a) |
 | Control | Reveal protected file card | yes (M4a) |
-| Control | Pause/resume/cancel | |
-| Control | Queue | |
+| Control | Pause/resume/cancel | yes (M3b 1) |
+| Control | Queue | yes (M3b 1) |
 | Teams | Solo | yes (M3b 2a) |
 | Teams | Duo | yes (M3b 2a) |
 | Teams | Academy | yes (M3b 2a) |
 | Teams | Observer strip | yes (M3b 2a) |
-| Providers | Connections and model discovery | |
-| Providers | Keys in Credential Manager | |
-| Providers | Model picker, reasoning, compaction | |
+| Providers | Connections and model discovery | yes (M3a) |
+| Providers | Keys in Credential Manager | yes (M3a) |
+| Providers | Model picker, reasoning, compaction | yes (M3a, M3b 2b) |
 | Agent | MCP servers and status | yes (M4a) |
 | Agent | Images | yes (M4a) |
 | Agent | File attachments | yes (M4a) |
 | Agent | Protected-file masking | yes (M4a) |
 | State | History | yes (M3b 2b) |
 | State | Session resume | yes (M3b 2b) |
-| State | Transcripts in `~/.plato` | |
-| State | Undo store | |
-| Editor | Open file from chat | |
-| Editor | Solution/folder root | |
-| Editor | Diagnostics after write (or documented gap) | |
-| Shell | Settings page | |
-| Shell | Commands and menu | |
-| Shell | Theme light/dark | |
-| Shell | Install and update | |
-| Shell | Licence and notices | |
+| State | Transcripts in `~/.plato` | yes (M2, M3, M4) |
+| State | Undo store | yes (M4a) |
+| Editor | Open file from chat | yes (M4b; existing open actions verified; clickable paths deferred) |
+| Editor | Solution/folder root | yes (M2) |
+| Editor | Diagnostics after write (or documented gap) | yes (M4b; documented gap: reports not-checked) |
+| Shell | Settings page | yes (M3a) |
+| Shell | Commands and menu | yes (M2, M4b) |
+| Shell | Theme light/dark | yes (M2, M3a) |
+| Shell | Install and update | yes (M2) |
+| Shell | Licence and notices | yes (bundled in VSIX) |
 
 ## Verification
 
