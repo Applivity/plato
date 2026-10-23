@@ -6,11 +6,15 @@
  * A background shell is started detached, and read by polling.
  *
  * Detached is deliberate — `npm run dev` spawns its own children, and killing
- * only the shell leaves the real process holding the port. Every signal here
- * goes to the process GROUP.
+ * only the shell leaves the real process holding the port. On POSIX every
+ * signal here goes to the process GROUP, which is what `detached` creates. On
+ * Windows (M0, D49cf) the group is not a signal target, so the tree is stopped
+ * with `taskkill /T /F` instead; the intent — the children die too — is the
+ * same, and the platform branch lives in `shellPlatform.ts`.
  */
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { isWindows, shellInvocation, taskkillArgs } from './shellPlatform.js';
 
 /** Output held per shell before the oldest is dropped. */
 const MAX_PENDING = 64_000;
@@ -63,13 +67,28 @@ export class ShellManager {
   private seq = 0;
   private readonly shells = new Map<string, Managed>();
 
-  constructor(private readonly onLifecycle?: ShellLifecycle) {}
+  constructor(
+    private readonly onLifecycle?: ShellLifecycle,
+    private readonly platform: NodeJS.Platform = process.platform,
+  ) {}
 
   start(root: string, command: string): ShellStatus {
     const id = String(++this.seq);
-    const child = spawn('/bin/bash', ['-c', command], {
+    const windows = isWindows(this.platform);
+    const invocation = shellInvocation(command, { platform: this.platform });
+    const child = spawn(invocation.file, invocation.args, {
       cwd: root,
-      detached: true,
+      // POSIX needs the new group for the negative-PID kill. Windows has no
+      // such kill, and `detached` there would only open a second console.
+      detached: !windows,
+      ...(windows
+        ? {
+            windowsHide: true,
+            ...(invocation.windowsVerbatimArguments === true
+              ? { windowsVerbatimArguments: true }
+              : {}),
+          }
+        : {}),
       // stdin closed: an interactive prompt would otherwise hang the process
       // forever with no way for anyone to answer it.
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -98,7 +117,7 @@ export class ShellManager {
     child.stdout?.on('data', (c: Buffer) => append(c.toString()));
     child.stderr?.on('data', (c: Buffer) => append(`[stderr] ${c.toString()}`));
     child.on('error', (e) => {
-      // A spawn failure (no /bin/bash, bad cwd) must reach the reader rather
+      // A spawn failure (no shell, bad cwd) must reach the reader rather
       // than leaving a shell that never runs and never exits.
       append(`[error] ${e.message}\n`);
       managed.running = false;
@@ -161,14 +180,21 @@ export class ShellManager {
     if (!m.running) {
       return { ok: true, output: `${label(m)} — already finished` };
     }
-    this.signal(m, 'SIGTERM');
-    if (await this.waitFor(m, KILL_GRACE_MS) === false) {
-      this.signal(m, 'SIGKILL');
+    const windows = isWindows(this.platform);
+    if (windows) {
+      // `taskkill /F` is already the forced stop; there is nothing to try first.
+      this.killTree(m);
       await this.waitFor(m, KILL_GRACE_MS);
+    } else {
+      this.signal(m, 'SIGTERM');
+      if (await this.waitFor(m, KILL_GRACE_MS) === false) {
+        this.signal(m, 'SIGKILL');
+        await this.waitFor(m, KILL_GRACE_MS);
+      }
     }
     const tail = this.drain(m);
     const verdict = m.running
-      ? `${label(m)} — still running after SIGKILL`
+      ? `${label(m)} — still running after ${windows ? 'taskkill' : 'SIGKILL'}`
       : `${label(m)} — killed`;
     return { ok: true, output: tail.length > 0 ? `${verdict}\n${tail}` : verdict };
   }
@@ -187,7 +213,11 @@ export class ShellManager {
    */
   async killAll(): Promise<number> {
     const running = [...this.shells.values()].filter((m) => m.running);
-    for (const m of running) this.signal(m, 'SIGKILL');
+    if (isWindows(this.platform)) {
+      for (const m of running) this.killTree(m);
+    } else {
+      for (const m of running) this.signal(m, 'SIGKILL');
+    }
     await Promise.all(running.map((m) => this.waitFor(m, KILL_GRACE_MS)));
     return running.length;
   }
@@ -226,6 +256,14 @@ export class ShellManager {
       // D49i: a cancel must not wait out the timeout. 30 s of a dead run is
       // exactly the "hung" feeling cancellation exists to remove.
       signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  /** Stops a process and every child it started. Windows has no signals. */
+  private killTree(m: Managed): void {
+    if (m.pid === null) return;
+    execFile('taskkill', taskkillArgs(m.pid), { windowsHide: true }, () => {
+      // A tree that is already gone is the outcome we wanted.
     });
   }
 

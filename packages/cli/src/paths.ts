@@ -15,24 +15,52 @@ import { join } from 'node:path';
  */
 export type Env = Record<string, string | undefined>;
 
-export function configDir(env: Env = process.env): string {
-  return env['PLATO_CONFIG_DIR'] || join(homedir(), '.config', 'plato');
+export function configDir(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (env['PLATO_CONFIG_DIR']) return env['PLATO_CONFIG_DIR'];
+  // M0 (D49cf): Windows has its own per-user roots. `~/.config` and
+  // `~/.local/share` are XDG, and a Windows user has no reason to grow them.
+  if (platform === 'win32') {
+    return join(env['APPDATA'] ?? join(homedir(), 'AppData', 'Roaming'), 'Plato');
+  }
+  return join(homedir(), '.config', 'plato');
 }
 
-export function configPath(env: Env = process.env): string {
-  return join(configDir(env), 'config.json');
+export function configPath(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(configDir(env, platform), 'config.json');
 }
 
-export function dataDir(env: Env = process.env): string {
-  return env['PLATO_DATA_DIR'] || join(homedir(), '.local', 'share', 'plato');
+export function dataDir(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (env['PLATO_DATA_DIR']) return env['PLATO_DATA_DIR'];
+  if (platform === 'win32') {
+    return join(
+      env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'),
+      'Plato',
+    );
+  }
+  return join(homedir(), '.local', 'share', 'plato');
 }
 
-export function authPath(env: Env = process.env): string {
-  return join(dataDir(env), 'auth.json');
+export function authPath(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(dataDir(env, platform), 'auth.json');
 }
 
-export function modelCachePath(env: Env = process.env): string {
-  return join(dataDir(env), 'models.json');
+export function modelCachePath(
+  env: Env = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(dataDir(env, platform), 'models.json');
 }
 
 /** The extension's per-project key: the first 8 hex of the SHA-1 of the root. */

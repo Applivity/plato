@@ -371,6 +371,39 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
     expect(decideWithArgs('kill_shell', 'plan', { id: 'x' })).toBe('deny');
   });
 
+  /**
+   * M0 (D49cf). The allowlist models bash. It can prove what `git status` does
+   * when bash reads it; it cannot prove what `cmd.exe` does with the same text.
+   * So on Windows the allowance is skipped entirely and the plain mode verdict
+   * stands — which is exactly the conservative behaviour the plan asks for.
+   */
+  describe('on Windows the bash allowlist is not consulted (M0)', () => {
+    it('denies every shell command in plan, including proven reads', () => {
+      expect(decideWithArgs('shell', 'plan', { command: 'git status' }, 'win32')).toBe('deny');
+      expect(decideWithArgs('shell', 'plan', { command: 'ls -la' }, 'win32')).toBe('deny');
+      expect(decideWithArgs('shell', 'plan', { command: 'grep -rn foo src' }, 'win32')).toBe('deny');
+      expect(decideWithArgs('shell', 'plan', { command: 'npm test' }, 'win32')).toBe('deny');
+    });
+
+    it('asks for every shell command in edit, including proven reads', () => {
+      expect(decideWithArgs('shell', 'edit', { command: 'git status' }, 'win32')).toBe('ask');
+      expect(decideWithArgs('shell', 'edit', { command: 'ls -la' }, 'win32')).toBe('ask');
+      expect(decideWithArgs('shell', 'edit', { command: 'rm -rf src' }, 'win32')).toBe('ask');
+    });
+
+    it('leaves auto unchanged', () => {
+      expect(decideWithArgs('shell', 'auto', { command: 'rm -rf src' }, 'win32')).toBe('allow');
+    });
+
+    it('leaves the other tools on the same verdicts as POSIX', () => {
+      expect(decideWithArgs('read_file', 'plan', { path: 'a.ts' }, 'win32')).toBe('allow');
+      expect(decideWithArgs('write_file', 'edit', { path: 'a.ts' }, 'win32')).toBe('ask');
+      expect(decideWithArgs('mcp__fake__echo', 'plan', { command: 'git status' }, 'win32')).toBe(
+        'deny',
+      );
+    });
+  });
+
   it('leaves the verdict for every other tool alone', () => {
     expect(decideWithArgs('write_file', 'edit', { path: 'a.ts' })).toBe('ask');
     expect(decideWithArgs('read_file', 'edit', { path: 'a.ts' })).toBe('allow');

@@ -176,9 +176,16 @@ export function decideWithArgs(
   tool: string,
   mode: Mode,
   args: Record<string, unknown>,
+  platform: NodeJS.Platform = process.platform,
 ): Decision {
   const base = decide(tool, mode);
   if (tool !== 'shell' || mode === 'auto') return base;
+  // M0 (D49cf): the allowlist is a bash parser. It can prove what `git status`
+  // does; it cannot prove what `cmd.exe` will do with the same text. On Windows
+  // the conservative verdict IS the base one — `plan` denies with no card (its
+  // promise is read-only, and asking would let a write run under its name) and
+  // `edit` asks for every command. POSIX keeps the allowance below.
+  if (platform === 'win32') return base;
   if (args['run_in_background'] === true) return base;
   const command = args['command'];
   if (typeof command === 'string' && isReadOnlyShellCommand(command)) return 'allow';

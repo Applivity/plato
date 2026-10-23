@@ -42,10 +42,12 @@
  *
  * # Quoting: the command is read the way bash will read it (D49aq)
  *
- * The command does NOT run argv-style — the executor hands the whole string to
- * `/bin/bash -c` (`execute.ts`), so quoting decides what bash does with it, and
- * this file has to model that faithfully or its verdict describes a different
- * command. Two rules follow, and both are consequences of bash's own:
+ * The command does NOT run argv-style — on POSIX the executor hands the whole
+ * string to `bash -c` (`shellPlatform.ts`), so quoting decides what bash does
+ * with it, and this file has to model that faithfully or its verdict describes
+ * a different command. On Windows this parser is never consulted (M0, D49cf):
+ * it describes bash, and `cmd.exe` is not bash. Two rules follow, and both are
+ * consequences of bash's own:
  *
  * - **Quoted globs are literal, so they are allowed.** bash expands `*` only
  *   when it is unquoted; inside quotes the character reaches the program

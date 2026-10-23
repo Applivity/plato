@@ -1061,6 +1061,55 @@ describe('runAgentLoop workspace containment (D49k)', () => {
   });
 
   /**
+   * M0 (D49cf). On Windows, plan denies EVERY shell command and draws no card,
+   * because the bash allowlist cannot describe `cmd.exe`. The refusal must say
+   * why, so the model knows to use the file tools or switch mode instead of
+   * retrying the same command.
+   */
+  it('denies every shell command in plan on Windows, and says why (M0)', async () => {
+    let approvals = 0;
+    const results: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              { type: 'tool_use', id: 'w1', name: 'shell', input: { command: 'git status' } },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') results.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      getMode: () => 'plan',
+      platform: 'win32',
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(r.reason).toBe('complete');
+    expect(approvals).toBe(0);
+    expect(results.join(' ')).toContain(
+      'Plato cannot prove a command is read-only on Windows',
+    );
+    expect(results.join(' ')).toContain('switch to edit');
+  });
+
+  /**
    * D49an. The read-only-shell allowance makes `cat keystore.properties` an
    * `allow`, because reading is all it does. **What stops it is the ORDER:** the
    * secret refusal runs before the mode decision, so the command is refused

@@ -283,6 +283,12 @@ export interface LoopOptions {
   task: string;
   /** Read live before every tool decision, so mid-run mode switches apply. */
   getMode: () => Mode;
+  /**
+   * M0 (D49cf): the platform the run is on. `process.platform` by default;
+   * injected so the Windows shell policy and its refusal copy can be tested on
+   * a Mac.
+   */
+  platform?: NodeJS.Platform;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
@@ -1098,11 +1104,20 @@ async function runLoop(
       // D49an: `decideWithArgs` is `decide` plus the read-only-shell allowance,
       // which is the only verdict that needs the arguments. A command that names
       // a protected file was already refused above, so it cannot reach this.
-      const decision = decideWithArgs(name, opts.getMode(), args);
+      const mode = opts.getMode();
+      const platform = opts.platform ?? process.platform;
+      const decision = decideWithArgs(name, mode, args, platform);
       let allowed = decision === 'allow';
 
       if (decision === 'deny') {
-        const blockedMsg = `blocked: ${name} is not permitted in ${opts.getMode()} mode`;
+        // M0 (D49cf): on Windows a shell command is denied in plan because the
+        // allowlist cannot prove anything about it. Say that, rather than the
+        // generic mode line, so the model knows what to do instead.
+        const blockedMsg =
+          platform === 'win32' && name === 'shell' && mode === 'plan'
+            ? 'blocked: Plato cannot prove a command is read-only on Windows. ' +
+              'Use the file tools or the git tool, or switch to edit.'
+            : `blocked: ${name} is not permitted in ${mode} mode`;
         results.push({
           type: 'tool_result',
           toolUseId: call.id,

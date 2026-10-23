@@ -25,6 +25,7 @@ import {
   unknownPlaceholderRefusal,
 } from '../runtime/secretCopy.js';
 import { isGitignored, listWorkspace, type WorkspaceListing } from './files.js';
+import { shellInvocation } from './shellPlatform.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
 import { matchGlob } from './glob.js';
 import { htmlToText, isPrivateHostname, isTextualContentType } from './web.js';
@@ -642,11 +643,20 @@ async function shellTool(
     };
   }
 
+  const invocation = shellInvocation(cmd);
   return new Promise((resolve) => {
     execFile(
-      '/bin/bash',
-      ['-c', cmd],
-      { cwd: root, timeout: 120_000, maxBuffer: 1_000_000 },
+      invocation.file,
+      invocation.args,
+      {
+        cwd: root,
+        timeout: 120_000,
+        maxBuffer: 1_000_000,
+        ...(invocation.windowsHide === true ? { windowsHide: true } : {}),
+        ...(invocation.windowsVerbatimArguments === true
+          ? { windowsVerbatimArguments: true }
+          : {}),
+      },
       (err, stdout, stderr) => {
         if (err && stdout.length === 0 && stderr.length === 0) {
           resolve(fail('command failed'));
