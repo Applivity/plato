@@ -4842,6 +4842,42 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49ch — the council card renders, a pause line is written once, and the page speaks UTF-8 to the host (2026-10-23).**
+
+**Why.** M3b checkpoint 2a drove Solo, Duo, and Academy through a real Visual Studio 2026 window. The
+feature work needed no new code — the shared host and the unchanged chat HTML carry it — but the
+witness found three defects. Two are in shared code, so the VS Code extension gets the same fixes.
+One is in the Visual Studio bridge.
+
+**1. The council card had never rendered in either host.** The host built the team payload and posted
+it through `send()`, which wraps its argument in `{ type, text }`. The page's `showTeam` reads
+`m.name` and `m.members` at the top level. Every Academy run therefore drew **"Team unnamed"** with
+no rows, since the card was introduced in 0.8.0. Structured payloads (`restore`, `settings`, `queue`)
+are posted flat; the team payload is one of them now. `send()` is for text messages only.
+
+**2. Every pause and resume line appeared twice.** `RunController.onPark` emitted a `notice` on the
+bus AND called `send('notice', line)`. Since D49bz the bus `notice` listener also posts the line, so
+the user saw two "Plato paused at a safe point." rows. The explicit send is removed; the bus notice
+is the one source.
+
+**3. Non-ASCII text from the page reached the host as U+FFFD.** On .NET Framework 4.8,
+`Process.StandardInput` is a StreamWriter with the system ANSI codepage, and
+`ProcessStartInfo.StandardInputEncoding` does not exist there. An em dash in a council role was
+written as byte 0x97; Node's UTF-8 reader reported U+FFFD and the host saved it. The bridge now
+writes the UTF-8 bytes to `StandardInput.BaseStream` itself. This is the Visual Studio shell only.
+Host-to-page text was never affected.
+
+**Verified.** `packages/vs/test/teams.test.mjs` covers the modes, the philosopher's powers, the
+council card payload, both observer notices, and the five-intervention cap. The team-payload
+assertion was falsified by restoring the old envelope, and the pause-line assertion by restoring
+the explicit send; both failed for the expected reason and were restored. The encoding fix is
+witnessed only where it can be: the real window creates a council through the Academy editor, and
+the driver asserts the saved role still contains `— mismatched lists`. `scripts/render/teams.mjs`
+adds the DOM assertions for the lead to run on macOS. Evidence:
+`C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
+
+---
+
 **D49cg — an approval card closes when its run ends, and a replayed card is never live (2026-10-23).**
 
 **Why.** The M3b checkpoint 1 witness found three defects that are shared with the VS Code extension:

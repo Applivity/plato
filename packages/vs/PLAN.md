@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE, M1, M2, M3a AND M3b CHECKPOINT 1 PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
+Status: **M0 DONE, M1, M2, M3a, M3b CHECKPOINT 1 (WITH ITS CORRECTION ROUND) AND M3b CHECKPOINT 2a PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
@@ -728,8 +728,23 @@ and a cancel left an approval card live. Each has a host regression test
 render assertions (`scripts/render/runlifecycle.mjs`, for the lead on macOS),
 and all three were re-verified in the real window in
 `C:\src\plato-vs-field\evidence\m3b\checkpoint1-fix\`.
-**Checkpoint 2 (Solo / Duo / Academy, observer strip, History and session
-resume, title generation and folding) is not started.**
+**Checkpoint 2a — Solo, Duo, Academy and the observer strip — PASSED
+(2026-10-23).** The real Settings picker switched all three arrangements through
+the unchanged shared host. A Duo philosopher named itself with its colour,
+guided the run, paused it at a safe point until the user resumed, and cancelled
+one. The five-intervention cap stopped at five even though the philosopher was
+granted eight. An Academy run drew **Team Lyceum** with Aristotle and
+Pythagoras, their kind, model, colour and powers, and both watching notices.
+**Three defects were found and fixed (D49ch):** the council card had never
+rendered because the host wrapped its payload in `text`; every pause and resume
+line was drawn twice; and non-ASCII text from the page reached the host as
+U+FFFD because .NET Framework's stdin writer uses the ANSI codepage. The first
+two are shared fixes, so the VS Code extension gets them too.
+`packages/vs/test/teams.test.mjs` pins the behaviour and was falsified twice;
+`scripts/render/teams.mjs` carries the DOM assertions for the lead on macOS;
+evidence is `C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
+**Checkpoint 2b (History and session resume, title generation and folding) is
+next.**
 
 ### M4 — Parity, part 2: agent features and editor
 
@@ -807,10 +822,10 @@ window, a transcript, or both.
 | Control | Reveal protected file card | |
 | Control | Pause/resume/cancel | |
 | Control | Queue | |
-| Teams | Solo | |
-| Teams | Duo | |
-| Teams | Academy | |
-| Teams | Observer strip | |
+| Teams | Solo | yes (M3b 2a) |
+| Teams | Duo | yes (M3b 2a) |
+| Teams | Academy | yes (M3b 2a) |
+| Teams | Observer strip | yes (M3b 2a) |
 | Providers | Connections and model discovery | |
 | Providers | Keys in Credential Manager | |
 | Providers | Model picker, reasoning, compaction | |

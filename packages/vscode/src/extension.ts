@@ -3947,7 +3947,13 @@ class ChatHost {
     const useAcademy = orchestration === 'academy' && team !== null;
     if (useAcademy && team) {
       this.send('notice', `Academy "${team.name || 'unnamed'}" active`);
-      this.send('team', {
+      // D49ch: this payload is NOT a text message, so it must not go through
+      // `send()`. That helper wraps its argument in `{ type, text }`, and the
+      // page reads the team card's name and members at the top level — so every
+      // council run rendered "Team unnamed" with no rows. Structured payloads
+      // (`restore`, `settings`, `queue`) are posted flat; this is one of them.
+      void this.panel.webview.postMessage({
+        type: 'team',
         name: team.name,
         members: team.members.map((m) => ({
           name: m.name,
@@ -4318,11 +4324,11 @@ class ChatHost {
         const line = parked
           ? 'Plato paused at a safe point.'
           : 'Plato resumed.';
-        // The bus notice is what the RECORD keeps and what pushes the scrollback
-        // row; the `send` is what draws it live. Both are needed — the listener
-        // for `notice` writes the log, it does not render.
+        // D49ch: ONE notice. The `notice` listener below both writes the log
+        // and sends the line (D49bz), so the explicit `send` this used to make
+        // drew every pause and resume twice — visible in the real window as two
+        // "Plato paused at a safe point." rows.
         bus.emit({ type: 'notice', runId: this.currentRunId, text: line });
-        this.send('notice', line);
         this.send('pause-state', { parked });
       },
     });

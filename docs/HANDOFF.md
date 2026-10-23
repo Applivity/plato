@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 and its correction round verified 2026-10-23)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 with its correction round, and M3b checkpoint 2a verified 2026-10-23)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -71,8 +71,21 @@ are now only in PROGRESS.
   card live (the host posts `approval-done`). Each has a host regression test — all three were
   falsified — plus render assertions in `scripts/render/runlifecycle.mjs` for the lead to run on
   macOS, and all three were re-verified in the real window: `evidence\m3b\checkpoint1-fix`.
-  **What remains for phase 3:** M3b checkpoint 2 (Solo/Duo/Academy, history and resume, title
-  generation and folding), then M4. The platform
+  **M3b checkpoint 2a, Solo, Duo, Academy and the observer strip, PASSED (2026-10-23):** the real
+  Settings picker switched all three arrangements; a Duo philosopher named itself with its colour,
+  guided the run, paused it at a safe point until the user resumed, and cancelled one; the
+  five-intervention cap stopped at five even with eight granted; and an Academy run drew **Team
+  Lyceum** with two philosophers and both watching notices. **The shared host and unchanged HTML
+  carry it**, so Stage A added no second implementation. **Three defects were found and fixed
+  (D49ch):** the council card had never rendered because its payload was wrapped in `text`; every
+  pause and resume line was drawn twice; and non-ASCII page-to-host text arrived as U+FFFD because
+  .NET Framework's stdin writer uses the ANSI codepage. The first two are shared fixes, so VS Code
+  gets them too. The stub model now scripts observer replies on their own cursor, so a philosopher
+  can be driven deterministically. `packages/vs/test/teams.test.mjs` pins the behaviour and was
+  falsified twice; render assertions are in `scripts/render/teams.mjs` for the lead on macOS;
+  evidence is in `C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
+  **What remains for phase 3:** M3b checkpoint 2b (history and session resume, title generation and
+  folding), then M4. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active

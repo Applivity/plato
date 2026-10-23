@@ -181,8 +181,17 @@ namespace Plato.Vs.Bridge
             await _writeGate.WaitAsync().ConfigureAwait(false);
             try
             {
-                await process.StandardInput.WriteLineAsync(line).ConfigureAwait(false);
-                await process.StandardInput.FlushAsync().ConfigureAwait(false);
+                // D49ch: the protocol is UTF-8, and `StandardInput` is a
+                // StreamWriter whose encoding is the system ANSI codepage on
+                // .NET Framework (StandardInputEncoding does not exist there).
+                // An en dash typed into a Settings field was written as 0x97,
+                // which Node's UTF-8 reader reported as U+FFFD and the host then
+                // saved that way — so every non-ASCII character the user sent
+                // arrived corrupted. Write the bytes ourselves.
+                var bytes = Encoding.UTF8.GetBytes(line + "\n");
+                var stream = process.StandardInput.BaseStream;
+                await stream.WriteAsync(bytes, 0, bytes.Length).ConfigureAwait(false);
+                await stream.FlushAsync().ConfigureAwait(false);
             }
             finally
             {
