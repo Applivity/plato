@@ -4842,6 +4842,34 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49cg — an approval card closes when its run ends, and a replayed card is never live (2026-10-23).**
+
+**Why.** The M3b checkpoint 1 witness found three defects that are shared with the VS Code extension:
+a fold rebuilt an answered approval card as live, so clicking it wrote an echo for an answer that
+reached nobody; a run advanced by the queue did not set the page's run UI, so Pause and Cancel were
+hidden even though the run was live; and cancel released the approval resolver but left the card's
+buttons live. These are repairs to the one card lifecycle, not new capability, so they are fixed in
+the shared host and webview and both hosts get them.
+
+**The rules.**
+
+1. Every approval `card-open` writes a `card-done` row beside it on allow, deny, session allow, and
+   cancel. Replay pairs the rows and draws the answered card; a lone old `card-open` replays
+   non-interactive. A late `approve` or `approve-all` is inert: no echo, no closed card, no widened
+   session.
+2. A queue-advanced run posts `queue-run` with the task, and the page sets the same run UI as a
+   user's send, including Pause and Cancel.
+3. Cancel closes the open approval card with the heading "<heading> — cancelled", not "denied",
+   because the user did not answer. The card stays as the record of what was asked.
+
+**Verified.** `packages/vs/test/approval-lifecycle.test.mjs` drives the real host through a
+`/compact` fold, late clicks, a cancelled card, and a queued pause/resume/cancel; it was falsified
+three times. `scripts/render/runlifecycle.mjs` asserts the DOM rules on macOS. All three defects were
+re-verified in a real Visual Studio 2026 window; evidence is
+`C:\src\plato-vs-field\evidence\m3b\checkpoint1-fix\`.
+
+---
+
 **D49cf — Phase 3 opens: Visual Studio 2026 is the next host, and the Windows repair comes first (founder, 2026-10-23).**
 
 **The instruction.** The founder set full Visual Studio support as the next goal and approved the

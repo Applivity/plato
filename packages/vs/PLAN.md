@@ -719,8 +719,15 @@ Studio 2026 window. The unchanged chat HTML and the existing IDE host carried
 them, so no bridge method and no shared code changed. Two witnesses per item:
 28 window screenshots and 16 run transcripts in
 `C:\src\plato-vs-field\evidence\m3b\checkpoint1\`, and the new host test
-`packages/vs/test/m3b.test.mjs`, which was falsified twice. Three shared,
-pre-existing defects are recorded in that evidence and are not fixed here.
+`packages/vs/test/m3b.test.mjs`, which was falsified twice. **The correction
+round (D49cg, 2026-10-23) fixed the three shared defects that pass found**, in
+the host and webview, so the VS Code extension gets the same fixes: a fold
+rebuilt spent approval cards as live; a queue-advanced run hid Pause and Cancel;
+and a cancel left an approval card live. Each has a host regression test
+(`packages/vs/test/approval-lifecycle.test.mjs`, falsified three times) and
+render assertions (`scripts/render/runlifecycle.mjs`, for the lead on macOS),
+and all three were re-verified in the real window in
+`C:\src\plato-vs-field\evidence\m3b\checkpoint1-fix\`.
 **Checkpoint 2 (Solo / Duo / Academy, observer strip, History and session
 resume, title generation and folding) is not started.**
 

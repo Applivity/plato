@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a and M3b checkpoint 1 verified 2026-10-23)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 and its correction round verified 2026-10-23)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -63,11 +63,16 @@ are now only in PROGRESS.
   the checkpoint added no bridge method and changed no shared code. The copy is the VS Code copy;
   the new host test `packages/vs/test/m3b.test.mjs` pins it and was falsified twice. Evidence is in
   `C:\src\plato-vs-field\evidence\m3b\checkpoint1\` (28 window screenshots, 16 transcripts, the
-  chat log, the driver log, and the sidecar log). **Three shared, pre-existing defects are recorded
-  there and not fixed:** a fold re-render rebuilds answered approval cards as live; a queue-advanced
-  run does not set the page's run UI, so Pause/Cancel are hidden during it; and a cancel leaves an
-  approval card's buttons live. **What remains for phase 3:** M3b checkpoint 2 (Solo/Duo/Academy,
-  history and resume, title generation and folding), then M4. The platform
+  chat log, the driver log, and the sidecar log). **The three shared defects that pass found were
+  FIXED in a correction round (D49cg, 2026-10-23), in the host and webview, so the VS Code
+  extension gets the same fixes:** a fold rebuilt spent approval cards as live (the host now
+  records a `card-done` row and a late answer is inert), a queue-advanced run hid Pause and Cancel
+  (the host now posts `queue-run` and the page sets the run UI), and a cancel left an approval
+  card live (the host posts `approval-done`). Each has a host regression test — all three were
+  falsified — plus render assertions in `scripts/render/runlifecycle.mjs` for the lead to run on
+  macOS, and all three were re-verified in the real window: `evidence\m3b\checkpoint1-fix`.
+  **What remains for phase 3:** M3b checkpoint 2 (Solo/Duo/Academy, history and resume, title
+  generation and folding), then M4. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active

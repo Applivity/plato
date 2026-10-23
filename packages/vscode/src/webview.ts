@@ -1445,6 +1445,12 @@ export function chatHtml(): string {
   let openRevealCard = null;
   /** D49cb: the model's mode request — the only card that can change a mode. */
   let openModeRequestCard = null;
+  /**
+   * D49cg: the approval card on screen, so a cancel can close it the way the
+   * question card is closed. Without this the buttons stayed live after the run
+   * was gone, and a click answered nothing while writing an echo row.
+   */
+  let openApprovalCard = null;
   // D37 state. The caption + ring + pill all read from here.
   let lastMaxContext = null;
   let lastThreshold = 0.8;
@@ -4440,6 +4446,17 @@ export function chatHtml(): string {
       // D49bo: the whole queue, every time. One authoritative mirror beats
       // three messages that each have to be kept in step with it.
       case 'queue': renderQueue(m.items, m.held); break;
+      // D49cg: the host started a queued run. It never saw an ask, so this is
+      // the only chance to show the message and set the run UI. Without it the
+      // Pause and Cancel controls stayed hidden for the whole queued run.
+      case 'queue-run':
+        addMsg('you', 'You', String(m.text || ''));
+        busy = true;
+        runT0 = Date.now();
+        refreshChip();
+        setRunUi(true);
+        setStatus('Plato is thinking');
+        break;
       case 'md': flushToolBuffer(); streamHtml(String(m.text || '')); refreshChip(); setStatus('writing'); break;
       case 'turn': {
         // Turn boundary: commit the ongoing stream into a finished block so
@@ -4492,6 +4509,11 @@ export function chatHtml(): string {
         showCard(m);
         refreshChip();
         setStatus('waiting for your approval');
+        break;
+      // D49cg: the run ended with the card on screen. The card is closed, as
+      // the question card is, so its buttons cannot answer a dead run.
+      case 'approval-done':
+        dismissApproval(m.text);
         break;
       case 'user-question':
         flushToolBuffer();
@@ -4584,7 +4606,16 @@ export function chatHtml(): string {
     log.textContent = '';
     stick = true;
     clearStatus();
-    for (const t of entries) { appendEntry(t); }
+    for (let i = 0; i < entries.length; i += 1) {
+      const t = entries[i];
+      // D49cg: an approval row records its own close immediately after its open.
+      // Replaying the open alone rebuilt a spent card as LIVE — the fold's own
+      // re-render did it — so the pair is replayed as the closed card below.
+      if (t.k === 'card-open' && entries[i + 1] && entries[i + 1].k === 'card-done') {
+        continue;
+      }
+      appendEntry(t);
+    }
     flushToolBuffer();
     chipOff();
     runT0 = 0;
@@ -4613,7 +4644,13 @@ export function chatHtml(): string {
         }
         if (t.phase === 'done') { toolBuffer.push({ tool: t.tool, phase: t.phase }); }
         break;
-      case 'card-open': showCard(t, false); break;
+      // D49cg: a replayed approval card is never interactive. A log written
+      // before this fix has an open row with no close, and the state it ended
+      // in is unknown — so it is drawn as a spent card rather than a live one
+      // the user can click into a run that no longer exists.
+      case 'card-open':
+        cardDone({ title: t.heading || 'Let Plato do this?', preview: t.preview });
+        break;
       // D49aw: a reload while the run is still waiting must rebuild the card,
       // or the question disappears off the screen while the host waits for an
       // answer that can no longer be given.
@@ -4879,6 +4916,7 @@ export function chatHtml(): string {
       actions.remove();
       card.classList.add('answered');
       h.textContent = text;
+      if (openApprovalCard === card) { openApprovalCard = null; }
     }
     function decide(v) {
       vsapi.postMessage({ type: 'approve', value: v ? 'yes' : 'no' });
@@ -4901,8 +4939,37 @@ export function chatHtml(): string {
     actions.appendChild(all);
     actions.appendChild(no);
     card.appendChild(actions);
+    // Only the newest card stays live; two live cards would ask the same
+    // question twice, and the older one could never be answered.
+    if (openApprovalCard) {
+      openApprovalCard.classList.add('answered');
+      const prior = openApprovalCard.querySelector('.actions');
+      if (prior) { prior.remove(); }
+      openApprovalCard = null;
+    }
+    openApprovalCard = card;
     log.appendChild(card);
     scroll();
+  }
+
+  /**
+   * D49cg: the host closed the card — the run ended while it was open. Marked
+   * ANSWERED and buttonless rather than removed, so the record of what was
+   * asked stays in the conversation, and marked in the DOM so nothing watching
+   * for an open card reads a dead one as live.
+   */
+  function dismissApproval(title) {
+    if (!openApprovalCard) { return; }
+    const card = openApprovalCard;
+    openApprovalCard = null;
+    const actions = card.querySelector('.actions');
+    if (actions) { actions.remove(); }
+    card.classList.add('answered');
+    const h = card.querySelector('h3');
+    if (h && typeof title === 'string' && title.length > 0) {
+      h.textContent = title;
+    }
+    clearStatus();
   }
 
   // D34/D35: question card — one question at a time (stepper); the last
@@ -5490,9 +5557,16 @@ export function chatHtml(): string {
     clearStatus();
   }
 
+  /**
+   * D49cg: a spent approval card, rebuilt from the log. It carries the same
+   * classes as the live card plus answered, so anything that keys off the class
+   * (the field drivers, the render suites) reads it as closed — and it has no
+   * actions because there is nothing left to answer.
+   */
   function cardDone(t) {
     const card = document.createElement('div');
-    card.className = 'card';
+    card.className = 'card approval-card answered';
+    if (t.tool) { card.dataset.tool = String(t.tool); }
     const h = document.createElement('h3');
     h.textContent = t.title;
     card.appendChild(h);

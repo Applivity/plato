@@ -122,3 +122,16 @@ export function approvalAnsweredSession(heading: string): string {
   const bare = heading.endsWith('?') ? heading.slice(0, -1) : heading;
   return `${bare} — allowed for the rest of this session`;
 }
+
+/**
+ * The heading after the run was CANCELLED with the card on screen.
+ *
+ * The card is kept as the record of what was asked, and it must say the call
+ * did not run. "Denied" would claim the user answered; every cancel path
+ * resolves the card on the user's behalf, so the honest word is the one the
+ * run record itself uses.
+ */
+export function approvalCancelled(heading: string): string {
+  const bare = heading.endsWith('?') ? heading.slice(0, -1) : heading;
+  return `${bare} — cancelled`;
+}
