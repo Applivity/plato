@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executeTool } from '../src/tools/execute.js';
 import { ShellManager } from '../src/tools/background.js';
+import { LONG_RUNNING, nodeCommand } from './portable.js';
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'plato-exec-'));
@@ -624,7 +625,7 @@ describe('background shells through the tool surface (D49m)', () => {
     const r = await executeTool(
       tempRoot(),
       'shell',
-      { command: 'sleep 20', run_in_background: true },
+      { command: LONG_RUNNING, run_in_background: true },
       { shells: m },
     );
     expect(r.ok).toBe(true);
@@ -641,7 +642,7 @@ describe('background shells through the tool surface (D49m)', () => {
     const started = await executeTool(
       root,
       'shell',
-      { command: 'sleep 0.3; echo built', run_in_background: true },
+      { command: nodeCommand("setTimeout(()=>console.log('built'),300)"), run_in_background: true },
       ctx,
     );
     expect(started.ok).toBe(true);
@@ -655,7 +656,7 @@ describe('background shells through the tool surface (D49m)', () => {
     const m = new ShellManager();
     const ctx = { shells: m };
     const root = tempRoot();
-    await executeTool(root, 'shell', { command: 'sleep 20', run_in_background: true }, ctx);
+    await executeTool(root, 'shell', { command: LONG_RUNNING, run_in_background: true }, ctx);
     const k = await executeTool(root, 'kill_shell', { id: 1 }, ctx);
     expect(k.ok).toBe(true);
     expect(k.output).toContain('killed');

@@ -24,6 +24,7 @@ import { createVault, isPlainText, placeholder } from '../src/security/mask.js';
 import { allowPathError, protectNameError } from '../src/security/secrets.js';
 import { declinedRevealRefusal, revealCard, revealedFileNotice } from '../src/runtime/secretCopy.js';
 import { seedVault } from '../src/runtime/seedVault.js';
+import { readMatching } from './portable.js';
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'plato-reveal-'));
@@ -228,19 +229,20 @@ describe('the settings the panel writes (D49bc)', () => {
 describe('the secret map filled at run start (D49bc)', () => {
   it('hides a value a command reached INDIRECTLY, without any read', async () => {
     const root = tempRoot();
-    // `local.properties` is protected by EXACT name, so a glob that expands to
-    // it is not that name: the token scan sees `local.propert*` and lets it
-    // through. This is the whole hole, in one line.
+    // `local.properties` is protected by EXACT name, so a command that reads it
+    // by PREFIX is not that name: the token scan sees `local.propert` and lets
+    // it through. This is the whole hole, in one line. (`readMatching` is the
+    // portable spelling: `cat local.propert*` needs bash.)
     writeFileSync(join(root, 'local.properties'), 'sdk.dir=/opt/sdk\napiKey=sk-live-indirect-0001\n');
     const vault = createVault();
 
-    const r = await executeTool(root, 'shell', { command: 'cat local.propert*' }, { vault });
+    const r = await executeTool(root, 'shell', { command: readMatching('local.propert') }, { vault });
     expect(r.ok).toBe(true);
     // Nothing read it, so before seeding this printed the value.
     expect(r.output).toContain('sk-live-indirect-0001');
 
     await seedVault(root, vault);
-    const after = await executeTool(root, 'shell', { command: 'cat local.propert*' }, { vault });
+    const after = await executeTool(root, 'shell', { command: readMatching('local.propert') }, { vault });
     expect(after.output).not.toContain('sk-live-indirect-0001');
     expect(after.output).toContain(placeholder('apiKey'));
   });

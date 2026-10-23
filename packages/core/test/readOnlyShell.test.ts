@@ -3,6 +3,17 @@ import { isReadOnlyShellCommand } from '../src/security/readOnlyShell.js';
 import { decideWithArgs, secretRefusal } from '../src/runtime/modes.js';
 
 /**
+ * M0 (D49cf): the POSIX policy is pinned explicitly. On a Windows host the
+ * default verdict is the conservative one, which is correct there and would
+ * make these POSIX assertions describe the wrong platform.
+ */
+const decidePosix = (
+  tool: string,
+  mode: 'plan' | 'edit' | 'auto',
+  args: Record<string, unknown>,
+): ReturnType<typeof decideWithArgs> => decideWithArgs(tool, mode, args, 'linux');
+
+/**
  * D49an. `edit` mode runs a read-only shell command without an approval card.
  *
  * **The refusals are the important half of this file**, because the two mistakes
@@ -305,11 +316,11 @@ describe('quoting is read the way bash reads it (D49aq)', () => {
  */
 describe('the allowance is narrow and mode-scoped (D49an)', () => {
   it('allows a read-only command in edit, and still asks for anything else', () => {
-    expect(decideWithArgs('shell', 'edit', { command: 'git status' })).toBe('allow');
-    expect(decideWithArgs('shell', 'edit', { command: 'ls -la' })).toBe('allow');
-    expect(decideWithArgs('shell', 'edit', { command: 'rm -rf src' })).toBe('ask');
-    expect(decideWithArgs('shell', 'edit', { command: 'git commit -m x' })).toBe('ask');
-    expect(decideWithArgs('shell', 'edit', {})).toBe('ask');
+    expect(decidePosix('shell', 'edit', { command: 'git status' })).toBe('allow');
+    expect(decidePosix('shell', 'edit', { command: 'ls -la' })).toBe('allow');
+    expect(decidePosix('shell', 'edit', { command: 'rm -rf src' })).toBe('ask');
+    expect(decidePosix('shell', 'edit', { command: 'git commit -m x' })).toBe('ask');
+    expect(decidePosix('shell', 'edit', {})).toBe('ask');
   });
 
   /**
@@ -328,15 +339,15 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
    * still true.
    */
   it('gives plan the read-only commands, and nothing else (D49ao)', () => {
-    expect(decideWithArgs('shell', 'plan', { command: 'git status' })).toBe('allow');
-    expect(decideWithArgs('shell', 'plan', { command: 'ls -la' })).toBe('allow');
-    expect(decideWithArgs('shell', 'plan', { command: 'grep -rn foo src' })).toBe('allow');
+    expect(decidePosix('shell', 'plan', { command: 'git status' })).toBe('allow');
+    expect(decidePosix('shell', 'plan', { command: 'ls -la' })).toBe('allow');
+    expect(decidePosix('shell', 'plan', { command: 'grep -rn foo src' })).toBe('allow');
     // Denied, not asked: plan draws no card for a command.
-    expect(decideWithArgs('shell', 'plan', { command: 'rm -rf src' })).toBe('deny');
-    expect(decideWithArgs('shell', 'plan', { command: 'npm test' })).toBe('deny');
-    expect(decideWithArgs('shell', 'plan', { command: 'cat /etc/passwd' })).toBe('deny');
-    expect(decideWithArgs('shell', 'plan', { command: 'git commit -m x' })).toBe('deny');
-    expect(decideWithArgs('shell', 'plan', {})).toBe('deny');
+    expect(decidePosix('shell', 'plan', { command: 'rm -rf src' })).toBe('deny');
+    expect(decidePosix('shell', 'plan', { command: 'npm test' })).toBe('deny');
+    expect(decidePosix('shell', 'plan', { command: 'cat /etc/passwd' })).toBe('deny');
+    expect(decidePosix('shell', 'plan', { command: 'git commit -m x' })).toBe('deny');
+    expect(decidePosix('shell', 'plan', {})).toBe('deny');
   });
 
   /**
@@ -349,13 +360,13 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
    */
   it('never auto-approves a background command (D49ao)', () => {
     expect(
-      decideWithArgs('shell', 'edit', { command: 'ls', run_in_background: true }),
+      decidePosix('shell', 'edit', { command: 'ls', run_in_background: true }),
     ).toBe('ask');
     expect(
-      decideWithArgs('shell', 'plan', { command: 'ls', run_in_background: true }),
+      decidePosix('shell', 'plan', { command: 'ls', run_in_background: true }),
     ).toBe('deny');
     // The same command in the foreground is still a read.
-    expect(decideWithArgs('shell', 'edit', { command: 'ls' })).toBe('allow');
+    expect(decidePosix('shell', 'edit', { command: 'ls' })).toBe('allow');
   });
 
   /**
@@ -366,9 +377,9 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
     // An MCP tool is shell-class and denied in plan; it carries a `command` arg
     // shaped exactly like the one the allowance looks for.
     expect(
-      decideWithArgs('mcp__fake__echo', 'plan', { command: 'git status' }),
+      decidePosix('mcp__fake__echo', 'plan', { command: 'git status' }),
     ).toBe('deny');
-    expect(decideWithArgs('kill_shell', 'plan', { id: 'x' })).toBe('deny');
+    expect(decidePosix('kill_shell', 'plan', { id: 'x' })).toBe('deny');
   });
 
   /**
@@ -424,7 +435,7 @@ describe('the allowance is narrow and mode-scoped (D49an)', () => {
    */
   it('says allow for a command naming a protected file, because the secret check fires first', () => {
     const args = { command: 'cat keystore.properties' };
-    expect(decideWithArgs('shell', 'edit', args)).toBe('allow');
+    expect(decidePosix('shell', 'edit', args)).toBe('allow');
     expect(secretRefusal('shell', args)).not.toBeNull();
   });
 });
