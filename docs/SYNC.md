@@ -76,11 +76,17 @@ Windows 10.
 
 ## Windows machine facts (2026-10-23)
 
-- **OS:** Windows 10 22H2 (19045). **Visual Studio 2026 requires Windows 11**, so
-  this machine cannot run VS 2026. Do not attempt to install it here.
-- **Visual Studio 2022 Community 17.14.27** is installed at
-  `C:\Program Files\Microsoft Visual Studio\2022\Community`. The **extension
-  development workload is not installed** yet. M2 cannot build until it is.
+- **OS:** Windows 10 22H2 (19045). Microsoft supports Visual Studio 2026 on
+  Windows 11 only. **VS 2026 18.11.1 is installed and runs here anyway.** Treat
+  Windows 10 as an unsupported development environment; the final acceptance
+  run belongs on Windows 11.
+- **Visual Studio 2026 Community 18.11.1** is installed at
+  `C:\Program Files\Microsoft Visual Studio\18\Community`. `devenv.exe` and
+  MSBuild 18.11.1 are present. The **extension development workload is
+  installed.** WebView2 runtime 155.0.4283.62. .NET Framework 4.8 targeting
+  pack present.
+- **Visual Studio 2022 Community 17.14.42** is also installed, without the
+  extension workload. Use VS 2026.
 - **Node 22.20.0** is under
   `C:\Users\DummyUser\AppData\Local\nvm\v22.20.0`. The default `node` is still
   21.7.3. Put the Node 22 directory first on `PATH`:
@@ -88,10 +94,12 @@ Windows 10.
 - **pnpm 11.23.0** is installed in that Node 22 directory.
 - **Claude Code 2.1.226** is installed.
 - **M1 spike:** passes on Windows.
-- **Open decision:** use VS 2022 as the development proxy and verify on a
-  Windows 11 machine with VS 2026, or move M2 to a Windows 11 machine now.
+- **M0:** the branch `windows/m0` is pushed. The Mac tests are green (core
+  908/908, CLI 180/180). The Windows verification is pending.
+- **SMB:** blocked from Windows 10 to the Mac share (guest logon). Use SSH
+  bundles.
 
-Then:
+Then, for M2:
 
 ```powershell
 cd C:\src\plato
@@ -103,8 +111,19 @@ node packages/vs/test/spike.mjs
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
-is on `192.168.4.62`. The two networks route for SSH; confirm SMB reaches the
-Mac before relying on it.
+is on `192.168.4.62`. SSH routes between them. SMB does not.
+
+For the M0 Windows verification, use a separate clone so `vs/m1` stays intact:
+
+```powershell
+cd C:\src
+git clone plato-sync.bundle plato-m0
+cd plato-m0
+git checkout windows/m0
+pnpm install
+pnpm test
+```
+
 
 ## Mac checkpoint procedure
 

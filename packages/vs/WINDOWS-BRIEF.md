@@ -14,14 +14,17 @@ Read first:
 
 ## Machine facts (verified 2026-10-23)
 
-- **OS:** Windows 10 22H2 (build 19045). **Visual Studio 2026 requires Windows
-  11**, so this machine cannot run VS 2026. Do not attempt to install it.
-- **Visual Studio 2022 Community 17.14.27** is installed at
-  `C:\Program Files\Microsoft Visual Studio\2022\Community`.
-  The **Visual Studio extension development workload is NOT installed yet.**
-  M2 cannot build until it is added. The VS lead/founder will decide whether
-  this machine is the VS 2022 development proxy or whether a Windows 11 machine
-  with VS 2026 is used instead.
+- **OS:** Windows 10 22H2 (build 19045). Microsoft supports Visual Studio 2026
+  on Windows 11 only. **VS 2026 18.11.1 is installed and runs here anyway.**
+  Treat Windows 10 as an unsupported development environment; the final
+  acceptance run belongs on Windows 11.
+- **Visual Studio 2026 Community 18.11.1** is installed at
+  `C:\Program Files\Microsoft Visual Studio\18\Community`.
+  `devenv.exe` and `MSBuild.exe` are present. The **Visual Studio extension
+  development workload is installed.** WebView2 runtime 155.0.4283.62. .NET
+  Framework 4.8 targeting pack present.
+- **Visual Studio 2022 Community 17.14.42** is also installed, without the
+  extension workload. Use VS 2026.
 - **Node 22.20.0** is installed under
   `C:\Users\DummyUser\AppData\Local\nvm\v22.20.0`. The default `node` is still
   21.7.3. Put the Node 22 directory first on `PATH` for every build:
@@ -35,11 +38,14 @@ Read first:
 - **M1 spike:** passes on Windows. The existing host runs through the shim,
   produces the chat HTML, completes three scripted runs, and writes three
   transcripts.
+- **M0 (the shared-core Windows repair):** the Mac tests are green — core
+  908/908 and CLI 180/180, including `shellPlatform.test.ts` and the Windows
+  path tests. The Windows verification is still pending.
 - **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
   SMB logons). Use SSH bundles, not SMB.
 - **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
 
-## M2 — start after the extension workload exists
+## M2 — start now
 
 The first run uses `write_file` and `read_file`, not the shell tool, so M2 does
 not wait for M0.
