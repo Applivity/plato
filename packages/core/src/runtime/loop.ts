@@ -44,7 +44,7 @@ import {
   promptBreakdown,
   shouldAutoCompact,
 } from './context.js';
-import { buildWorkerRole } from './workerRole.js';
+import { buildWorkerRole, type TeamContext } from './workerRole.js';
 import {
   askNote,
   continueText,
@@ -283,6 +283,12 @@ export interface LoopOptions {
   task: string;
   /** Read live before every tool decision, so mid-run mode switches apply. */
   getMode: () => Mode;
+  /**
+   * M0 (D49cf): the platform the run is on. `process.platform` by default;
+   * injected so the Windows shell policy and its refusal copy can be tested on
+   * a Mac.
+   */
+  platform?: NodeJS.Platform;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
@@ -402,6 +408,11 @@ export interface LoopOptions {
   model: string;
   /** Extra system text appended for this run (D31: team coder role). */
   role?: string;
+  /**
+   * The observers that started for this run. Appended to the worker prompt so
+   * a model cannot conclude the team is blind when it is not.
+   */
+  team?: TeamContext;
   /**
    * D46: Plato's global config dir (`~/.plato`). Feeds the worker-prompt join
    * as the PLATO.md fallback when the project has none.
@@ -674,6 +685,7 @@ async function runLoop(
     // D49cb: the instruction matches the tool. A host without the card keeps
     // the prose-only path, which is what the CLI does until it grows one.
     modeRequest: opts.requestMode !== undefined,
+    ...(opts.team === undefined ? {} : { team: opts.team }),
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`
@@ -1098,11 +1110,20 @@ async function runLoop(
       // D49an: `decideWithArgs` is `decide` plus the read-only-shell allowance,
       // which is the only verdict that needs the arguments. A command that names
       // a protected file was already refused above, so it cannot reach this.
-      const decision = decideWithArgs(name, opts.getMode(), args);
+      const mode = opts.getMode();
+      const platform = opts.platform ?? process.platform;
+      const decision = decideWithArgs(name, mode, args, platform);
       let allowed = decision === 'allow';
 
       if (decision === 'deny') {
-        const blockedMsg = `blocked: ${name} is not permitted in ${opts.getMode()} mode`;
+        // M0 (D49cf): on Windows a shell command is denied in plan because the
+        // allowlist cannot prove anything about it. Say that, rather than the
+        // generic mode line, so the model knows what to do instead.
+        const blockedMsg =
+          platform === 'win32' && name === 'shell' && mode === 'plan'
+            ? 'blocked: Plato cannot prove a command is read-only on Windows. ' +
+              'Use the file tools or the git tool, or switch to edit.'
+            : `blocked: ${name} is not permitted in ${mode} mode`;
         results.push({
           type: 'tool_result',
           toolUseId: call.id,

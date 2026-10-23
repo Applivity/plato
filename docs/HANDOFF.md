@@ -33,10 +33,7 @@ are now only in PROGRESS.
   existing VS Code IDE host runs outside VS Code through `packages/vs/host/shim/vscode.ts`; it
   produced the chat HTML, ran three scripted runs (a write with an approval card, undo, a question
   card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
-  whole host type-checks against the shim. **M1, the host-shim spike, PASSED:** the existing
-  VS Code IDE host runs outside VS Code, produced the chat HTML, ran three scripted runs (a write
-  with an approval card, undo, a question card, and a mode request), persisted the mode, wrote
-  three transcripts, and disposed cleanly. The M1-era suite was core 886/886 and CLI 175/175, and
+  whole host type-checks against the shim. The M1-era suite was core 886/886 and CLI 175/175, and
   all 25 render suites pass. **M0, the Windows shell and process repair, is DONE and verified on
   Windows (2026-10-23):** the Mac suite is core 908/1 skipped and CLI 180; the Windows suite is
   core 907/2 skipped and CLI 177/3 skipped; the real Windows command/background/MCP run passed.
@@ -103,9 +100,15 @@ are now only in PROGRESS.
   opening line, the fuller Teams section, and the version bump. Its served README is
   byte-identical to the repository file. The npmjs.com page still showed "no README" for 0.1.1
   after its approval, and the registry was correct then too; npmjs.com answers 403 to this
-  environment, so the page itself can only be checked in a browser. **0.1.3 is prepared and waits
-  on the founder's publish**: a Support section (`plato-feedback@applivity.com` and the Applivity
-  link) and a `homepage` field, so the npm page carries a back link outside the README.
+  environment, so the page itself can only be checked in a browser. **`0.1.3` is live on npm**
+  (a Support section, `plato-feedback@applivity.com`, and a `homepage` field).
+  **`0.1.4` is the release candidate on branch `plato-bugs`:** the Windows shell/process/MCP
+  repair, four terminal fixes (a bounded live answer, terminal Markdown, Ctrl+word keys, and the
+  Duo observer prompt), and the VS Code Duo parity. Core is 914 passed / 1 skipped, CLI 216, the
+  Windows suite is 907 passed / 2 skipped and 177 passed / 3 skipped, and a real Windows
+  command/background/MCP run passed. **The npm publish remains the founder's.** **Visual Studio
+  2026 support is on branch `vs/m1` and is not part of this CLI release**; M1 passes and M2 is in
+  progress on the Windows machine.
 
   **The VSIX half of D49bz is DONE (2026-10-21), in the place the founder asked for: Plato's own
   settings page.** A new **Others** section (the gear) carries the switch, written with the same
@@ -116,9 +119,10 @@ are now only in PROGRESS.
   holds the same value, and run 2 finds nothing. The
   case found a real defect on its first run — the extension persisted loop notices but never posted
   them, so they appeared only after a reload; `extension.ts` now does both. **The VSIX still needs
-  the founder's upload**: `0.26.4` is **live** on the Marketplace; `0.26.6` is packaged and
-  prepared with the switch, its plain-language copy, the panel section, and the real mode request.
-  `0.26.5` was superseded before upload. Nothing newer than `0.26.4` has been uploaded. The matrix found two prompt defects
+  the founder's upload**: `0.26.4` is **live** on the Marketplace; `0.26.7` is packaged and
+  prepared with the switch, its plain-language copy, the panel section, the real mode request, the
+  Windows shell/process repair, and the Duo worker parity. `0.26.5` and `0.26.6` were superseded
+  before upload. Nothing newer than `0.26.4` has been uploaded. The matrix found two prompt defects
   that are now fixed: a prompt whose input closes already threw out of an approval, and a pending
   question whose input closed hung the CLI forever; both now count as no answer. The npm
   publish is the founder's. Every other

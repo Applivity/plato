@@ -4395,6 +4395,9 @@ class ChatHost {
       const result = await runAgentLoop({
         root,
         task: modelTask,
+        // The worker is told which watchers actually started, so its account of
+        // the team matches the one the user sees.
+        team: { mode: orchestration, watchers: observers.map((o) => o.name) },
         // D49bz: read per run, not at activation, so a change in Settings
         // applies to the next run without reloading the window. Off by default:
         // an ignored file is found and labelled rather than silently missed.

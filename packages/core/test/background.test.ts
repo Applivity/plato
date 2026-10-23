@@ -3,6 +3,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ShellManager } from '../src/tools/background.js';
+import { isWindows } from '../src/tools/shellPlatform.js';
+import { LONG_RUNNING, nodeCommand, print, warn } from './portable.js';
 
 /**
  * D49m. `shell` blocks for 120s and then dies, so anything long-running was
@@ -27,7 +29,7 @@ async function drain(m: ShellManager, id: string): Promise<string> {
 describe('ShellManager (D49m)', () => {
   it('starts a shell that outlives the call', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'sleep 2');
+    const s = m.start(root(), LONG_RUNNING);
     expect(s.running).toBe(true);
     expect(s.pid).toBeGreaterThan(0);
     // The start call returned while the command is still going — the whole
@@ -39,7 +41,7 @@ describe('ShellManager (D49m)', () => {
 
   it('reports that it exited, with the code and the output', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'echo finished');
+    const s = m.start(root(), print('finished'));
     const out = await drain(m, s.id);
     expect(out).toContain('finished');
     expect(out).toContain('exited 0');
@@ -49,14 +51,14 @@ describe('ShellManager (D49m)', () => {
 
   it('reports a non-zero exit code', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'exit 3');
+    const s = m.start(root(), nodeCommand('process.exit(3)'));
     await drain(m, s.id);
     expect(m.get(s.id)?.exitCode).toBe(3);
   });
 
   it('captures stderr, labelled', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'echo problem >&2');
+    const s = m.start(root(), warn('problem'));
     const out = await drain(m, s.id);
     expect(out).toContain('[stderr] problem');
   });
@@ -65,7 +67,10 @@ describe('ShellManager (D49m)', () => {
   // would blow up the context a little more with each call.
   it('returns only what is new since the last read', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'echo one; sleep 0.4; echo two');
+    const s = m.start(
+      root(),
+      nodeCommand("console.log('one');setTimeout(()=>console.log('two'),400)"),
+    );
     const first = await m.read(s.id, 200);
     expect(first.output).toContain('one');
     const second = await drain(m, s.id);
@@ -75,14 +80,14 @@ describe('ShellManager (D49m)', () => {
 
   it('waits for output instead of returning empty', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'sleep 0.3; echo late');
+    const s = m.start(root(), nodeCommand("setTimeout(()=>console.log('late'),300)"));
     const r = await m.read(s.id, 5_000);
     expect(r.output).toContain('late');
   });
 
   it('returns as soon as the shell exits, without waiting out the timeout', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'exit 0');
+    const s = m.start(root(), nodeCommand('process.exit(0)'));
     const t0 = Date.now();
     await m.read(s.id, 20_000);
     // If this waited the full 20s the test would take 20s; the exit must win.
@@ -95,7 +100,7 @@ describe('ShellManager (D49m)', () => {
    */
   it('stops waiting when the run is cancelled', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'sleep 20');
+    const s = m.start(root(), LONG_RUNNING);
     const ctrl = new AbortController();
     setTimeout(() => ctrl.abort(), 100);
     const t0 = Date.now();
@@ -108,7 +113,7 @@ describe('ShellManager (D49m)', () => {
 
   it('kills a running shell', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), 'sleep 20');
+    const s = m.start(root(), LONG_RUNNING);
     const r = await m.kill(s.id);
     expect(r.ok).toBe(true);
     expect(r.output).toContain('killed');
@@ -117,7 +122,10 @@ describe('ShellManager (D49m)', () => {
 
   // `npm run dev` spawns children; killing only the shell leaves the real
   // process holding the port. The group signal is what makes kill mean kill.
-  it('kills the whole process group, not just the shell', async () => {
+  // POSIX only, by construction: `&`, `$!` and a process group are bash's.
+  // Windows kills the tree with `taskkill /T /F`; that path is proven by the
+  // unit tests in shellPlatform.test.ts and on the Windows machine (M0).
+  it.skipIf(isWindows())('kills the whole process group, not just the shell', async () => {
     const m = new ShellManager();
     const dir = root();
     // A grandchild that would outlive the shell if only the shell were killed.
@@ -142,16 +150,16 @@ describe('ShellManager (D49m)', () => {
     expect(await m.read('99', 0)).toMatchObject({ ok: false });
     expect((await m.read('99', 0)).output).toContain('no background shell 99');
     expect(await m.kill('99')).toMatchObject({ ok: false });
-    const s = m.start(root(), 'exit 0');
+    const s = m.start(root(), nodeCommand('process.exit(0)'));
     await drain(m, s.id);
     expect((await m.kill(s.id)).output).toContain('already finished');
   });
 
   it('lists shells and stops every running one', async () => {
     const m = new ShellManager();
-    const a = m.start(root(), 'sleep 20');
-    const b = m.start(root(), 'sleep 20');
-    const c = m.start(root(), 'exit 0');
+    const a = m.start(root(), LONG_RUNNING);
+    const b = m.start(root(), LONG_RUNNING);
+    const c = m.start(root(), nodeCommand('process.exit(0)'));
     await drain(m, c.id);
     expect(m.list()).toHaveLength(3);
     expect(m.hasRunning()).toBe(true);
@@ -167,7 +175,7 @@ describe('ShellManager (D49m)', () => {
     const m = new ShellManager((phase, status) => {
       seen.push(`${phase}:${status.id}`);
     });
-    const s = m.start(root(), 'exit 0');
+    const s = m.start(root(), nodeCommand('process.exit(0)'));
     await drain(m, s.id);
     expect(seen).toEqual([`started:${s.id}`, `exited:${s.id}`]);
   });
@@ -177,7 +185,7 @@ describe('ShellManager (D49m)', () => {
   // output, so this deliberately does not drain while the flood is running.
   it('caps a flood of output and admits what it dropped', async () => {
     const m = new ShellManager();
-    const s = m.start(root(), "printf 'x%.0s' $(seq 1 70000)");
+    const s = m.start(root(), nodeCommand("process.stdout.write('x'.repeat(70000))"));
     for (let i = 0; i < 100 && m.get(s.id)?.running; i++) {
       await new Promise((r) => setTimeout(r, 50));
     }

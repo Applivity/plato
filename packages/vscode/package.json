@@ -1,6 +1,6 @@
 {
   "name": "plato",
-  "version": "0.26.6",
+  "version": "0.26.7",
   "private": true,
   "license": "Apache-2.0",
   "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
@@ -21,7 +21,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-0.26.6.vsix --force"
+    "install:vsix": "code --install-extension plato-0.26.7.vsix --force"
   },
   "contributes": {
     "commands": [

@@ -332,3 +332,67 @@ describe('the worker prompt says how to ask for a mode (D49bk, D49cb)', () => {
     expect(one).toContain('Use request_mode, not ask_user, for a mode change');
   });
 });
+
+/**
+ * The worker is told about the team it runs in. Before this, a Duo run's reply
+ * claimed Aristotle was "a separate harness, two processes, no shared context"
+ * and used that to call the design invalid. The observers were in-process and
+ * had the coder's digest the whole time; the prompt simply never said so.
+ */
+describe('the worker prompt describes the team', () => {
+  it('names the watcher and says what it can see', async () => {
+    const r = await buildWorkerRole({
+      root: dir,
+      team: { mode: 'duo', watchers: ['Aristotle'] },
+    });
+    const one = r.system.replace(/\s+/g, ' ');
+    expect(one).toContain('1 philosopher (Aristotle) is watching this run');
+    expect(one).toContain('same Plato process');
+    expect(one).toContain('digest of your tool calls');
+    expect(one).toContain('[observer guidance]');
+    expect(one).toContain('Watchers never approve, edit, or run anything');
+  });
+
+  it('names every watcher, and stays grammatical with more than one', async () => {
+    const r = await buildWorkerRole({
+      root: dir,
+      team: { mode: 'academy', watchers: ['Aristotle', 'Curie'] },
+    });
+    expect(r.system.replace(/\s+/g, ' ')).toContain(
+      '2 philosophers (Aristotle, Curie) are watching this run',
+    );
+  });
+
+  it('says a solo run has no watcher', async () => {
+    const r = await buildWorkerRole({ root: dir, team: { mode: 'solo', watchers: [] } });
+    const one = r.system.replace(/\s+/g, ' ');
+    expect(one).toContain('No philosopher is watching this run');
+    expect(one).not.toContain('same Plato process');
+  });
+
+  it('says a team whose watchers could not start is running alone', async () => {
+    const r = await buildWorkerRole({ root: dir, team: { mode: 'duo', watchers: [] } });
+    expect(r.system.replace(/\s+/g, ' ')).toContain(
+      'No philosopher could start for this run',
+    );
+  });
+
+  it('keeps the paragraph when a project PLATO.md replaces the body', async () => {
+    write('PLATO.md', 'You are Plato. Work carefully.');
+    const r = await buildWorkerRole({
+      root: dir,
+      team: { mode: 'duo', watchers: ['Aristotle'] },
+    });
+    // The body was replaced, so the fallback sentence is gone...
+    expect(r.system).not.toContain('philosophers may watch and advise');
+    // ...but the host fact survives, because it is appended, not baked in.
+    expect(r.system).toContain('Aristotle');
+    expect(r.system).toContain('same Plato process');
+  });
+
+  it('adds nothing for a host that does not describe a team', async () => {
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).not.toContain('same Plato process');
+    expect(r.system).not.toContain('No philosopher is watching this run');
+  });
+});

@@ -267,7 +267,9 @@ export async function runDoctor(context: DoctorContext): Promise<number> {
   if (auth.error !== undefined) {
     line('warn', auth.error);
   }
-  if (auth.mode !== undefined && isWideMode(auth.mode)) {
+  // M0 (D49cf): Windows reports a synthetic mode, not a permission, so this
+  // check can only describe protection that platform does not have.
+  if (process.platform !== 'win32' && auth.mode !== undefined && isWideMode(auth.mode)) {
     line(
       'warn',
       `Credential file ${authPath(context.env)} has mode ${formatMode(auth.mode)}; expected 0600`,

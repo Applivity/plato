@@ -170,24 +170,19 @@ describe('doctor: state and the last run', () => {
   it('fails when a home cannot be written', async () => {
     const env = tempEnv({ ANTHROPIC_API_KEY: 'sk-env' });
     validConfig(env);
-    mkdirSync(env['PLATO_HOME']!, { recursive: true });
-    // chmod 0500 on a directory the owner does not own the parent of still
-    // blocks creation of new files for a normal user.
-    const { chmodSync } = await import('node:fs');
-    chmodSync(env['PLATO_HOME']!, 0o500);
-    try {
-      const io = capture();
-      const code = await runDoctor({
-        env,
-        streams: io.streams,
-        keychain: null,
-        root: '/tmp/project',
-      });
-      expect(code).toBe(1);
-      expect(io.out()).toContain('✗ Cannot write');
-    } finally {
-      chmodSync(env['PLATO_HOME']!, 0o700);
-    }
+    // M0 (D49cf): `chmod 0500` does not deny writes on Windows, so this uses a
+    // home that is a FILE where a directory is needed. The probe creates the
+    // directory and writes a file in it; both steps fail, on every platform.
+    writeFileSync(env['PLATO_HOME']!, 'not a directory');
+    const io = capture();
+    const code = await runDoctor({
+      env,
+      streams: io.streams,
+      keychain: null,
+      root: '/tmp/project',
+    });
+    expect(code).toBe(1);
+    expect(io.out()).toContain('✗ Cannot write');
   });
 
   it('says when this directory has never been run', async () => {

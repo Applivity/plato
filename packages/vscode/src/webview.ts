@@ -384,6 +384,11 @@ export function chatHtml(): string {
   /* --- Settings page (D38: full rewrite) --- */
   #sbody { flex:1; overflow-y:auto; padding:24px 20px; }
   #sbody .wrap { max-width:720px; margin:0 auto; }
+  /* D47h: #sbody is a flex item. Its automatic min-width is the min-content
+     width of the widest Settings child, so a wide card held the page wider than
+     the Visual Studio tool window and the page scrolled sideways. Let the
+     column and its wrap shrink; the section bodies already wrap their contents. */
+  #sbody, #sbody .wrap { min-width:0; width:100%; }
   .shead2 { margin:0 0 6px; font-size:11px; font-weight:600;
             text-transform:uppercase; letter-spacing:.1em;
             color:var(--pl-muted); }

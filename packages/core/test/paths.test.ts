@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { join, resolve } from 'node:path';
 import { absInRoot, containmentRefusal, pathArgsOf, resolveInRoot } from '../src/security/paths.js';
 
 /**
@@ -7,7 +8,13 @@ import { absInRoot, containmentRefusal, pathArgsOf, resolveInRoot } from '../src
  * outside the workspace. That was demonstrated, not theorised: `write_file`
  * with `../../../../tmp/x` created the file. These tests pin the rule.
  */
-const ROOT = '/work/project';
+/**
+ * M0 (D49cf): the root is absolute on the HOST, so these assertions describe
+ * the same containment on Windows (`C:\work\project`) as on POSIX. The result
+ * of a contained path is always workspace-relative with forward slashes.
+ */
+const ROOT = resolve('/work/project');
+const INSIDE = join(ROOT, 'src', 'a.ts');
 
 describe('resolveInRoot', () => {
   it('accepts a plain relative path and returns it unchanged', () => {
@@ -20,7 +27,7 @@ describe('resolveInRoot', () => {
   });
 
   it('accepts an absolute path that is inside the root', () => {
-    expect(resolveInRoot(ROOT, '/work/project/src/a.ts')).toBe('src/a.ts');
+    expect(resolveInRoot(ROOT, INSIDE)).toBe('src/a.ts');
   });
 
   // The escapes. Each of these reached the filesystem before D49k.
@@ -32,13 +39,13 @@ describe('resolveInRoot', () => {
 
   it('refuses an absolute path outside the root', () => {
     expect(resolveInRoot(ROOT, '/etc/hosts')).toBeNull();
-    expect(resolveInRoot(ROOT, '/work/other/a.ts')).toBeNull();
+    expect(resolveInRoot(ROOT, resolve(ROOT, '..', 'other', 'a.ts'))).toBeNull();
   });
 
   it('refuses a sibling directory that merely shares a prefix', () => {
     // The classic bug: a string-prefix check accepts `/work/project-evil`
     // because it starts with `/work/project`.
-    expect(resolveInRoot(ROOT, '/work/project-evil/a.ts')).toBeNull();
+    expect(resolveInRoot(ROOT, join(`${ROOT}-evil`, 'a.ts'))).toBeNull();
   });
 
   it('refuses an empty path and one carrying a NUL byte', () => {
@@ -54,7 +61,7 @@ describe('resolveInRoot', () => {
 
 describe('absInRoot', () => {
   it('joins a contained path and refuses an escaping one', () => {
-    expect(absInRoot(ROOT, 'src/a.ts')).toBe('/work/project/src/a.ts');
+    expect(absInRoot(ROOT, 'src/a.ts')).toBe(join(ROOT, 'src', 'a.ts'));
     expect(absInRoot(ROOT, '../a.ts')).toBeNull();
   });
 });

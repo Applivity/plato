@@ -9,8 +9,13 @@ mid-run, and stops at a safe point. The same engine powers the
 [plato.applivity.com](https://plato.applivity.com) · [Install](#install) ·
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands)
 
-**Pre-release.** This is `0.1.3`. The core of the agent is the same code the
+**Pre-release.** This is `0.1.4`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
+
+**0.1.4** adds Windows support for commands, background shells, and MCP
+servers. It also fixes four terminal defects: a reply no longer repeats down
+the scrollback, Markdown renders in the terminal, Ctrl+Left/Right/Delete and
+Ctrl+W work, and a Duo worker is told which watchers started.
 
 ## Install
 
@@ -19,6 +24,9 @@ npm install -g @applivity/plato
 ```
 
 Node 22 or newer is required.
+
+Plato runs on macOS, Linux, and Windows. On Windows, `plan` does not run shell
+commands, and `edit` asks before every command; `auto` runs them.
 
 ## Authenticate
 

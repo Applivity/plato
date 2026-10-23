@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executeTool } from '../src/tools/execute.js';
 import { createVault, placeholder, type SecretVault } from '../src/security/mask.js';
+import { nodeCommand } from './portable.js';
 
 function tempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'plato-mask-'));
@@ -180,7 +181,7 @@ describe('scrubbing what a command printed', () => {
     const r = await executeTool(
       root,
       'shell',
-      { command: 'printf "%s" sk-live-abc123456789' },
+      { command: nodeCommand("process.stdout.write('sk-live-abc123456789')") },
       { vault },
     );
     expect(r.ok).toBe(true);

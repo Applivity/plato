@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { runAgentLoop, resolveRecommended } from '../src/runtime/loop.js';
 import { AgentBus, RunController } from '../src/runtime/bus.js';
 import { createVault, placeholder } from '../src/security/mask.js';
+import { isWindows } from '../src/tools/shellPlatform.js';
+import { LONG_RUNNING, nodeCommand, readMatching } from './portable.js';
 import type {
   ChatProvider,
   TurnRequest,
@@ -1023,7 +1025,9 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     ]);
   });
 
-  it('runs a read-only shell command in edit with no card at all (D49an)', async () => {
+  // POSIX only: the read-only allowlist is a bash parser (M0, D49cf). On
+  // Windows it is not consulted at all, and the sibling test below covers edit.
+  it.skipIf(isWindows())('runs a read-only shell command in edit with no card at all (D49an)', async () => {
     let approvals = 0;
     const declined: string[] = [];
     const p: ChatProvider = {
@@ -1058,6 +1062,105 @@ describe('runAgentLoop workspace containment (D49k)', () => {
     // This is the whole feature: no card, and the command was not declined.
     expect(approvals).toBe(0);
     expect(declined.join(' ')).not.toContain('user declined');
+  });
+
+  /**
+   * M0 (D49cf). The other half of the same rule: on Windows `edit` asks for
+   * EVERY shell command, including one that looks read-only, because the bash
+   * allowlist cannot describe `cmd.exe`. An approval still runs it.
+   */
+  it.skipIf(!isWindows())('asks for a shell command in edit on Windows, and runs it (M0)', async () => {
+    let approvals = 0;
+    const results: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'e1',
+                name: 'shell',
+                input: { command: nodeCommand("console.log('ran')") },
+              },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') results.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      getMode: () => 'edit',
+      platform: 'win32',
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(r.reason).toBe('complete');
+    expect(approvals).toBe(1);
+    expect(results.join(' ')).toContain('ran');
+  });
+
+  /**
+   * M0 (D49cf). On Windows, plan denies EVERY shell command and draws no card,
+   * because the bash allowlist cannot describe `cmd.exe`. The refusal must say
+   * why, so the model knows to use the file tools or switch mode instead of
+   * retrying the same command.
+   */
+  it('denies every shell command in plan on Windows, and says why (M0)', async () => {
+    let approvals = 0;
+    const results: string[] = [];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        if (req.messages.length === 1) {
+          return {
+            content: [
+              { type: 'tool_use', id: 'w1', name: 'shell', input: { command: 'git status' } },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'tool_use',
+          };
+        }
+        for (const b of req.messages[req.messages.length - 1]!.content) {
+          if (b.type === 'tool_result') results.push(b.content);
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const r = await runAgentLoop({
+      ...BASE,
+      provider: p,
+      getMode: () => 'plan',
+      platform: 'win32',
+      approve: () => {
+        approvals += 1;
+        return Promise.resolve(true);
+      },
+    });
+    expect(r.reason).toBe('complete');
+    expect(approvals).toBe(0);
+    expect(results.join(' ')).toContain(
+      'Plato cannot prove a command is read-only on Windows',
+    );
+    expect(results.join(' ')).toContain('switch to edit');
   });
 
   /**
@@ -1258,7 +1361,7 @@ describe('runAgentLoop background shell teardown (D49m)', () => {
                 type: 'tool_use',
                 id: 's1',
                 name: 'shell',
-                input: { command: 'sleep 20', run_in_background: true },
+                input: { command: LONG_RUNNING, run_in_background: true },
               },
             ],
             usage: { inputTokens: 1, outputTokens: 1 },
@@ -2270,7 +2373,7 @@ describe('a protected file is readable, with its values masked (D49bb)', () => {
     writeFileSync(join(root, '.env'), ENV);
     const { p, requests } = capturing([
       callTurn('read_file', { path: '.env' }),
-      callTurn('shell', { command: 'printf %s sk-live-abc123456789' }),
+      callTurn('shell', { command: nodeCommand("process.stdout.write('sk-live-abc123456789')") }),
       done,
     ]);
 
@@ -2294,7 +2397,7 @@ describe('a protected file is readable, with its values masked (D49bb)', () => {
     // Protected by EXACT name, so a glob that expands to it is not that name.
     writeFileSync(join(root, 'local.properties'), 'apiKey=sk-live-indirect-0001\n');
     const { p, requests } = capturing([
-      callTurn('shell', { command: 'cat local.propert*' }),
+      callTurn('shell', { command: readMatching('local.propert') }),
       done,
     ]);
 

@@ -54,6 +54,48 @@ export interface BuildWorkerRoleOpts {
    * prose-only fallback, so the prompt never names a tool it cannot offer.
    */
   modeRequest?: boolean;
+  /**
+   * The team this run actually has. A host supplies the names of observers
+   * that STARTED, not the configured specs, so a watcher skipped for a missing
+   * key is not announced. Omitted by a host that has no observers.
+   */
+  team?: TeamContext;
+}
+
+export interface TeamContext {
+  mode: 'solo' | 'duo' | 'academy';
+  /** The names of the observers that actually started. */
+  watchers: readonly string[];
+}
+
+/**
+ * What the worker knows about its watchers. Without this the model fills the
+ * gap with its default assumption — separate calls, separate contexts — and
+ * can tell the user the team design does not work. It is a HOST fact, so it is
+ * appended after the body: a project PLATO.md must not be able to delete it.
+ */
+export function teamParagraph(team: TeamContext | undefined): string {
+  if (team === undefined) {
+    return '';
+  }
+  if (team.watchers.length === 0) {
+    return team.mode === 'solo'
+      ? 'No philosopher is watching this run; you are working alone.'
+      : 'No philosopher could start for this run; you are working alone.';
+  }
+  const count = team.watchers.length;
+  const names = team.watchers.join(', ');
+  return (
+    `Team: ${count} philosopher${count === 1 ? '' : 's'} (${names}) ` +
+    `${count === 1 ? 'is' : 'are'} watching this run. A watcher runs in the ` +
+    'same Plato process on the same run, and sees a digest of your tool calls ' +
+    '(the tool, its target, and whether it succeeded) and the latest part of ' +
+    'your reply — not tool output or the rest of the conversation. At a safe ' +
+    'point a watcher may send you a short instruction (it arrives as ' +
+    '"[observer guidance] …"), pause the run, or cancel it. Watchers never ' +
+    'approve, edit, or run anything; the work and the approvals are yours. ' +
+    'If the user asks how the team works, say this.'
+  );
 }
 
 export interface BuildWorkerRoleResult {
@@ -367,7 +409,8 @@ were permitted, and continue with what the mode allows. Use request_mode, not
 ask_user, for a mode change.`
     : `If a call comes back refused because of the mode, say in one sentence what
 you would do if it were permitted and let the user decide.`;
-  const system = [...parts, modeParagraph].join('\n\n');
+  const team = teamParagraph(opts.team);
+  const system = [...parts, modeParagraph, team].filter((part) => part.length > 0).join('\n\n');
   return { system, layers };
 }
 

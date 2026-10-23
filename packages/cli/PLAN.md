@@ -1,13 +1,12 @@
 # Plato CLI
 
-Status: **in progress** — M0 through M5 are done (2026-10-21); M6's packaging
-half is done, including the publish-ready manifest and the secret audit, the
-real-model matrix passes 19/19 against both live providers, and the TUI passes
-under a pty. **The carried-forward mode request is built (D49cc): the terminal
-offers `request_mode`, and its loop reads the mode live.** **`0.1.0` is
-published (2026-10-22)**; see D49ce's sibling record and `docs/LICENSING.md` §8. The scope and the locked choices are in `docs/DECISIONS.md`
-(D49bw–D49by). This file is the implementation plan. The user-facing package
-README is `README.md`.
+Status: **release candidate 0.1.4** — M0 through M6 are complete. `0.1.3` is
+live on npm; `0.1.4` is the release candidate on branch `plato-bugs`. It adds
+the Windows shell/process/MCP repair and four terminal fixes. The npm publish
+remains the founder's. **The carried-forward mode request is built (D49cc).**
+The scope and locked choices are in `docs/DECISIONS.md` (D49bw–D49by); the
+implementation record is `docs/PROGRESS.md`. The user-facing README is
+`README.md`.
 
 ## What it is
 

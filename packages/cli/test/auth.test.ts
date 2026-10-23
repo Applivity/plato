@@ -83,7 +83,13 @@ describe('auth login', () => {
 
     expect(code).toBe(0);
     expect(io.out()).toContain('anthropic saved to');
-    expect(io.out()).toContain('mode 0600');
+    // M0 (D49cf): file modes are not enforced on Windows, so the product says
+    // that plainly there instead of claiming 0600.
+    if (process.platform === 'win32') {
+      expect(io.out()).toContain('Windows does not enforce file modes');
+    } else {
+      expect(io.out()).toContain('mode 0600');
+    }
     expect(io.out()).not.toContain('sk-test-secret');
 
     const config = loadConfig(env);
@@ -91,7 +97,9 @@ describe('auth login', () => {
       { id: 'anthropic', kind: 'anthropic', baseUrl: 'https://api.anthropic.com' },
     ]);
     expect(readAuthFile(env).keys['anthropic']).toBe('sk-test-secret');
-    expect(statSync(authPath(env)).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect(statSync(authPath(env)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('writes to the keychain by default and never prints the key', async () => {
@@ -206,7 +214,9 @@ describe('auth status', () => {
     expect(io.out()).not.toContain('sk-env-secret');
   });
 
-  it('reports a file with a wider mode', async () => {
+  // POSIX only: Windows has no file modes, and `chmod 0644` there changes
+  // nothing. The Windows note is asserted in the login test above.
+  it.skipIf(process.platform === 'win32')('reports a file with a wider mode', async () => {
     const env = tempEnv({ PLATO_DISABLE_KEYRING: '1' });
     await runAuth(['login', 'anthropic'], {
       env,

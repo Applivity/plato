@@ -6,6 +6,11 @@
  * it never breaks the loop.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import {
+  commandInvocation,
+  mergeEnv,
+  resolveCommand,
+} from '../tools/shellPlatform.js';
 
 export interface McpTool {
   name: string;
@@ -38,9 +43,22 @@ export class McpServer {
 
   /** Spawns the server, handshakes, and loads the tool list. */
   async start(timeoutMs = 20_000): Promise<void> {
-    const proc = spawn(this.cfg.command, this.cfg.args ?? [], {
-      env: { ...process.env, ...(this.cfg.env ?? {}) },
+    // M0 (D49cf): on Windows `npx` is `npx.cmd` on PATH, and a `.cmd` shim
+    // must go through cmd.exe. `resolveCommand` applies PATHEXT; the command
+    // invocation adds the shell only when the resolved file needs one.
+    const env = mergeEnv(process.env, this.cfg.env ?? {});
+    const invocation = commandInvocation(
+      resolveCommand(this.cfg.command, { env }),
+      this.cfg.args ?? [],
+      { env },
+    );
+    const proc = spawn(invocation.file, invocation.args, {
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(invocation.windowsHide === true ? { windowsHide: true } : {}),
+      ...(invocation.windowsVerbatimArguments === true
+        ? { windowsVerbatimArguments: true }
+        : {}),
     });
     this.proc = proc;
     proc.stdout.on('data', (d: Buffer) => this.onData(d));

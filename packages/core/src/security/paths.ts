@@ -30,7 +30,11 @@ export function resolveInRoot(root: string, raw: string): string | null {
   const rel = relative(root, resolve(root, raw));
   if (isAbsolute(rel)) return null; // a different drive/root (Windows)
   if (rel === '..' || rel.startsWith(`..${sep}`)) return null;
-  return rel;
+  // M0 (D49cf): a workspace-relative path is the SAME string on every platform.
+  // `relative()` returns `src\a.ts` on Windows, but this value is what the model
+  // writes, what an approval is remembered under, and what the file tools join,
+  // so one separator is required. Forward slashes are accepted by Windows APIs.
+  return rel.split(sep).join('/');
 }
 
 /** Absolute path for a contained argument, or null when it escapes. */
