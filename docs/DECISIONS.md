@@ -4842,6 +4842,124 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49cf — Phase 3 opens: Visual Studio 2026 is the next host, and the Windows repair comes first (founder, 2026-10-23).**
+
+**The instruction.** The founder set full Visual Studio support as the next goal and approved the
+R&D recommendation. The plan is [`packages/vs/PLAN.md`](../packages/vs/PLAN.md). This entry records
+the decisions that bind the work; the plan carries the milestones, the parity checklist, and the
+verification.
+
+**The decisions.**
+
+1. **Target Visual Studio 2026 first.** Visual Studio 2022 is not in v1. The extension model is
+   backward compatible, so a later 2022 pass is a compatibility test, not a second codebase.
+2. **Full parity before public publish.** The founder chose parity over an early release. Internal
+   signed builds are allowed; the Marketplace listing waits until the parity checklist is complete.
+3. **Shim first, bridge as the fallback.** The existing VS Code IDE host and chat UI are reused. If
+   the shim cannot reach parity, use the conventional bridge over the CLI engine. No functionality
+   is dropped to make the shim work.
+4. **Windows repair first.** The shell and background-shell tools call `/bin/bash` directly, MCP
+   commands need `.cmd` resolution, and process cleanup uses POSIX process groups. This is a repair
+   of the shipped VS Code extension and CLI on Windows, and a prerequisite for Visual Studio. It is
+   M0; the extension does not start until M0 passes.
+5. **Environment.** Development is on a full Windows machine with Visual Studio 2026. The repository
+   is shared over SMB, but the working tree is a local clone. SMB is not a build directory: pnpm,
+   MSBuild, file watchers, file locks, and long paths are all unreliable there.
+6. **Publishing.** Visual Studio Marketplace after parity, under the `applivity` publisher. A signed
+   VSIX is used for internal builds. The exact signing method, item id, and privacy policy are open.
+
+**The platform facts that shape the design.**
+
+- **Visual Studio 2026 is GA.** It shipped as 18.0 on 2025-11-11; the current build is 18.11.1
+  (2026-10-20). The VS 2022 extensibility documentation still applies. Extensions are VSIX v3,
+  authored in C#/VB/C++.
+- **Visual Studio has no JavaScript or Node extension host.** A web UI must live inside a .NET
+  extension. WebView2 is the practical way to render it.
+- **There are two extension models.** The classic in-process VSPackage model uses .NET Framework
+  and WPF and can host WebView2. The newer out-of-process VisualStudio.Extensibility model uses
+  .NET 8 and Remote UI; its core API has been stable since 17.9, but the landing page still calls
+  the SDK a preview, and WebView2 hosting is not confirmed there. The HTML UI points to the
+  **in-process** model for v1.
+- **There is no secret store like VS Code's SecretStorage.** Use Windows Credential Manager, or
+  DPAPI. Never the Settings store and never the `.vs` folder.
+- **There is no WebviewPanel equivalent.** Use a dockable tool window. A custom editor tab is
+  heavier and is not needed.
+- **There is no free theme system like `--vscode-*`.** Read Visual Studio colors with
+  `VSColorTheme.GetThemedColor` and send them to the page as CSS custom properties.
+- **Node's single-executable format is still stability 1.1** and needs a temp-file extraction step
+  for native modules. Plato has no native modules, so ship the standard `node.exe` plus one bundled
+  CJS file. Do not use SEA or `node-api-dotnet` in v1.
+- **Marketplace policy requires disclosure of executable code**, a privacy policy, HTTPS, and no
+  credentials in the listing. The bundled Node runtime must be named in the listing.
+
+**The architecture.**
+
+```
+Visual Studio 2026
+  └─ Plato VSIX (C#, in-process VSPackage, WPF)
+       ├─ tool window + WebView2 → existing chatHtml()
+       ├─ native: theme, Credential Manager, dialogs, open file, solution root
+       └─ newline-delimited JSON over stdio
+            ↕
+       Node 22 sidecar
+            ├─ vscode API shim
+            ├─ existing IDE host (packages/vscode/src/extension.ts, unchanged)
+            └─ @applivity/plato-core (unchanged)
+```
+
+The shim implements only the ~25 `vscode` members the extension uses. Settings, sessions, titles,
+folding, attachments, card copy, and the edge cases the field tests found stay in one place. The
+chat UI does not change: C# injects a small `acquireVsCodeApi` adapter and a WebView2 message
+bridge before the page script runs. The render harness already proves this pattern by faking
+`acquireVsCodeApi`. The agent runs in a separate process, so a sidecar crash does not stop Visual
+Studio.
+
+**The Windows repair, in specific terms.** One `shellPlatform.ts` answers which program runs a
+command: `/bin/bash -c` on POSIX, `%ComSpec% /d /s /c` on Windows. Process trees are killed with
+`taskkill /T /F` on Windows. MCP commands resolve `.cmd` shims. On Windows, `plan` **denies** every
+shell command and draws no card, because asking could let a write run under plan's name; `edit`
+**asks** for every shell command, with no read-only auto-approval; `auto` is unchanged. The bash
+read-only tokenizer does not describe `cmd.exe`, and a wrong "read-only" answer is a security
+defect. POSIX behavior does not change. A Windows allowlist is a later security project.
+
+**The gates.** M1 proves the shim on macOS with a fake panel and a scripted run. M2 proves the shell
+in a real Visual Studio 2026 window. If the shim cannot pass M1, switch to the bridge before
+building parity. If the shell cannot host the page and the sidecar in M2, fix the shell before
+adding features.
+
+**Ownership.** The **Plato CLI worker** (the tab on the Mac) writes the M0 code and its macOS tests,
+because M0 is shared-core and CLI work. The **Windows machine worker** verifies M0 on Windows and
+owns M2, because it has Visual Studio 2026 and the Windows test loop. M2 may start in parallel with
+M0: the first shell run uses `write_file` and `read_file`, not the shell tool. No parity and no
+public release until M0 is green.
+
+**M1 passed (2026-10-23).** The existing VS Code host now runs outside VS Code through
+`packages/vs/host/shim/vscode.ts`. The spike bundles the compiled host with `vscode` aliased to the
+shim, starts `activate()` with a fake panel, and drives three scripted runs through the real host:
+a `write_file` with the approval card and the file on disk; `/undo` removing the file Plato created;
+a question card and a mode request, with the picker told `auto` and the run continuing. It persists
+the mode in `workspaceState`, writes three transcripts under `~/.plato/runs`, and disposes the panel
+cleanly. **The strict alias check is clean:** the whole host type-checks against the shim, so a
+missing API member is a compile error. Core is 886/886, CLI is 175/175, and all 25 render suites
+pass. **The bridge is not needed for the shim gate**; it remains the fallback if a later parity item
+cannot be expressed through the shim. The proof is `packages/vs/test/spike.mjs`.
+
+**Open items.** The Marketplace VSIX size limit, signing requirement, and review time; the item id
+(`applivity.plato-vs` is the working name); the privacy policy; diagnostics after a write (the
+Error List API for third parties is not clearly documented; report "not checked" if unavailable);
+ARM64; a shared settings store with the CLI; and a Chats tree (the in-panel History page is enough
+for v1).
+
+**Files:** `packages/vs/PLAN.md` (the plan), `docs/HANDOFF.md` (current state), `docs/PROGRESS.md`
+(the phase row and change log), and the future `packages/vs/src/` and `packages/vs/host/`.
+
+**Verification:** the plan's milestone exit criteria; core and render suites on macOS; a Windows CI
+job; shim contract tests; a scripted run through the sidecar; a real Visual Studio window driven by
+FlaUI plus the WebView2 DevTools protocol, with screenshots and transcript witnesses; and a clean
+Windows VM install with no Node installed.
+
+---
+
 **D49ce — the CLI has a start screen: the owl from the mark, a wordmark, and one line of wayfinding (2026-10-22).**
 
 **Why.** The founder's report: *"the start screen is very blank-ish"*, and after the first draft,

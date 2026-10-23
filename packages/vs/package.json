@@ -1,0 +1,17 @@
+{
+  "name": "@applivity/plato-vs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual Studio 2026 host for Plato — shim spike (M1)",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node esbuild.mjs && node test/spike.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.1",
+    "esbuild": "0.25.10",
+    "typescript": "5.9.2"
+  }
+}

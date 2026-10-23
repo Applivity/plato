@@ -21,7 +21,25 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23)
+
+- **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
+  The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
+  **the host shim first** with the conventional bridge as the fallback, and **the Windows repair
+  first**. Development uses a full Windows machine; the repository is shared over SMB, but the
+  working tree is a **local clone**, because pnpm and MSBuild are unreliable on an SMB share.
+  **The implementation plan with milestones, exit criteria, the parity checklist, and the
+  verification is `packages/vs/PLAN.md`.** **M1, the host-shim spike, PASSED on 2026-10-23:** the
+  existing VS Code IDE host runs outside VS Code through `packages/vs/host/shim/vscode.ts`; it
+  produced the chat HTML, ran three scripted runs (a write with an approval card, undo, a question
+  card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
+  whole host type-checks against the shim, core is 886/886, the CLI is 175/175, and all 25 render
+  suites pass. **M0 code is owned by the Plato CLI worker on this Mac; the Windows machine worker
+  verifies M0 on Windows and owns M2. M2 may start in parallel with M0 (the first run uses
+  `write_file` / `read_file`, not the shell); no parity or release until M0 is green.** The shim
+  proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The platform facts, the two
+  extension models, the Credential Manager choice, and the open Marketplace questions are in
+  D49cf. The CLI state below is unchanged and remains the current release record.
 
 - **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the
   founder has opened phase 2. The CLI is a first-class host over the same core, not an afterthought.
