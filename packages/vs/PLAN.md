@@ -3,8 +3,9 @@
 Status: **M0 DONE; M1, M2, M3a AND M3b (CHECKPOINTS 1, 2a AND 2b) PASSED (2026-10-23), SO M3 IS COMPLETE. M4a, THE AGENT-FEATURES HALF OF M4, PASSED (2026-10-24); M4b IS NEXT.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
-Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
-teams, history) is next. The founder approved this plan.
+Visual Studio 2026 window. M3a (settings and keys) and M3b (modes, approvals,
+teams, history) passed; M4a (MCP, images and attachments, undo, masking/reveal,
+and the stuck card) passed and M4b is next. The founder approved this plan.
 The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
