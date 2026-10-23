@@ -4842,6 +4842,34 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
+
+**Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command
+path had single backslashes, so JSON parsed them as escapes and the resolved path did not
+exist. `child_process.spawn` emitted `'error'` on the child — and an EventEmitter `error`
+with no listener is an **uncaught exception**, so the whole Node sidecar died. The window
+said *"Plato's agent process stopped. Use a Plato command to restart it."* and the run was
+lost. This is the class M2 fixed for a timed-out UI dialog: a bad input must not take the
+agent down. It is worse here, because the input is a user-editable file that any MCP README
+can be copied into, and the failure looked like Plato crashing rather than a server failing.
+
+**The rule.** `McpServer.start` attaches an `error` listener to the child and races the
+handshake against it. A spawn failure rejects `start()` with the real error and rejects every
+pending call; the handshake timer is cleared on every exit. The host's existing per-server
+`try/catch` turns that into *"MCP <name> failed to start — …"* on the run and
+`tools: 0, error` in Settings, and the run continues with no tools from that server. A dead
+server is reported, never fatal.
+
+**Verified.** `packages/core/test/mcp-client.test.ts` adds a command that cannot spawn and
+asserts `start()` rejects. **Falsified** by removing the listener: the vitest worker died
+with the same uncaught `'error'` event the sidecar did. `packages/vs/test/m4a.test.mjs` adds
+a bad server to a working config and asserts the run completes, the notice names the failure,
+and Settings reports `tools: 0` with a non-empty error. The real-window run reproduced the
+crash on the old build and completed on the fixed VSIX. **Shared core, so the VS Code
+extension and the CLI get the same fix.**
+
+---
+
 **D49ch — the council card renders, a pause line is written once, and the page speaks UTF-8 to the host (2026-10-23).**
 
 **Why.** M3b checkpoint 2a drove Solo, Duo, and Academy through a real Visual Studio 2026 window. The

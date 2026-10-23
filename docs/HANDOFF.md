@@ -96,7 +96,33 @@ are now only in PROGRESS.
   `C:\src\plato-vs-field\evidence\m3b\checkpoint2b\`. **One open product question is recorded, not
   changed:** resuming a saved chat replaces the live conversation without archiving it first, so an
   unarchived live chat is lost. This is the shipped VS Code behaviour too (D41 archives on close
-  and New Chat only). **What remains for phase 3:** M4 (agent features and editor), then M5. The platform
+  and New Chat only). **M4a, the agent-features half of M4, PASSED (2026-10-24):** MCP configuration and server
+  status, images and file attachments, undo, protected-file masking and the reveal card, and
+  the stuck card were driven through the real controls in a real Visual Studio 2026 window.
+  The shared host and the unchanged chat HTML carried all five, so no bridge method and no
+  webview change was needed. Settings listed the two MCP servers honestly (`not run yet` and
+  `disabled`), its enable switch rewrote `mcp.json`, **Open mcp.json** opened the real file,
+  and the model called `mcp__fake__echo` behind the ordinary approval card; the native
+  Windows picker attached a PNG and a text file, and the stub log proves the model received
+  **one `image/png` part** and the file body; `/undo` deleted a created file, put an edited
+  file back byte for byte, and the undo of the undo was the redo; a protected file read
+  masked, a one-line JSON file raised the reveal card once and **Show it this session** let
+  the value through, while a declined file returned the refusal with the value hidden; and
+  five identical calls raised **Plato is stuck**, with **Keep going** carrying the user's
+  guidance into the model's next turn and **Stop** ending the run as `stuck` without taking
+  the model's next step. **One real defect was found and fixed (D49ci): an MCP server whose
+  command cannot spawn killed the Node sidecar** — an `error` event with no listener is an
+  uncaught exception. `McpServer.start` now rejects the handshake, the host reports the
+  failure and the run continues; a core test and a host test pin it, and both were falsified.
+  The new host test is `packages/vs/test/m4a.test.mjs` (falsified four times); the exact-copy
+  render assertions are in `scripts/render/` for the lead on macOS, because this machine has
+  no Playwright and the render harness's HTML import is POSIX-shaped. Evidence is
+  `C:\src\plato-vs-field\evidence\m4\checkpoint-a\`. **Boundaries recorded:** the session-2
+  desktop is locked, so `SendInput` is denied and the field helper fills the native file
+  dialog with Win32 messages (it is still the real dialog); the editor surface does not render
+  through `PrintWindow` on that desktop, so DTE `activeDocument` is the witness that
+  `mcp.json` opened. **What remains for phase 3:** M4b (`/` commands, plan/todos, open-file
+  links, diagnostics after a write, optional Chats tree), then M5. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active

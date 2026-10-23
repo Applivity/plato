@@ -56,7 +56,14 @@ const REVEAL = {
   await p.waitForTimeout(250);
   const t = await card(p);
   check('the reveal card is drawn', t.length > 0, t);
+  const heading = await p.evaluate(() => {
+    const h = document.querySelector('.card.reveal-card h3');
+    return h ? h.textContent : '';
+  });
+  check('the title is the product copy', heading === 'Show this protected file in full?', heading);
   check('it names the file', /secrets\.json is protected/.test(t), t);
+  check('it names the permanent alternative and where it lives',
+    /plato\.secrets\.allow/.test(t), t);
   check('it says why this file and not others', /does not hold "KEY=value" lines/.test(t), t);
   check('it states the cost', /goes into this conversation/.test(t), t);
   check('and that the cost cannot be undone', /cannot hide the values afterwards/.test(t), t);

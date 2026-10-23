@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE; M1, M2, M3a AND M3b (CHECKPOINTS 1, 2a AND 2b) PASSED (2026-10-23), SO M3 IS COMPLETE.** Phase 3 opened 2026-10-23.
+Status: **M0 DONE; M1, M2, M3a AND M3b (CHECKPOINTS 1, 2a AND 2b) PASSED (2026-10-23), SO M3 IS COMPLETE. M4a, THE AGENT-FEATURES HALF OF M4, PASSED (2026-10-24); M4b IS NEXT.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
@@ -781,6 +781,21 @@ Done when:
   deferred with a reason.
 - The acceptance cases pass in a real Visual Studio window.
 
+**M4a, the agent-features half, PASSED (2026-10-24).** MCP configuration and
+server status, images and file attachments, the undo card and undo behaviour,
+protected-file masking and the reveal card, and the stuck card were driven
+through the real controls in a real Visual Studio 2026 window. The shared host
+and the unchanged chat HTML carried all five; no bridge method and no webview
+change was needed. The new host test `packages/vs/test/m4a.test.mjs` pins them
+and was falsified four times; the exact-copy render assertions are in
+`scripts/render/` for the lead on macOS. **One real defect was found and fixed
+(D49ci): an MCP server whose command cannot spawn killed the Node sidecar.**
+Its core and host regressions are falsified. Evidence:
+`C:\src\plato-vs-field\evidence\m4\checkpoint-a\`. **M4b — `/` commands and
+completion, plan/todos, open-file links, diagnostics after a write (or the
+documented “not checked” gap), and the optional Chats tree — is next. M5 is
+not started.**
+
 ### M5 — Release
 
 **Estimate:** 1–2 weeks.
@@ -829,9 +844,9 @@ window, a transcript, or both.
 | Control | Mode request card | |
 | Control | Approval cards and session memory | |
 | Control | Question card | |
-| Control | Stuck card | |
-| Control | Undo card and undo | |
-| Control | Reveal protected file card | |
+| Control | Stuck card | yes (M4a) |
+| Control | Undo card and undo | yes (M4a) |
+| Control | Reveal protected file card | yes (M4a) |
 | Control | Pause/resume/cancel | |
 | Control | Queue | |
 | Teams | Solo | yes (M3b 2a) |
@@ -841,10 +856,10 @@ window, a transcript, or both.
 | Providers | Connections and model discovery | |
 | Providers | Keys in Credential Manager | |
 | Providers | Model picker, reasoning, compaction | |
-| Agent | MCP servers and status | |
-| Agent | Images | |
-| Agent | File attachments | |
-| Agent | Protected-file masking | |
+| Agent | MCP servers and status | yes (M4a) |
+| Agent | Images | yes (M4a) |
+| Agent | File attachments | yes (M4a) |
+| Agent | Protected-file masking | yes (M4a) |
 | State | History | yes (M3b 2b) |
 | State | Session resume | yes (M3b 2b) |
 | State | Transcripts in `~/.plato` | |

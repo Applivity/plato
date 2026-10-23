@@ -46,6 +46,10 @@ const r = await p.evaluate(() => {
 check('both accepted attachments render a chip', r.count === 2, r);
 check('the text chip is unchanged', r.names[0] === 'src/a.ts', r.names);
 check('only the image chip carries the glyph', r.glyphs === 1, r);
+const thumbnails = await p.evaluate(
+  () => document.querySelectorAll('#attachRow img').length,
+);
+check('an image chip is a glyph, not a thumbnail', thumbnails === 0, thumbnails);
 check('the image chip shows its size', r.names[1] === 'shot.png  240 KB', r.names);
 check('the row is visible while chips exist', r.rowHidden === false, r.rowHidden);
 check('a refusal is reported, not swallowed', r.log.includes('not a PNG'), r.log);

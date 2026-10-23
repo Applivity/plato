@@ -211,6 +211,30 @@ const server = createServer(async (req, res) => {
     typeof messages[0]?.content === 'string' && messages[0].role === 'system'
       ? messages[0].content
       : '';
+  // M4a: an image rides the opening user turn as a parts array (D49n). The log
+  // records whether one arrived and its sniffed MIME, because a test that only
+  // sees the attach-result has proved the PICKER, not that the model was sent
+  // the bytes. Additive fields: a caller that does not read them is unaffected.
+  const partsOf = (m) =>
+    Array.isArray(m?.content) ? m.content : [];
+  const imageUrls = messages
+    .flatMap((m) => partsOf(m))
+    .filter((p) => p && (p.type === 'image_url' || p.type === 'image'))
+    .map((p) => String(p.image_url?.url ?? p.source?.data ?? ''));
+  const imageMimes = imageUrls
+    .map((url) => {
+      const match = /^data:([^;]+);base64,/.exec(url);
+      return match ? match[1] : 'unknown';
+    });
+  const userTexts = messages
+    .filter((m) => m && m.role === 'user')
+    .map((m) => {
+      if (typeof m.content === 'string') return m.content;
+      return partsOf(m)
+        .filter((p) => p && p.type === 'text')
+        .map((p) => String(p.text ?? ''))
+        .join('\n');
+    });
   log.push({
     at: new Date().toISOString(),
     model: body.model,
@@ -218,6 +242,10 @@ const server = createServer(async (req, res) => {
     toolNames: offered > 0 ? body.tools.map((t) => t?.function?.name) : [],
     messages: messages.length,
     toolResults,
+    // M4a: what the opening user turn actually carried.
+    userTexts,
+    imageParts: imageUrls.length,
+    imageMimes,
     systemChars: systemText.length,
     streaming: body.stream === true,
     consumedStep: null,

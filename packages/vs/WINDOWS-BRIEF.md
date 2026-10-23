@@ -101,6 +101,23 @@ The checks that passed on Windows:
    - macOS/Linux behavior is unchanged.
 4. The transcript carried all five required events.
 
+## M4a — PASSED (2026-10-24)
+
+The agent-features half of M4 is witnessed in a real Visual Studio 2026
+window: MCP configuration and status, images and file attachments, undo,
+protected-file masking and the reveal card, and the stuck card. The shared
+host and the unchanged chat HTML carry all five. The host test is
+`packages/vs/test/m4a.test.mjs`; the exact-copy render assertions are in
+`scripts/render/` for the lead on macOS. **One defect was fixed (D49ci): an
+MCP server whose command cannot spawn killed the Node sidecar.** Evidence:
+`C:\src\plato-vs-field\evidence\m4\checkpoint-a\`.
+
+Two field-harness traps found here: the session-2 desktop is locked, so
+`SendInput` (and `SendKeys`) is denied; the helper fills the native file
+dialog with Win32 messages instead. The VS editor surface does not render
+through `PrintWindow` on that desktop, so DTE `activeDocument` is the witness
+that a file opened.
+
 ## Report
 
 For each milestone, report:
