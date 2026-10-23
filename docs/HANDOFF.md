@@ -77,9 +77,10 @@ are now only in PROGRESS.
   holds the same value, and run 2 finds nothing. The
   case found a real defect on its first run — the extension persisted loop notices but never posted
   them, so they appeared only after a reload; `extension.ts` now does both. **The VSIX still needs
-  the founder's upload**: `0.26.4` is **live** on the Marketplace; `0.26.6` is packaged and
-  prepared with the switch, its plain-language copy, the panel section, and the real mode request.
-  `0.26.5` was superseded before upload. Nothing newer than `0.26.4` has been uploaded. The matrix found two prompt defects
+  the founder's upload**: `0.26.4` is **live** on the Marketplace; `0.26.7` is packaged and
+  prepared with the switch, its plain-language copy, the panel section, the real mode request, the
+  Windows shell/process repair, and the Duo worker parity. `0.26.5` and `0.26.6` were superseded
+  before upload. Nothing newer than `0.26.4` has been uploaded. The matrix found two prompt defects
   that are now fixed: a prompt whose input closes already threw out of an approval, and a pending
   question whose input closed hung the CLI forever; both now count as no answer. The npm
   publish is the founder's. Every other

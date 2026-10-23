@@ -21,10 +21,10 @@ published (2026-10-22)**; the registry, a clean install, and `npx` verify it.
 | `packages/vscode/package.json` | `"private": true`, `"license": "Apache-2.0"`, `"name": "plato"`, `"publisher": "applivity"`. |
 | Stale manifest | `packages/vscode/package.vsix.json` is **deleted**. It claimed `SEE LICENSE IN docs/DECISIONS.md`, which contains no license text. |
 | Runtime dependencies | Four packages, all MIT: `@anthropic-ai/sdk` 0.65.0, `json-schema-to-ts` 3.1.1, `@babel/runtime` 7.29.7, `ts-algebra` 2.0.0. No copyleft and no source-available dependency. |
-| Current VSIX (`plato-0.26.6.vsix`) | **Prepared 2026-10-21; not yet uploaded.** 15 files, 141.38 KB. The manifest Identity is `Id="plato" Publisher="applivity" Version="0.26.6"`, the display name is `Plato by Applivity`, and the description is the public-facing sentence. `0.26.4` is the live version. It contains the `.gitignore` search switch and its panel section, the real `request_mode` request and its card, and the readme line that says Plato can ask for a mode. It carries `LICENSE.txt`, `NOTICE`, `THIRD-PARTY-NOTICES.md`, `readme.md`, and `media/icon.png` (128x128 PNG; dark tile, cyan rim, natural-proportion owl with no horizontal stretch). Categories: `Machine Learning`, `Other`. The packaged manifest says `"license": "Apache-2.0"`. No `src/`, `test/`, `out/`, `scripts/`, or `**/*.map`. |
-| Installed locally | `applivity.plato@0.26.6`. The old `applivity.plato-vscode` was uninstalled on 2026-10-20. |
-| Local VSIX history | 23 files, from 0.1.0 to 0.26.0, plus 0.26.1, 0.26.2, 0.26.3 (superseded before upload), 0.26.4 (live), 0.26.5 (superseded before upload), and 0.26.6 (prepared). The historical files carry no licence. |
-| Marketplace | **Live** at `https://marketplace.visualstudio.com/items?itemName=applivity.plato`. Display name `Plato by Applivity`; publisher `applivity` (verified); **version 0.26.4 is live**; category `Machine Learning`; public and validated. **0.26.6 is prepared, pending upload; 0.26.3 and 0.26.5 were superseded before upload.** |
+| Current VSIX (`plato-0.26.7.vsix`) | **Prepared 2026-10-23; not yet uploaded.** 15 files, 142.78 KB. The manifest Identity is `Id="plato" Publisher="applivity" Version="0.26.7"`, the display name is `Plato by Applivity`, and the description is the public-facing sentence. `0.26.4` is the live version. It contains the `.gitignore` search switch and its panel section, the real `request_mode` request and its card, the Windows shell/process/MCP repair, and the Duo worker parity. `0.26.5` and `0.26.6` were superseded before upload. It carries `LICENSE.txt`, `NOTICE`, `THIRD-PARTY-NOTICES.md`, `readme.md`, and `media/icon.png`. Categories: `Machine Learning`, `Other`. The packaged manifest says `"license": "Apache-2.0"`. No `src/`, `test/`, `out/`, `scripts/`, or `**/*.map`. |
+| Installed locally | `applivity.plato@0.26.6`; install `plato-0.26.7.vsix` for the release candidate. The old `applivity.plato-vscode` was uninstalled on 2026-10-20. |
+| Local VSIX history | 23 files, from 0.1.0 to 0.26.0, plus 0.26.1, 0.26.2, 0.26.3 (superseded before upload), 0.26.4 (live), 0.26.5 and 0.26.6 (superseded before upload), and 0.26.7 (prepared). The historical files carry no licence. |
+| Marketplace | **Live** at `https://marketplace.visualstudio.com/items?itemName=applivity.plato`. Display name `Plato by Applivity`; publisher `applivity` (verified); **version 0.26.4 is live**; category `Machine Learning`; public and validated. **0.26.7 is prepared, pending upload; 0.26.3, 0.26.5, and 0.26.6 were superseded before upload.** |
 | Publication | VS Code Marketplace: live (see above). No npm or Open VSX listing. |
 | Website | A static `index.html` and `styles.css` in `../plato-website`. The stale "no licence" copy was replaced with the Apache-2.0 line on 2026-10-20. |
 
@@ -106,15 +106,15 @@ Remaining:
 - [x] Prepare `0.26.3` with the dark tile + cyan rim icon and the canonical owl
       asset pack in `../plato-website/assets/`.
 - [x] Upload `0.26.4` to the Marketplace. It is live.
-- [ ] Upload `0.26.6` to the Marketplace (the `.gitignore` search switch in
-      Plato's Settings → Others and in VS Code Settings, and the real
-      `request_mode` card the model asks through).
+- [ ] Upload `0.26.7` to the Marketplace (the Windows shell/process/MCP repair
+      and the Duo worker parity, plus the 0.26.6 content: the `.gitignore` search
+      switch, its Settings section, and the real `request_mode` card).
 - [x] Run the secret audit on the VSIX. No secrets, no forbidden files, and no
       local paths were found.
 - [ ] Run the acceptance test.
 - [x] Extension ID: `applivity.plato` (chosen 2026-10-20; see section 6).
 - [x] Publish. The extension was uploaded through the Marketplace management
-      page on 2026-10-20. Version 0.26.4 is live; 0.26.6 is ready to upload.
+      page on 2026-10-20. Version 0.26.4 is live; 0.26.7 is ready to upload.
 
 The extension manifest has no `repository` field while the repository is
 private. `vsce` warns about this but packages the VSIX. Adding the private URL
