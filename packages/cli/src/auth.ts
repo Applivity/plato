@@ -213,6 +213,15 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   });
   if (saved.store === 'keychain') {
     context.streams.out(`✓ ${target} saved to the OS keychain.\n`);
+  } else if (process.platform === 'win32') {
+    // M0 (D49cf): Windows has no POSIX file modes, so `chmod 0600` below is a
+    // no-op and the file is plaintext that other accounts may be able to read
+    // under its ACL. Saying "mode 0600" there would name protection that does
+    // not exist; the keychain is the only answer on that platform.
+    context.streams.out(
+      `✓ ${target} saved to ${saved.path ?? authPath(context.env)}. ` +
+        'Windows does not enforce file modes; this file is plaintext.\n',
+    );
   } else {
     context.streams.out(`✓ ${target} saved to ${saved.path ?? authPath(context.env)} (mode 0600).\n`);
   }
@@ -258,7 +267,17 @@ async function status(context: AuthContext): Promise<number> {
   if (auth.error !== undefined) {
     context.streams.err(`warning: ${auth.error}\n`);
   }
-  if (auth.mode !== undefined && isWideMode(auth.mode)) {
+  if (process.platform === 'win32') {
+    // M0 (D49cf): `statSync().mode` on Windows is synthetic (0666 for a
+    // writable file), not a permission. A "wider mode" warning would describe
+    // a protection Windows never had, so say the useful thing instead.
+    if (auth.mode !== undefined) {
+      context.streams.err(
+        `note: ${authPath(context.env)} is a plaintext key file; ` +
+          'Windows does not enforce file modes.\n',
+      );
+    }
+  } else if (auth.mode !== undefined && isWideMode(auth.mode)) {
     context.streams.err(
       `warning: ${authPath(context.env)} has mode ${formatMode(auth.mode)}; expected 0600.\n`,
     );
