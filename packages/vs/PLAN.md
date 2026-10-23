@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE, M1, M2, M3a, M3b CHECKPOINT 1 (WITH ITS CORRECTION ROUND) AND M3b CHECKPOINT 2a PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
+Status: **M0 DONE; M1, M2, M3a AND M3b (CHECKPOINTS 1, 2a AND 2b) PASSED (2026-10-23), SO M3 IS COMPLETE.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
@@ -683,9 +683,10 @@ Done when:
 - Every item has a witness in a real Visual Studio window.
 - The same copy as the VS Code extension appears (cards, refusals, notices).
 
-**Status: M3a PASSED (2026-10-23); M3b remains.** This milestone is split for the
-Windows worker: **M3a** is the settings page and API keys; **M3b** is modes,
-approvals, teams, and history. M3a evidence, in a real Visual Studio 2026
+**Status: M3 PASSED (2026-10-23).** This milestone is split for the Windows
+worker: **M3a** is the settings page and API keys; **M3b** is modes, approvals,
+teams, and history. **M3b checkpoints 1, 2a and 2b all pass**, so every item in
+the milestone has a witness in a real Visual Studio window. M3a evidence, in a real Visual Studio 2026
 18.11.1 window:
 
 - The shared Settings page (the unchanged `webview.ts`) renders in the tool
@@ -743,8 +744,19 @@ two are shared fixes, so the VS Code extension gets them too.
 `packages/vs/test/teams.test.mjs` pins the behaviour and was falsified twice;
 `scripts/render/teams.mjs` carries the DOM assertions for the lead on macOS;
 evidence is `C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
-**Checkpoint 2b (History and session resume, title generation and folding) is
-next.**
+**Checkpoint 2b — History, session resume, title generation and folding —
+PASSED (2026-10-23).** In the real window the model title appeared after the
+first run and was renamed through the chip; History listed the live chat first,
+the saved chat second (`click to resume`), and the runs with their turns;
+clicking the saved chat **Stage A teams** restored its conversation and adopted
+its title; and `/compact` folded the older turns, said *"Summary added for 3
+earlier messages. Nothing was removed."*, drew the *"Plato now carries a summary
+of the work above"* banner, and left every message on screen while the log grew
+by one row. **No defect was found in this half.**
+`packages/vs/test/history.test.mjs` pins the behaviour and was falsified twice;
+`scripts/render/history.mjs` carries the DOM assertions for the lead on macOS;
+evidence is `C:\src\plato-vs-field\evidence\m3b\checkpoint2b\`. **M3 is
+complete; M4 is next.**
 
 ### M4 — Parity, part 2: agent features and editor
 
@@ -833,8 +845,8 @@ window, a transcript, or both.
 | Agent | Images | |
 | Agent | File attachments | |
 | Agent | Protected-file masking | |
-| State | History | |
-| State | Session resume | |
+| State | History | yes (M3b 2b) |
+| State | Session resume | yes (M3b 2b) |
 | State | Transcripts in `~/.plato` | |
 | State | Undo store | |
 | Editor | Open file from chat | |

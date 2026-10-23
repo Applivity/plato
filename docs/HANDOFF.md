@@ -21,7 +21,7 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 with its correction round, and M3b checkpoint 2a verified 2026-10-23)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; VS M2, M3a, M3b checkpoint 1 with its correction round, and M3b checkpoints 2a and 2b verified 2026-10-23; M3 complete)
 
 - **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
   The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
@@ -84,8 +84,19 @@ are now only in PROGRESS.
   can be driven deterministically. `packages/vs/test/teams.test.mjs` pins the behaviour and was
   falsified twice; render assertions are in `scripts/render/teams.mjs` for the lead on macOS;
   evidence is in `C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
-  **What remains for phase 3:** M3b checkpoint 2b (history and session resume, title generation and
-  folding), then M4. The platform
+  **M3b checkpoint 2b, History, session resume, title generation and folding, PASSED (2026-10-23):**
+  the model title appeared after the first run and was renamed through the chip; History listed the
+  live chat, the saved chat and the runs; resuming the saved chat restored its log and adopted its
+  title; and `/compact` folded the older turns into a banner with "Summary added for 3 earlier
+  messages. Nothing was removed." while every message stayed on screen and the log grew by one row.
+  **No defect was found in this half.** `packages/vs/test/history.test.mjs` pins the fold's
+  no-shrink rule (falsified with the old destructive fold), the title and its rename, the History
+  payload, resume (falsified by removing the active-run guard), and the archive on close; render
+  assertions are in `scripts/render/history.mjs`; evidence is
+  `C:\src\plato-vs-field\evidence\m3b\checkpoint2b\`. **One open product question is recorded, not
+  changed:** resuming a saved chat replaces the live conversation without archiving it first, so an
+  unarchived live chat is lost. This is the shipped VS Code behaviour too (D41 archives on close
+  and New Chat only). **What remains for phase 3:** M4 (agent features and editor), then M5. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active
