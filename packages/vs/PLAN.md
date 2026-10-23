@@ -3,7 +3,8 @@
 Status: **M0 DONE, M1, M2 AND M3a PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
-Visual Studio 2026 window. M3 parity is next. The founder approved this plan.
+Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
+teams, history) is next. The founder approved this plan.
 The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
@@ -702,7 +703,11 @@ approvals, teams, and history. M3a evidence, in a real Visual Studio 2026
 - Tests: `packages/vs/test/settings.test.mjs` covers the payload, discovery,
   persistence across a sidecar restart, and the no-key-in-file rule. It was
   falsified by removing the compaction field, then restored.
-- Evidence: `C:\src\plato-vs-field\evidence\m3a\`.
+- The default 346px tool-window width has no horizontal overflow:
+  `document.scrollWidth` is 346, `#sbody` is 331/331, and the Providers card's
+  right edge is 296. The rebuild from `3f41c5b` installed with exit 0.
+- Evidence: `C:\src\plato-vs-field\evidence\m3a\`, including
+  `settings-narrow.png` and `settings-narrow.txt`.
 
 **M3b** (modes, approvals with session memory, queue and run controls, Solo /
 Duo / Academy, observer strip, History and session resume, title generation and

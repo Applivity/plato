@@ -54,7 +54,9 @@ are now only in PROGRESS.
   Context slider always rendered the 0.8 default, and VS 2026's light theme returns a near-white
   Accent family, so primary buttons and an ON switch were illegible (the shell now uses the system
   highlight pair). The durable test is `packages/vs/test/settings.test.mjs`, falsified by removing
-  the compaction field. **What remains for phase 3:** M3b (modes, approvals, teams, history),
+  the compaction field. At the default 346px tool-window width the page has no horizontal overflow
+  (`settings-narrow.png` and `settings-narrow.txt`). **What remains for phase 3:** M3b (modes,
+  approvals, teams, history),
   then M4. The platform
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
