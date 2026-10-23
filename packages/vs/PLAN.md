@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE, M1, M2 AND M3a PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
+Status: **M0 DONE, M1, M2, M3a AND M3b CHECKPOINT 1 PASSED (2026-10-23).** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys) passed; M3b (modes, approvals,
@@ -711,7 +711,18 @@ approvals, teams, and history. M3a evidence, in a real Visual Studio 2026
 
 **M3b** (modes, approvals with session memory, queue and run controls, Solo /
 Duo / Academy, observer strip, History and session resume, title generation and
-folding) is not started.
+folding) is split for the Windows worker. **Checkpoint 1 — modes and approvals —
+PASSED (2026-10-23).** The plan/edit/auto picker, the live switch, the
+mode-request card, approvals with session memory, the queue, pause/resume/cancel,
+and every parked card were clicked through the real controls in a real Visual
+Studio 2026 window. The unchanged chat HTML and the existing IDE host carried
+them, so no bridge method and no shared code changed. Two witnesses per item:
+28 window screenshots and 16 run transcripts in
+`C:\src\plato-vs-field\evidence\m3b\checkpoint1\`, and the new host test
+`packages/vs/test/m3b.test.mjs`, which was falsified twice. Three shared,
+pre-existing defects are recorded in that evidence and are not fixed here.
+**Checkpoint 2 (Solo / Duo / Academy, observer strip, History and session
+resume, title generation and folding) is not started.**
 
 ### M4 — Parity, part 2: agent features and editor
 
