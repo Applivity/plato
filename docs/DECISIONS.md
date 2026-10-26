@@ -4887,6 +4887,24 @@ C# shell has no automated test — the window is its witness. Evidence:
 
 ---
 
+**D49ck — Visual Studio 0.1.0 ships unsigned; signing follows the release (2026-10-26).**
+
+**Why.** A code-signing certificate proves who published the VSIX. It does not change what
+the extension does, and it is not required to publish. The founder's decision on
+2026-10-26 is to release 0.1.0 unsigned rather than wait for procurement and identity
+verification, which take days to weeks.
+
+**What this costs, stated plainly.** On a machine with default policy, Visual Studio and
+Windows may show the publisher as unverified; some organisations block unsigned
+extensions outright. The clean-VM acceptance run must record the exact wording a default
+Windows 11 machine shows, so the limitation is known rather than assumed.
+
+**What comes next.** Azure Trusted Signing is the intended route: identity verified through
+Microsoft, about $10 a month, and a certificate Windows already trusts. It is a release
+step for the next version, not a reason to hold 0.1.0.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command

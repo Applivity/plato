@@ -931,15 +931,61 @@ Done:
 
 Remaining, and why:
 
-- **Code signing.** Needs a certificate the founder must obtain.
+- **Code signing.** Deferred by the founder (D49ck, 2026-10-26): 0.1.0 ships
+  unsigned; Azure Trusted Signing follows the release. The Windows 11
+  acceptance records the exact wording a default machine shows for an unsigned
+  VSIX.
 - **Marketplace upload and listing fields.** Founder account. The support
   address is **plato-feedback@applivity.com** (founder, 2026-10-26) and the
   privacy-policy URL is **https://plato.applivity.com/privacy** (founder,
-  2026-10-26). The README carries both. The page must be live before the
-  listing is published; the rest of the fields (category, tags, screenshots)
-  are entered in the management page.
+  2026-10-26). The README carries both, and the page is live (verified
+  2026-10-26). The remaining fields (category, tags, description, screenshots)
+  are entered in the management page; the listing copy is drafted below.
 - **Clean-Windows-11 VM acceptance.** This machine is Windows 10 22H2, which
   Microsoft does not support for Visual Studio 2026.
+
+### Listing copy (draft, for the management page)
+
+**Display name:** Plato by Applivity for Visual Studio
+**Category:** Machine Learning (confirm the category list shown in the account)
+**Tags:** AI, agent, coding, assistant, chat
+**Pricing:** Free. The user pays their model provider.
+**Licence:** Apache-2.0 (in the VSIX)
+**Support:** plato-feedback@applivity.com
+**Privacy policy:** https://plato.applivity.com/privacy
+**Release notes:** first Visual Studio release: 0.1.0.
+
+**Short description** (one sentence, as in the manifest): An AI coding agent that
+shows its work, lets you steer mid-run, and stops at a safe point.
+
+**Long description:**
+
+Plato is an AI coding agent that works in a tool window beside your code. It
+shows each step while it works, so you can follow the plan, change direction
+mid-run, and stop it at a safe point.
+
+Plato reads your code, edits files, and runs commands — only within the mode you
+choose. In **plan** it looks and does not touch. In **edit** it asks before a
+write or a command. In **auto** it works without stopping.
+
+You supply the model provider key and pay the provider directly. Anthropic and
+any OpenAI-compatible endpoint are supported, including a model that runs on
+your machine. A Node.js 22 runtime is bundled, so you do not install Node.js.
+
+Plato sends nothing to Applivity. Prompts and the code it reads go only to the
+provider you configure. Transcripts, settings, and keys stay on your machine;
+keys are held by Windows Credential Manager.
+
+Plato is pre-release, and this is its first Visual Studio release. It needs
+Visual Studio 2026 on Windows 11.
+
+**Screenshots to capture** (real window, no keys or personal paths):
+1. Chat answering a task, with tool rows and the status line (light theme).
+2. An approval card for a file write, with the preview visible.
+3. The same chat in dark theme.
+4. Settings: connections and model picker.
+5. History: saved chats and runs.
+6. A Duo run with the observer strip.
 
 ### M6 — After release (optional)
 
