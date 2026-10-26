@@ -8,8 +8,9 @@ teams, history), M4a (MCP, images and attachments, undo, masking/reveal,
 and the stuck card), and M4b (/ commands, plan/todos, open-file actions, and
 diagnostics gap) passed. The acceptance run in the VS window is 17 pass /
 0 fail / 3 N/A with recorded reasons. The parity checklist is complete except
-the recorded New Chat confirmation defect and the two deferred items (clickable
-path links, optional Chats tree); M5 is next. The
+the two deferred items (clickable path links, optional Chats tree); the
+recorded New Chat confirmation defect is fixed and witnessed in the VS window
+(D49cj); M5 is next. The
 founder approved this plan. The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
@@ -265,8 +266,9 @@ Sidecar → host:
 Rules:
 
 - Unknown methods return an error; do not crash.
-- A request must time out. Use 30 seconds for UI and secrets, 10 seconds for
-  the rest.
+- A request must time out. Use 10 minutes for UI, 30 seconds for secrets, and
+  10 seconds for the rest. A dialog waits for a person; the original 30-second
+  UI timeout abandoned an open dialog (D49cj).
 - The sidecar never sends a request before `init` completes.
 - The C# side marshals all UI work to the Visual Studio UI thread with
   `JoinableTaskFactory`.
@@ -844,11 +846,19 @@ its masking claim is unchanged. Evidence: `C:\src\plato-vs-field\evidence\m4\acc
 (`acceptance.md`, `acceptance-results.json`, `evidence.txt`, 23 run transcripts and
 52 screenshots — 26 pairs — plus the N/A record).
 
-**One defect found outside the M4b list.** The `+ new` control does not start a
-new chat: the host's confirmation goes through the shim's `ui.message`, the
-sidecar logs `ui.message timed out after 30000 ms`, and the conversation is not
-cleared. It is recorded in "Known gaps" (16) for M5. The acceptance run worked
-around it by clearing the workspace-state chat log and restarting Visual Studio.
+**One defect found outside the M4b list.** The `+ new` control did not start a
+new chat: the host's confirmation went through the shim's `ui.message`, the
+sidecar logged `ui.message timed out after 30000 ms`, and the conversation was
+not cleared. The acceptance run worked around it by clearing the
+workspace-state chat log and restarting Visual Studio. **Fixed (D49cj,
+2026-10-26).** `VsShellUtilities.ShowMessageBox` blocked the Visual Studio UI
+thread and never created a window in VS 2026 18.11.12315, so no answer could
+ever arrive; the box is now a WPF `MessageWindow` with the core's action labels,
+all four shell message-box call sites use it, and a UI request waits 10 minutes
+instead of 30 seconds. Witnessed in the real window for both `+ new` and the
+`Plato: New Chat` menu command, including a Cancel that left the conversation
+intact, and by the new host test `packages/vs/test/newchat.test.mjs` (falsified
+twice). The parity row is now complete.
 
 **M4 is COMPLETE. M5 (Release) is next.**
 
@@ -924,7 +934,7 @@ window, a transcript, or both.
 | Editor | Solution/folder root | yes (M2) |
 | Editor | Diagnostics after write (or documented gap) | yes (M4b; documented gap: reports not-checked) |
 | Shell | Settings page | yes (M3a) |
-| Shell | Commands and menu | partial (M2/M4b: Open Chat, Set API Key, Manage Keys and the open actions are witnessed; New Chat's confirmation times out — gap 16) |
+| Shell | Commands and menu | yes (M2/M4b; New Chat's confirmation completes — D49cj) |
 | Shell | Theme light/dark | yes (M2, M3a) |
 | Shell | Install and update | yes (M2) |
 | Shell | Licence and notices | yes (bundled in VSIX) |
@@ -1012,14 +1022,18 @@ These are recorded, not silently deferred.
     address and a privacy policy URL. The CLI already uses
     `plato-feedback@applivity.com`; use the same address and publish the policy
     at `plato.applivity.com/privacy`.
-16. **New Chat confirmation does not complete.** In the Visual Studio host the
-    chat's `+ new` posts `newChat`; the host asks
-    `showWarningMessage(..., { modal: true }, 'New Chat')`; the shim maps that to
-    `ui.message`; and the sidecar logs `ui.message timed out after 30000 ms`. The
-    conversation is not cleared. The M4 acceptance run worked around it by
-    clearing the workspace-state chat log and restarting Visual Studio. Fix
-    before release; the command is registered and the host already defers to the
-    shim's message path.
+16. **New Chat confirmation did not complete — FIXED (D49cj, 2026-10-26).**
+    In the Visual Studio host the chat's `+ new` posted `newChat`; the host
+    asked `showWarningMessage(..., { modal: true }, 'New Chat')`; the shim
+    mapped that to `ui.message`; and `VsShellUtilities.ShowMessageBox` blocked
+    the UI thread without ever creating a window, so the sidecar logged
+    `ui.message timed out after 30000 ms` and the conversation was not
+    cleared. The box is now a WPF `MessageWindow` that carries the core's
+    action label, every shell message-box call site uses it, and a UI request
+    waits 10 minutes (the menu command's wait matches). Witnessed in the real
+    window for `+ new`, the `Plato: New Chat` menu command, and a Cancel that
+    left the conversation intact; `packages/vs/test/newchat.test.mjs` pins the
+    host side and was falsified twice.
 
 ## What not to do
 

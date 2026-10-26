@@ -39,13 +39,18 @@ export function isResponse(message: RpcMessage): message is RpcResponse {
   );
 }
 
-/** UI and credential calls may wait for a person; everything else may not. */
+/**
+ * A person answers the page's dialogs. A modal that expires under them leaves
+ * a control that does nothing when it is finally pressed, so UI calls wait ten
+ * minutes; credential calls are machine work and keep the plan's 30 seconds.
+ */
 export function timeoutFor(method: string): number {
   const override = Number(process.env['PLATO_VS_RPC_TIMEOUT_MS'] ?? '');
   if (Number.isFinite(override) && override > 0) {
     return override;
   }
-  return method.startsWith('ui.') || method.startsWith('secrets.')
-    ? 30_000
-    : 10_000;
+  if (method.startsWith('ui.')) {
+    return 10 * 60_000;
+  }
+  return method.startsWith('secrets.') ? 30_000 : 10_000;
 }

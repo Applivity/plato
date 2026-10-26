@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 
 namespace Plato.Vs.Native
 {
@@ -190,55 +189,140 @@ namespace Plato.Vs.Native
         }
     }
 
-    internal static class MessageDialog
+    /// <summary>
+    /// A modal message with the caller's own action labels.
+    ///
+    /// This is a WPF window, like the two dialogs above, and not
+    /// `VsShellUtilities.ShowMessageBox`: in Visual Studio 2026 18.11.12315 the
+    /// shell box blocked the UI thread and never created a window when it was
+    /// called from a JoinableTask, so a request that needed an answer timed out
+    /// with nothing on screen. A WPF dialog also keeps the core's button copy
+    /// (for example "New Chat") on the button.
+    /// </summary>
+    internal sealed class MessageWindow : Window
     {
-        private const int IdOk = 1;
-        private const int IdCancel = 2;
-        private const int IdYes = 6;
-        private const int IdNo = 7;
+        private string? _result;
+
+        private MessageWindow(string kind, string message, IReadOnlyList<string> actions, Color background, Color foreground)
+        {
+            Title = "Plato";
+            Width = 460;
+            SizeToContent = SizeToContent.Height;
+            MinHeight = 150;
+            ResizeMode = ResizeMode.NoResize;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            ShowInTaskbar = false;
+            Background = new SolidColorBrush(background);
+            Foreground = new SolidColorBrush(foreground);
+
+            var grid = new Grid { Margin = new Thickness(16) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var glyph = new TextBlock
+            {
+                Text = kind == "error" ? "\uEA39" : kind == "warning" ? "\uE7BA" : "\uE946",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 22,
+                Margin = new Thickness(0, 0, 14, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            Grid.SetRow(glyph, 0);
+            Grid.SetColumn(glyph, 0);
+            grid.Children.Add(glyph);
+
+            var text = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+            };
+            // A long error stays readable without growing the window off screen.
+            var scroller = new ScrollViewer
+            {
+                Content = text,
+                MaxHeight = 360,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(0, 0, 0, 18),
+            };
+            Grid.SetRow(scroller, 0);
+            Grid.SetColumn(scroller, 1);
+            grid.Children.Add(scroller);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+            };
+            for (var i = 0; i < actions.Count; i++)
+            {
+                var label = actions[i];
+                var button = new Button
+                {
+                    Content = label,
+                    MinWidth = 84,
+                    Padding = new Thickness(10, 2, 10, 2),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    IsDefault = i == 0,
+                };
+                button.Click += (_, __) => Accept(label);
+                buttons.Children.Add(button);
+            }
+
+            if (actions.Count == 0)
+            {
+                var ok = new Button
+                {
+                    Content = "OK",
+                    MinWidth = 84,
+                    Padding = new Thickness(10, 2, 10, 2),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    IsDefault = true,
+                };
+                ok.Click += (_, __) => Accept(null);
+                buttons.Children.Add(ok);
+            }
+            else
+            {
+                buttons.Children.Add(new Button
+                {
+                    Content = "Cancel",
+                    MinWidth = 84,
+                    Padding = new Thickness(10, 2, 10, 2),
+                    Margin = new Thickness(8, 0, 0, 0),
+                    IsCancel = true,
+                });
+            }
+
+            Grid.SetRow(buttons, 1);
+            Grid.SetColumn(buttons, 1);
+            grid.Children.Add(buttons);
+
+            Content = grid;
+            Loaded += (_, __) =>
+            {
+                var first = buttons.Children.Count > 0 ? buttons.Children[0] as Button : null;
+                first?.Focus();
+            };
+        }
+
+        private void Accept(string? result)
+        {
+            _result = result;
+            DialogResult = true;
+        }
 
         public static string? Show(IServiceProvider serviceProvider, string kind, string message, IReadOnlyList<string> actions)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-
-            var icon = kind == "error"
-                ? OLEMSGICON.OLEMSGICON_CRITICAL
-                : kind == "warning"
-                    ? OLEMSGICON.OLEMSGICON_WARNING
-                    : OLEMSGICON.OLEMSGICON_INFO;
-
-            var buttons = actions.Count switch
-            {
-                0 => OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                1 => OLEMSGBUTTON.OLEMSGBUTTON_OKCANCEL,
-                2 => OLEMSGBUTTON.OLEMSGBUTTON_YESNO,
-                _ => OLEMSGBUTTON.OLEMSGBUTTON_YESNOCANCEL,
-            };
-
-            var result = VsShellUtilities.ShowMessageBox(
-                serviceProvider,
+            var window = new MessageWindow(
+                kind,
                 message,
-                "Plato",
-                icon,
-                buttons,
-                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
-
-            if (result == IdOk || result == IdYes)
-            {
-                return actions.Count >= 1 ? actions[0] : null;
-            }
-
-            if (result == IdNo)
-            {
-                return actions.Count >= 2 ? actions[1] : null;
-            }
-
-            if (result == IdCancel)
-            {
-                return actions.Count >= 3 ? actions[2] : null;
-            }
-
-            return null;
+                actions,
+                ThemeService.BackgroundColor(),
+                ThemeService.ForegroundColor());
+            return window.ShowDialog() == true ? window._result : null;
         }
     }
 }

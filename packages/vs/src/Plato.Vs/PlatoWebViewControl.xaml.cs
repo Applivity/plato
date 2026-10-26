@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.Web.WebView2.Core;
 using Newtonsoft.Json;
@@ -74,13 +73,7 @@ namespace Plato.Vs
                 var package = PlatoPackage.Instance;
                 if (package != null)
                 {
-                    VsShellUtilities.ShowMessageBox(
-                        package,
-                        error.Message,
-                        "Plato",
-                        OLEMSGICON.OLEMSGICON_WARNING,
-                        OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                        OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                    MessageWindow.Show(package, "error", error.Message, Array.Empty<string>());
                 }
             }
         }
@@ -174,13 +167,11 @@ namespace Plato.Vs
             if (string.IsNullOrEmpty(root))
             {
                 await _jtf.SwitchToMainThreadAsync();
-                VsShellUtilities.ShowMessageBox(
+                MessageWindow.Show(
                     package,
+                    "info",
                     "Open a solution or a folder before you open Plato.",
-                    "Plato",
-                    OLEMSGICON.OLEMSGICON_INFO,
-                    OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                    OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                    Array.Empty<string>());
                 return;
             }
 

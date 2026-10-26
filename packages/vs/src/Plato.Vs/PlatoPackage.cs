@@ -6,7 +6,6 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 using Plato.Vs.Bridge;
 using Plato.Vs.Native;
 
@@ -87,7 +86,12 @@ namespace Plato.Vs
             await OpenChatAsync();
             if (Sidecar != null)
             {
-                await Sidecar.RequestAsync("command", new { command }, TimeSpan.FromSeconds(30));
+                // A command such as New Chat or Set API Key waits for a person,
+                // so this must not give up while its dialog is still open.
+                await Sidecar.RequestAsync(
+                    "command",
+                    new { command },
+                    TimeSpan.FromMinutes(10));
             }
         }
 
@@ -100,13 +104,7 @@ namespace Plato.Vs
             catch (Exception error)
             {
                 await JoinableTaskFactory.SwitchToMainThreadAsync();
-                VsShellUtilities.ShowMessageBox(
-                    this,
-                    error.Message,
-                    "Plato",
-                    OLEMSGICON.OLEMSGICON_WARNING,
-                    OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                    OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                MessageWindow.Show(this, "error", error.Message, Array.Empty<string>());
             }
         }
 
