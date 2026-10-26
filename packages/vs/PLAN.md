@@ -842,7 +842,7 @@ button (`HideButton`), and hiding must not unload the page, so there is no
 panel-dispose to stop the run. Case 23 was adapted `cat` → `type` for cmd.exe;
 its masking claim is unchanged. Evidence: `C:\src\plato-vs-field\evidence\m4\acceptance\`
 (`acceptance.md`, `acceptance-results.json`, `evidence.txt`, 23 run transcripts and
-their screenshots, plus the N/A record).
+52 screenshots — 26 pairs — plus the N/A record).
 
 **One defect found outside the M4b list.** The `+ new` control does not start a
 new chat: the host's confirmation goes through the shim's `ui.message`, the
