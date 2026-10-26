@@ -43,6 +43,30 @@
     </None>
     <Content Include="sidecar\**\*" CopyToOutputDirectory="PreserveNewest" IncludeInVSIX="true" />
     <Resource Include="Resources\icon.png" />
+
+    <!-- Listing and licence material. The repository root has the only copies;
+         these entries place them at the VSIX root, as the VS Code extension
+         does, rather than copying them. -->
+    <Content Include="..\..\..\..\LICENSE">
+      <Link>LICENSE</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\..\NOTICE">
+      <Link>NOTICE</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\..\THIRD-PARTY-NOTICES.md">
+      <Link>THIRD-PARTY-NOTICES.md</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\README.md">
+      <Link>README.md</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\vscode\media\icon.png">
+      <Link>icon.png</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
   </ItemGroup>
 
 </Project>

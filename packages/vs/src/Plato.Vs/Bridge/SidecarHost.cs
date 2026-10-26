@@ -106,7 +106,7 @@ namespace Plato.Vs.Bridge
             process.Exited += (_, __) => OnProcessExited(process);
             process.Start();
             _process = process;
-            Log("sidecar started: pid " + process.Id);
+            Log("sidecar started: pid " + process.Id + " runtime " + ProcessImagePath(process));
 
             _ = Task.Run(() => ReadStdoutAsync(process));
             _ = Task.Run(() => ReadStderrAsync(process));
@@ -596,6 +596,23 @@ namespace Plato.Vs.Bridge
             catch (Exception)
             {
                 // A log failure must not break a run.
+            }
+        }
+
+        /// <summary>
+        /// The image the sidecar process actually started from. This is the
+        /// witness that a run used the bundled runtime and not a Node found on
+        /// PATH, so it is logged at start.
+        /// </summary>
+        private static string ProcessImagePath(Process process)
+        {
+            try
+            {
+                return process.MainModule?.FileName ?? "(unavailable)";
+            }
+            catch (Exception)
+            {
+                return "(unavailable)";
             }
         }
 

@@ -885,6 +885,56 @@ Done when:
 
 **Do not publish before parity.** Internal signed builds are allowed earlier.
 
+**Status: PACKAGING PHASE DONE (2026-10-26); THE RELEASE IS NOT PUBLISHED.**
+Evidence: `C:\src\plato-vs-field\evidence\m5\package\`.
+
+Done:
+
+- **Node is vendored, not taken from a dev machine.**
+  `packages/vs/scripts/fetch-node.ps1` obtains the pinned official Node.js
+  22.20.0 LTS Windows x64 archive from nodejs.org and checks its SHA-256
+  (`bb819d6eb8f5bfda294bbc83a7e4ec6539da67c4233d54b0d655b9248b15e29d`)
+  before extraction. It stages `node.exe` and Node's `LICENSE` in `sidecar\`.
+  `-LocalZip` is the offline override, checked against the same hash. The
+  build runs gen-defaults and esbuild with the staged `node.exe`, so no
+  dev-machine Node path is used. The stale `C:\Users\DummyUser` default is
+  deleted from `package-vsix.ps1`.
+- **Notices.** `THIRD-PARTY-NOTICES.md` has a Node.js 22.20.0 entry with the
+  licence text and states that only `node.exe` and `LICENSE` ship. `LICENSE`,
+  `NOTICE`, and `THIRD-PARTY-NOTICES.md` are inside the VSIX at the root with
+  `IncludeInVSIX` and are byte-identical to the repository copies.
+- **Listing assets.** `packages/vs/README.md` is the user-facing copy (what
+  Plato is; it runs an agent that can edit files and run commands in the open
+  solution; the user supplies a provider key; a Node 22 runtime is bundled;
+  Apache-2.0; a support-address placeholder). The VSIX carries it as
+  `README.md` and uses `packages/vscode/media/icon.png` as its manifest icon.
+- **Package and inspect.** The Release VSIX is **33,293,139 bytes, 19 files,
+  SHA-256 `cdf32458634fa16c015c75d457345159eef40297900e17a8f6a2b0a585497d4e`.**
+  It holds `sidecar\node.exe`, `sidecar\plato-host.cjs`, `sidecar\LICENSE`,
+  the three licence files, the icon, and `Plato.Vs.dll`. It has no source,
+  maps, tests, scripts, or local user paths. The secret audit
+  (`audit-vsix.ps1` / `audit.txt`) found no key material; the six AKIA-shaped
+  ASCII runs are upstream bytes in the official `node.exe`.
+- **Clean-runtime install.** The VSIX installed with exit 0. Visual Studio was
+  started with a PATH that held no Node or nvm directory (0 of 42 entries
+  contained `node.exe`; `Get-Command node` was not found). The chat answered a
+  real stub run (`✓ done in 1s · 0 tool calls · 120 tok`). The sidecar log
+  names the process image
+  `…\extensions\szyphvra.b2p\sidecar\node.exe`, and `Win32_Process` shows that
+  was the only `node.exe` child of `devenv.exe`.
+- **Tests.** `pnpm exec tsc -b`, `pnpm --dir packages/vs typecheck`, and
+  `pnpm --dir packages/vs test` pass. The shared webview did not change, so
+  `render:fast` is not part of this phase; it cannot run on this machine.
+
+Remaining, and why:
+
+- **Code signing.** Needs a certificate the founder must obtain.
+- **Marketplace upload and listing fields.** Founder account. The support
+  address in `packages/vs/README.md` is a placeholder until the founder
+  supplies it, and a privacy-policy URL is still needed.
+- **Clean-Windows-11 VM acceptance.** This machine is Windows 10 22H2, which
+  Microsoft does not support for Visual Studio 2026.
+
 ### M6 — After release (optional)
 
 - Visual Studio 2022 compatibility test.

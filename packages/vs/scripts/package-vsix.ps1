@@ -1,6 +1,6 @@
 param(
     [string]$Configuration = "Release",
-    [string]$NodeExe = "C:\Users\DummyUser\AppData\Local\nvm\v22.20.0\node.exe",
+    [string]$LocalNodeZip = "",
     [string]$MSBuild = "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe"
 )
 
@@ -10,22 +10,23 @@ $VsRoot = Split-Path -Parent $PSScriptRoot
 $Project = Join-Path $VsRoot "src\Plato.Vs\Plato.Vs.csproj"
 $Sidecar = Join-Path $VsRoot "src\Plato.Vs\sidecar"
 
-if (-not (Test-Path $NodeExe)) {
-    throw "Node 22 LTS was not found at $NodeExe"
-}
+Write-Host "== fetch the pinned Node 22 runtime =="
+# The runtime is obtained from nodejs.org and its SHA-256 is checked against
+# the constant in fetch-node.ps1. There is no dev-machine Node path.
+$fetch = @{ Sidecar = $Sidecar }
+if ($LocalNodeZip) { $fetch.LocalZip = $LocalNodeZip }
+& (Join-Path $PSScriptRoot "fetch-node.ps1") @fetch
 
-$NodeDirectory = Split-Path -Parent $NodeExe
-$env:PATH = "$NodeDirectory;$env:PATH"
+$Node = Join-Path $Sidecar "node.exe"
+$env:PATH = "$Sidecar;$env:PATH"
 
 Write-Host "== build the sidecar bundle =="
-& node (Join-Path $VsRoot "scripts\gen-defaults.mjs")
+& $Node (Join-Path $VsRoot "scripts\gen-defaults.mjs")
 if ($LASTEXITCODE -ne 0) { throw "gen-defaults failed" }
-& node (Join-Path $VsRoot "esbuild.mjs")
+& $Node (Join-Path $VsRoot "esbuild.mjs")
 if ($LASTEXITCODE -ne 0) { throw "esbuild failed" }
 
-Write-Host "== stage node.exe and plato-host.cjs =="
-New-Item -ItemType Directory -Force $Sidecar | Out-Null
-Copy-Item $NodeExe (Join-Path $Sidecar "node.exe") -Force
+Write-Host "== stage plato-host.cjs =="
 Copy-Item (Join-Path $VsRoot "dist\plato-host.cjs") (Join-Path $Sidecar "plato-host.cjs") -Force
 
 Write-Host "== build the VSIX =="
