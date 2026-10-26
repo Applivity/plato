@@ -834,15 +834,15 @@ pairs — 3 transcripts, `field-run.log`, `transcript-summary.txt`, `evidence.tx
 
 **Acceptance in the VS window (2026-10-26).** The M4 acceptance cases were run
 through the same window by `evidence\m4\acceptance\drive-acceptance.mjs`, judged
-with the product's own `scripts/field/verdict.mjs`: **20 cases, 24 runs — 17 pass,
-0 fail, 3 N/A with recorded reasons.** Cases 2 and 3 are POSIX-only: on Windows,
+with the product's own `scripts/field/verdict.mjs`: **20 cases, 23 runs (24 result
+rows including the N/A record) — 17 pass, 0 fail, 3 N/A with recorded reasons.** Cases 2 and 3 are POSIX-only: on Windows,
 plan denies every shell command and edit asks for every one; the adapted runs
 witness that policy. Case 33 is VS Code-only: the VS tool-window X is a hide
 button (`HideButton`), and hiding must not unload the page, so there is no
 panel-dispose to stop the run. Case 23 was adapted `cat` → `type` for cmd.exe;
 its masking claim is unchanged. Evidence: `C:\src\plato-vs-field\evidence\m4\acceptance\`
-(`acceptance.md`, `acceptance-results.json`, `evidence.txt`, 24 transcripts and
-their screenshots).
+(`acceptance.md`, `acceptance-results.json`, `evidence.txt`, 23 run transcripts and
+their screenshots, plus the N/A record).
 
 **One defect found outside the M4b list.** The `+ new` control does not start a
 new chat: the host's confirmation goes through the shim's `ui.message`, the
