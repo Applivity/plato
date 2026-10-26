@@ -908,8 +908,11 @@ Done:
   solution; the user supplies a provider key; a Node 22 runtime is bundled;
   Apache-2.0; a support-address placeholder). The VSIX carries it as
   `README.md` and uses `packages/vscode/media/icon.png` as its manifest icon.
-- **Package and inspect.** The Release VSIX is **33,293,139 bytes, 19 files,
-  SHA-256 `cdf32458634fa16c015c75d457345159eef40297900e17a8f6a2b0a585497d4e`.**
+- **Package and inspect.** The Release VSIX is **33,293,246 bytes, 19 files,
+  SHA-256 `192eca78832f53a2d09ce42580897f18dcdf1f4396e796002e603bb8a26a0e47`**
+  (rebuilt with the founder-supplied support address and privacy URL; the
+  clean-runtime run below used the previous build `cdf32458…97d4e`, which
+  differs only in the README text).
   It holds `sidecar\node.exe`, `sidecar\plato-host.cjs`, `sidecar\LICENSE`,
   the three licence files, the icon, and `Plato.Vs.dll`. It has no source,
   maps, tests, scripts, or local user paths. The secret audit
