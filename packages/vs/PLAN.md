@@ -1,12 +1,15 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE; M1, M2, M3a, M3b, M4a AND M4b PASSED (2026-10-24), SO M3 AND M4 ARE COMPLETE. M5 (RELEASE) IS NEXT.** Phase 3 opened 2026-10-23.
+Status: **M0 DONE; M1, M2, M3a, M3b, M4a (2026-10-24) AND M4b (2026-10-26, with the M4 acceptance run in the VS window) PASSED, SO M3 AND M4 ARE COMPLETE. M5 (RELEASE) IS NEXT.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys), M3b (modes, approvals,
 teams, history), M4a (MCP, images and attachments, undo, masking/reveal,
 and the stuck card), and M4b (/ commands, plan/todos, open-file actions, and
-diagnostics gap) passed. The parity checklist is complete and M5 is next. The
+diagnostics gap) passed. The acceptance run in the VS window is 17 pass /
+0 fail / 3 N/A with recorded reasons. The parity checklist is complete except
+the recorded New Chat confirmation defect and the two deferred items (clickable
+path links, optional Chats tree); M5 is next. The
 founder approved this plan. The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
@@ -795,7 +798,8 @@ and was falsified four times; the exact-copy render assertions are in
 Its core and host regressions are falsified. Evidence:
 `C:\src\plato-vs-field\evidence\m4\checkpoint-a\`.
 
-**M4b, the editor and interaction half, PASSED (2026-10-24).** Slash commands and
+**M4b, the editor and interaction half, PASSED (2026-10-26; the 2026-10-24
+claims were treated as unverified and re-run).** Slash commands and
 completion, plan and todos (`todo_write`), open-file actions, and diagnostics
 after a write (the documented gap) were driven through the real controls in a
 real Visual Studio 2026 window:
@@ -814,18 +818,39 @@ real Visual Studio 2026 window:
    run detail view. Per user decision (Option 2), existing open actions from chat
    were verified and clickable path links in conversational prose were deferred
    (no shared code has them; adding them would be a new capability, not parity).
-4. Diagnostics after a write (documented gap): after a write, `editorDiag.collect()`
-   reported `not-analysed` (the documented gap: VS has no public in-process third-party
-   LSP diagnostics API), emitting the honest notice `"diagnostics: not checked in
-   probe-diag-m4b.txt — no language server reported on it"`, which was recorded in
-   both the chat log and transcript.
+4. Diagnostics after a write (documented gap): the probe is removed first, so the
+   run witnesses a CREATE and `write_file` records `ok:true` in the transcript (a
+   non-empty leftover file is refused without `overwrite:true`). After the write,
+   `editorDiag.collect()` reported `not-analysed` (the documented gap: VS has no
+   public in-process third-party LSP diagnostics API), emitting the honest notice
+   `"diagnostics: not checked in probe-diag-m4b.txt — no language server reported
+   on it"`, which was recorded in both the chat log and transcript.
 5. Chats tree window: optional for v1; deferred per plan (the in-panel History
    page provides complete chat listing, resume, and transcript viewing).
 
-The new host test `packages/vs/test/m4b.test.mjs` pins all items and was falsified
-four times. Evidence: `C:\src\plato-vs-field\evidence\m4\checkpoint-b\` (22 screenshots,
-3 transcripts, `field-run.log`, `transcript-summary.txt`, `evidence.txt`).
-**M4 is COMPLETE. The parity checklist is closed. M5 (Release) is next.**
+The host test `packages/vs/test/m4b.test.mjs` pins all items. Evidence:
+`C:\src\plato-vs-field\evidence\m4\checkpoint-b\` (22 screenshots — 11 window/page
+pairs — 3 transcripts, `field-run.log`, `transcript-summary.txt`, `evidence.txt`).
+
+**Acceptance in the VS window (2026-10-26).** The M4 acceptance cases were run
+through the same window by `evidence\m4\acceptance\drive-acceptance.mjs`, judged
+with the product's own `scripts/field/verdict.mjs`: **20 cases, 24 runs — 17 pass,
+0 fail, 3 N/A with recorded reasons.** Cases 2 and 3 are POSIX-only: on Windows,
+plan denies every shell command and edit asks for every one; the adapted runs
+witness that policy. Case 33 is VS Code-only: the VS tool-window X is a hide
+button (`HideButton`), and hiding must not unload the page, so there is no
+panel-dispose to stop the run. Case 23 was adapted `cat` → `type` for cmd.exe;
+its masking claim is unchanged. Evidence: `C:\src\plato-vs-field\evidence\m4\acceptance\`
+(`acceptance.md`, `acceptance-results.json`, `evidence.txt`, 24 transcripts and
+their screenshots).
+
+**One defect found outside the M4b list.** The `+ new` control does not start a
+new chat: the host's confirmation goes through the shim's `ui.message`, the
+sidecar logs `ui.message timed out after 30000 ms`, and the conversation is not
+cleared. It is recorded in "Known gaps" (16) for M5. The acceptance run worked
+around it by clearing the workspace-state chat log and restarting Visual Studio.
+
+**M4 is COMPLETE. M5 (Release) is next.**
 
 ### M5 — Release
 
@@ -899,7 +924,7 @@ window, a transcript, or both.
 | Editor | Solution/folder root | yes (M2) |
 | Editor | Diagnostics after write (or documented gap) | yes (M4b; documented gap: reports not-checked) |
 | Shell | Settings page | yes (M3a) |
-| Shell | Commands and menu | yes (M2, M4b) |
+| Shell | Commands and menu | partial (M2/M4b: Open Chat, Set API Key, Manage Keys and the open actions are witnessed; New Chat's confirmation times out — gap 16) |
 | Shell | Theme light/dark | yes (M2, M3a) |
 | Shell | Install and update | yes (M2) |
 | Shell | Licence and notices | yes (bundled in VSIX) |
@@ -987,6 +1012,14 @@ These are recorded, not silently deferred.
     address and a privacy policy URL. The CLI already uses
     `plato-feedback@applivity.com`; use the same address and publish the policy
     at `plato.applivity.com/privacy`.
+16. **New Chat confirmation does not complete.** In the Visual Studio host the
+    chat's `+ new` posts `newChat`; the host asks
+    `showWarningMessage(..., { modal: true }, 'New Chat')`; the shim maps that to
+    `ui.message`; and the sidecar logs `ui.message timed out after 30000 ms`. The
+    conversation is not cleared. The M4 acceptance run worked around it by
+    clearing the workspace-state chat log and restarting Visual Studio. Fix
+    before release; the command is registered and the host already defers to the
+    shim's message path.
 
 ## What not to do
 
