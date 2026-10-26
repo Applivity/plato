@@ -4842,6 +4842,51 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49cj — New Chat asks in a real dialog, and a UI request waits for the person (2026-10-26).**
+
+**Why.** Gap 16 was the last partial parity row. In the Visual Studio host, `+ new`
+posts `newChat`; the shared host asks
+`showWarningMessage(..., { modal: true }, 'New Chat')`; the shim maps that to
+`ui.message`; the C# shell showed it with `VsShellUtilities.ShowMessageBox`. On VS 2026
+18.11.12315 that call **blocked the UI thread and never created a window**. The sidecar
+logged `ui.message timed out after 30000 ms`, nothing appeared on screen, the conversation
+was not cleared, and the UI thread stayed inside the call until the process was killed —
+inside that window, DTE calls were rejected with `RPC_E_CALL_REJECTED` and even `Quit`
+could not run. An instrumented build logged `ui.message: showing` and never reached
+`answered`; a scan of every top-level window on the session-2 desktop found no dialog.
+`ui.inputBox`, which is a WPF `ShowDialog`, worked in the same build, so the fault was the
+shell box and not the joinable-task path.
+
+**The rule.** `MessageWindow` is a WPF dialog in `Native/Dialogs.cs`, built like the quick
+pick and input box, and it shows the caller's own action labels (`New Chat`) plus Cancel,
+or a single OK when there is no action. It returns the label of the button that was
+pressed. **All four** `VsShellUtilities.ShowMessageBox` call sites use it — the `ui.message`
+handler, two error boxes, and the "open a solution or a folder" notice — because the API
+hangs in this build, not only for New Chat. No copy moves out of core; the message and the
+label still come from the shared host.
+
+**A UI request now waits ten minutes, not thirty seconds.** A modal that expires under the
+person leaves a control that does nothing when it is finally pressed: the answer arrives
+with no request to receive it (the same build showed `response for an unknown request id`).
+`protocol.ts` gives `ui.*` ten minutes, `secrets.*` the plan's 30 seconds, everything else
+ten seconds; the menu command's outer wait matches at ten minutes, because New Chat and Set
+API Key both wait for a person.
+
+**Verified.** `packages/vs/test/newchat.test.mjs` drives the host directly: a cancel leaves
+the log, the title and History untouched; an answer asks first with the exact core payload
+(`kind: warning`, the message, `actions: ['New Chat']`), then archives the live
+conversation, clears the log, resets the title and tells the page to start empty. It was
+**falsified twice** on the compiled host — a changed label failed "the confirmation carries
+the core copy", and removing the archive failed "the conversation is in History". **In the
+real VS window:** `+ new` and the `Plato: New Chat` menu command each raised the dialog; each
+was left open 35–59 seconds (past the old 30-second timeout) and then answered, the
+conversation cleared, and the answer produced a new 142-entry archive; **Cancel** left the
+139-entry log, its title and History intact; the host log has no timeout and no error. The
+C# shell has no automated test — the window is its witness. Evidence:
+`C:\src\plato-vs-field\evidence\newchat\`.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command

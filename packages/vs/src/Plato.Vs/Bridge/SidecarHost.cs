@@ -419,7 +419,7 @@ namespace Plato.Vs.Bridge
                         case "ui.message":
                         {
                             var actions = parameters["actions"]?.ToObject<List<string>>() ?? new List<string>();
-                            var action = MessageDialog.Show(
+                            var action = MessageWindow.Show(
                                 _serviceProvider,
                                 parameters.Value<string>("kind") ?? "info",
                                 parameters.Value<string>("message") ?? string.Empty,
