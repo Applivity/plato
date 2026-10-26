@@ -913,11 +913,12 @@ Done:
   The install targets are `[18.0,19.0)` for Community, Pro, and Enterprise, so
   Visual Studio 2022 cannot install a build that was never tested there; VS 2022
   compatibility is M6.
-- **Package and inspect.** The Release VSIX is **33,293,246 bytes, 19 files,
-  SHA-256 `192eca78832f53a2d09ce42580897f18dcdf1f4396e796002e603bb8a26a0e47`**
-  (rebuilt with the founder-supplied support address and privacy URL; the
-  clean-runtime run below used the previous build `cdf32458…97d4e`, which
-  differs only in the README text).
+- **Package and inspect.** The Release VSIX is **33,293,147 bytes, 19 files,
+  SHA-256 `81b05912217cfe9222b682e50e7a9ef3dd5acdafea17561e1fba26890ed25a01`**
+  (rebuilt with the founder-supplied support address and privacy URL, then
+  again with the clean identity and the VS 2026-only install range; the
+  clean-runtime run below used an earlier build `cdf32458…97d4e`, which differs
+  only in the README text, the identity string, and the target range).
   It holds `sidecar\node.exe`, `sidecar\plato-host.cjs`, `sidecar\LICENSE`,
   the three licence files, the icon, and `Plato.Vs.dll`. It has no source,
   maps, tests, scripts, or local user paths. The secret audit
@@ -998,8 +999,8 @@ slightly from this):
 1. Sign in at `https://marketplace.visualstudio.com/manage` as publisher
    `applivity`, open the **Visual Studio extensions** section, and create a new
    extension.
-2. Upload `Plato.Vs.vsix` — the audited artifact, 33,293,246 bytes, SHA-256
-   `192eca78…0e47` — and confirm its identity and version on the review page.
+2. Upload `Plato.Vs.vsix` — the audited artifact, 33,293,147 bytes, SHA-256
+   `81b05912…5a01` — and confirm its identity and version on the review page.
 3. Fill the listing from the copy above: display name, short and long
    description, category, tags, support address, privacy-policy URL, release
    notes ("First Visual Studio release: 0.1.0."), and the six screenshots in
