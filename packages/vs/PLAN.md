@@ -1,6 +1,6 @@
 # Plato for Visual Studio — implementation plan
 
-Status: **M0 DONE; M1, M2, M3a, M3b, M4a (2026-10-24) AND M4b (2026-10-26, with the M4 acceptance run in the VS window) PASSED, SO M3 AND M4 ARE COMPLETE. M5 (RELEASE) IS NEXT.** Phase 3 opened 2026-10-23.
+Status: **M0 DONE; M1, M2, M3a, M3b, M4a (2026-10-24) AND M4b (2026-10-26, with the M4 acceptance run in the VS window) PASSED, SO M3 IS COMPLETE; M4b IS PASSED, BUT THE M4 PARITY ROW FOR NEW CHAT IS STILL OPEN. M5 (RELEASE) FOLLOWS AFTER IT IS CLOSED.** Phase 3 opened 2026-10-23.
 M0 is verified on Windows (unit and real run), and the shim gate is green: the
 existing VS Code host runs outside VS Code. M2 is built and witnessed in a real
 Visual Studio 2026 window. M3a (settings and keys), M3b (modes, approvals,
@@ -850,7 +850,7 @@ sidecar logs `ui.message timed out after 30000 ms`, and the conversation is not
 cleared. It is recorded in "Known gaps" (16) for M5. The acceptance run worked
 around it by clearing the workspace-state chat log and restarting Visual Studio.
 
-**M4 is COMPLETE. M5 (Release) is next.**
+**M4b is complete. The New Chat parity row is still open; M5 (Release) follows after it is closed.**
 
 ### M5 — Release
 
@@ -924,7 +924,7 @@ window, a transcript, or both.
 | Editor | Solution/folder root | yes (M2) |
 | Editor | Diagnostics after write (or documented gap) | yes (M4b; documented gap: reports not-checked) |
 | Shell | Settings page | yes (M3a) |
-| Shell | Commands and menu | partial (M2/M4b: Open Chat, Set API Key, Manage Keys and the open actions are witnessed; New Chat's confirmation times out — gap 16) |
+| Shell | Commands and menu | **open — New Chat fix in progress (session `newchat`, bundle `C:\src\vs-newchat.bundle`; gap 16).** Open Chat, Set API Key, Manage Keys and the open actions are witnessed. |
 | Shell | Theme light/dark | yes (M2, M3a) |
 | Shell | Install and update | yes (M2) |
 | Shell | Licence and notices | yes (bundled in VSIX) |

@@ -42,6 +42,14 @@ Rules:
 - The original repository is not a remote. It is the source of the stable
   commit and the working tree of the VS lead.
 
+## Current checkpoint (2026-10-26)
+
+- `main` is `1696dd2` (CLI 0.1.4 / VS Code 0.26.7). `vs/m2` is `f6f7d355` on GitHub and the LAN repo; the Windows clone is on the same commit. This docs checkpoint is local until the New Chat bundle is merged.
+- M3 and M4a are complete. M4b passed; its acceptance is 23 actual runs (24 rows including the N/A), 17 pass / 0 fail / 3 N/A, 23 transcripts, 52 screenshots (26 pairs), under `C:\src\plato-vs-field\evidence\m4\checkpoint-b` and `...\acceptance`. Do not delete that folder.
+- **Open parity row: New Chat.** A fix is running in Windows background session `newchat` (`8b9cc639`); expected bundle `C:\src\vs-newchat.bundle`, evidence `C:\src\plato-vs-field\evidence\newchat`. Merge/review it before M5.
+- The Windows agent must use `--model claude-sonnet-5-5`; the gateway does not route `claude-haiku-5-5`. The gateway budget is a separate limit from the model-provider key.
+- Preserve the Mac copy of the M4a evidence text at `/Users/ai/Desktop/plato-sync/incoming-vs-m4a-52d933fe/evidence/evidence.txt`; the Windows M4a screenshots were lost.
+
 ## Windows clone (actual, 2026-10-23)
 
 **SMB does not work from this Windows machine.** It is Windows 10, which refuses
