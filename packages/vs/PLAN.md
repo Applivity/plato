@@ -987,6 +987,30 @@ Visual Studio 2026 on Windows 11.
 5. History: saved chats and runs.
 6. A Duo run with the observer strip.
 
+**Upload procedure** (founder account; the management page labels can differ
+slightly from this):
+
+1. Sign in at `https://marketplace.visualstudio.com/manage` as publisher
+   `applivity`, open the **Visual Studio extensions** section, and create a new
+   extension.
+2. Upload `Plato.Vs.vsix` — the audited artifact, 33,293,246 bytes, SHA-256
+   `192eca78…0e47` — and confirm its identity and version on the review page.
+3. Fill the listing from the copy above: display name, short and long
+   description, category, tags, support address, privacy-policy URL, release
+   notes ("First Visual Studio release: 0.1.0."), and the six screenshots in
+   order.
+4. Publish. Validation can take a few minutes; keep the unsigned limitation
+   (D49ck) in mind when reading any warning the page shows.
+5. After it is live: install from Visual Studio's Manage Extensions on the
+   Windows 11 machine, run a real task, and record what an unsigned extension
+   shows. Then publish 0.1.1 (a docs-only change is enough) to prove the update
+   path from the Marketplace.
+6. If the listing must be withdrawn, unpublish it from the same page; installed
+   copies stay.
+7. The privacy page currently calls the Visual Studio extension "in
+   development, not yet released". Ask the website agent to update that line
+   once the listing is live.
+
 ### M6 — After release (optional)
 
 - Visual Studio 2022 compatibility test.
