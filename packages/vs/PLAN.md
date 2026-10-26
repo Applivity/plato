@@ -930,8 +930,11 @@ Remaining, and why:
 
 - **Code signing.** Needs a certificate the founder must obtain.
 - **Marketplace upload and listing fields.** Founder account. The support
-  address in `packages/vs/README.md` is a placeholder until the founder
-  supplies it, and a privacy-policy URL is still needed.
+  address is **plato-feedback@applivity.com** (founder, 2026-10-26) and the
+  privacy-policy URL is **https://plato.applivity.com/privacy** (founder,
+  2026-10-26). The README carries both. The page must be live before the
+  listing is published; the rest of the fields (category, tags, screenshots)
+  are entered in the management page.
 - **Clean-Windows-11 VM acceptance.** This machine is Windows 10 22H2, which
   Microsoft does not support for Visual Studio 2026.
 

@@ -68,7 +68,13 @@ file included with the extension. Third-party notices are in
 
 The source repository is private. The license does not require it to be public.
 
+## Privacy
+
+Plato sends nothing to Applivity. Prompts and the code the agent reads go to
+the model provider you configure; transcripts, settings, and keys stay on your
+machine. The policy is at
+[plato.applivity.com/privacy](https://plato.applivity.com/privacy).
+
 ## Support
 
-**Support address: placeholder — the founder supplies this address before
-publishing.**
+Questions, bug reports, and feedback: **plato-feedback@applivity.com**.
