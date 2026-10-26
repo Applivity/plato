@@ -332,7 +332,36 @@ tarball.
 | CLI key storage | Decided (D49bx, approved 2026-10-21): environment, then the OS keychain, then a 0600 file. Setup is one command, and the fallback is automatic. |
 | CLI terminal stack | Decided (D49by, approved 2026-10-21): Ink 8.0.0, with a plain renderer over the same view model. |
 
-## 10. References
+## 10. Visual Studio extension — phase 3, opened 2026-10-23
+
+**Status.** Packaging is complete and 0.1.0 is **not published**. The plan and
+its release steps are in `packages/vs/PLAN.md` (M5).
+
+**What the VSIX carries.** Apache-2.0, like the other hosts. `LICENSE`, `NOTICE`
+and `THIRD-PARTY-NOTICES.md` are inside the VSIX at the root and are
+byte-identical to the repository copies. The VS Code rules in sections 2 and 4
+apply unchanged: a private repository is allowed, "open source" must not be
+claimed, and the notices must ship with the artifact.
+
+**Node.js is bundled.** The extension ships `node.exe` from the official
+**Node.js 22.20.0 LTS Windows x64** archive and Node's own `LICENSE` beside it
+in `sidecar\`. The archive is pinned to SHA-256
+`bb819d6e…e29d` (nodejs.org) and the build refuses anything else. Node is MIT
+with the notices of its built-in libraries in that `LICENSE` file; the Node
+entry in `THIRD-PARTY-NOTICES.md` records this and states that only `node.exe`
+and `LICENSE` ship. No npm client, headers, or build dependencies are included.
+
+**Marketplace identity.** Publisher `applivity` (the same account as the VS Code
+extension), item `applivity.plato-vs`, display name "Plato by Applivity for
+Visual Studio". The support address is
+**plato-feedback@applivity.com**; the privacy policy is
+**https://plato.applivity.com/privacy** (live 2026-10-26).
+
+**Signing.** Deferred by the founder (D49ck, 2026-10-26): 0.1.0 ships unsigned.
+Azure Trusted Signing is the intended route for a later version. The Windows 11
+acceptance records what a default machine shows for an unsigned VSIX.
+
+## 11. References
 
 - `docs/DECISIONS.md` — D18 (repository intent), D19 (distribution reality),
   D49ar (the publish gate), D49bv (this decision), and D49bw–D49by (the CLI

@@ -908,6 +908,11 @@ Done:
   solution; the user supplies a provider key; a Node 22 runtime is bundled;
   Apache-2.0; a support-address placeholder). The VSIX carries it as
   `README.md` and uses `packages/vscode/media/icon.png` as its manifest icon.
+- **Identity and host range.** The VSIX identity is `applivity.plato-vs`, the
+  item name planned in "Open questions" (12); it is permanent once published.
+  The install targets are `[18.0,19.0)` for Community, Pro, and Enterprise, so
+  Visual Studio 2022 cannot install a build that was never tested there; VS 2022
+  compatibility is M6.
 - **Package and inspect.** The Release VSIX is **33,293,246 bytes, 19 files,
   SHA-256 `192eca78832f53a2d09ce42580897f18dcdf1f4396e796002e603bb8a26a0e47`**
   (rebuilt with the founder-supplied support address and privacy URL; the
