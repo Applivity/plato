@@ -177,13 +177,6 @@ const glyph = (p) => p.evaluate(() => {
   check('typing /q filters the menu to the queue command',
     filtered.length === 1 && filtered[0].id === 'queue' && filtered[0].usage.startsWith('/queue'),
     filtered);
-  await p.evaluate(() => {
-    const q = document.getElementById('q');
-    q.value = '';
-    q.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await p.waitForTimeout(120);
-
   await p.evaluate(() => document.getElementById('cmds').click());
   await p.waitForTimeout(220);
   const closed = await p.evaluate(() =>

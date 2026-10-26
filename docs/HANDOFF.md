@@ -125,7 +125,7 @@ are now only in PROGRESS.
   facts, the two extension models, the Credential Manager choice, and the open Marketplace
   questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
   from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active
-  Visual Studio branch is `wip/m4b-host-test` (bundle `C:\src\vs-m4b.bundle`). **The Windows machine has VS 2026 18.11.1 Community with the
+  Visual Studio branch is `vs/m2` (bundle `C:\src\vs-m4b.bundle`). **The Windows machine has VS 2026 18.11.1 Community with the
   extension workload, but Microsoft supports VS 2026 on Windows 11 only; the final acceptance
   belongs on Windows 11.** The code travels by SSH bundle because SMB guest logons are blocked.
   The shim proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The CLI state below
