@@ -30,7 +30,10 @@ Write-Host "== stage plato-host.cjs =="
 Copy-Item (Join-Path $VsRoot "dist\plato-host.cjs") (Join-Path $Sidecar "plato-host.cjs") -Force
 
 Write-Host "== build the VSIX =="
-& $MSBuild $Project /p:Configuration=$Configuration /p:Platform=x64 /v:m /nologo
+# /restore matters: without it an incremental tree keeps the package versions
+# resolved by the last build, so a changed PackageReference is silently ignored
+# and the VSIX ships the old assembly binding.
+& $MSBuild $Project /restore /p:Configuration=$Configuration /p:Platform=x64 /v:m /nologo
 if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
 
 Get-ChildItem (Join-Path $VsRoot "src\Plato.Vs\bin") -Recurse -Filter *.vsix |
