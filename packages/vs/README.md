@@ -22,6 +22,9 @@ Plato is pre-release.
 
 ## Install
 
+Plato runs in Visual Studio 2022 17.14 or later, including Visual Studio 2026,
+on 64-bit Windows.
+
 1. Open **Extensions → Manage Extensions** in Visual Studio.
 2. Search for **Plato by Applivity**.
 3. Choose **Download**, then close Visual Studio to complete the install.
