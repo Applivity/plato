@@ -912,13 +912,16 @@ Done:
   `README.md` and uses `packages/vscode/media/icon.png` as its manifest icon.
 - **Identity and host range.** The VSIX identity is `applivity.plato-vs`, the
   item name planned in "Open questions" (12); it is permanent once published.
-  The install targets are `[18.0,19.0)` for Community, Pro, and Enterprise, so
-  Visual Studio 2022 cannot install a build that was never tested there; VS 2022
-  compatibility is M6.
+  The install targets are **`[17.14,)`** for Community, Pro, and Enterprise.
+  The Marketplace rejected `[18.0,19.0)` because 18.0 is an experimental API
+  version there; under the VS 2026 compatibility model, Visual Studio 2026 runs
+  extensions built against 17.x and only the lower bound matters (D49cl).
+  Visual Studio 2022 17.14+ is therefore *allowed* to install, but it remains
+  untested and is M6; the listing says Visual Studio 2026.
 - **Package and inspect.** The Release VSIX is **33,293,147 bytes, 19 files,
   SHA-256 `81b05912217cfe9222b682e50e7a9ef3dd5acdafea17561e1fba26890ed25a01`**
   (rebuilt with the founder-supplied support address and privacy URL, then
-  again with the clean identity and the VS 2026-only install range; the
+  again with the clean identity and the stable `[17.14,)` install range; the
   clean-runtime run below used an earlier build `cdf32458…97d4e`, which differs
   only in the README text, the identity string, and the target range).
   It holds `sidecar\node.exe`, `sidecar\plato-host.cjs`, `sidecar\LICENSE`,

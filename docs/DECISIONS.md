@@ -4905,6 +4905,27 @@ step for the next version, not a reason to hold 0.1.0.
 
 ---
 
+**D49cl — The Visual Studio install target uses the stable extension API (2026-10-28).**
+
+**Why.** The first Marketplace upload was rejected: *"Your extension has specified an API
+version of 18.0 as the lower bound in its installation target. This API version is
+experimental, and not allowed in the Marketplace at this time. Please change your
+installation target to use the latest stable API version 17.14."* Microsoft's VS 2026
+compatibility model is explicit: Visual Studio 2026 runs extensions built against API 17.x,
+and compatibility is decided from the lower bound alone.
+
+**The rule.** The three `InstallationTarget` entries (Community, Pro, Enterprise) use
+**`[17.14,)`**: the latest stable API, which is what the Marketplace accepts and what
+Visual Studio 2026 runs.
+
+**The consequence, stated honestly.** Under the new model an upper bound no longer excludes
+a host, so the manifest cannot restrict itself to Visual Studio 2026. Visual Studio 2022
+17.14+ is therefore *allowed* to install the 0.1.0 VSIX; it has never been tested there and
+remains M6. The listing, the README, and the support answer all say Visual Studio 2026 on
+Windows 11, which is the supported combination.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command
