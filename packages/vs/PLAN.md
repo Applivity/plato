@@ -910,7 +910,7 @@ Done:
   solution; the user supplies a provider key; a Node 22 runtime is bundled;
   Apache-2.0; a support-address placeholder). The VSIX carries it as
   `README.md` and uses `packages/vscode/media/icon.png` as its manifest icon.
-- **Identity and host range.** The VSIX identity is `applivity.plato.vs`, the
+- **Identity and host range.** The VSIX identity is `applivity.plato-vs`, the
   item name planned in "Open questions" (12); it is permanent once published.
   The install targets are **`[17.14,)`** for Community, Pro, and Enterprise.
   The Marketplace rejected `[18.0,19.0)` because 18.0 is an experimental API
@@ -958,7 +958,7 @@ Remaining, and why:
 
 **Acceptance on Windows 11 (2026-10-28).** Windows 11 25H2 build 26200,
 Visual Studio 2026 Community 18.11.12315, a real user session. The audited
-Release VSIX (identity `applivity.plato.vs`, 0.1.0, unsigned) installed with
+Release VSIX (identity `applivity.plato-vs`, 0.1.0, unsigned) installed with
 `VSIXInstaller /quiet /force`. Plato was configured for DeepSeek
 (`https://api.deepseek.com/v1`, model `deepseek-flash`) with the key in Windows
 Credential Manager, and every run below was in `auto`.
@@ -1188,7 +1188,7 @@ These are recorded, not silently deferred.
     in the VSIX manifest. All three run the same extension. Confirm the manifest
     range at packaging.
 12. **Marketplace identity.** Working name: publisher `applivity`, item
-    `applivity.plato.vs`, display name “Plato by Applivity for Visual Studio.”
+    `applivity.plato-vs`, display name “Plato by Applivity for Visual Studio.”
     Confirm the item name is free before publishing.
 13. **Telemetry.** v1 sends no telemetry. If that changes, the privacy policy
     and the Marketplace listing must say so before the change ships.
