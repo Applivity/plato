@@ -4945,6 +4945,41 @@ the package is rebuilt.
 
 ---
 
+**D49cn — Visual Studio 2022 17.14 is supported, and the shell's own library decides the
+binding (2026-10-28).**
+
+**Why.** The install range `[17.14,)` (D49cl) admitted Visual Studio 2022, and the C# was
+already compiled against the 2022 17.14 SDK, but nobody had run the package there. The
+first field run on Community 17.14.37806.7 went most of the way: the package installed,
+its four commands registered, the tool window drew in both themes, the bundled
+`sidecar\node.exe` started — and the page stayed at "loading…". The extension log named
+the cause: `stdout reader stopped: Method not found:
+'System.String Newtonsoft.Json.Linq.JToken.ToString(Newtonsoft.Json.Formatting)'`.
+Visual Studio supplies Newtonsoft.Json and resolves an extension's reference to its own
+copy whatever version the extension was compiled against: 2022 loads **13.0.3**, 2026
+loads **13.0.4**. 13.0.4 added the one-argument `ToString(Formatting)`; the compiler had
+picked it; on 13.0.3 the call cannot bind, and the exception escaped the message handler
+and stopped the stdout reader on the first message from the sidecar.
+
+**The rule.** The project references the **oldest** Newtonsoft.Json the supported shells
+load — 13.0.3 — so the compiler binds the two-argument overload that exists in both. A
+newer reference is what broke it, and any future call to a newer-only API is now a compile
+error rather than a field failure.
+
+**The consequence.** 0.1.1 runs a complete scripted round trip in 2022 17.14 and in 2026
+18.11 from one package; the transcripts and screenshots are in
+`C:\src\plato-vs-field\evidence\m6-2022\`. The install range is unchanged, and the README
+now says: Plato runs in Visual Studio 2022 17.14 or later, including Visual Studio 2026,
+on 64-bit Windows.
+
+**The build trap, recorded because it cost a round.** Changing the reference is not enough:
+`package-vsix.ps1` did not restore, so an incremental tree kept the 13.0.4 resolution,
+built a VSIX that still failed in 2022, and the failure looked like the fix had not worked.
+The script now passes `/restore` to MSBuild. A package built by that script from a clean
+tree is the one to ship.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command

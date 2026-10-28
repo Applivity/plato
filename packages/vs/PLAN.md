@@ -41,15 +41,17 @@ Read in this order:
 
 ## What it is
 
-A Visual Studio 2026 extension that runs Plato in a dockable tool window. It
-supports the same Solo, Duo, and Academy teams; the same three modes; the same
-approval, question, stuck, undo, reveal, and mode-request cards; the same
-providers, keys, MCP servers, images, transcripts, undo store, and protected-file
-rules as the VS Code extension and the CLI.
+A Visual Studio extension that runs Plato in a dockable tool window. It supports
+the same Solo, Duo, and Academy teams; the same three modes; the same approval,
+question, stuck, undo, reveal, and mode-request cards; the same providers, keys,
+MCP servers, images, transcripts, undo store, and protected-file rules as the
+VS Code extension and the CLI.
 
-Visual Studio is Windows-only. Visual Studio for Mac is retired. Visual Studio
-2022 is **not** in v1; the VS 2026 extension model is backward compatible, so
-VS 2022 support is a later compatibility test, not a second codebase.
+Visual Studio is Windows-only. Visual Studio for Mac is retired. **Visual Studio
+2022 17.14 or later and Visual Studio 2026 are both supported as of 0.1.1**
+(D49cn): the compatibility test the earlier plan deferred has been run, and the
+one thing it broke — the shell's Newtonsoft.Json version deciding which
+`JToken.ToString` overload binds — is fixed. No second codebase was needed.
 
 ## Locked decisions (founder, 2026-10-23)
 
@@ -889,7 +891,12 @@ Done when:
 `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`
 (identity `applivity.plato-vs`, internal name `plato-vs`, version 0.1.0,
 unsigned per D49ck). Packaging was done 2026-10-26, the Windows 11 acceptance
-ran 2026-10-28, and the founder published the same day.
+ran 2026-10-28, and the founder published the same day. **0.1.1 awaits the
+founder's upload:** it is the Visual Studio 2022 repair (D49cn), built by the
+restoring packaging script from a deleted `obj`/`bin` and witnessed in 2022
+17.14 and 2026 18.11. The package is
+`/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.1.vsix`, 33,293,430 bytes,
+SHA-256 `f9ac0275…a95e`, identity `applivity.plato-vs`, targets `[17.14,)`.
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
@@ -955,11 +962,14 @@ Remaining, and why:
   internal name `plato-vs`, identity `applivity.plato-vs` (D49cm). Support
   **plato-feedback@applivity.com** and privacy
   **https://plato.applivity.com/privacy** are on the listing.
-- **Install from the Marketplace, and the update path.** Still open: install
-  0.1.0 through Visual Studio's Manage Extensions on Windows 11, then publish
-  0.1.1 (a docs-only change is enough) and confirm the update. The package
-  download endpoint returned `Access Denied` for anonymous callers while the
-  listing was private; re-check it now that the listing is public.
+- **Install from the Marketplace, and the update path.** Still open. The
+  package download endpoint was checked on 2026-10-28: it now serves the
+  published 0.1.0 to an anonymous caller, and the download is byte-identical to
+  the release build in 17 of 19 files (only the Marketplace's own
+  `catalog.json` and `manifest.json` differ). What remains is installing through
+  Visual Studio's own Manage Extensions on Windows 11, then publishing **0.1.1**
+  — which is not docs-only: it is the Visual Studio 2022 repair (D49cn) — and
+  confirming that the update is offered and applies.
 - **The website line.** The privacy page still calls the Visual Studio
   extension "in development, not yet released". The founder has the update
   parked at `/Users/ai/Desktop/plato-website/VS-RELEASE-UPDATE.md`.
@@ -1076,7 +1086,9 @@ slightly from this):
 
 ### M6 — After release (optional)
 
-- Visual Studio 2022 compatibility test.
+- ~~Visual Studio 2022 compatibility test.~~ **DONE 2026-10-28 (D49cn):** 2022
+  17.14 is supported from 0.1.1, with a scripted round trip witnessed there and
+  again in 2026. Evidence: `C:\src\plato-vs-field\evidence\m6-2022\`.
 - ARM64 build.
 - Diagnostics if the API is available.
 - Evaluate the out-of-process VisualStudio.Extensibility model for a future
