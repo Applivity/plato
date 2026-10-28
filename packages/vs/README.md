@@ -72,9 +72,9 @@ is not the default.
 
 ## License
 
-Plato is licensed under the Apache License 2.0. The full text is in the license
-file included with the extension. Third-party notices are in
-`THIRD-PARTY-NOTICES.md`.
+Plato is licensed under the Apache License 2.0. The full license text ships
+with the extension as `LICENSE`, and the third-party notices ship as
+`THIRD-PARTY-NOTICES.md`. Both files are inside the installed extension.
 
 The source repository is private. The license does not require it to be public.
 
