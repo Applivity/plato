@@ -119,7 +119,7 @@ namespace Plato.Vs.Bridge
                     settingsPath = PlatoPaths.SettingsFile,
                     stateDir = PlatoPaths.RoamingRoot,
                     workspaceStateFile = PlatoPaths.WorkspaceStateFile(root),
-                    version = "0.1.0",
+                    version = "0.1.1",
                 },
                 TimeSpan.FromSeconds(20)).ConfigureAwait(false);
 
