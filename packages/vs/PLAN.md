@@ -895,8 +895,10 @@ ran 2026-10-28, and the founder published the same day. **0.1.1 awaits the
 founder's upload:** it is the Visual Studio 2022 repair (D49cn), built by the
 restoring packaging script from a deleted `obj`/`bin` and witnessed in 2022
 17.14 and 2026 18.11. The package is
-`/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.1.vsix`, 33,293,430 bytes,
-SHA-256 `f9ac0275…a95e`, identity `applivity.plato-vs`, targets `[17.14,)`.
+`/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.vsix`, 33,293,629 bytes,
+SHA-256 `9f7781f0…4575`, identity `applivity.plato-vs`, targets `[17.14,)`
+(0.1.2 adds the repaired sidecar-image log line to 0.1.1; 0.1.1's package,
+`f9ac0275…a95e`, is kept as evidence).
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
