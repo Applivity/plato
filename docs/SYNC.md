@@ -42,12 +42,14 @@ Rules:
 - The original repository is not a remote. It is the source of the stable
   commit and the working tree of the VS lead.
 
-## Current checkpoint (2026-10-26)
+## Current checkpoint (2026-10-28)
 
-- `main` is `1696dd2` (CLI 0.1.4 / VS Code 0.26.7). `vs/m2` carries the New Chat fix `7a01815b` merged with the session checkpoint, on GitHub and the LAN repo; the Windows clone is updated to the same commit.
-- M3 and M4 are complete. M4b's acceptance is 23 actual runs (24 rows including the N/A), 17 pass / 0 fail / 3 N/A, 23 transcripts, 52 screenshots (26 pairs), under `C:\src\plato-vs-field\evidence\m4\checkpoint-b` and `...\acceptance`. Do not delete that folder.
-- **The parity checklist is complete.** New Chat is fixed (D49cj) and witnessed: the shell message box was replaced by a WPF `MessageWindow`, and a UI request waits 10 minutes. Evidence is in `C:\src\plato-vs-field\evidence\newchat`. M5 Release is next: bundled Node 22 with its licence, icon and listing README, then the founder's signing certificate, Windows 11 VM, Marketplace account, and privacy policy URL.
-- The Windows agent must use `--model claude-sonnet-5-5`; the gateway does not route `claude-haiku-5-5`. The gateway budget is a separate limit from the model-provider key.
+- `main` is `1696dd2` (CLI 0.1.4 / VS Code 0.26.7, both published). `vs/m2` is the Visual Studio work on GitHub and the LAN repo; the Windows 10 and Windows 11 clones follow it.
+- **The Visual Studio extension is published:** 0.1.0 at `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs` — publisher `applivity`, internal name `plato-vs`, identity `applivity.plato-vs` (D49cm), unsigned (D49ck), install target `[17.14,)` (D49cl). The package is 33,293,332 bytes, SHA-256 `ebc5b2e6…08ce`; copies on the Mac at `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.0.vsix`, on Windows 11 at `C:\src\Plato.Vs.vsix`, and the build output on Windows 10.
+- **Windows 11 acceptance passed (2026-10-28).** Three real DeepSeek (`deepseek-flash`) runs in `auto` on copies of the founder's two projects: a DatingApp analysis (36 tool calls, 254.8k tokens, 38 s), a DatingApp write that created `ARCHITECTURE.md`, and a CviConnector analysis (9 tool calls, 92.6k tokens, 20 s). Suites there: Visual Studio host 10/10, CLI 213 pass / 3 skipped, core 914 pass / 2 skipped with one shell flake that passed 3/3 reruns. Evidence: `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md`), and `...\m5\package\` for the packaging audit. Do not delete either folder.
+- **VS Code 0.26.9 is staged, not published:** `/Users/ai/Desktop/plato-artifacts/plato-0.26.9.vsix`, 146,495 bytes, SHA-256 `bdac17dc…730f`. It changes only the listing text (the license paragraph now names `LICENSE.txt` and `THIRD-PARTY-NOTICES.md` and says both ship; the README adds support and privacy). Built from the local branch `release/0.26.8` at `9a5a4c9b`, which is **not pushed**; `main` is untouched.
+- **Still open:** install 0.1.0 from the Marketplace on Windows 11 and publish 0.1.1 to prove the update path; the website's privacy page still calls the Visual Studio extension "in development" (brief parked at `../plato-website/VS-RELEASE-UPDATE.md`); code signing is deferred (D49ck); Visual Studio 2022 17.14+ is allowed by the manifest but untested (M6).
+- The Windows agent must use `--model claude-sonnet-5-5`; the gateway does not route `claude-haiku-5-5`. The gateway budget is separate from the model-provider key.
 - Preserve the Mac copy of the M4a evidence text at `/Users/ai/Desktop/plato-sync/incoming-vs-m4a-52d933fe/evidence/evidence.txt`; the Windows M4a screenshots were lost.
 
 ## Windows clone (actual, 2026-10-23)

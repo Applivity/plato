@@ -4926,6 +4926,25 @@ Windows 11, which is the supported combination.
 
 ---
 
+**D49cm — The Marketplace identity is `applivity.plato-vs` (2026-10-28).**
+
+**Why.** The Marketplace's Internal Name becomes the permanent item URL and cannot be edited
+after the first publish. The first two attempts were rejected as "contains non-permitted
+characters"; the characters were never the problem — the field had a **leading space**. With
+the space removed, `plato-vs` is accepted, hyphen and all.
+
+**The rule.** Publisher `applivity`; internal name **`plato-vs`**; the VSIX `Identity Id` is
+**`applivity.plato-vs`**, so the package, the VSIX ID and the URL agree:
+`https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`. Published
+2026-10-28 as 0.1.0.
+
+**The consequence.** Every later version must carry the same identity; a build with a
+different VSIX ID reads as a different extension to the Marketplace and to Visual Studio's
+update path. A name that looks rejected is worth checking for invisible characters before
+the package is rebuilt.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command

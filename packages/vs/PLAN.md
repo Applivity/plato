@@ -949,12 +949,20 @@ Remaining, and why:
   unsigned; Azure Trusted Signing follows the release. The Windows 11
   acceptance records the exact wording a default machine shows for an unsigned
   VSIX.
-- **Marketplace upload and listing fields.** Founder account. The support
-  address is **plato-feedback@applivity.com** (founder, 2026-10-26) and the
-  privacy-policy URL is **https://plato.applivity.com/privacy** (founder,
-  2026-10-26). The README carries both, and the page is live (verified
-  2026-10-26). The remaining fields (category, tags, description, screenshots)
-  are entered in the management page; the listing copy is drafted below.
+- **Marketplace upload and listing fields.** **DONE (2026-10-28).** The founder
+  published 0.1.0 at
+  `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`;
+  internal name `plato-vs`, identity `applivity.plato-vs` (D49cm). Support
+  **plato-feedback@applivity.com** and privacy
+  **https://plato.applivity.com/privacy** are on the listing.
+- **Install from the Marketplace, and the update path.** Still open: install
+  0.1.0 through Visual Studio's Manage Extensions on Windows 11, then publish
+  0.1.1 (a docs-only change is enough) and confirm the update. The package
+  download endpoint returned `Access Denied` for anonymous callers while the
+  listing was private; re-check it now that the listing is public.
+- **The website line.** The privacy page still calls the Visual Studio
+  extension "in development, not yet released". The founder has the update
+  parked at `/Users/ai/Desktop/plato-website/VS-RELEASE-UPDATE.md`.
 - **Clean-Windows-11 VM acceptance.** **Done 2026-10-28** — see below. The
   earlier block was because the build machine was Windows 10 22H2, which
   Microsoft does not support for Visual Studio 2026.
