@@ -5135,7 +5135,7 @@ extension 0.26.7 were released from `main` at `1696dd2`; `plato-bugs` and `windo
 and deleted.
 
 **Open items.** The Marketplace VSIX size limit, signing requirement, and review time; the item id
-(`applivity.plato-vs` is the working name); the privacy policy; diagnostics after a write (the
+(`applivity.plato.vs` is the working name); the privacy policy; diagnostics after a write (the
 Error List API for third parties is not clearly documented; report "not checked" if unavailable);
 ARM64; a shared settings store with the CLI; and a Chats tree (the in-panel History page is enough
 for v1).

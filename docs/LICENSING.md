@@ -352,7 +352,7 @@ entry in `THIRD-PARTY-NOTICES.md` records this and states that only `node.exe`
 and `LICENSE` ship. No npm client, headers, or build dependencies are included.
 
 **Marketplace identity.** Publisher `applivity` (the same account as the VS Code
-extension), item `applivity.plato-vs`, display name "Plato by Applivity for
+extension), item `applivity.plato.vs`, display name "Plato by Applivity for
 Visual Studio". The support address is
 **plato-feedback@applivity.com**; the privacy policy is
 **https://plato.applivity.com/privacy** (live 2026-10-26).
