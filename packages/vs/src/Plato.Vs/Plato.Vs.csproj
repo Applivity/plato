@@ -24,7 +24,11 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- The shell supplies Newtonsoft.Json at run time; the VSIX does not ship it.
+         Visual Studio 2022 loads 13.0.3, which lacks the one-argument
+         JToken.ToString(Formatting) that 13.0.4 added. Compiling against 13.0.3
+         makes the compiler bind the overload that exists in both versions. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
