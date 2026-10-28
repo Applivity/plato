@@ -918,8 +918,8 @@ Done:
   extensions built against 17.x and only the lower bound matters (D49cl).
   Visual Studio 2022 17.14+ is therefore *allowed* to install, but it remains
   untested and is M6; the listing says Visual Studio 2026.
-- **Package and inspect.** The Release VSIX is **33,293,330 bytes, 19 files,
-  SHA-256 `ac0cea3cb4fbb539f909fe4efa31841a42f5d3fcbccbbe03de1e9cccb6bf4d5c`**
+- **Package and inspect.** The Release VSIX is **33,293,327 bytes, 19 files,
+  SHA-256 `3b20d1e0ab56145e0c56e37e47e9501ffb7c692b84e48376183bb276b2f0c39d`**
   (rebuilt with the founder-supplied support address and privacy URL, then
   again with the clean identity and the stable `[17.14,)` install range; the
   clean-runtime run below used an earlier build `cdf32458…97d4e`, which differs
@@ -1045,8 +1045,8 @@ slightly from this):
 1. Sign in at `https://marketplace.visualstudio.com/manage` as publisher
    `applivity`, open the **Visual Studio extensions** section, and create a new
    extension.
-2. Upload `Plato.Vs.vsix` — the audited artifact, 33,293,330 bytes, SHA-256
-   `ac0cea3c…4d5c` — and confirm its identity and version on the review page.
+2. Upload `Plato.Vs.vsix` — the audited artifact, 33,293,327 bytes, SHA-256
+   `3b20d1e0…c39d` — and confirm its identity and version on the review page.
 3. Fill the listing from the copy above: display name, short and long
    description, category, tags, support address, privacy-policy URL, release
    notes ("First Visual Studio release: 0.1.0."), and the six screenshots in
