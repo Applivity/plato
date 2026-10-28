@@ -334,8 +334,11 @@ tarball.
 
 ## 10. Visual Studio extension — phase 3, opened 2026-10-23
 
-**Status.** Packaging is complete and 0.1.0 is **not published**. The plan and
-its release steps are in `packages/vs/PLAN.md` (M5).
+**Status.** **Published 2026-10-28**: version 0.1.0 is live at
+`https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`
+(publisher `applivity`, internal name `plato-vs`, identity
+`applivity.plato-vs`). The plan and its remaining release steps are in
+`packages/vs/PLAN.md` (M5).
 
 **What the VSIX carries.** Apache-2.0, like the other hosts. `LICENSE`, `NOTICE`
 and `THIRD-PARTY-NOTICES.md` are inside the VSIX at the root and are

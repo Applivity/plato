@@ -885,8 +885,11 @@ Done when:
 
 **Do not publish before parity.** Internal signed builds are allowed earlier.
 
-**Status: PACKAGING PHASE DONE (2026-10-26); WINDOWS 11 ACCEPTANCE RUN
-(2026-10-28); THE RELEASE IS NOT PUBLISHED.**
+**Status: PUBLISHED 2026-10-28** at
+`https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`
+(identity `applivity.plato-vs`, internal name `plato-vs`, version 0.1.0,
+unsigned per D49ck). Packaging was done 2026-10-26, the Windows 11 acceptance
+ran 2026-10-28, and the founder published the same day.
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
