@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -119,7 +120,7 @@ namespace Plato.Vs.Bridge
                     settingsPath = PlatoPaths.SettingsFile,
                     stateDir = PlatoPaths.RoamingRoot,
                     workspaceStateFile = PlatoPaths.WorkspaceStateFile(root),
-                    version = "0.1.1",
+                    version = "0.1.2",
                 },
                 TimeSpan.FromSeconds(20)).ConfigureAwait(false);
 
@@ -603,18 +604,62 @@ namespace Plato.Vs.Bridge
         /// The image the sidecar process actually started from. This is the
         /// witness that a run used the bundled runtime and not a Node found on
         /// PATH, so it is logged at start.
+        /// <see cref="Process.MainModule"/> is not reliable here: inside
+        /// devenv.exe it returned the process's first loaded module
+        /// (ntdll.dll) instead of the executable, so it named the wrong image
+        /// in a field run. QueryFullProcessImageName asks the kernel for the
+        /// image path directly.
         /// </summary>
         private static string ProcessImagePath(Process process)
         {
+            var handle = IntPtr.Zero;
             try
             {
-                return process.MainModule?.FileName ?? "(unavailable)";
+                handle = OpenProcess(ProcessQueryLimitedInformation, false, process.Id);
+                if (handle == IntPtr.Zero)
+                {
+                    return "(unavailable)";
+                }
+
+                var length = 1024;
+                var buffer = new StringBuilder(length);
+                if (!QueryFullProcessImageName(handle, 0, buffer, ref length))
+                {
+                    return "(unavailable)";
+                }
+
+                return buffer.ToString();
             }
             catch (Exception)
             {
                 return "(unavailable)";
             }
+            finally
+            {
+                if (handle != IntPtr.Zero)
+                {
+                    CloseHandle(handle);
+                }
+            }
         }
+
+        private const uint ProcessQueryLimitedInformation = 0x1000;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(
+            uint desiredAccess,
+            bool inheritHandle,
+            int processId);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool QueryFullProcessImageName(
+            IntPtr process,
+            uint flags,
+            StringBuilder exeName,
+            ref int size);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr handle);
 
         private static bool SafeHasExited(Process process)
         {

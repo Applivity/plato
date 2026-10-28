@@ -16,7 +16,7 @@ namespace Plato.Vs
     /// sidecar's lifetime.
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [InstalledProductRegistration("Plato by Applivity", "AI coding agent for Visual Studio", "0.1.1")]
+    [InstalledProductRegistration("Plato by Applivity", "AI coding agent for Visual Studio", "0.1.2")]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(typeof(PlatoToolWindow), Style = VsDockStyle.Tabbed, Window = "3ae79031-e1bc-11d0-8f78-00a0c9110057")]
     [Guid(PackageGuidString)]
