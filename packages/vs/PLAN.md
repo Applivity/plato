@@ -887,18 +887,17 @@ Done when:
 
 **Do not publish before parity.** Internal signed builds are allowed earlier.
 
-**Status: PUBLISHED 2026-10-28** at
+**Status: PUBLISHED — 0.1.0 and 0.1.2** at
 `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`
-(identity `applivity.plato-vs`, internal name `plato-vs`, version 0.1.0,
-unsigned per D49ck). Packaging was done 2026-10-26, the Windows 11 acceptance
-ran 2026-10-28, and the founder published the same day. **0.1.1 awaits the
-founder's upload:** it is the Visual Studio 2022 repair (D49cn), built by the
-restoring packaging script from a deleted `obj`/`bin` and witnessed in 2022
-17.14 and 2026 18.11. The package is
-`/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.vsix`, 33,293,629 bytes,
-SHA-256 `9f7781f0…4575`, identity `applivity.plato-vs`, targets `[17.14,)`
-(0.1.2 adds the repaired sidecar-image log line to 0.1.1; 0.1.1's package,
-`f9ac0275…a95e`, is kept as evidence).
+(identity `applivity.plato-vs`, internal name `plato-vs`, unsigned per D49ck).
+Packaging was done 2026-10-26, the Windows 11 acceptance ran 2026-10-28, and the
+founder published 0.1.0 the same day. **0.1.2 is live and was verified from the
+public endpoint (2026-10-28):** the anonymous download is 33,293,629 bytes with
+manifest `0.1.2`, and its `Plato.Vs.dll` hashes `14b577ae…f2c6` — the binary that
+was run in 2022 17.14 and 2026 18.11. It carries the Visual Studio 2022 repair
+(D49cn) and the repaired sidecar-image log line; 0.1.1 was never published and
+its package (`f9ac0275…a95e`) is kept as evidence. Targets stay `[17.14,)`; the
+local upload copy is `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.vsix`.
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
