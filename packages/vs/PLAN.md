@@ -885,8 +885,10 @@ Done when:
 
 **Do not publish before parity.** Internal signed builds are allowed earlier.
 
-**Status: PACKAGING PHASE DONE (2026-10-26); THE RELEASE IS NOT PUBLISHED.**
-Evidence: `C:\src\plato-vs-field\evidence\m5\package\`.
+**Status: PACKAGING PHASE DONE (2026-10-26); WINDOWS 11 ACCEPTANCE RUN
+(2026-10-28); THE RELEASE IS NOT PUBLISHED.**
+Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
+`C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
 Done:
 
@@ -947,8 +949,35 @@ Remaining, and why:
   2026-10-26). The README carries both, and the page is live (verified
   2026-10-26). The remaining fields (category, tags, description, screenshots)
   are entered in the management page; the listing copy is drafted below.
-- **Clean-Windows-11 VM acceptance.** This machine is Windows 10 22H2, which
+- **Clean-Windows-11 VM acceptance.** **Done 2026-10-28** — see below. The
+  earlier block was because the build machine was Windows 10 22H2, which
   Microsoft does not support for Visual Studio 2026.
+
+**Acceptance on Windows 11 (2026-10-28).** Windows 11 25H2 build 26200,
+Visual Studio 2026 Community 18.11.12315, a real user session. The audited
+Release VSIX (identity `applivity.plato-vs`, 0.1.0, unsigned) installed with
+`VSIXInstaller /quiet /force`. Plato was configured for DeepSeek
+(`https://api.deepseek.com/v1`, model `deepseek-flash`) with the key in Windows
+Credential Manager, and every run below was in `auto`.
+
+- **Real repository 1, analysis (DatingApp, a copy).** DeepSeek read the API and
+  client: **36 tool calls, 254.8k tokens, 38 s**, and reported three real risks
+  with file evidence (an unauthenticated action that grants roles, an approval
+  path that never saves, a hub with no authorisation).
+- **Real repository 1, write (DatingApp copy).** It created `ARCHITECTURE.md`
+  (1,867 bytes) in `auto` and changed nothing else; the content names the real
+  ports, services, interceptors, and SignalR token path.
+- **Real repository 2, analysis (CviConnector, a copy).** **9 tool calls,
+  92.6k tokens, 20 s**; it found a singleton holding mutable per-caller state, a
+  fire-and-forget commit whose exceptions are lost, and a service with no
+  authentication that returns provider tokens.
+- **Suites on that machine.** Visual Studio host **10/10 pass**; CLI 213 pass /
+  3 skipped; core 914 pass / 2 skipped with one background-shell timing failure
+  that then passed **3/3** reruns; `render:fast` cannot run on Windows (POSIX
+  env syntax) and passes on macOS.
+- **Scope.** Both repositories were copied to `C:\src\field\` first; the
+  Desktop originals were never opened. The only file Plato wrote is the copy's
+  `ARCHITECTURE.md`. The key file was deleted after the first successful run.
 
 ### Listing copy (draft, for the management page)
 
