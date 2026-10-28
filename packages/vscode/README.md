@@ -1,8 +1,18 @@
 # Plato
 
-Plato is an AI coding agent for VS Code. It works inside your project and shows
-you what it is doing while it does it. You can watch every step, change its
-direction mid-run, and stop it at a safe point.
+Plato is an AI coding agent that works inside your VS Code project. It does not
+hide its work: every step appears as it happens — the files it reads, the
+commands it runs, the change it proposes — so you can follow the plan as it
+forms, take the wheel mid-run, or stop at a safe point.
+
+**Plan, edit, or auto. Solo, duo, or academy. You hold the switch.**
+
+- **Plan** reads and reasons; it changes nothing.
+- **Edit** asks before it writes a file or runs a command, and remembers your
+  answer for the session.
+- **Auto** works without stopping.
+
+Plato cannot change its own mode. When the work needs more room, it asks you.
 
 Plato is pre-release.
 
