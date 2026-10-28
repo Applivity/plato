@@ -3,7 +3,7 @@
   <Metadata>
     <Identity Id="applivity.plato-vs" Version="0.1.0" Language="en-US" Publisher="applivity" />
     <DisplayName>Plato by Applivity for Visual Studio</DisplayName>
-    <Description>An AI coding agent that shows its work, lets you steer mid-run, and stops at a safe point.</Description>
+    <Description>An AI coding agent that plans in the open, takes your direction mid-run, and asks before it changes your code.</Description>
     <Icon>icon.png</Icon>
     <Tags>AI, agent, coding, assistant, chat</Tags>
   </Metadata>

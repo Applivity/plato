@@ -3,7 +3,7 @@
   "version": "0.26.7",
   "private": true,
   "license": "Apache-2.0",
-  "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
+  "description": "An AI coding agent that plans in the open, takes your direction mid-run, and asks before it changes your code.",
   "publisher": "applivity",
   "displayName": "Plato by Applivity",
   "icon": "media/icon.png",

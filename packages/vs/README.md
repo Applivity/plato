@@ -1,8 +1,18 @@
 # Plato by Applivity for Visual Studio
 
-Plato is an AI coding agent for Visual Studio 2026. It runs in a tool window
-beside your code and shows you what it is doing while it does it. You can watch
-every step, change its direction mid-run, and stop it at a safe point.
+Plato is an AI coding agent that works in a tool window beside your code. It
+does not hide its work: every step appears as it happens — the files it reads,
+the commands it runs, the change it proposes — so you can follow the plan as it
+forms, take the wheel mid-run, or stop at a safe point.
+
+**Plan, edit, or auto. You hold the switch.**
+
+- **Plan** reads and reasons; it changes nothing.
+- **Edit** asks before it writes a file or runs a command, and remembers your
+  answer for the session.
+- **Auto** works without stopping.
+
+Plato cannot change its own mode. When the work needs more room, it asks you.
 
 Plato is pre-release.
 

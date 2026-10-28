@@ -994,28 +994,42 @@ Credential Manager, and every run below was in `auto`.
 **Release notes:** first Visual Studio release: 0.1.0.
 
 **Short description** (one sentence, as in the manifest): An AI coding agent that
-shows its work, lets you steer mid-run, and stops at a safe point.
+plans in the open, takes your direction mid-run, and asks before it changes your
+code.
 
 **Long description:**
 
-Plato is an AI coding agent that works in a tool window beside your code. It
-shows each step while it works, so you can follow the plan, change direction
-mid-run, and stop it at a safe point.
+Plato is an AI coding agent that works in a tool window beside your code. It does
+not hide its work: every step appears as it happens — the files it reads, the
+commands it runs, the change it proposes — so you can follow the plan as it
+forms, take the wheel mid-run, or stop at a safe point.
 
-Plato reads your code, edits files, and runs commands — only within the mode you
-choose. In **plan** it looks and does not touch. In **edit** it asks before a
-write or a command. In **auto** it works without stopping.
+**Plan, edit, or auto. You hold the switch.**
 
-You supply the model provider key and pay the provider directly. Anthropic and
-any OpenAI-compatible endpoint are supported, including a model that runs on
-your machine. A Node.js 22 runtime is bundled, so you do not install Node.js.
+- **Plan** reads and reasons; it changes nothing.
+- **Edit** asks before it writes a file or runs a command, and remembers your
+  answer for the session.
+- **Auto** works without stopping.
+
+Plato cannot change its own mode. When the work needs more room, it asks you.
+
+Every step is recorded. Approval cards show the actual diff before a write.
+Plato keeps undo copies of the files it changed, reads protected files with
+their values masked, runs the MCP servers you configure, accepts images, and can
+work Solo, as a Duo with a second model reviewing, or as an Academy with two
+observers. You hold the switch in all three.
+
+You bring the model: Anthropic or any OpenAI-compatible endpoint, including one
+that runs on your machine. You supply the key and pay the provider directly. A
+Node.js 22 runtime is bundled, so you install nothing else.
 
 Plato sends nothing to Applivity. Prompts and the code it reads go only to the
 provider you configure. Transcripts, settings, and keys stay on your machine;
-keys are held by Windows Credential Manager.
+keys are held by Windows Credential Manager. The policy is
+https://plato.applivity.com/privacy.
 
-Plato is pre-release, and this is its first Visual Studio release. It needs
-Visual Studio 2026 on Windows 11.
+Plato is pre-release, and this is its first Visual Studio release. It supports
+Visual Studio 2026 on Windows 11. Support: plato-feedback@applivity.com.
 
 **Screenshots to capture** (real window, no keys or personal paths):
 1. Chat answering a task, with tool rows and the status line (light theme).
