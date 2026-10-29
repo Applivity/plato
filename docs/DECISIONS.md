@@ -4980,6 +4980,24 @@ tree is the one to ship.
 
 ---
 
+**D49co — a screenshot is captured at display width, in a window sized to its slot
+(2026-10-29).**
+
+**Why.** The website asked for 1000×500 images. The first set was captured in a large
+window (1872×912, the Marketplace size) and scaled down, and the website rejected it: UI
+text fell to about 8px and stopped being legible. The second set was captured in a Visual
+Studio window **sized to 1000×500** (Plato panel 590px, editor 370px) at 1x, and all six
+images render at about 13.5px. Nothing else changed. The difference was the capture, not
+the compression.
+
+**The rule.** Decide the width the image will be shown at, size the window to it, and
+capture at 1x. Do not capture large and scale down. Two sets now exist and they are not
+interchangeable: the Marketplace listing shots stay 1872×912, and the website copies stay
+1000×500. The evidence and the capture record are in
+`C:\src\plato-vs-field\evidence\m6-shots\`.
+
+---
+
 **D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
 
 **Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command
