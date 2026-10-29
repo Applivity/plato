@@ -899,11 +899,12 @@ was run in 2022 17.14 and 2026 18.11. It carries the Visual Studio 2022 repair
 its package (`f9ac0275…a95e`) is kept as evidence. Targets stay `[17.14,)`; the
 local upload copy of 0.1.2 is `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.vsix`.
 
-**0.1.3 awaits upload:** one wording change (four strings that named
+**0.1.3 is live (2026-10-29):** one wording change (four strings that named
 `SecretStorage`, now "the system credential store") plus the version. It is
 `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.3.vsix`, 33,293,606 bytes,
 SHA-256 `dc7d9461…1b14`, and the Settings sentence was read from the running
-build. The same strings reach the VS Code extension at its next release, since
+build. The public download is byte-identical (same size and SHA-256), and the
+gallery reports `0.1.3` with `lastUpdated` `2026-10-29T13:46:20Z`. The same strings reach the VS Code extension at its next release, since
 they live in the shared webview.
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
