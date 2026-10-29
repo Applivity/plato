@@ -20,6 +20,28 @@ if ($LocalNodeZip) { $fetch.LocalZip = $LocalNodeZip }
 $Node = Join-Path $Sidecar "node.exe"
 $env:PATH = "$Sidecar;$env:PATH"
 
+Write-Host "== compile the shared shell =="
+# The sidecar bundle imports packages/vscode/out/extension.js, which is a
+# gitignored tsc output. If that copy is stale the VSIX ships old UI strings and
+# nothing fails: 0.1.3's Settings page still said "SecretStorage" after a build
+# that skipped this step. Compile when pnpm is available; otherwise refuse to
+# build from output older than its sources.
+$Vscode = Join-Path (Split-Path -Parent $VsRoot) "vscode"
+$VscodeOut = Join-Path $Vscode "out\extension.js"
+if (Get-Command pnpm -ErrorAction SilentlyContinue) {
+    & pnpm exec tsc -b
+    if ($LASTEXITCODE -ne 0) { throw "tsc -b failed" }
+} else {
+    if (-not (Test-Path $VscodeOut)) {
+        throw "packages/vscode/out/extension.js is missing and pnpm is not on PATH"
+    }
+    $newest = Get-ChildItem (Join-Path $Vscode "src") -Recurse -Filter *.ts |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($newest.LastWriteTime -gt (Get-Item $VscodeOut).LastWriteTime) {
+        throw "packages/vscode/out/extension.js is older than $($newest.Name); run pnpm exec tsc -b first"
+    }
+}
+
 Write-Host "== build the sidecar bundle =="
 & $Node (Join-Path $VsRoot "scripts\gen-defaults.mjs")
 if ($LASTEXITCODE -ne 0) { throw "gen-defaults failed" }
