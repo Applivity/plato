@@ -322,7 +322,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
           return;
         }
         const input = await vscode.window.showInputBox({
-          prompt: `${pick} API key (stored in VS Code SecretStorage, never in settings or files)`,
+          prompt: `${pick} API key (stored in the system credential store, never in settings or files)`,
           password: true,
           ignoreFocusOut: true,
         });
@@ -3468,7 +3468,7 @@ class ChatHost {
 
   private async promptForKey(connId: string): Promise<void> {
     const input = await vscode.window.showInputBox({
-      prompt: `${connId} API key (stored in SecretStorage, never displayed)`,
+      prompt: `${connId} API key (stored in the system credential store, never displayed)`,
       password: true,
       ignoreFocusOut: true,
     });

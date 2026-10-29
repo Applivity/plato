@@ -2749,7 +2749,7 @@ export function chatHtml(): string {
     // D47i: the header bar names the section, so the in-body title is gone;
     // only the explanation stays, matching Orchestration and Context.
     sec1Body.appendChild(el('p', 'shelp',
-      'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in SecretStorage and never displayed.'));
+      'Where Plato goes. Each provider has its own API key, base URL, and model list. Keys are stored in the system credential store and never displayed.'));
 
     // D43: onboarding card on first run — nothing is pre-configured.
     if (userConns.length === 0) {
@@ -2995,7 +2995,7 @@ export function chatHtml(): string {
     addCard.appendChild(add);
     sec1Body.appendChild(addCard);
     sec1Body.appendChild(el('div', 'note',
-      'Connections are stored in your VS Code settings under plato.connections. Keys live in SecretStorage and are never displayed.'));
+      'Connections are stored in your settings under plato.connections. Keys live in the system credential store and are never displayed.'));
 
 
     // ---- 2. Orchestration (always-open) ----
