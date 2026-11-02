@@ -915,6 +915,16 @@ only link the Marketplace listing renders, and the version moved in the four
 places that name it. Built and run in Visual Studio 2022 17.14 and 2026 18.11
 before upload; evidence in `C:\src\plato-vs-field\evidence\m7-0.1.4`. The same strings reach the VS Code extension at its next release, since
 they live in the shared webview.
+**0.1.5 is built and not yet published (2026-11-02):** `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.5.vsix`,
+33,293,851 bytes, SHA-256 `411f3262…2923`, manifest `0.1.5`. The only content
+change is the listing readme: three real screenshots, served from
+`raw.githubusercontent.com/Applivity/plato/main/docs/media/`, so the Marketplace
+overview is no longer text only. It was built on Windows 10 from `main`
+`bde3e7bc` with `package-vsix.ps1`, which compiles the shared shell first. A
+byte-level comparison against 0.1.4 shows only `README.md`, `sidecar/README.md`,
+the manifest and `Plato.Vs.dll` (the version string) differ; `plato-host.cjs` is
+unchanged. The matching VS Code package is `plato-0.26.11.vsix`.
+
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).
 
