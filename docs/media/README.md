@@ -18,15 +18,22 @@ than they were captured, deliberately, rather than re-captured for this page.
 trusting anyone's memory — compare the served bytes against these files:
 
 ```sh
-for p in vs-chat:vs-01-chat-1000 vs-approval:vs-02-approval-1000 \
-         vs-duo:vs-06-duo-1000; do
-  curl -sL "https://plato.applivity.com/assets/shots/vs/${p#*:}.png" -o /tmp/live.png
+# this file : path on plato.applivity.com
+for p in vscode-chat:assets/shots/01-chat-mid-run.png \
+         vscode-guidance:assets/shots/02-guidance-during-run.png \
+         vscode-approval:assets/shots/03-approval-card.png \
+         vs-chat:assets/shots/vs/vs-01-chat-1000.png \
+         vs-approval:assets/shots/vs/vs-02-approval-1000.png \
+         vs-duo:assets/shots/vs/vs-06-duo-1000.png; do
+  curl -sL "https://plato.applivity.com/${p#*:}" -o /tmp/live.png
   curl -sL "https://raw.githubusercontent.com/Applivity/plato/main/docs/media/${p%%:*}.png" -o /tmp/repo.png
   echo "${p%%:*}: $(shasum -a 256 /tmp/live.png /tmp/repo.png | awk '{print $1}' | sort -u | wc -l | tr -d ' ') hash(es)"
 done
 ```
 
 `1 hash(es)` means in step; `2` means the site and this folder have diverged.
+The site names the VS Code captures by position (`01-` to `10-`), not by the
+`vscode-` names used here, so the left column of the loop is the mapping.
 
 The Visual Studio captures are the **real-model set of 2026-11-02**: Windows 10,
 Visual Studio 2026 18.11, extension 0.1.4, DeepSeek `deepseek-flash`, window
