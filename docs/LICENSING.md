@@ -70,16 +70,24 @@ project — its community, process and support — and it is the open question
 below. A reader who merges the two will either add the phrase everywhere or
 remove the link that tells the truth.
 
-**But do not claim it yet (founder, 2026-11-02).** The phrase is true; the
-founder chose not to use it, because "open source" invites expectations of a
+**The phrase is not used (founder, 2026-11-02).** The claim is true; the founder
+decided not to make it, because "open source" invites expectations of a
 community, a contribution process and support that a solo pre-release product
-does not yet meet. Both listings say "licensed under the Apache License 2.0" and
-link the source. **The website's install note is the exception in flight:** it
-says *"It is open source under the Apache License 2.0 … The licence covers the
-code, not the maturity"*, added under an earlier approval from the founder. The
-founder was asked on 2026-11-02 whether that sentence stays; until the answer is
-recorded here, do not extend the claim to the listings, the README or the About
-line.
+does not yet meet. The listings, the README and the About line never carried it.
+The website's install note did — *"It is open source under the Apache License
+2.0 … The licence covers the code, not the maturity"* — added under an earlier
+approval, and it is being changed at the founder's direction to:
+
+> It is licensed under the Apache License 2.0, and the source is public at
+> github.com/Applivity/plato.
+
+The hedged sentence was removed because the paragraph already opens with *"Plato
+is an early release, and it changes quickly"*: maturity was stated plainly in the
+first sentence, and the hedge restated it in a form the founder could not parse.
+A caveat the owner cannot read is not protecting anyone.
+
+**If the phrase is wanted later**, it belongs in the licensing document first,
+with the sentence to be used and the reason — not in a website brief.
 
 ## 3. Why this path
 
