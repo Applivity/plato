@@ -16,6 +16,18 @@ Plato cannot change its own mode. When the work needs more room, it asks you.
 
 Plato is pre-release.
 
+![The Plato tool window in Visual Studio](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vs-chat.png)
+
+*A run in the tool window, beside your own editor.*
+
+![An approval card in Visual Studio](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vs-approval.png)
+
+*Edit mode: the real diff, and one decision before anything changes.*
+
+![A Duo run with a philosopher watching](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vs-duo.png)
+
+*Duo: a philosopher reads along, with its own model and its own permissions.*
+
 > **Plato runs an AI agent that can edit files and run commands in the open
 > solution.** It acts only under the mode you choose and the approvals you
 > give. Read each card before you answer it.

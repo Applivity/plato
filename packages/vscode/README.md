@@ -16,6 +16,18 @@ Plato cannot change its own mode. When the work needs more room, it asks you.
 
 Plato is pre-release.
 
+![The Plato panel in VS Code, mid-run](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vscode-chat.png)
+
+*A run in the panel: the task, the tools as they happen, the answer.*
+
+![Guidance typed during a run](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vscode-guidance.png)
+
+*Type while it works; the direction reaches Plato at the next safe point.*
+
+![An approval card with a real diff](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vscode-approval.png)
+
+*Edit mode: the real diff, and one decision before anything changes.*
+
 ## Install
 
 Install from the Visual Studio Marketplace:
