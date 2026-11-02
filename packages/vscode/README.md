@@ -1,8 +1,18 @@
 # Plato
 
-Plato is an AI coding agent for VS Code. It works inside your project and shows
-you what it is doing while it does it. You can watch every step, change its
-direction mid-run, and stop it at a safe point.
+Plato is an AI coding agent that works inside your VS Code project. It does not
+hide its work: every step appears as it happens — the files it reads, the
+commands it runs, the change it proposes — so you can follow the plan as it
+forms, take the wheel mid-run, or stop at a safe point.
+
+**Plan, edit, or auto. Solo, duo, or academy. You hold the switch.**
+
+- **Plan** reads and reasons; it changes nothing.
+- **Edit** asks before it writes a file or runs a command, and remembers your
+  answer for the session.
+- **Auto** works without stopping.
+
+Plato cannot change its own mode. When the work needs more room, it asks you.
 
 Plato is pre-release.
 
@@ -62,9 +72,15 @@ not the default.
 
 Plato is licensed under the
 [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0). The
-full text is in the license file included with the extension. Third-party
-notices are in `THIRD-PARTY-NOTICES.md`.
+full license text ships with the extension as `LICENSE.txt`, and the
+third-party notices ship as `THIRD-PARTY-NOTICES.md`. Both files are inside the
+installed extension.
 
 The source is public at
 [github.com/Applivity/plato](https://github.com/Applivity/plato) and is licensed
 under the Apache License, Version 2.0.
+
+## Support
+
+Questions, bug reports, and feedback: **plato-feedback@applivity.com**.
+Privacy policy: [plato.applivity.com/privacy](https://plato.applivity.com/privacy).

@@ -1,9 +1,9 @@
 {
   "name": "plato",
-  "version": "0.26.7",
+  "version": "0.26.10",
   "private": true,
   "license": "Apache-2.0",
-  "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
+  "description": "An AI coding agent that plans in the open, takes your direction mid-run, and asks before it changes your code.",
   "publisher": "applivity",
   "repository": { "type": "git", "url": "https://github.com/Applivity/plato.git" },
   "homepage": "https://plato.applivity.com",
@@ -24,7 +24,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-0.26.7.vsix --force"
+    "install:vsix": "code --install-extension plato-0.26.10.vsix --force"
   },
   "contributes": {
     "commands": [
