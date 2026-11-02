@@ -1082,7 +1082,7 @@ two views (D45c realized, in the same milestone as the code, per D45c/D45d).
   host; the header chip shows `duo · <name>` / `academy:<name>` from the files.
 
 **D47b — Duo editor polish + DUO.yaml self-contained (M4.1, 0.25.0 — committed
-477bd43, 2026-09-09).**
+c7484bc, 2026-09-09).**
 
 Founder review of the D47 editors read "amateur"; several polish rounds followed,
 Duo first. Decisions recorded beyond D47:
@@ -1121,7 +1121,7 @@ Duo first. Decisions recorded beyond D47:
   select sits on its own full-width row so a long model ref can't overflow.
 
 **D47j — the Providers row: collapse on action, a broken Delete, no confirm, and a
-render-aborting crash (M4.1, 0.25.0 — committed 4f6a45a, 2026-09-11).**
+render-aborting crash (M4.1, 0.25.0 — committed 6259920, 2026-09-11).**
 
 Founder report, all three missed by the previous pass:
 
@@ -1287,7 +1287,7 @@ reads it here, not in a plan file outside the repo.
    concatenated by string, and a `content-type` guard for servers that ignore
    `stream: true` and would otherwise return a silently empty answer. **The
    working precedent for the Anthropic half was the M0 provider deleted in D49e;
-   it is in git history at `136564b`,
+   it is in git history at `0aeb309`,
    `packages/core/src/providers/anthropic.ts`.**
 3. **Agent tool surface** — regex `grep` with output modes (it is literal-substring
    and 100-hit-capped today); a `glob` tool, since there is no way to find a file
@@ -1467,7 +1467,7 @@ and their build output in `dist/` (untracked).
 These two files were *not* worthless — `providers/anthropic.ts` held the only
 working streaming call in the repo (`messages.stream()` + `on('text')` +
 `finalMessage()`), which is the pattern phase 2 needs. It is preserved in git
-history at **`136564b`**.
+history at **`0aeb309`**.
 
 **D49f — a transient provider failure retries with backoff (M5.0, 0.25.0 —
 2026-09-17).**
@@ -5006,7 +5006,7 @@ Numbering continues after the Visual Studio series on this branch (D49cf–D49co
 **The change.** The founder moved the repository to the `Applivity` organization and made it public.
 The old personal account `applivity-com` is deleted, and its URL returns 404. The canonical remote is
 now `https://github.com/Applivity/plato`. The move is a rename, not a rewrite: the new remote serves
-`main` at `1696dd2` and `vs/m2` at `b03ad3f1`, the same commits as the local branches, so nothing in
+`main` at `e154a1f` and `vs/m2` at `52af87b8`, the same commits as the local branches, so nothing in
 the history changed.
 
 **The secret audit was required before this, and was run after it (D15).** The rule in the open
@@ -5237,10 +5237,10 @@ were fixed, and `resolveInRoot` now returns forward slashes on Windows. **M2 is 
 (2026-10-23):** the C# shell, the WebView2 tool window, the sidecar, and the VSIX were built and
 witnessed in a real Visual Studio 2026 18.11.1 window. A scripted `write_file` run drew the approval
 card and wrote the file, the transcript landed in `~/.plato`, light and dark screenshots exist, and
-the sidecar exits when Visual Studio closes. Commit `5d4cdcc` is on `vs/m2`; the bundle is
+the sidecar exits when Visual Studio closes. Commit `6697d81` is on `vs/m2`; the bundle is
 `C:\src\vs-m2.bundle`. **VS 2026 18.11.1 Community is installed on Windows 10; Microsoft supports
 VS 2026 on Windows 11 only, so the final acceptance belongs on Windows 11.** CLI 0.1.4 and VS Code
-extension 0.26.7 were released from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged
+extension 0.26.7 were released from `main` at `e154a1f`; `plato-bugs` and `windows/m0` are merged
 and deleted.
 
 **Open items.** The Marketplace VSIX size limit, signing requirement, and review time; the item id
@@ -7028,7 +7028,7 @@ that named a *different* wrong path, which is precisely the failure mode being
 fixed. Restoring the old string fails both assertions and prints the offending
 description, which is the evidence that the check can actually fail.
 
-**D47l — the API key is entered in the panel (M4.1, 0.25.0 — committed a62d682,
+**D47l — the API key is entered in the panel (M4.1, 0.25.0 — committed c7987c4,
 2026-09-11).**
 
 Founder question: *"what is 'Set key' doing — it shows a Visual Studio in-build
@@ -7059,7 +7059,7 @@ canonical UI and the palette is a power-user shortcut, so there is one coherent
 story rather than three competing surfaces.
 
 **D47k — "Add connection" closed Providers: the restore key was not stable
-(M4.1, 0.25.0 — committed 6f15e52, 2026-09-11).**
+(M4.1, 0.25.0 — committed eeac932, 2026-09-11).**
 
 D47j restored the open/closed state by keying on the section's **summary text**.
 But the Providers summary embeds a live count:
@@ -7078,7 +7078,7 @@ test replays the founder's exact sequence and was proven to fail when the key is
 reverted.
 
 **D47i — one Settings surface: unified panels, honest affordances (M4.1, 0.25.0 —
-committed 87aa9cf, 2026-09-11).**
+committed c354536, 2026-09-11).**
 
 Founder review: the Providers and Context header arrows were too small, the
 connection action buttons were jammed together ("Set key and Refresh collapse the
@@ -7124,7 +7124,7 @@ structural fact.
 Presentation only: no `postMessage` type, parser, emitter, or behaviour changed.
 
 **D47h — the doer model select did not stick, and the narrow panel (M4.1, 0.25.0
-— committed fe2cf26, 2026-09-11).**
+— committed fa4cd6a, 2026-09-11).**
 
 Founder report: in **both** Duo and Academy, changing `Plato's model` snapped back
 to the composer's value; changing it in the **composer** worked. Two defects and a
@@ -7172,7 +7172,7 @@ layout class.
   grid fails 6 cases.
 
 **D47g — Role field hardening + the two walls, after founder UI review (M4.1, 0.25.0
-— committed 68dc451, 2026-09-10).**
+— committed 296cbb3, 2026-09-10).**
 
 Founder review of the D47f build raised three items. Two were defects I had
 shipped.

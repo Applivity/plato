@@ -41,7 +41,7 @@ Read first:
 - **M0 (the shared-core Windows repair):** **DONE and verified on Windows.**
   Mac core 908/1 skipped, CLI 180; Windows core 907/2 skipped, CLI 177/3
   skipped; the real Windows command/background/MCP run passed. Branch
-  `windows/m0` (`246c3e7`) is merged into `main` and deleted.
+  `windows/m0` (`16b3007`) is merged into `main` and deleted.
 - **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
   SMB logons). Use SSH bundles, not SMB.
 - **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
@@ -49,7 +49,7 @@ Read first:
 ## M2 — PASSED (2026-10-23)
 
 The shell is built and witnessed in a real Visual Studio 2026 18.11.1 window.
-Commit `5d4cdcc` is on `vs/m2`; the bundle is `C:\src\vs-m2.bundle`; evidence
+Commit `6697d81` is on `vs/m2`; the bundle is `C:\src\vs-m2.bundle`; evidence
 is in `C:\src\plato-vs-field\evidence`. The tool window loads the chat, the
 scripted `write_file` task draws the approval card and writes the file, the
 transcript is under `~/.plato`, light and dark screenshots exist, and the

@@ -534,7 +534,7 @@ background shell was read with `bash_output` and stopped with `kill_shell`, and
 the fake MCP server's `echo` tool ran. The first Windows run found 21 core and
 3 CLI failures (POSIX command strings and file-mode assumptions); all were
 fixed, and `resolveInRoot` now returns forward slashes on Windows. The branch was
-`windows/m0` (`246c3e7`); it is merged into `main` and deleted.
+`windows/m0` (`16b3007`); it is merged into `main` and deleted.
 
 Deliverables:
 
@@ -715,7 +715,7 @@ the milestone has a witness in a real Visual Studio window. M3a evidence, in a r
   falsified by removing the compaction field, then restored.
 - The default 346px tool-window width has no horizontal overflow:
   `document.scrollWidth` is 346, `#sbody` is 331/331, and the Providers card's
-  right edge is 296. The rebuild from `3f41c5b` installed with exit 0.
+  right edge is 296. The rebuild from `f98901d` installed with exit 0.
 - Evidence: `C:\src\plato-vs-field\evidence\m3a\`, including
   `settings-narrow.png` and `settings-narrow.txt`.
 
@@ -909,7 +909,7 @@ gallery reports `0.1.3` with `lastUpdated` `2026-10-29T13:46:20Z`.
 **0.1.4 is live (founder, 2026-11-02) and verified from the public endpoint:** the
 gallery returns `0.1.4` with `lastUpdated` `2026-11-02T12:55:05Z`, and the
 anonymous download is 33,293,656 bytes with SHA-256 `ea9e5ef4…7136` —
-byte-identical to the package built on Windows 10 from `vs/m2` `18bb5b70`. The
+byte-identical to the package built on Windows 10 from `vs/m2` `2b426bfb`. The
 manifest gains `<MoreInfo>https://github.com/Applivity/plato</MoreInfo>`, the
 only link the Marketplace listing renders, and the version moved in the four
 places that name it. Built and run in Visual Studio 2022 17.14 and 2026 18.11
@@ -922,7 +922,7 @@ bytes with SHA-256 `411f3262…2923` — byte-identical to
 `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.5.vsix`. The only content change
 is the listing readme: three real screenshots, served from
 `raw.githubusercontent.com/Applivity/plato/main/docs/media/`. It was built on
-Windows 10 from `main` `bde3e7bc` with `package-vsix.ps1`, which compiles the
+Windows 10 from `main` `da4d8743` with `package-vsix.ps1`, which compiles the
 shared shell first. A byte-level comparison against 0.1.4 shows only `README.md`,
 `sidecar/README.md`, the manifest and `Plato.Vs.dll` (the version string) differ;
 `plato-host.cjs` is unchanged. The matching VS Code package is
