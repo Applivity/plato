@@ -63,6 +63,13 @@ under Apache-2.0.
 usually implies that the source is available. The repository opened on
 2026-11-02 (D49cp), so "open source" is accurate now, with no license change.
 
+**Two different things, and they must not collapse.** *The source is public* is
+a fact: the repository is open, `LICENSE` is Apache-2.0, and the website's
+Source link states it. *"Open source"* is a positioning claim about the
+project — its community, process and support — and it is the open question
+below. A reader who merges the two will either add the phrase everywhere or
+remove the link that tells the truth.
+
 **But do not claim it yet (founder, 2026-11-02).** The phrase is true; the
 founder chose not to use it, because "open source" invites expectations of a
 community, a contribution process and support that a solo pre-release product
