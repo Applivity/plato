@@ -1,0 +1,17 @@
+{
+  "name": "@applivity/plato-vs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual Studio 2026 host for Plato — sidecar and VSIX",
+  "scripts": {
+    "build": "node scripts/gen-defaults.mjs && node esbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs && node test/settings.test.mjs && node test/m3b.test.mjs && node test/approval-lifecycle.test.mjs && node test/teams.test.mjs && node test/history.test.mjs && node test/newchat.test.mjs && node test/m4a.test.mjs && node test/m4b.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.1",
+    "esbuild": "0.25.10",
+    "typescript": "5.9.2"
+  }
+}

@@ -69,6 +69,11 @@ const WITH_REFUSAL = {
   await p.waitForTimeout(250);
   const t = await card(p);
   check('the undo card is drawn', t.length > 0, t);
+  const heading = await p.evaluate(() => {
+    const h = document.querySelector('.card.undo-card h3');
+    return h ? h.textContent : '';
+  });
+  check('the title is the product copy', heading === 'Undo your last request?', heading);
   check('it names each file', /src\/a\.ts/.test(t) && /PLATO_UNDO_C\.txt/.test(t), t);
   check('and each row says what happens to THAT file', /deletes it/.test(t), t);
   const b = await buttons(p);

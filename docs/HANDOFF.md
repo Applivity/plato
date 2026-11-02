@@ -21,7 +21,121 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; **Visual Studio 2022 support added 2026-10-28 (D49cn)**; VS M2, M3a, M3b checkpoint 1 with its correction round, M3b checkpoints 2a and 2b and M4a verified 2026-10-24; M4b verified 2026-10-26 with acceptance, the New Chat confirmation fixed 2026-10-26 (D49cj), and the M5 packaging phase done 2026-10-26; M3 and M4 complete; the VS release is not published)
+
+**Session checkpoint — Visual Studio 2022 supported (2026-10-28).** The package declares `[17.14,)`, so 2022 could install it, but it had never run there. It now does, and **0.1.1 is the version that carries the repair** (D49cn). **What the first field run found:** on Community 17.14.37806.7 the exact Marketplace package installed, registered its four commands, drew the tool window in both themes and started the bundled `sidecar\node.exe` — then the page stayed at "loading…" and the log read `stdout reader stopped: Method not found: 'JToken.ToString(Newtonsoft.Json.Formatting)'`. Visual Studio resolves an extension's Newtonsoft.Json to its own copy: **2022 loads 13.0.3, 2026 loads 13.0.4**, and 13.0.4 added the one-argument overload the compiler had chosen. **The fix:** reference 13.0.3, the oldest shell in range, so the compiler binds the two-argument call that exists in both; no source line changed. **A second defect came out of the same run:** `package-vsix.ps1` did not restore, so an incremental tree kept resolving 13.0.4 and built a VSIX that still failed in 2022 — the script now passes `/restore` to MSBuild, and the package to ship is one that script built from a clean tree. **Witnessed after the fix:** a full scripted round trip in **2022 17.14** (reply drawn in the window, transcript `mvsctt39eyud`) and in **2026 18.11** (transcript `mvscx3m6abjb`) from the same package. The README now names the supported versions. **0.1.1 is packaged and ready: `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.1.vsix`, 33,293,430 bytes, SHA-256 `f9ac0275…a95e`**, built by the restoring script from a deleted `obj`/`bin` with a `Plato.Vs.dll` byte-identical to the tested binary; the installer applied it to 2022 and a scripted turn passed there (`C:\src\plato-vs-field\evidence\m6-2022\rebuild\`). Evidence: `C:\src\plato-vs-field\evidence\m6-2022\` (`REPORT.md`, `bridge-failure.txt`, screenshots, installer and extension logs, both transcripts); do not delete it. **Still open:** publishing 0.1.1 (the founder uploads), the install-from-Marketplace check, the website's version line, and code signing (D49ck). **The log defect is fixed in 0.1.2:** the start-up line printed `ntdll.dll` because `Process.MainModule` is unreliable inside `devenv.exe`; it now calls `QueryFullProcessImageName`, and a field run in each host names the installed extension's own `sidecar\node.exe` (evidence `m6-2022\logfix\`). **0.1.2 is published (founder, 2026-10-28) and verified from the public endpoint:** the anonymous Marketplace download is 33,293,629 bytes with manifest `0.1.2`, and its `Plato.Vs.dll` hashes `14b577ae…f2c6`, the same binary that was run in both hosts. Local copy: `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.vsix`, SHA-256 `9f7781f0…4575`. **0.1.3 is live (founder, 2026-10-29; gallery `lastUpdated` `13:46:20Z`) and verified from the public endpoint — the anonymous download is byte-identical to the built package, same size and same SHA-256:** it changes only the key-storage wording — four user-visible strings named `SecretStorage`, the VS Code API name, on a page whose Visual Studio build stores keys in Windows Credential Manager; they now say "the system credential store". `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.3.vsix`, 33,293,606 bytes, SHA-256 `dc7d9461…1b14`, and its Settings page was read from the running build. The shared strings reach the VS Code extension at its next release. The packaging script now compiles the shared shell before bundling, because a stale `packages/vscode/out/extension.js` had shipped the old sentence silently. **VS 2022 is no longer a deferred item.**
+
+**Session checkpoint — M5 packaging (2026-10-26); PUBLISHED (2026-10-28).** The Visual Studio extension is **live** at `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs` — identity `applivity.plato-vs`, internal name `plato-vs`, version 0.1.0, unsigned (D49ck). The packaging record that preceded publication follows. The VSIX no longer copies a dev-machine Node: `packages/vs/scripts/fetch-node.ps1` obtains the pinned official **Node.js 22.20.0 LTS Windows x64** archive from nodejs.org, checks SHA-256 `bb819d6e…e29d`, and stages `node.exe` plus Node's `LICENSE` in `sidecar\`; `-LocalZip` is the offline override, checked against the same hash, and the build runs gen-defaults and esbuild with the staged runtime. `THIRD-PARTY-NOTICES.md` carries the Node entry and states that only `node.exe` and `LICENSE` ship. `LICENSE`, `NOTICE`, and `THIRD-PARTY-NOTICES.md` are in the VSIX at the root with `IncludeInVSIX` and are byte-identical to the repository copies. The listing has `packages/vs/README.md` (what Plato is; the agent can edit files and run commands in the open solution; the user supplies a provider key; a Node 22 runtime is bundled; Apache-2.0; the privacy link **https://plato.applivity.com/privacy**; support **plato-feedback@applivity.com**) and `packages/vscode/media/icon.png` as the manifest icon. **The Release VSIX is 33,293,332 bytes, 19 files, SHA-256 `ebc5b2e6…08ce`.** It was rebuilt after the founder supplied the support address and privacy URL, then again with the clean identity `applivity.plato-vs`, and a third time with the stable `[17.14,)` install range the Marketplace requires (D49cl); the clean-runtime run below used an earlier build (`cdf32458…97d4e`), which differs only in the README text, the identity string, and the target range. It holds `sidecar\node.exe`, `sidecar\plato-host.cjs`, `sidecar\LICENSE`, the three licence files, the icon, and `Plato.Vs.dll`; it has no source, maps, tests, scripts, or local user paths, and the secret audit (`audit-vsix.ps1`/`audit.txt`) found no key material — the six AKIA-shaped ASCII runs are upstream bytes in the official `node.exe`. **Clean-runtime install:** the VSIX installed with exit 0; Visual Studio was started by the session-2 helper with a PATH that had no Node or nvm directory (0 of 42 entries contained `node.exe`; `Get-Command node` was not found); the chat answered a real stub run (`✓ done in 1s · 0 tool calls · 120 tok`); and the sidecar log names the process image `…\extensions\szyphvra.b2p\sidecar\node.exe`, while `Win32_Process` shows that was the only `node.exe` child of `devenv.exe`. Evidence: `C:\src\plato-vs-field\evidence\m5\package\`. `pnpm exec tsc -b`, `pnpm --dir packages/vs typecheck`, and `pnpm --dir packages/vs test` pass; the shared webview did not change, so `render:fast` is not part of this phase. **Not done, and why:** code signing is **deferred by the founder (D49ck, 2026-10-26)** — 0.1.0 ships unsigned and Azure Trusted Signing follows; the Marketplace upload is **DONE** — the founder published 0.1.0 on 2026-10-28 at `https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`, with the short description, categories, overview, support address **plato-feedback@applivity.com** and privacy URL **https://plato.applivity.com/privacy** (the page is live); the install-from-Marketplace check and the 0.1.1 update-path test remain; **VS Code 0.26.9 is live (published by the founder 2026-10-28)** — `/Users/ai/Desktop/plato-artifacts/plato-0.26.9.vsix`, SHA-256 `bdac17dc…730f`, built from the local unpushed branch `release/0.26.8` at `9a5a4c9b`, and it changes only the listing text (the license paragraph names `LICENSE.txt` and `THIRD-PARTY-NOTICES.md` and says both ship; the README adds support and privacy); the clean-Windows-11 acceptance is **DONE (2026-10-28)** — on Windows 11 25H2 with Visual Studio 2026 18.11.12315, the audited VSIX installed under `applivity.plato-vs`, DeepSeek `deepseek-flash` with the key in Credential Manager, and three real runs in `auto`: a DatingApp analysis (36 tool calls, 254.8k tokens, 38 s, three real risks named with file evidence), a DatingApp write (it created `ARCHITECTURE.md`, 1,867 bytes, and changed nothing else), and a CviConnector analysis (9 tool calls, 92.6k tokens, 20 s, a mutable singleton, a lost fire-and-forget commit, and no authentication). Both projects were copies under `C:\src\field\`; the Desktop originals were never opened, and the key file was deleted after the first run. Suites on that machine: Visual Studio host 10/10, CLI 213 pass / 3 skipped, core 914 pass / 2 skipped with one background-shell timing failure that then passed 3/3 reruns; `render:fast` is macOS-only. Evidence and `REPORT.md`: `C:\src\plato-vs-field\evidence\m5\real\`.
+
+**Session checkpoint (2026-10-26, before M5).** `vs/m2` carries the New Chat fix `7a01815b` merged with this checkpoint, and is pushed to GitHub and the LAN repo; the Windows clone is on the same commit. M3, M4a, and M4b are complete. The M4 acceptance run is **23 actual runs (24 result rows including the N/A record), 17 pass / 0 fail / 3 N/A with reasons**, with **23 transcripts and 52 screenshots (26 pairs)** in `C:\src\plato-vs-field\evidence\m4\checkpoint-b` and `...\acceptance`. **The parity checklist is complete except the two deferred items.** The last open row, New Chat, is closed: the shell box blocked the UI thread without appearing, so it is now a WPF `MessageWindow` with the core's label, and a UI request waits 10 minutes; witnessed in the real window for `+ new`, the menu command, and Cancel, with `packages/vs/test/newchat.test.mjs` falsified twice. Evidence: `C:\src\plato-vs-field\evidence\newchat\`. **M5 Release followed with the packaging phase above; the founder's signing certificate, Windows 11 VM, Marketplace account, privacy policy URL, and support address remain.** Deferred with recorded reasons: clickable path links (Option 2), the Chats tree, VS 2022, ARM64, and diagnostics after a write (the documented `not-checked` gap); final acceptance belongs on Windows 11. Ops: the Windows agent must use `claude-sonnet-5-5` (the gateway does not route `claude-haiku-5-5`); the M4a evidence folder was emptied during the M4b run, but the Mac copy of its `evidence.txt` is at `/Users/ai/Desktop/plato-sync/incoming-vs-m4a-52d933fe/evidence/evidence.txt` (its screenshots are lost).
+
+- **Phase 3 is OPEN: full Visual Studio 2026 support is the next goal (approved 2026-10-23, D49cf).**
+  The founder approved the plan: **Visual Studio 2026 first**, **full parity before public publish**,
+  **the host shim first** with the conventional bridge as the fallback, and **the Windows repair
+  first**. Development uses a full Windows machine; the repository is shared over SMB, but the
+  working tree is a **local clone**, because pnpm and MSBuild are unreliable on an SMB share.
+  **The implementation plan with milestones, exit criteria, the parity checklist, and the
+  verification is `packages/vs/PLAN.md`.** **M1, the host-shim spike, PASSED on 2026-10-23:** the
+  existing VS Code IDE host runs outside VS Code through `packages/vs/host/shim/vscode.ts`; it
+  produced the chat HTML, ran three scripted runs (a write with an approval card, undo, a question
+  card, and a mode request), persisted the mode, wrote three transcripts, and disposed cleanly. The
+  whole host type-checks against the shim. The M1-era suite was core 886/886 and CLI 175/175, and
+  all 25 render suites pass. **M0, the Windows shell and process repair, is DONE and verified on
+  Windows (2026-10-23):** the Mac suite is core 908/1 skipped and CLI 180; the Windows suite is
+  core 907/2 skipped and CLI 177/3 skipped; the real Windows command/background/MCP run passed.
+  **M2, the Visual Studio shell, PASSED (2026-10-23):** a real Visual Studio 2026 18.11.1 window
+  loads the unchanged chat UI in a WebView2 tool window, a scripted `write_file` task draws the
+  approval card, the approved file lands on disk, the transcript is under `~/.plato/runs`, the
+  tool window is captured in light and dark, and the Node sidecar stops when Visual Studio closes.
+  Credential Manager, the native file picker, open file, and a message box are witnessed too. The
+  shell is `packages/vs/src/Plato.Vs/`; the sidecar entry is `packages/vs/host/main.ts`; packaging
+  is `packages/vs/scripts/package-vsix.ps1`. **Two defects found by the run are fixed:** a UTF-8
+  BOM made the sidecar reject `settings.json`, and a timed-out UI request killed the sidecar
+  through an unhandled rejection. **M3a, the settings half of M3, PASSED (2026-10-23):** the
+  shared Settings page renders in the tool window; connections add/list/remove, Fetch models
+  against a local stub, the model picker, reasoning, compaction, protected files, and Others all
+  persist to `%APPDATA%\Plato\settings.json` in the extension's schema; keys are in Credential
+  Manager and never in that file; every value survives a Visual Studio reload and a tool-window
+  close/reopen. **Two defects are fixed:** the settings payload omitted `compaction`, so the
+  Context slider always rendered the 0.8 default, and VS 2026's light theme returns a near-white
+  Accent family, so primary buttons and an ON switch were illegible (the shell now uses the system
+  highlight pair). The durable test is `packages/vs/test/settings.test.mjs`, falsified by removing
+  the compaction field. At the default 346px tool-window width the page has no horizontal overflow
+  (`settings-narrow.png` and `settings-narrow.txt`). **M3b checkpoint 1, modes and approvals,
+  PASSED (2026-10-23):** the plan/edit/auto picker, the live switch, the mode-request card, approvals
+  with per-file and tool-wide session memory, the queue, pause/resume/cancel, and every parked card
+  were clicked through the real controls in a real Visual Studio 2026 window, and each run's
+  transcript is the second witness. **The shared host and the unchanged chat HTML carry them**, so
+  the checkpoint added no bridge method and changed no shared code. The copy is the VS Code copy;
+  the new host test `packages/vs/test/m3b.test.mjs` pins it and was falsified twice. Evidence is in
+  `C:\src\plato-vs-field\evidence\m3b\checkpoint1\` (28 window screenshots, 16 transcripts, the
+  chat log, the driver log, and the sidecar log). **The three shared defects that pass found were
+  FIXED in a correction round (D49cg, 2026-10-23), in the host and webview, so the VS Code
+  extension gets the same fixes:** a fold rebuilt spent approval cards as live (the host now
+  records a `card-done` row and a late answer is inert), a queue-advanced run hid Pause and Cancel
+  (the host now posts `queue-run` and the page sets the run UI), and a cancel left an approval
+  card live (the host posts `approval-done`). Each has a host regression test — all three were
+  falsified — plus render assertions in `scripts/render/runlifecycle.mjs` for the lead to run on
+  macOS, and all three were re-verified in the real window: `evidence\m3b\checkpoint1-fix`.
+  **M3b checkpoint 2a, Solo, Duo, Academy and the observer strip, PASSED (2026-10-23):** the real
+  Settings picker switched all three arrangements; a Duo philosopher named itself with its colour,
+  guided the run, paused it at a safe point until the user resumed, and cancelled one; the
+  five-intervention cap stopped at five even with eight granted; and an Academy run drew **Team
+  Lyceum** with two philosophers and both watching notices. **The shared host and unchanged HTML
+  carry it**, so Stage A added no second implementation. **Three defects were found and fixed
+  (D49ch):** the council card had never rendered because its payload was wrapped in `text`; every
+  pause and resume line was drawn twice; and non-ASCII page-to-host text arrived as U+FFFD because
+  .NET Framework's stdin writer uses the ANSI codepage. The first two are shared fixes, so VS Code
+  gets them too. The stub model now scripts observer replies on their own cursor, so a philosopher
+  can be driven deterministically. `packages/vs/test/teams.test.mjs` pins the behaviour and was
+  falsified twice; render assertions are in `scripts/render/teams.mjs` for the lead on macOS;
+  evidence is in `C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
+  **M3b checkpoint 2b, History, session resume, title generation and folding, PASSED (2026-10-23):**
+  the model title appeared after the first run and was renamed through the chip; History listed the
+  live chat, the saved chat and the runs; resuming the saved chat restored its log and adopted its
+  title; and `/compact` folded the older turns into a banner with "Summary added for 3 earlier
+  messages. Nothing was removed." while every message stayed on screen and the log grew by one row.
+  **No defect was found in this half.** `packages/vs/test/history.test.mjs` pins the fold's
+  no-shrink rule (falsified with the old destructive fold), the title and its rename, the History
+  payload, resume (falsified by removing the active-run guard), and the archive on close; render
+  assertions are in `scripts/render/history.mjs`; evidence is
+  `C:\src\plato-vs-field\evidence\m3b\checkpoint2b\`. **One open product question is recorded, not
+  changed:** resuming a saved chat replaces the live conversation without archiving it first, so an
+  unarchived live chat is lost. This is the shipped VS Code behaviour too (D41 archives on close
+  and New Chat only). **M4a, the agent-features half of M4, PASSED (2026-10-24):** MCP configuration and server
+  status, images and file attachments, undo, protected-file masking and the reveal card, and
+  the stuck card were driven through the real controls in a real Visual Studio 2026 window.
+  The shared host and the unchanged chat HTML carried all five, so no bridge method and no
+  webview change was needed. Settings listed the two MCP servers honestly (`not run yet` and
+  `disabled`), its enable switch rewrote `mcp.json`, **Open mcp.json** opened the real file,
+  and the model called `mcp__fake__echo` behind the ordinary approval card; the native
+  Windows picker attached a PNG and a text file, and the stub log proves the model received
+  **one `image/png` part** and the file body; `/undo` deleted a created file, put an edited
+  file back byte for byte, and the undo of the undo was the redo; a protected file read
+  masked, a one-line JSON file raised the reveal card once and **Show it this session** let
+  the value through, while a declined file returned the refusal with the value hidden; and
+  five identical calls raised **Plato is stuck**, with **Keep going** carrying the user's
+  guidance into the model's next turn and **Stop** ending the run as `stuck` without taking
+  the model's next step. **One real defect was found and fixed (D49ci): an MCP server whose
+  command cannot spawn killed the Node sidecar** — an `error` event with no listener is an
+  uncaught exception. `McpServer.start` now rejects the handshake, the host reports the
+  failure and the run continues; a core test and a host test pin it, and both were falsified.
+  The new host test is `packages/vs/test/m4a.test.mjs` (falsified four times); the exact-copy
+  render assertions are in `scripts/render/` for the lead on macOS, because this machine has
+  no Playwright and the render harness's HTML import is POSIX-shaped. Evidence is
+  `C:\src\plato-vs-field\evidence\m4\checkpoint-a\`. **Boundaries recorded:** the session-2
+  desktop is locked, so `SendInput` is denied and the field helper fills the native file
+  dialog with Win32 messages (it is still the real dialog); the editor surface does not render
+  through `PrintWindow` on that desktop, so DTE `activeDocument` is the witness that
+  `mcp.json` opened. **M4b, the editor and interaction half, PASSED (2026-10-26; the 2026-10-24 claims were treated as unverified and re-run):** slash commands and completion, plan and todos (`todo_write`), open-file actions, and the diagnostics gap were driven through the real controls in a real Visual Studio 2026 window. All five slash commands were listed in the `/` popover and `/q` filtered dynamically to `/queue`; `todo_write` rendered plan cards with the exact glyphs (`✓`, `▸`, `○`), and unfinished steps were reported honestly in the closing note (`2 of 3 plan steps unfinished`) while a completed plan had no warning; `/system-prompt` created `PLATO.md` from the bundled default and opened it in VS (`activeDocument`), and Settings' Open buttons for `mcp.json`, `DUO.yaml`, and `ACADEMY.yaml` plus History's `openRun` detail view opened their files (existing open actions verified, clickable path links deferred per Option 2); and after a create, `editorDiag.collect()` reported `not-analysed`, emitting the honest notice `diagnostics: not checked in probe-diag-m4b.txt — no language server reported on it`, recorded in the chat and the transcript. The diagnostics run removes the probe first, so `write_file` records `ok:true`; a leftover non-empty file is refused without `overwrite:true`. The host test `packages/vs/test/m4b.test.mjs` pins all items. Evidence: `C:\src\plato-vs-field\evidence\m4\checkpoint-b\` (22 screenshots — 11 window/page pairs — 3 transcripts, `field-run.log`). **Acceptance (2026-10-26):** `C:\src\plato-vs-field\evidence\m4\acceptance\` — 20 cases, 23 runs (24 result rows including the N/A record); **17 pass, 0 fail, 3 N/A with recorded reasons.** Cases 2 and 3 are POSIX-only: the Windows policy denies every shell command in plan and asks for every shell command in edit; the adapted runs witness that policy. Case 33 is VS Code-only: the VS tool-window X is a hide button, and hiding must not unload the page, so there is no panel-dispose to stop the run. Case 23 was adapted `cat` → `type` for cmd.exe; its claim is unchanged. **One defect was found outside the M4b list and is now FIXED (D49cj, 2026-10-26):** the `+ new` control did NOT start a new chat — the host's `ui.message` confirmation timed out after 30 s (`vscode shim: ui.message failed: Error: ui.message timed out after 30000 ms`) because `VsShellUtilities.ShowMessageBox` blocked the Visual Studio UI thread and never created a window. The box is now a WPF `MessageWindow` that shows the core's `New Chat` label (every shell message-box call site uses it), and a UI request waits 10 minutes. Witnessed in the real window for `+ new`, the `Plato: New Chat` menu command, and Cancel (which left the conversation intact); `packages/vs/test/newchat.test.mjs` pins the host side and was falsified twice. Evidence: `C:\src\plato-vs-field\evidence\newchat\`. **The parity checklist is complete except the two deferred items.** **M4 is COMPLETE. M5 (Release) is next.** The platform
+  facts, the two extension models, the Credential Manager choice, and the open Marketplace
+  questions are in D49cf. **Release state:** CLI 0.1.4 and VS Code extension 0.26.7 were released
+  from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged and deleted. The active
+  Visual Studio branch is `vs/m2` (bundle `C:\src\vs-m4b.bundle`). **The Windows machine has VS 2026 18.11.1 Community with the
+  extension workload, but Microsoft supports VS 2026 on Windows 11 only; the final acceptance
+  belongs on Windows 11.** The code travels by SSH bundle because SMB guest logons are blocked.
+  The shim proof lives in `packages/vs/host/` and `packages/vs/test/spike.mjs`. The CLI state below
+  is unchanged and remains the current release record.
 
 - **Phase 2 is OPEN: the next release is an npm CLI (2026-10-21).** The extension is live, and the
   founder has opened phase 2. The CLI is a first-class host over the same core, not an afterthought.

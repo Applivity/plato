@@ -54,6 +54,18 @@ describe('McpServer over real stdio', () => {
     }
   }, 20_000);
 
+  it('rejects start instead of crashing when the command cannot spawn', async () => {
+    // M4a (D49ci): a bad `command` in ~/.plato/mcp.json used to emit an
+    // unhandled `error` event on the child process, which killed the whole
+    // Node sidecar. The handshake must reject, so the host can say the server
+    // failed and carry on with the other tools.
+    const srv = new McpServer('missing', {
+      command: 'plato-no-such-command-9f3a',
+    });
+    await expect(srv.start(5_000)).rejects.toThrow();
+    srv.stop();
+  }, 10_000);
+
   it('rejects tool calls when the tool reports an error', async () => {
     const srv = new McpServer('fake', {
       command: process.execPath,

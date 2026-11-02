@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "vscode": ["./host/shim/vscode.ts"]
+    },
+    "types": ["node"]
+  },
+  "include": ["host/**/*.ts", "../vscode/src/**/*.ts"]
+}

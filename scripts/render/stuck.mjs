@@ -36,7 +36,10 @@ const REPEAT = {
   title: 'Plato is stuck',
   lead: 'It has made the same call 5 times and got the same answer every time:',
   call: 'running pnpm build',
-  help: 'Repeating it will only give the same answer. Tell Plato what to do instead, or press Stop and rephrase your request.',
+  // M4a: the host now sends the FULL core copy, including the sentence that
+  // says what Keep going does. The fixture used to stop at the first way out,
+  // so the card could lose the second one and this suite would not see it.
+  help: 'Repeating it will only give the same answer. Tell Plato what to do instead, or press Stop and rephrase your request. Keep going resumes the run, and Plato will not ask about this same call again.',
 };
 
 const NOPROGRESS = {
@@ -55,8 +58,15 @@ const NOPROGRESS = {
   await p.waitForTimeout(250);
   const t = await cardText(p);
   check('the stuck card is drawn', t.length > 0, t);
+  const heading = await p.evaluate(() => {
+    const h = document.querySelector('.card.stuck-card h3');
+    return h ? h.textContent : '';
+  });
+  check('the title is the product copy', heading === 'Plato is stuck', heading);
   check('it names the call, not just "the same call"', /pnpm build/.test(t), t);
   check('it says how many times', /5 times/.test(t), t);
+  check('it says what Keep going does as well as what it says',
+    /Keep going resumes the run/.test(t) && /will not ask about this same call again/.test(t), t);
   // The call gets its own element, so "which call" is answerable at a glance.
   const callLine = await p.evaluate(() => {
     const c = document.querySelector('.card.stuck-card .stuck-call');

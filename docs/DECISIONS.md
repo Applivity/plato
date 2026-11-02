@@ -4844,9 +4844,164 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49cj — New Chat asks in a real dialog, and a UI request waits for the person (2026-10-26).**
+
+**Why.** Gap 16 was the last partial parity row. In the Visual Studio host, `+ new`
+posts `newChat`; the shared host asks
+`showWarningMessage(..., { modal: true }, 'New Chat')`; the shim maps that to
+`ui.message`; the C# shell showed it with `VsShellUtilities.ShowMessageBox`. On VS 2026
+18.11.12315 that call **blocked the UI thread and never created a window**. The sidecar
+logged `ui.message timed out after 30000 ms`, nothing appeared on screen, the conversation
+was not cleared, and the UI thread stayed inside the call until the process was killed —
+inside that window, DTE calls were rejected with `RPC_E_CALL_REJECTED` and even `Quit`
+could not run. An instrumented build logged `ui.message: showing` and never reached
+`answered`; a scan of every top-level window on the session-2 desktop found no dialog.
+`ui.inputBox`, which is a WPF `ShowDialog`, worked in the same build, so the fault was the
+shell box and not the joinable-task path.
+
+**The rule.** `MessageWindow` is a WPF dialog in `Native/Dialogs.cs`, built like the quick
+pick and input box, and it shows the caller's own action labels (`New Chat`) plus Cancel,
+or a single OK when there is no action. It returns the label of the button that was
+pressed. **All four** `VsShellUtilities.ShowMessageBox` call sites use it — the `ui.message`
+handler, two error boxes, and the "open a solution or a folder" notice — because the API
+hangs in this build, not only for New Chat. No copy moves out of core; the message and the
+label still come from the shared host.
+
+**A UI request now waits ten minutes, not thirty seconds.** A modal that expires under the
+person leaves a control that does nothing when it is finally pressed: the answer arrives
+with no request to receive it (the same build showed `response for an unknown request id`).
+`protocol.ts` gives `ui.*` ten minutes, `secrets.*` the plan's 30 seconds, everything else
+ten seconds; the menu command's outer wait matches at ten minutes, because New Chat and Set
+API Key both wait for a person.
+
+**Verified.** `packages/vs/test/newchat.test.mjs` drives the host directly: a cancel leaves
+the log, the title and History untouched; an answer asks first with the exact core payload
+(`kind: warning`, the message, `actions: ['New Chat']`), then archives the live
+conversation, clears the log, resets the title and tells the page to start empty. It was
+**falsified twice** on the compiled host — a changed label failed "the confirmation carries
+the core copy", and removing the archive failed "the conversation is in History". **In the
+real VS window:** `+ new` and the `Plato: New Chat` menu command each raised the dialog; each
+was left open 35–59 seconds (past the old 30-second timeout) and then answered, the
+conversation cleared, and the answer produced a new 142-entry archive; **Cancel** left the
+139-entry log, its title and History intact; the host log has no timeout and no error. The
+C# shell has no automated test — the window is its witness. Evidence:
+`C:\src\plato-vs-field\evidence\newchat\`.
+
+---
+
+**D49ck — Visual Studio 0.1.0 ships unsigned; signing follows the release (2026-10-26).**
+
+**Why.** A code-signing certificate proves who published the VSIX. It does not change what
+the extension does, and it is not required to publish. The founder's decision on
+2026-10-26 is to release 0.1.0 unsigned rather than wait for procurement and identity
+verification, which take days to weeks.
+
+**What this costs, stated plainly.** On a machine with default policy, Visual Studio and
+Windows may show the publisher as unverified; some organisations block unsigned
+extensions outright. The clean-VM acceptance run must record the exact wording a default
+Windows 11 machine shows, so the limitation is known rather than assumed.
+
+**What comes next.** Azure Trusted Signing is the intended route: identity verified through
+Microsoft, about $10 a month, and a certificate Windows already trusts. It is a release
+step for the next version, not a reason to hold 0.1.0.
+
+---
+
+**D49cl — The Visual Studio install target uses the stable extension API (2026-10-28).**
+
+**Why.** The first Marketplace upload was rejected: *"Your extension has specified an API
+version of 18.0 as the lower bound in its installation target. This API version is
+experimental, and not allowed in the Marketplace at this time. Please change your
+installation target to use the latest stable API version 17.14."* Microsoft's VS 2026
+compatibility model is explicit: Visual Studio 2026 runs extensions built against API 17.x,
+and compatibility is decided from the lower bound alone.
+
+**The rule.** The three `InstallationTarget` entries (Community, Pro, Enterprise) use
+**`[17.14,)`**: the latest stable API, which is what the Marketplace accepts and what
+Visual Studio 2026 runs.
+
+**The consequence, stated honestly.** Under the new model an upper bound no longer excludes
+a host, so the manifest cannot restrict itself to Visual Studio 2026. Visual Studio 2022
+17.14+ is therefore *allowed* to install the 0.1.0 VSIX; it has never been tested there and
+remains M6. The listing, the README, and the support answer all say Visual Studio 2026 on
+Windows 11, which is the supported combination.
+
+---
+
+**D49cm — The Marketplace identity is `applivity.plato-vs` (2026-10-28).**
+
+**Why.** The Marketplace's Internal Name becomes the permanent item URL and cannot be edited
+after the first publish. The first two attempts were rejected as "contains non-permitted
+characters"; the characters were never the problem — the field had a **leading space**. With
+the space removed, `plato-vs` is accepted, hyphen and all.
+
+**The rule.** Publisher `applivity`; internal name **`plato-vs`**; the VSIX `Identity Id` is
+**`applivity.plato-vs`**, so the package, the VSIX ID and the URL agree:
+`https://marketplace.visualstudio.com/items?itemName=applivity.plato-vs`. Published
+2026-10-28 as 0.1.0.
+
+**The consequence.** Every later version must carry the same identity; a build with a
+different VSIX ID reads as a different extension to the Marketplace and to Visual Studio's
+update path. A name that looks rejected is worth checking for invisible characters before
+the package is rebuilt.
+
+---
+
+**D49cn — Visual Studio 2022 17.14 is supported, and the shell's own library decides the
+binding (2026-10-28).**
+
+**Why.** The install range `[17.14,)` (D49cl) admitted Visual Studio 2022, and the C# was
+already compiled against the 2022 17.14 SDK, but nobody had run the package there. The
+first field run on Community 17.14.37806.7 went most of the way: the package installed,
+its four commands registered, the tool window drew in both themes, the bundled
+`sidecar\node.exe` started — and the page stayed at "loading…". The extension log named
+the cause: `stdout reader stopped: Method not found:
+'System.String Newtonsoft.Json.Linq.JToken.ToString(Newtonsoft.Json.Formatting)'`.
+Visual Studio supplies Newtonsoft.Json and resolves an extension's reference to its own
+copy whatever version the extension was compiled against: 2022 loads **13.0.3**, 2026
+loads **13.0.4**. 13.0.4 added the one-argument `ToString(Formatting)`; the compiler had
+picked it; on 13.0.3 the call cannot bind, and the exception escaped the message handler
+and stopped the stdout reader on the first message from the sidecar.
+
+**The rule.** The project references the **oldest** Newtonsoft.Json the supported shells
+load — 13.0.3 — so the compiler binds the two-argument overload that exists in both. A
+newer reference is what broke it, and any future call to a newer-only API is now a compile
+error rather than a field failure.
+
+**The consequence.** 0.1.1 runs a complete scripted round trip in 2022 17.14 and in 2026
+18.11 from one package; the transcripts and screenshots are in
+`C:\src\plato-vs-field\evidence\m6-2022\`. The install range is unchanged, and the README
+now says: Plato runs in Visual Studio 2022 17.14 or later, including Visual Studio 2026,
+on 64-bit Windows.
+
+**The build trap, recorded because it cost a round.** Changing the reference is not enough:
+`package-vsix.ps1` did not restore, so an incremental tree kept the 13.0.4 resolution,
+built a VSIX that still failed in 2022, and the failure looked like the fix had not worked.
+The script now passes `/restore` to MSBuild. A package built by that script from a clean
+tree is the one to ship.
+
+---
+
+**D49co — a screenshot is captured at display width, in a window sized to its slot
+(2026-10-29).**
+
+**Why.** The website asked for 1000×500 images. The first set was captured in a large
+window (1872×912, the Marketplace size) and scaled down, and the website rejected it: UI
+text fell to about 8px and stopped being legible. The second set was captured in a Visual
+Studio window **sized to 1000×500** (Plato panel 590px, editor 370px) at 1x, and all six
+images render at about 13.5px. Nothing else changed. The difference was the capture, not
+the compression.
+
+**The rule.** Decide the width the image will be shown at, size the window to it, and
+capture at 1x. Do not capture large and scale down. Two sets now exist and they are not
+interchangeable: the Marketplace listing shots stay 1872×912, and the website copies stay
+1000×500. The evidence and the capture record are in
+`C:\src\plato-vs-field\evidence\m6-shots\`.
+
+---
+
 **D49cp — the repository is public, under the `Applivity` organization (founder, 2026-11-02).**
-Numbering continues after the Visual Studio series on `vs/m2` (D49cf–D49co), which merges into this
-branch later.
+Numbering continues after the Visual Studio series on this branch (D49cf–D49co).
 
 **The change.** The founder moved the repository to the `Applivity` organization and made it public.
 The old personal account `applivity-com` is deleted, and its URL returns 404. The canonical remote is
@@ -4869,14 +5024,238 @@ known external exposure (`HcadPublicAndroid-demo`) is outside this repository an
   `docs/LICENSING.md` previously forbade a `repository` field because the target was a private URL;
   that reason is gone.
 - The Visual Studio package gains `<MoreInfo>` in its manifest — the only link the Marketplace
-  listing renders. The extension package gains `repository`, which the VS Code listing shows as
-  Repository.
+  listing renders — and the version moves to 0.1.4. The VS Code package gains `repository`, which
+  the listing shows as Repository.
 - "Open source" is now accurate for the licence (D49bv, Apache-2.0). The rules that forbade the term
   while the source was private no longer apply. The trademark sweep (D16) is still owed before a
   wider public release.
 - Every clone updates its `origin` to the new URL; the old one cannot authenticate.
-- A repository that anyone can read needs a front page, so the root `README.md` now exists and states
+- A repository that anyone can read needs a front page, so the root `README.md` exists and states
   what Plato is, the three hosts, the install commands, and the licence.
+
+---
+
+**D49ci — a bad MCP command is a failed server, not a dead sidecar (2026-10-24).**
+
+**Why.** The M4a field run configured a fake MCP server in `~/.plato/mcp.json`. The command
+path had single backslashes, so JSON parsed them as escapes and the resolved path did not
+exist. `child_process.spawn` emitted `'error'` on the child — and an EventEmitter `error`
+with no listener is an **uncaught exception**, so the whole Node sidecar died. The window
+said *"Plato's agent process stopped. Use a Plato command to restart it."* and the run was
+lost. This is the class M2 fixed for a timed-out UI dialog: a bad input must not take the
+agent down. It is worse here, because the input is a user-editable file that any MCP README
+can be copied into, and the failure looked like Plato crashing rather than a server failing.
+
+**The rule.** `McpServer.start` attaches an `error` listener to the child and races the
+handshake against it. A spawn failure rejects `start()` with the real error and rejects every
+pending call; the handshake timer is cleared on every exit. The host's existing per-server
+`try/catch` turns that into *"MCP <name> failed to start — …"* on the run and
+`tools: 0, error` in Settings, and the run continues with no tools from that server. A dead
+server is reported, never fatal.
+
+**Verified.** `packages/core/test/mcp-client.test.ts` adds a command that cannot spawn and
+asserts `start()` rejects. **Falsified** by removing the listener: the vitest worker died
+with the same uncaught `'error'` event the sidecar did. `packages/vs/test/m4a.test.mjs` adds
+a bad server to a working config and asserts the run completes, the notice names the failure,
+and Settings reports `tools: 0` with a non-empty error. The real-window run reproduced the
+crash on the old build and completed on the fixed VSIX. **Shared core, so the VS Code
+extension and the CLI get the same fix.**
+
+---
+
+**D49ch — the council card renders, a pause line is written once, and the page speaks UTF-8 to the host (2026-10-23).**
+
+**Why.** M3b checkpoint 2a drove Solo, Duo, and Academy through a real Visual Studio 2026 window. The
+feature work needed no new code — the shared host and the unchanged chat HTML carry it — but the
+witness found three defects. Two are in shared code, so the VS Code extension gets the same fixes.
+One is in the Visual Studio bridge.
+
+**1. The council card had never rendered in either host.** The host built the team payload and posted
+it through `send()`, which wraps its argument in `{ type, text }`. The page's `showTeam` reads
+`m.name` and `m.members` at the top level. Every Academy run therefore drew **"Team unnamed"** with
+no rows, since the card was introduced in 0.8.0. Structured payloads (`restore`, `settings`, `queue`)
+are posted flat; the team payload is one of them now. `send()` is for text messages only.
+
+**2. Every pause and resume line appeared twice.** `RunController.onPark` emitted a `notice` on the
+bus AND called `send('notice', line)`. Since D49bz the bus `notice` listener also posts the line, so
+the user saw two "Plato paused at a safe point." rows. The explicit send is removed; the bus notice
+is the one source.
+
+**3. Non-ASCII text from the page reached the host as U+FFFD.** On .NET Framework 4.8,
+`Process.StandardInput` is a StreamWriter with the system ANSI codepage, and
+`ProcessStartInfo.StandardInputEncoding` does not exist there. An em dash in a council role was
+written as byte 0x97; Node's UTF-8 reader reported U+FFFD and the host saved it. The bridge now
+writes the UTF-8 bytes to `StandardInput.BaseStream` itself. This is the Visual Studio shell only.
+Host-to-page text was never affected.
+
+**Verified.** `packages/vs/test/teams.test.mjs` covers the modes, the philosopher's powers, the
+council card payload, both observer notices, and the five-intervention cap. The team-payload
+assertion was falsified by restoring the old envelope, and the pause-line assertion by restoring
+the explicit send; both failed for the expected reason and were restored. The encoding fix is
+witnessed only where it can be: the real window creates a council through the Academy editor, and
+the driver asserts the saved role still contains `— mismatched lists`. `scripts/render/teams.mjs`
+adds the DOM assertions for the lead to run on macOS. Evidence:
+`C:\src\plato-vs-field\evidence\m3b\checkpoint2a\`.
+
+---
+
+**D49cg — an approval card closes when its run ends, and a replayed card is never live (2026-10-23).**
+
+**Why.** The M3b checkpoint 1 witness found three defects that are shared with the VS Code extension:
+a fold rebuilt an answered approval card as live, so clicking it wrote an echo for an answer that
+reached nobody; a run advanced by the queue did not set the page's run UI, so Pause and Cancel were
+hidden even though the run was live; and cancel released the approval resolver but left the card's
+buttons live. These are repairs to the one card lifecycle, not new capability, so they are fixed in
+the shared host and webview and both hosts get them.
+
+**The rules.**
+
+1. Every approval `card-open` writes a `card-done` row beside it on allow, deny, session allow, and
+   cancel. Replay pairs the rows and draws the answered card; a lone old `card-open` replays
+   non-interactive. A late `approve` or `approve-all` is inert: no echo, no closed card, no widened
+   session.
+2. A queue-advanced run posts `queue-run` with the task, and the page sets the same run UI as a
+   user's send, including Pause and Cancel.
+3. Cancel closes the open approval card with the heading "<heading> — cancelled", not "denied",
+   because the user did not answer. The card stays as the record of what was asked.
+
+**Verified.** `packages/vs/test/approval-lifecycle.test.mjs` drives the real host through a
+`/compact` fold, late clicks, a cancelled card, and a queued pause/resume/cancel; it was falsified
+three times. `scripts/render/runlifecycle.mjs` asserts the DOM rules on macOS. All three defects were
+re-verified in a real Visual Studio 2026 window; evidence is
+`C:\src\plato-vs-field\evidence\m3b\checkpoint1-fix\`.
+
+---
+
+**D49cf — Phase 3 opens: Visual Studio 2026 is the next host, and the Windows repair comes first (founder, 2026-10-23).**
+
+**The instruction.** The founder set full Visual Studio support as the next goal and approved the
+R&D recommendation. The plan is [`packages/vs/PLAN.md`](../packages/vs/PLAN.md). This entry records
+the decisions that bind the work; the plan carries the milestones, the parity checklist, and the
+verification.
+
+**The decisions.**
+
+1. **Target Visual Studio 2026 first.** Visual Studio 2022 is not in v1. The extension model is
+   backward compatible, so a later 2022 pass is a compatibility test, not a second codebase.
+2. **Full parity before public publish.** The founder chose parity over an early release. Internal
+   signed builds are allowed; the Marketplace listing waits until the parity checklist is complete.
+3. **Shim first, bridge as the fallback.** The existing VS Code IDE host and chat UI are reused. If
+   the shim cannot reach parity, use the conventional bridge over the CLI engine. No functionality
+   is dropped to make the shim work.
+4. **Windows repair first.** The shell and background-shell tools call `/bin/bash` directly, MCP
+   commands need `.cmd` resolution, and process cleanup uses POSIX process groups. This is a repair
+   of the shipped VS Code extension and CLI on Windows, and a prerequisite for Visual Studio. It is
+   M0; the extension does not start until M0 passes.
+5. **Environment.** Development is on a full Windows machine with Visual Studio 2026. The repository
+   is shared over SMB, but the working tree is a local clone. SMB is not a build directory: pnpm,
+   MSBuild, file watchers, file locks, and long paths are all unreliable there.
+6. **Publishing.** Visual Studio Marketplace after parity, under the `applivity` publisher. A signed
+   VSIX is used for internal builds. The exact signing method, item id, and privacy policy are open.
+
+**The platform facts that shape the design.**
+
+- **Visual Studio 2026 is GA.** It shipped as 18.0 on 2025-11-11; the current build is 18.11.1
+  (2026-10-20). The VS 2022 extensibility documentation still applies. Extensions are VSIX v3,
+  authored in C#/VB/C++.
+- **Visual Studio has no JavaScript or Node extension host.** A web UI must live inside a .NET
+  extension. WebView2 is the practical way to render it.
+- **There are two extension models.** The classic in-process VSPackage model uses .NET Framework
+  and WPF and can host WebView2. The newer out-of-process VisualStudio.Extensibility model uses
+  .NET 8 and Remote UI; its core API has been stable since 17.9, but the landing page still calls
+  the SDK a preview, and WebView2 hosting is not confirmed there. The HTML UI points to the
+  **in-process** model for v1.
+- **There is no secret store like VS Code's SecretStorage.** Use Windows Credential Manager, or
+  DPAPI. Never the Settings store and never the `.vs` folder.
+- **There is no WebviewPanel equivalent.** Use a dockable tool window. A custom editor tab is
+  heavier and is not needed.
+- **There is no free theme system like `--vscode-*`.** Read Visual Studio colors with
+  `VSColorTheme.GetThemedColor` and send them to the page as CSS custom properties.
+- **Node's single-executable format is still stability 1.1** and needs a temp-file extraction step
+  for native modules. Plato has no native modules, so ship the standard `node.exe` plus one bundled
+  CJS file. Do not use SEA or `node-api-dotnet` in v1.
+- **Marketplace policy requires disclosure of executable code**, a privacy policy, HTTPS, and no
+  credentials in the listing. The bundled Node runtime must be named in the listing.
+
+**The architecture.**
+
+```
+Visual Studio 2026
+  └─ Plato VSIX (C#, in-process VSPackage, WPF)
+       ├─ tool window + WebView2 → existing chatHtml()
+       ├─ native: theme, Credential Manager, dialogs, open file, solution root
+       └─ newline-delimited JSON over stdio
+            ↕
+       Node 22 sidecar
+            ├─ vscode API shim
+            ├─ existing IDE host (packages/vscode/src/extension.ts, unchanged)
+            └─ @applivity/plato-core (unchanged)
+```
+
+The shim implements only the ~25 `vscode` members the extension uses. Settings, sessions, titles,
+folding, attachments, card copy, and the edge cases the field tests found stay in one place. The
+chat UI does not change: C# injects a small `acquireVsCodeApi` adapter and a WebView2 message
+bridge before the page script runs. The render harness already proves this pattern by faking
+`acquireVsCodeApi`. The agent runs in a separate process, so a sidecar crash does not stop Visual
+Studio.
+
+**The Windows repair, in specific terms.** One `shellPlatform.ts` answers which program runs a
+command: `/bin/bash -c` on POSIX, `%ComSpec% /d /s /c` on Windows. Process trees are killed with
+`taskkill /T /F` on Windows. MCP commands resolve `.cmd` shims. On Windows, `plan` **denies** every
+shell command and draws no card, because asking could let a write run under plan's name; `edit`
+**asks** for every shell command, with no read-only auto-approval; `auto` is unchanged. The bash
+read-only tokenizer does not describe `cmd.exe`, and a wrong "read-only" answer is a security
+defect. POSIX behavior does not change. A Windows allowlist is a later security project.
+
+**The gates.** M1 proves the shim on macOS with a fake panel and a scripted run. M2 proves the shell
+in a real Visual Studio 2026 window. If the shim cannot pass M1, switch to the bridge before
+building parity. If the shell cannot host the page and the sidecar in M2, fix the shell before
+adding features.
+
+**Ownership.** The **Plato CLI worker** (the tab on the Mac) writes the M0 code and its macOS tests,
+because M0 is shared-core and CLI work. The **Windows machine worker** verifies M0 on Windows and
+owns M2, because it has Visual Studio 2026 and the Windows test loop. M2 may start in parallel with
+M0: the first shell run uses `write_file` and `read_file`, not the shell tool. No parity and no
+public release until M0 is green.
+
+**M1 passed (2026-10-23).** The existing VS Code host now runs outside VS Code through
+`packages/vs/host/shim/vscode.ts`. The spike bundles the compiled host with `vscode` aliased to the
+shim, starts `activate()` with a fake panel, and drives three scripted runs through the real host:
+a `write_file` with the approval card and the file on disk; `/undo` removing the file Plato created;
+a question card and a mode request, with the picker told `auto` and the run continuing. It persists
+the mode in `workspaceState`, writes three transcripts under `~/.plato/runs`, and disposes the panel
+cleanly. **The strict alias check is clean:** the whole host type-checks against the shim, so a
+missing API member is a compile error. Core is 886/886, CLI is 175/175, and all 25 render suites
+pass. **The bridge is not needed for the shim gate**; it remains the fallback if a later parity item
+cannot be expressed through the shim. The proof is `packages/vs/test/spike.mjs`.
+
+**M0 and M2 (2026-10-23).** M0 is **DONE and verified on Windows**: Mac core 908/1 skipped and
+CLI 180; Windows core 907/2 skipped and CLI 177/3 skipped; a real `cmd.exe` command, a background
+shell read and killed, and the fake MCP `echo` tool passed with 5/5 transcript checks. The first
+Windows run found 21 core and 3 CLI failures (POSIX command strings and file-mode assumptions); all
+were fixed, and `resolveInRoot` now returns forward slashes on Windows. **M2 is PASSED
+(2026-10-23):** the C# shell, the WebView2 tool window, the sidecar, and the VSIX were built and
+witnessed in a real Visual Studio 2026 18.11.1 window. A scripted `write_file` run drew the approval
+card and wrote the file, the transcript landed in `~/.plato`, light and dark screenshots exist, and
+the sidecar exits when Visual Studio closes. Commit `5d4cdcc` is on `vs/m2`; the bundle is
+`C:\src\vs-m2.bundle`. **VS 2026 18.11.1 Community is installed on Windows 10; Microsoft supports
+VS 2026 on Windows 11 only, so the final acceptance belongs on Windows 11.** CLI 0.1.4 and VS Code
+extension 0.26.7 were released from `main` at `1696dd2`; `plato-bugs` and `windows/m0` are merged
+and deleted.
+
+**Open items.** The Marketplace VSIX size limit, signing requirement, and review time; the item id
+(`applivity.plato-vs` is the working name); the privacy policy; diagnostics after a write (the
+Error List API for third parties is not clearly documented; report "not checked" if unavailable);
+ARM64; a shared settings store with the CLI; and a Chats tree (the in-panel History page is enough
+for v1).
+
+**Files:** `packages/vs/PLAN.md` (the plan), `docs/HANDOFF.md` (current state), `docs/PROGRESS.md`
+(the phase row and change log), and the future `packages/vs/src/` and `packages/vs/host/`.
+
+**Verification:** the plan's milestone exit criteria; core and render suites on macOS; a Windows CI
+job; shim contract tests; a scripted run through the sidecar; a real Visual Studio window driven by
+FlaUI plus the WebView2 DevTools protocol, with screenshots and transcript witnesses; and a clean
+Windows VM install with no Node installed.
 
 ---
 
@@ -7108,11 +7487,10 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
   and purge history FIRST.
 - License decision (D19) — **DECIDED 2026-10-20 (D49bv): Apache-2.0.** The
   repository was private until 2026-11-02, when the founder made it public
-  under `Applivity` (D49cp). The checklist and the website wording are in
-  `docs/LICENSING.md`.
+  under `Applivity` (D49cp). The checklist and the website wording are in `docs/LICENSING.md`.
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
 - Correction (verified during setup, now historical): GitHub account
   `applivity-com` was a personal user account, not an Organization. That
   account is deleted and the repository lives under the `Applivity`
-  organization at github.com/Applivity/plato, public since 2026-11-02
-  (D49cp). Automation tokens need the `repo` scope for repo creation and push.
+  organization at github.com/Applivity/plato, public since 2026-11-02 (D49cp). Automation tokens need the `repo`
+  scope for repo creation and push.

@@ -65,6 +65,22 @@ export class McpServer {
     proc.stderr.on('data', () => {
       // Server diagnostics go nowhere by design (noisy daemons).
     });
+    // M4a (D49ci): a command that cannot spawn emits `error` on the child, and
+    // an EventEmitter `error` with no listener is an uncaught exception — it
+    // killed the Node sidecar outright. The handshake was waiting on a pipe
+    // that would never answer, so the run died with no card and no message.
+    // Reject the handshake instead; the host turns that into a notice and the
+    // run continues with no tools from this server.
+    const failed = new Promise<never>((_, reject) => {
+      proc.on('error', (error: Error) => {
+        for (const p of this.pending.values()) {
+          p.reject(error);
+        }
+        this.pending.clear();
+        this.proc = null;
+        reject(error);
+      });
+    });
     proc.on('close', () => {
       for (const p of this.pending.values()) {
         p.reject(new Error(`mcp server ${this.serverName} exited`));
@@ -73,20 +89,25 @@ export class McpServer {
       this.proc = null;
     });
 
-    const timer = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('mcp handshake timeout')), timeoutMs),
-    );
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const timer = new Promise<never>((_, reject) => {
+      timerId = setTimeout(
+        () => reject(new Error('mcp handshake timeout')),
+        timeoutMs,
+      );
+    });
     try {
       await Promise.race([this.call('initialize', {
         protocolVersion: '2024-11-05',
         capabilities: {},
         clientInfo: { name: 'plato', version: '0.1.0' },
-      }), timer]);
+      }), timer, failed]);
       // Notification: no response expected.
       this.notify('notifications/initialized');
       const res = (await Promise.race([
         this.call('tools/list', {}),
         timer,
+        failed,
       ])) as { tools?: unknown[] };
       for (const t of res.tools ?? []) {
         const rec = t as Record<string, unknown>;
@@ -105,7 +126,7 @@ export class McpServer {
         });
       }
     } finally {
-      clearTimeout(undefined as unknown as ReturnType<typeof setTimeout>);
+      if (timerId !== undefined) clearTimeout(timerId);
     }
   }
 

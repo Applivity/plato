@@ -149,6 +149,34 @@ const glyph = (p) => p.evaluate(() => {
   });
   check('clicking it opens the command menu, with rows in it', open > 0, open);
 
+  // D49cf M4b: the menu is the canonical five, with the usage a user types, and
+  // typing a prefix filters it. The host test pins the payload; this pins what
+  // the shared page does with it.
+  const listed = await p.evaluate(() => Array.from(
+    document.querySelectorAll('.popover.open[data-trigger="q"] .popover-row'),
+  ).map((r) => ({
+    id: r.dataset.id || '',
+    usage: (r.querySelector('.pr-meta')?.textContent || '').trim(),
+  })));
+  const wanted = SLASH_META_MSG.commands.map((c) => ({ id: c.id, usage: c.usage }));
+  check('the menu lists all five canonical commands with their usage',
+    JSON.stringify(listed) === JSON.stringify(wanted), { listed, wanted });
+
+  await p.evaluate(() => {
+    const q = document.getElementById('q');
+    q.value = '/q';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(220);
+  const filtered = await p.evaluate(() => Array.from(
+    document.querySelectorAll('.popover.open[data-trigger="q"] .popover-row'),
+  ).map((r) => ({
+    id: r.dataset.id || '',
+    usage: (r.querySelector('.pr-meta')?.textContent || '').trim(),
+  })));
+  check('typing /q filters the menu to the queue command',
+    filtered.length === 1 && filtered[0].id === 'queue' && filtered[0].usage.startsWith('/queue'),
+    filtered);
   await p.evaluate(() => document.getElementById('cmds').click());
   await p.waitForTimeout(220);
   const closed = await p.evaluate(() =>

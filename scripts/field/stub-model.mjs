@@ -21,17 +21,40 @@
  *      transcript says Plato did.
  *
  * Control endpoints (used by the runner, never by Plato):
- *   POST /__script  { steps: [...] }   set the script; resets the cursor
+ *   POST /__script  { steps: [...], observers: [...] }
+ *                                      set the script and the observer replies;
+ *                                      resets both cursors
  *   POST /__reset                      clear the script and the log
  *   GET  /__log                        the request log as JSON
+ *
+ * D49cg follow-on (M3b checkpoint 2): an observer turn also carries no tools.
+ * It used to share the auxiliary path and always received the title placeholder,
+ * which is not JSON, so no observer could ever be scripted into an action. The
+ * observer has its OWN script now, consumed independently: `observers` is a list
+ * of actions such as `{"action":"guidance","message":"..."}`, a bare string, or
+ * `{"action":"noop"}`. An empty list answers noop. The agent's `steps` cursor is
+ * untouched, so rule 1 still holds for both.
  */
 import { createServer } from 'node:http';
 
 const PORT = Number(process.env['PLATO_STUB_PORT'] ?? 4599);
 
+/**
+ * The model list `/models` returns. The default is the single model every
+ * existing case assumes. A caller that needs a different list — the M3a
+ * settings run needs a reasoning-capable name — sets PLATO_STUB_MODELS.
+ */
+const MODELS = (process.env['PLATO_STUB_MODELS'] ?? 'stub-model')
+  .split(',')
+  .map((id) => id.trim())
+  .filter((id) => id.length > 0);
+
 /** Cursor into the current script, plus the log of what we were asked. */
 let steps = [];
 let cursor = 0;
+/** D49cg follow-on: the observer's own script, consumed by its own cursor. */
+let observerSteps = [];
+let observerCursor = 0;
 let log = [];
 /** D49bo: how long `/models` is held before it answers. See `/__script`. */
 let modelsDelayMs = 0;
@@ -116,6 +139,8 @@ const server = createServer(async (req, res) => {
   if (url === '/__script' && req.method === 'POST') {
     const body = await readBody(req);
     steps = Array.isArray(body.steps) ? body.steps : [];
+    observerSteps = Array.isArray(body.observers) ? body.observers : [];
+    observerCursor = 0;
     // D49bo: how long to hold the model-discovery response. The host asks for
     // this while PREPARING a run — before it is `running` — so stalling it widens
     // the window in which a control press can arrive before the run has started.
@@ -129,6 +154,8 @@ const server = createServer(async (req, res) => {
   if (url === '/__reset' && req.method === 'POST') {
     steps = [];
     cursor = 0;
+    observerSteps = [];
+    observerCursor = 0;
     log = [];
     return json(res, 200, { ok: true });
   }
@@ -146,7 +173,9 @@ const server = createServer(async (req, res) => {
       await new Promise((r) => setTimeout(r, modelsDelayMs));
       if (res.writableEnded || res.destroyed) return;
     }
-    return json(res, 200, { data: [{ id: 'stub-model', object: 'model' }] });
+    return json(res, 200, {
+      data: MODELS.map((id) => ({ id, object: 'model' })),
+    });
   }
 
   if (!url.endsWith('/chat/completions') || req.method !== 'POST') {
@@ -178,6 +207,34 @@ const server = createServer(async (req, res) => {
       const text = String(m.content ?? '');
       return { len: text.length, head: text.slice(0, 4000), masked: text.includes('«masked:') };
     });
+  const systemText =
+    typeof messages[0]?.content === 'string' && messages[0].role === 'system'
+      ? messages[0].content
+      : '';
+  // M4a: an image rides the opening user turn as a parts array (D49n). The log
+  // records whether one arrived and its sniffed MIME, because a test that only
+  // sees the attach-result has proved the PICKER, not that the model was sent
+  // the bytes. Additive fields: a caller that does not read them is unaffected.
+  const partsOf = (m) =>
+    Array.isArray(m?.content) ? m.content : [];
+  const imageUrls = messages
+    .flatMap((m) => partsOf(m))
+    .filter((p) => p && (p.type === 'image_url' || p.type === 'image'))
+    .map((p) => String(p.image_url?.url ?? p.source?.data ?? ''));
+  const imageMimes = imageUrls
+    .map((url) => {
+      const match = /^data:([^;]+);base64,/.exec(url);
+      return match ? match[1] : 'unknown';
+    });
+  const userTexts = messages
+    .filter((m) => m && m.role === 'user')
+    .map((m) => {
+      if (typeof m.content === 'string') return m.content;
+      return partsOf(m)
+        .filter((p) => p && p.type === 'text')
+        .map((p) => String(p.text ?? ''))
+        .join('\n');
+    });
   log.push({
     at: new Date().toISOString(),
     model: body.model,
@@ -185,10 +242,32 @@ const server = createServer(async (req, res) => {
     toolNames: offered > 0 ? body.tools.map((t) => t?.function?.name) : [],
     messages: messages.length,
     toolResults,
-    systemChars: typeof messages[0]?.content === 'string' && messages[0].role === 'system' ? messages[0].content.length : 0,
+    // M4a: what the opening user turn actually carried.
+    userTexts,
+    imageParts: imageUrls.length,
+    imageMimes,
+    systemChars: systemText.length,
     streaming: body.stream === true,
     consumedStep: null,
   });
+
+  // Observer call (no tools): played from its own script so a case can make a
+  // philosopher steer the run. Its cursor is separate from the agent's — see
+  // rule 1 at the top of this file.
+  if (offered === 0 && systemText.startsWith('You are the observer')) {
+    log[log.length - 1].consumedStep = 'observer';
+    const step =
+      observerCursor < observerSteps.length
+        ? observerSteps[observerCursor]
+        : { action: 'noop' };
+    observerCursor += 1;
+    const text = typeof step === 'string' ? step : JSON.stringify(step);
+    if (body.stream === true) return textFrames(res, text, 'stop');
+    return json(res, 200, {
+      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 10, completion_tokens: 10 },
+    });
+  }
 
   // Auxiliary call (no tools): the title/idle path. Answer and do not touch the
   // script — see rule 1 at the top of this file.

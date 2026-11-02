@@ -1,0 +1,76 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <UseWPF>true</UseWPF>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>Plato.Vs</AssemblyName>
+    <RootNamespace>Plato.Vs</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64</Platforms>
+
+    <!-- VSIX settings (from the installed Visual Studio 2026 VSIX template). -->
+    <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectCapability Include="CreateVsixContainer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="18.9.820" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <!-- The shell supplies Newtonsoft.Json at run time; the VSIX does not ship it.
+         Visual Studio 2022 loads 13.0.3, which lacks the one-argument
+         JToken.ToString(Formatting) that 13.0.4 added. Compiling against 13.0.3
+         makes the compiler bind the overload that exists in both versions. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <VSCTCompile Include="Commands\PlatoCommands.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="source.extension.vsixmanifest">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </None>
+    <Content Include="sidecar\**\*" CopyToOutputDirectory="PreserveNewest" IncludeInVSIX="true" />
+    <Resource Include="Resources\icon.png" />
+
+    <!-- Listing and licence material. The repository root has the only copies;
+         these entries place them at the VSIX root, as the VS Code extension
+         does, rather than copying them. -->
+    <Content Include="..\..\..\..\LICENSE">
+      <Link>LICENSE</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\..\NOTICE">
+      <Link>NOTICE</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\..\THIRD-PARTY-NOTICES.md">
+      <Link>THIRD-PARTY-NOTICES.md</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\README.md">
+      <Link>README.md</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+    <Content Include="..\..\..\vscode\media\icon.png">
+      <Link>icon.png</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+</Project>

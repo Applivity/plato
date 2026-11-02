@@ -129,8 +129,7 @@ is at [plato.applivity.com/privacy](https://plato.applivity.com/privacy).
 ## Status
 
 **Pre-release.** The three hosts version independently and move at their own
-pace; the badges above show what is live. The Visual Studio host is built on the
-`vs/m2` branch and merges here after review.
+pace; the badges above show what is live.
 
 ## Repository layout
 
@@ -138,6 +137,7 @@ pace; the badges above show what is live. The Visual Studio host is built on the
 packages/core     the engine — agent loop, tools, providers, MCP client
 packages/vscode   the VS Code extension shell and its webview
 packages/cli      the terminal host
+packages/vs       the Visual Studio extension (C#, WebView2, Node sidecar)
 docs              decisions, progress, and handoff notes
 ```
 
@@ -155,8 +155,14 @@ pnpm build
 pnpm test
 ```
 
-The Visual Studio package builds on Windows with MSBuild, from the `vs/m2`
-branch.
+The Visual Studio package builds on Windows with MSBuild:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packages\vs\scripts\package-vsix.ps1
+```
+
+It fetches the pinned Node 22 runtime, compiles the shared shell, bundles the
+sidecar and runs MSBuild with `/restore`.
 
 ## License
 

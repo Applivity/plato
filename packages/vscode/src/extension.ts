@@ -89,6 +89,7 @@ import {
   approvalAllowAll,
   approvalAnswered,
   approvalAnsweredSession,
+  approvalCancelled,
   approvalHeading,
   // D49ba: what a tool is called where the user reads about it.
   toolWordsForView,
@@ -321,7 +322,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
           return;
         }
         const input = await vscode.window.showInputBox({
-          prompt: `${pick} API key (stored in VS Code SecretStorage, never in settings or files)`,
+          prompt: `${pick} API key (stored in the system credential store, never in settings or files)`,
           password: true,
           ignoreFocusOut: true,
         });
@@ -713,6 +714,13 @@ class ChatHost {
   private readonly revealedPaths = new Set<string>();
   private controller = new RunController();
   private pendingApproval: PendingResolve | null = null;
+  /**
+   * D49cg: the open card's own words, kept so its CLOSE can be written into the
+   * log. A `card-open` row with no record of how the card ended is what made a
+   * spent card look live when the log was replayed after a fold.
+   */
+  private pendingApprovalCard: { heading: string; preview: string } | null =
+    null;
   /** D49bc: the run is parked on a reveal card until this is answered. */
   private pendingReveal: PendingResolve | null = null;
   private pendingQuestion: ((answers: string[]) => void) | null = null;
@@ -966,10 +974,24 @@ class ChatHost {
           return;
         }
         if (m.type === 'approve') {
+          // D49cg: an answer with nothing pending is a LATE CLICK on a rebuilt
+          // card. It used to write "[allowed]"/"[denied]" into the conversation
+          // for an answer that reached nobody. The card's own record is closed
+          // when it is answered, so nothing is owed here.
+          if (this.pendingApproval === null) return;
+          const card = this.pendingApprovalCard;
           const resolve = this.pendingApproval;
           this.pendingApproval = null;
+          this.pendingApprovalCard = null;
           const ok = m.value === 'yes';
-          resolve?.(ok);
+          resolve(ok);
+          if (card !== null) {
+            this.push({
+              k: 'card-done',
+              title: approvalAnswered(card.heading, ok),
+              preview: card.preview,
+            });
+          }
           this.push({
             k: 'msg',
             cls: 'you',
@@ -979,6 +1001,11 @@ class ChatHost {
           return;
         }
         if (m.type === 'approve-all' && typeof m.tool === 'string') {
+          // D49cg: a late click must not widen a permission either. The old
+          // path added the session approval before checking that a card was
+          // waiting, so a stale card could silence every future ask.
+          if (this.pendingApproval === null) return;
+          const card = this.pendingApprovalCard;
           // D49p: the webview echoes back the key the card was opened with, so a
           // host-scoped approval is remembered against that host and not the
           // tool as a whole.
@@ -990,7 +1017,15 @@ class ChatHost {
           // The waiting card must resolve too — the loop is blocked on it.
           const resolve = this.pendingApproval;
           this.pendingApproval = null;
-          resolve?.(true);
+          this.pendingApprovalCard = null;
+          resolve(true);
+          if (card !== null) {
+            this.push({
+              k: 'card-done',
+              title: approvalAnsweredSession(card.heading),
+              preview: card.preview,
+            });
+          }
           // D49ba: the key is internal ("web_fetch:example.com") and "approved"
           // had no actor. The notice's real job is to answer "why was there no
           // card?" — and the call it is about is named on the row right below it.
@@ -2560,8 +2595,18 @@ class ChatHost {
   private releaseParkedCards(): void {
     // Unblock a waiting approval, so cancel takes effect now.
     const r = this.pendingApproval;
+    const card = this.pendingApprovalCard;
     this.pendingApproval = null;
+    this.pendingApprovalCard = null;
     r?.(false);
+    // D49cg: the card is CLOSED on screen and in the log, as the question card
+    // already is. Cancel used to release the resolver and leave the buttons
+    // live, so the user could answer a card that belonged to a dead run.
+    if (card !== null) {
+      const title = approvalCancelled(card.heading);
+      this.push({ k: 'card-done', title, preview: card.preview });
+      this.send('approval-done', title);
+    }
     // D49aq: and unblock a waiting QUESTION, which cancel used to miss. The loop
     // awaits the answer with nothing that can interrupt it, so with a question
     // card on screen Cancel did nothing at all — the run stayed blocked until the
@@ -2727,6 +2772,11 @@ class ChatHost {
         kind: p.kind,
         baseUrl: p.baseUrl,
       })),
+      // D37/D44d: the Settings page's Context slider reads `d.compaction`.
+      // This payload used to omit it, so every render fell back to 0.8 and a
+      // stored 0.7 was displayed as 80% while the file held 0.7. The ring read
+      // the same state from `postModelState`; both surfaces now get one value.
+      compaction: this.compactionState(),
       orchestration: {
         mode: vscode.workspace
           .getConfiguration('plato')
@@ -3418,7 +3468,7 @@ class ChatHost {
 
   private async promptForKey(connId: string): Promise<void> {
     const input = await vscode.window.showInputBox({
-      prompt: `${connId} API key (stored in SecretStorage, never displayed)`,
+      prompt: `${connId} API key (stored in the system credential store, never displayed)`,
       password: true,
       ignoreFocusOut: true,
     });
@@ -3512,6 +3562,7 @@ class ChatHost {
     this.pendingAttachments = [];
     this.pendingHistory = null;
     this.pendingApproval = null;
+    this.pendingApprovalCard = null;
     this.pendingStuck = null;
     this.pendingReveal = null;
     this.replyBuffer = '';
@@ -3896,7 +3947,13 @@ class ChatHost {
     const useAcademy = orchestration === 'academy' && team !== null;
     if (useAcademy && team) {
       this.send('notice', `Academy "${team.name || 'unnamed'}" active`);
-      this.send('team', {
+      // D49ch: this payload is NOT a text message, so it must not go through
+      // `send()`. That helper wraps its argument in `{ type, text }`, and the
+      // page reads the team card's name and members at the top level — so every
+      // council run rendered "Team unnamed" with no rows. Structured payloads
+      // (`restore`, `settings`, `queue`) are posted flat; this is one of them.
+      void this.panel.webview.postMessage({
+        type: 'team',
         name: team.name,
         members: team.members.map((m) => ({
           name: m.name,
@@ -4267,11 +4324,11 @@ class ChatHost {
         const line = parked
           ? 'Plato paused at a safe point.'
           : 'Plato resumed.';
-        // The bus notice is what the RECORD keeps and what pushes the scrollback
-        // row; the `send` is what draws it live. Both are needed — the listener
-        // for `notice` writes the log, it does not render.
+        // D49ch: ONE notice. The `notice` listener below both writes the log
+        // and sends the line (D49bz), so the explicit `send` this used to make
+        // drew every pause and resume twice — visible in the real window as two
+        // "Plato paused at a safe point." rows.
         bus.emit({ type: 'notice', runId: this.currentRunId, text: line });
-        this.send('notice', line);
         this.send('pause-state', { parked });
       },
     });
@@ -4686,6 +4743,11 @@ class ChatHost {
     const next = this.queue.shift();
     if (next === undefined) return;
     this.postQueue();
+    // D49cg: the host starts this run, so no `ask` set the page's run UI. Tell
+    // it now, with the task, or Pause and Cancel stay hidden for the whole
+    // queued run and the conversation loses the message that started it.
+    this.push({ k: 'msg', cls: 'you', who: 'You', text: next });
+    this.send('queue-run', next);
     this.startRun(next, {});
   }
 
@@ -4860,15 +4922,20 @@ class ChatHost {
     // card is rebuilt with the same heading the user first read.
     const heading = approvalHeading(req.tool, req.args);
     const allowAll = approvalAllowAll(req.tool, req.host);
+    const preview = req.preview ?? JSON.stringify(req.args).slice(0, 800);
     this.push({
       k: 'card-open',
       tool: req.tool,
-      preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
+      preview,
       heading,
       allowAll,
     });
     return new Promise((resolve) => {
       this.pendingApproval = resolve;
+      // D49cg: kept so the answer, the session approval, or a cancel can write
+      // the card's close next to its open. The pair is what makes a replay
+      // show a spent card as spent.
+      this.pendingApprovalCard = { heading, preview };
       void this.panel.webview.postMessage({
         type: 'approval',
         tool: req.tool,
@@ -4882,7 +4949,7 @@ class ChatHost {
         headingDenied: approvalAnswered(heading, false),
         headingSession: approvalAnsweredSession(heading),
         ...(req.host !== undefined ? { host: req.host } : {}),
-        preview: req.preview ?? JSON.stringify(req.args).slice(0, 800),
+        preview,
       });
     });
   }

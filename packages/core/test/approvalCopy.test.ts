@@ -3,6 +3,7 @@ import {
   approvalAllowAll,
   approvalAnswered,
   approvalAnsweredSession,
+  approvalCancelled,
   approvalHeading,
 } from '../src/runtime/approvalCopy.js';
 
@@ -120,5 +121,19 @@ describe('the answered heading', () => {
     expect(approvalAnsweredSession('Let Plato run this command?')).toBe(
       'Let Plato run this command — allowed for the rest of this session',
     );
+  });
+});
+
+describe('the cancelled heading', () => {
+  it('says the run was cancelled, not that the user denied it', () => {
+    // Every cancel path resolves the card on the user's behalf, so "denied"
+    // would put a decision in the transcript that the user never made.
+    expect(approvalCancelled('Let Plato write a.ts?')).toBe(
+      'Let Plato write a.ts — cancelled',
+    );
+    expect(approvalCancelled('Let Plato write a.ts')).toBe(
+      'Let Plato write a.ts — cancelled',
+    );
+    expect(approvalCancelled('Let Plato write a.ts?')).not.toContain('denied');
   });
 });

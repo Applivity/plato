@@ -18,6 +18,13 @@ secrets.toml
 
 # --- Node / pnpm ---
 node_modules/
+
+# Visual Studio VSIX build outputs and the staged Node sidecar
+packages/vs/src/Plato.Vs/bin/
+packages/vs/src/Plato.Vs/obj/
+packages/vs/src/Plato.Vs/sidecar/*
+!packages/vs/src/Plato.Vs/sidecar/README.md
+.vs/
 .pnpm-store/
 
 # --- TypeScript build output ---
