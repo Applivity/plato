@@ -25,19 +25,18 @@ The Windows machine clones the bare repository to a **local** path, for example
 
 | Branch | Purpose | Owner |
 |---|---|---|
-| `main` | The published truth: CLI 0.1.4 and VS Code extension 0.26.7 at `1696dd2` | founder |
-| `vs/m2` | The active Visual Studio work: C# VSIX shell, WebView2, sidecar, and parity | Windows worker |
+| `main` | The published truth, and the only branch: all three hosts, the engine and the docs | founder |
 
-`windows/m0` and `plato-bugs` are merged and deleted. `vs/m1` is merged into
-`vs/m2`; its remote copy is retired when `vs/m2` is pushed. `vs/m2` is the only
-active work branch.
+`windows/m0`, `plato-bugs`, `vs/m1` and `vs/m2` are merged and deleted.
+**`vs/m2` merged into `main` on 2026-11-02** (59 commits: the C# VSIX shell,
+WebView2, the sidecar and the parity work), and its copies on GitHub and the LAN
+repository were deleted. There are no other branches.
 
 Rules:
 
-- `main` is the only published truth. Both GitHub and the LAN repository point
-  at it.
-- A work branch is temporary. `vs/m2` is the one active exception. It is pushed
-  to both remotes after review and deleted when it reaches `main`.
+- `main` is the only published truth, and the only branch. Both GitHub and the
+  LAN repository point at it.
+- A work branch is temporary: cut it, review it, merge it, delete it.
 - Never edit `main` directly.
 - Each worker works on a branch. The bare repository is the LAN rendezvous.
 - Merge into `main` only after the founder reviews it.
@@ -79,7 +78,7 @@ From the Windows machine:
 cd C:\src
 git clone plato-sync.bundle plato
 cd plato
-git checkout vs/m2
+git checkout main
 git branch -a
 ```
 
@@ -88,7 +87,16 @@ For later updates, create a new bundle on the Mac, copy it over, then:
 ```powershell
 cd C:\src\plato
 git fetch C:\src\plato-sync.bundle "refs/heads/*:refs/remotes/sync/*"
-git merge --ff-only sync/vs/m2
+git merge --ff-only sync/main
+```
+
+Since the repository is public, the simpler path is GitHub directly:
+
+```powershell
+cd C:\src\plato
+git remote set-url origin https://github.com/Applivity/plato.git
+git fetch origin main
+git merge --ff-only origin/main
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
