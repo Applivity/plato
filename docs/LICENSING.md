@@ -63,6 +63,13 @@ under Apache-2.0.
 usually implies that the source is available. The repository opened on
 2026-11-02 (D49cp), so "open source" is accurate now, with no license change.
 
+**But do not claim it yet (founder, 2026-11-02).** The phrase is true; the
+founder chose not to use it, because "open source" invites expectations of a
+community, a contribution process and support that a solo pre-release product
+does not yet meet. The site and both listings say "licensed under the Apache
+License 2.0" and link the source. Claim "open source" when there are community
+contributors, or when the founder decides to invite them.
+
 ## 3. Why this path
 
 - Apache-2.0 is recognized and accepted by enterprises and contributors.
