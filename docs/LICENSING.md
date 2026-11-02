@@ -66,9 +66,13 @@ usually implies that the source is available. The repository opened on
 **But do not claim it yet (founder, 2026-11-02).** The phrase is true; the
 founder chose not to use it, because "open source" invites expectations of a
 community, a contribution process and support that a solo pre-release product
-does not yet meet. The site and both listings say "licensed under the Apache
-License 2.0" and link the source. Claim "open source" when there are community
-contributors, or when the founder decides to invite them.
+does not yet meet. Both listings say "licensed under the Apache License 2.0" and
+link the source. **The website's install note is the exception in flight:** it
+says *"It is open source under the Apache License 2.0 … The licence covers the
+code, not the maturity"*, added under an earlier approval from the founder. The
+founder was asked on 2026-11-02 whether that sentence stays; until the answer is
+recorded here, do not extend the claim to the listings, the README or the About
+line.
 
 ## 3. Why this path
 
