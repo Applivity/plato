@@ -7,6 +7,13 @@
   },
   "description": "An AI coding agent for the terminal that shows its work, lets you steer mid-run, and stops at a safe point.",
   "homepage": "https://plato.applivity.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Applivity/plato.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Applivity/plato/issues"
+  },
   "type": "module",
   "bin": {
     "plato": "dist/cli.js"

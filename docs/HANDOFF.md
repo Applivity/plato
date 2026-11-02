@@ -341,8 +341,9 @@ are now only in PROGRESS.
   offer the tool** — neither can draw a card, and a request that can only be
   refused is a lie.
 - Location: `/Users/ai/Desktop/plato`. Canonical remote
-  `https://github.com/applivity-com/plato` (private, default branch `main`;
-  `applivity-com` is a personal user account, **not** an org).
+  `https://github.com/Applivity/plato` (**public since 2026-11-02**, under the
+  `Applivity` organization, default branch `main`). The earlier `applivity-com`
+  user account and its URL are gone; that path returns 404.
 - Monorepo (pnpm workspaces): `packages/core` — the engine, v0.1.0, **no VS Code
   imports** — `packages/vscode` — the extension shell, **v0.26.6 prepared, 0.26.4 live** — and
   `packages/cli` — `@applivity/plato` `0.1.0`, **built through M5 and publish-ready**
@@ -1403,15 +1404,15 @@ the read-only allowlist (D49an).
   commits.
 - Never send `keystore.properties`, `local.properties`, `.env*`,
   `*.keystore`, or any `.gitignore`d file content to a model.
-- Repo stays private. The license is Apache-2.0 (D49bv). No Marketplace or npm
-  publish before the checklist in `docs/LICENSING.md` is complete. Do not call
-  the product "open source" while the source is private.
+- The repository is public (Apache-2.0, D49bv; public since 2026-11-02, D49cp).
+  "Open source" is now accurate. No Marketplace or npm publish before the
+  checklist in `docs/LICENSING.md` is complete.
 
 ## Key external identities
 
 | Thing | Value |
 |---|---|
-| GitHub org | applivity-com |
+| GitHub org | `Applivity` — repository `Applivity/plato`, public since 2026-11-02 (`applivity-com` deleted) |
 | Marketplace publisher | `applivity` (alias parked: `applivityllc`) |
 | npm org | `applivity` |
 | npm package (built, not published) | `@applivity/plato`, command `plato` (D49bw) |

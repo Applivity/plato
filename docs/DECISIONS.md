@@ -102,14 +102,16 @@ trademark sweep is a pre-release checklist item; domains are optional.
 marketplace publisher `applivity` (verified live; extension ID
 `applivity.plato`); publisher `applivityllc` also registered, kept parked
 as alias (publisher IDs are permanent and cannot be renamed); npm org
-`applivity`.
+`applivity`. *The GitHub namespace changed on 2026-11-02: the repository is
+now `Applivity/plato`, public (D49cp). The Marketplace and npm namespaces are
+unchanged.*
 
 ## Engineering strategy
 
 **D18 — Repository (Q20).** Monorepo named `plato` under `applivity-com`:
 pnpm workspaces + TypeScript project references; `packages/core`,
 `packages/vscode`, `packages/cli` (later). Private until M4; license
-decision at M4 (founder leans open source; Apache-2.0/MIT candidates).
+decision at M4 (founder leans open source; Apache-2.0/MIT candidates). *The repository is now `Applivity/plato`, public since 2026-11-02 (D49cp).*
 Future devs can join without restructuring (add CODEOWNERS/review rules
 then).
 
@@ -4842,6 +4844,42 @@ time, fails the run: that is a malformed server being reported honestly, not a w
 
 ---
 
+**D49cp — the repository is public, under the `Applivity` organization (founder, 2026-11-02).**
+Numbering continues after the Visual Studio series on `vs/m2` (D49cf–D49co), which merges into this
+branch later.
+
+**The change.** The founder moved the repository to the `Applivity` organization and made it public.
+The old personal account `applivity-com` is deleted, and its URL returns 404. The canonical remote is
+now `https://github.com/Applivity/plato`. The move is a rename, not a rewrite: the new remote serves
+`main` at `1696dd2` and `vs/m2` at `b03ad3f1`, the same commits as the local branches, so nothing in
+the history changed.
+
+**The secret audit was required before this, and was run after it (D15).** The rule in the open
+items says a secret sweep must precede any repository visibility change. The founder made the change
+without one, so the sweep was run immediately afterwards against the full history: 383 commits,
+scanned for provider keys, GitHub tokens, AWS keys, private-key blocks, and assigned secret strings.
+Every match is a synthetic test fixture — `sk-plato-invalid-000000`, `sk-live-plato-probe-0001`, and
+a fake PEM block, all in tests. No real credential has ever been in the repository; provider keys go
+to SecretStorage or Windows Credential Manager and never to a file, so there was nothing to leak. The
+known external exposure (`HcadPublicAndroid-demo`) is outside this repository and is unaffected.
+
+**What it changes.**
+
+- Package metadata may now carry `repository`, `homepage` and `bugs` pointing at the public URL.
+  `docs/LICENSING.md` previously forbade a `repository` field because the target was a private URL;
+  that reason is gone.
+- The Visual Studio package gains `<MoreInfo>` in its manifest — the only link the Marketplace
+  listing renders. The extension package gains `repository`, which the VS Code listing shows as
+  Repository.
+- "Open source" is now accurate for the licence (D49bv, Apache-2.0). The rules that forbade the term
+  while the source was private no longer apply. The trademark sweep (D16) is still owed before a
+  wider public release.
+- Every clone updates its `origin` to the new URL; the old one cannot authenticate.
+- A repository that anyone can read needs a front page, so the root `README.md` now exists and states
+  what Plato is, the three hosts, the install commands, and the licence.
+
+---
+
 **D49ce — the CLI has a start screen: the owl from the mark, a wordmark, and one line of wayfinding (2026-10-22).**
 
 **Why.** The founder's report: *"the start screen is very blank-ish"*, and after the first draft,
@@ -7068,10 +7106,13 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
   and `local.properties` in its working tree that its own `.gitignore`
   does not cover. If that repo is ever made public: rotate those secrets
   and purge history FIRST.
-- License decision (D19) — **DECIDED 2026-10-20 (D49bv): Apache-2.0, repository
-  private.** The checklist and the website wording are in `docs/LICENSING.md`.
+- License decision (D19) — **DECIDED 2026-10-20 (D49bv): Apache-2.0.** The
+  repository was private until 2026-11-02, when the founder made it public
+  under `Applivity` (D49cp). The checklist and the website wording are in
+  `docs/LICENSING.md`.
 - Optional rename `.aplivity/` → `.plato/` before M3 (D11 flag).
-- Correction (verified during setup): GitHub account `applivity-com` is a
-  personal user account, not an Organization. Repo target URL unchanged:
-  github.com/applivity-com/plato. Automation tokens need the `repo`
-  scope for repo creation and push.
+- Correction (verified during setup, now historical): GitHub account
+  `applivity-com` was a personal user account, not an Organization. That
+  account is deleted and the repository lives under the `Applivity`
+  organization at github.com/Applivity/plato, public since 2026-11-02
+  (D49cp). Automation tokens need the `repo` scope for repo creation and push.

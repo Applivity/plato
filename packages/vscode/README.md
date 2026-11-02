@@ -65,4 +65,6 @@ Plato is licensed under the
 full text is in the license file included with the extension. Third-party
 notices are in `THIRD-PARTY-NOTICES.md`.
 
-The source repository is private. The license does not require it to be public.
+The source is public at
+[github.com/Applivity/plato](https://github.com/Applivity/plato) and is licensed
+under the Apache License, Version 2.0.

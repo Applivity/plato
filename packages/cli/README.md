@@ -7,7 +7,8 @@ mid-run, and stops at a safe point. The same engine powers the
 **Plan, edit, or auto. Solo, duo, or academy. You hold the switch.**
 
 [plato.applivity.com](https://plato.applivity.com) · [Install](#install) ·
-[Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands)
+[Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
+[Source](https://github.com/Applivity/plato)
 
 **Pre-release.** This is `0.1.4`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.

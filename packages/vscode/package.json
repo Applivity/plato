@@ -5,6 +5,9 @@
   "license": "Apache-2.0",
   "description": "An AI coding agent for VS Code that shows its work, lets you steer mid-run, and stops at a safe point.",
   "publisher": "applivity",
+  "repository": { "type": "git", "url": "https://github.com/Applivity/plato.git" },
+  "homepage": "https://plato.applivity.com",
+  "bugs": { "url": "https://github.com/Applivity/plato/issues" },
   "displayName": "Plato by Applivity",
   "icon": "media/icon.png",
   "engines": {
