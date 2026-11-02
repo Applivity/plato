@@ -10,8 +10,10 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
-**Pre-release.** This is `0.1.4`. The core of the agent is the same code the
+**Pre-release.** This is `0.1.5`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
+
+**0.1.5** adds the source link above; no behaviour changed.
 
 **0.1.4** adds Windows support for commands, background shells, and MCP
 servers. It also fixes four terminal defects: a reply no longer repeats down
