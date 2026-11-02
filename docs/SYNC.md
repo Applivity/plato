@@ -1,8 +1,10 @@
 # Local sync — Mac and Windows workers
 
 This is the private LAN sync for the Visual Studio work. `main` is the published
-truth on GitHub; the LAN repository mirrors it and is the rendezvous for the
-Windows machine.
+truth on GitHub at `https://github.com/Applivity/plato` (public since
+2026-11-02, D49cp); the LAN repository mirrors it and is the rendezvous for the
+Windows machine. Every clone uses the `Applivity` URL — the old `applivity-com`
+one cannot authenticate and returns 404.
 
 ## Layout
 

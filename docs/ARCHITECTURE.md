@@ -34,7 +34,7 @@ here are binding unless a DECISIONS.md entry supersedes them.
 ## Monorepo layout
 
 ```
-plato/                      (this dir; GitHub repo applivity-com/plato)
+plato/                      (this dir; GitHub repo Applivity/plato, public)
 ├── docs/                   you are here
 ├── packages/
 │   ├── core/               agent library — no VS Code imports allowed

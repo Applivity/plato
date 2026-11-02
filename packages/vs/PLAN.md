@@ -904,7 +904,15 @@ local upload copy of 0.1.2 is `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.2.
 `/Users/ai/Desktop/plato-artifacts/Plato.Vs.0.1.3.vsix`, 33,293,606 bytes,
 SHA-256 `dc7d9461…1b14`, and the Settings sentence was read from the running
 build. The public download is byte-identical (same size and SHA-256), and the
-gallery reports `0.1.3` with `lastUpdated` `2026-10-29T13:46:20Z`. The same strings reach the VS Code extension at its next release, since
+gallery reports `0.1.3` with `lastUpdated` `2026-10-29T13:46:20Z`.
+
+**0.1.4 is prepared, not built (2026-11-02):** the manifest gains
+`<MoreInfo>https://github.com/Applivity/plato</MoreInfo>` — the only link the
+Marketplace listing renders — and the version moves in the four places that
+name it (manifest Identity, `AssemblyInfo`, `InstalledProductRegistration`, and
+the sidecar handshake). It must be built on Windows with
+`packages/vs/scripts/package-vsix.ps1` and installed once before the founder
+uploads it. The same strings reach the VS Code extension at its next release, since
 they live in the shared webview.
 Evidence: `C:\src\plato-vs-field\evidence\m5\package\` and
 `C:\src\plato-vs-field\evidence\m5\real\` (its `REPORT.md` is the record).

@@ -2,11 +2,12 @@
 
 Status: **live 2026-10-20.** Plato is licensed under **Apache-2.0**; the
 extension is published as **`applivity.plato`** under the display name
-**Plato by Applivity**. The repository remains private. The website says
-"licensed under the Apache License 2.0," not "open source."
+**Plato by Applivity**. The repository is **public since 2026-11-02** (D49cp),
+so "open source" is accurate and the website uses it.
 
-This file records what is true, why the private-repository path is allowed, and
-the remaining publish work. **The CLI is phase 2, opened 2026-10-21 (D49bw).**
+This file records what is true now, and the remaining publish work. The
+private-repository reasoning in section 2 is kept as a record; it no longer
+constrains anything. **The CLI is phase 2, opened 2026-10-21 (D49bw).**
 Its npm plan and checklist are in section 8. **`@applivity/plato` `0.1.0` is
 published (2026-10-22)**; the registry, a clean install, and `npx` verify it.
 
@@ -28,9 +29,9 @@ published (2026-10-22)**; the registry, a clean install, and `npx` verify it.
 | Publication | VS Code Marketplace: live (see above). No npm or Open VSX listing. |
 | Website | A static `index.html` and `styles.css` in `../plato-website`. The stale "no licence" copy was replaced with the Apache-2.0 line on 2026-10-20. |
 
-The repository is private. The license does not change that.
+The repository is public (since 2026-11-02, D49cp). The license did not change.
 
-## 2. Apache-2.0 with a private repository
+## 2. Apache-2.0 with a private repository (historical, 2026-10-20 to 2026-11-02)
 
 **This is allowed.** Apache-2.0 does not require a public repository. It does not
 require source distribution with a binary. It requires that each distribution
@@ -58,9 +59,8 @@ must use a proprietary EULA. Versions already published under Apache-2.0 stay
 under Apache-2.0.
 
 **Wording.** "Licensed under the Apache License 2.0" is accurate. "Open source"
-usually implies that the source is available. Do not use "open source" while the
-repository is private. If the repository opens later, the same license applies
-and the term becomes accurate without a license change.
+usually implies that the source is available. The repository opened on
+2026-11-02 (D49cp), so "open source" is accurate now, with no license change.
 
 ## 3. Why this path
 
@@ -141,8 +141,9 @@ VSIX. The root copies are what the repository and the website link to.
   0.26.2 listing shows `Machine Learning`. The category comes from the VSIX
   manifest, not a management-page editor.
 - `keywords`: none. Optional.
-- `repository`, `homepage`, `bugs`: absent. The repository is private. `vsce`
-  warns; this is not a blocker. Add a public support page only if one exists.
+- `repository`, `homepage`, `bugs`: **added 2026-11-02** to the public URL and
+  the site. The Marketplace shows the repository link at the next release; the
+  fields do not reach the live listing until then.
 - `privacy policy`: the Marketplace may ask for a URL. Plato sends prompts to the
   configured model provider. Prepare a public privacy page if the upload form
   requires one.
@@ -174,8 +175,8 @@ Gaps to fix in a later version or in the management page:
 - **Preview badge:** absent. The README says pre-release.
 - **README install text:** fixed in 0.26.1. It describes the Marketplace install
   (`code --install-extension applivity.plato`).
-- **Links:** no repository, homepage, or support link. The repository is private;
-  a support page is optional.
+- **Links:** the repository, homepage and issues links are in the manifest since
+  2026-11-02 (D49cp). The live listing shows them from the next release.
 - **Privacy policy:** none. The extension sends prompts to the model provider.
 
 ## 5. Proprietary fallback, not chosen
@@ -207,8 +208,8 @@ The website is a static site in `../plato-website`. The chosen line is:
 
 > Pre-release. Plato is licensed under the Apache License 2.0.
 
-The footer links to the license text. While the repository is private, the page
-must not say "open source." It may say "licensed under Apache-2.0."
+The footer links to the license text. The repository is public since 2026-11-02
+(D49cp), so the page may say "open source", and it links the repository.
 
 The stale copy was updated on 2026-10-20:
 
@@ -229,7 +230,7 @@ Keep these rules:
 
 - Do not add a marketplace badge or download link until the listing is live and
   the URL is verified.
-- Do not call Plato "open source" while the repository is private.
+- "Open source" is accurate since 2026-11-02 (D49cp).
 - Do not say "free." The user pays their model provider.
 - Keep the "do not deploy" rule until the founder decides to publish the site.
   "Ready" is not "deployed."
@@ -280,11 +281,12 @@ CLI, or publish core first. The plan is to bundle core into the CLI, as the
 extension bundles it into the VSIX. Do not publish a CLI that depends on an
 unpublished package.
 
-**Repository.** The repository stays private. Apache-2.0 with a private
-repository is allowed, under the same conditions as section 2. A public
-repository is not required for npm. Provenance is not available while the
-repository is private. Do not add a `repository` field that points to a private
-URL that users cannot open.
+**Repository.** The repository is public since 2026-11-02 (D49cp). The CLI
+manifest now carries `repository` and `bugs` pointing at it, and the README
+links it. npm shows those fields on the package page only after the next
+publish, so the live 0.1.4 page still has no repository link. npm provenance is
+still not available — it needs a public build source and a CI publish, which
+does not exist yet.
 
 **Publish checklist (in progress).**
 
