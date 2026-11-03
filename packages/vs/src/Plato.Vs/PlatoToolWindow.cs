@@ -1,7 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Plato.Vs.Bridge;
 
 namespace Plato.Vs
@@ -13,7 +15,7 @@ namespace Plato.Vs
     /// its own chat.
     /// </summary>
     [Guid("47671774-5F5A-46D9-B6BD-AA0236B8E959")]
-    public sealed class PlatoToolWindow : ToolWindowPane
+    public sealed class PlatoToolWindow : ToolWindowPane, IVsWindowFrameNotify3
     {
         private readonly SidecarHost _sidecar;
 
@@ -42,6 +44,34 @@ namespace Plato.Vs
         internal SidecarHost Sidecar => _sidecar;
 
         public Task ShutdownAsync() => _sidecar.StopAsync();
+
+        /// <summary>
+        /// Activation is what makes a command act on the window the user is
+        /// working in. Visual Studio calls this for tab and floating-window
+        /// activation; the pane then moves itself to the end of the package's
+        /// ordered list, which is where the command target is read from.
+        /// </summary>
+        public int OnShow(int fShow)
+        {
+            if (fShow == (int)__FRAMESHOW.FRAMESHOW_WinShown ||
+                fShow == (int)__FRAMESHOW.FRAMESHOW_TabActivated ||
+                fShow == 12)
+            {
+                ThreadHelper.ThrowIfNotOnUIThread();
+                PlatoPackage.Instance?.NoteActive(this);
+            }
+
+            return VSConstants.S_OK;
+        }
+
+        public int OnClose(ref uint pgrfSaveOptions) => VSConstants.S_OK;
+
+        public int OnMove(int x, int y, int w, int h) => VSConstants.S_OK;
+
+        public int OnSize(int x, int y, int w, int h) => VSConstants.S_OK;
+
+        public int OnDockableChange(int fDockable, int x, int y, int w, int h) =>
+            VSConstants.S_OK;
 
         protected override void Dispose(bool disposing)
         {

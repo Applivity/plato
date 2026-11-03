@@ -244,6 +244,13 @@ namespace Plato.Vs
 
         private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            // A page message is proof the user is working in this window, even
+            // if the frame notification has not arrived yet.
+            if (ThreadHelper.CheckAccess())
+            {
+                PlatoPackage.Instance?.NoteActive(this);
+            }
+
             var sidecar = _sidecar;
             if (sidecar == null)
             {

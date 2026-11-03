@@ -46,6 +46,13 @@ namespace Plato.Vs
 
         internal string ExtensionDirectory { get; private set; } = AppDomain.CurrentDomain.BaseDirectory;
 
+        /// <summary>
+        /// The window the user last interacted with. The list is kept in
+        /// activation order: a new window is appended, so it is active until
+        /// another is focused, and an activation moves its window to the end.
+        /// A closed window is removed before this is read, so the target falls
+        /// back to the window that was active before it.
+        /// </summary>
         private PlatoToolWindow? LastActive =>
             _windows.Count == 0 ? null : _windows[_windows.Count - 1];
 
@@ -144,6 +151,33 @@ namespace Plato.Vs
         internal void UnregisterWindow(PlatoToolWindow window)
         {
             _windows.Remove(window);
+        }
+
+        /// <summary>
+        /// Moves an activated window to the end of the activation order. The
+        /// frame notification is the primary signal; a message from the page
+        /// also counts, because a click can land before the frame reports it.
+        /// </summary>
+        internal void NoteActive(PlatoToolWindow window)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            if (!_windows.Contains(window))
+            {
+                return;
+            }
+
+            _windows.Remove(window);
+            _windows.Add(window);
+        }
+
+        internal void NoteActive(PlatoWebViewControl control)
+        {
+            var window = _windows.FirstOrDefault(
+                candidate => ReferenceEquals(candidate.WebViewControl, control));
+            if (window != null)
+            {
+                NoteActive(window);
+            }
         }
 
         /// <summary>

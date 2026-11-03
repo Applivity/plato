@@ -384,3 +384,4 @@ if (require.main === module) {
 export { start };
 export type { StartedHost };
 export type { InitParams };
+export { WorkspaceMemento, __setSharedWriteHook } from './shim/vscode.ts';

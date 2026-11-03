@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/gen-defaults.mjs && node esbuild.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs && node test/settings.test.mjs && node test/m3b.test.mjs && node test/approval-lifecycle.test.mjs && node test/teams.test.mjs && node test/history.test.mjs && node test/newchat.test.mjs && node test/m4a.test.mjs && node test/m4b.test.mjs && node test/multi-window.test.mjs"
+    "test": "node scripts/gen-defaults.mjs && node esbuild.mjs && node test/spike.mjs && node test/bridge.test.mjs && node test/settings.test.mjs && node test/m3b.test.mjs && node test/approval-lifecycle.test.mjs && node test/teams.test.mjs && node test/history.test.mjs && node test/newchat.test.mjs && node test/m4a.test.mjs && node test/m4b.test.mjs && node test/multi-window.test.mjs && node test/shared-chats.test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.3.1",
