@@ -36,6 +36,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -264,7 +265,7 @@ try {
     /applies from your next message\.$/,
     'an idle switch says when it applies',
   );
-  await waitState((s) => s['plato.chatMode'] === 'plan', 'plan persisted');
+  await waitState((s) => chatValue(s, 'mode') === 'plan', 'plan persisted');
 
   mark = posts.length;
   host.receive({ type: 'mode', value: 'edit' });
@@ -314,7 +315,7 @@ try {
   assert.equal(existsSync(join(ROOT, 'denied.txt')), false, 'a denied write does not happen');
   await settle();
   assert.ok(
-    stateFile()['plato.chatLog'].some((e) => e.k === 'msg' && e.text === '[denied]'),
+    chatValue(stateFile(), 'log').some((e) => e.k === 'msg' && e.text === '[denied]'),
     'the refusal is in the conversation',
   );
 
@@ -428,7 +429,7 @@ try {
     mark,
   );
   assert.equal(afterRequest.type, 'done');
-  await waitState((s) => s['plato.chatMode'] === 'auto', 'auto persisted');
+  await waitState((s) => chatValue(s, 'mode') === 'auto', 'auto persisted');
 
   // -- decline ----------------------------------------------------------
   host.receive({ type: 'mode', value: 'edit' });
@@ -456,7 +457,7 @@ try {
     mark,
   );
   await waitPost((m) => m.type === 'done', 'the declined-request run to finish', mark);
-  await waitState((s) => s['plato.chatMode'] === 'edit', 'a decline leaves the mode alone');
+  await waitState((s) => chatValue(s, 'mode') === 'edit', 'a decline leaves the mode alone');
 
   /* ================================================================== */
   /* 4. A live switch applies at the next tool call                     */
@@ -499,7 +500,7 @@ try {
     0,
     'auto drew no approval card',
   );
-  const switchedLog = stateFile()['plato.chatLog'];
+  const switchedLog = chatValue(stateFile(), 'log');
   assert.ok(
     switchedLog.some(
       (e) => e.k === 'msg' && String(e.text).startsWith('Mode: auto — applies from the next tool call.'),
@@ -634,7 +635,7 @@ try {
   await waitPost((m) => m.type === 'question-done', 'the question card to close', mark);
   await waitPost((m) => m.type === 'done', 'the question run to cancel', mark);
   assert.ok(
-    stateFile()['plato.chatLog'].some((e) => e.k === 'question-done'),
+    chatValue(stateFile(), 'log').some((e) => e.k === 'question-done'),
     'the cancelled question is closed in the log',
   );
 
@@ -682,7 +683,7 @@ try {
   host.receive({ type: 'cancel' });
   await waitPost((m) => m.type === 'mode-request-done', 'the mode card to close', mark);
   await waitPost((m) => m.type === 'done', 'the mode-request run to cancel', mark);
-  await waitState((s) => s['plato.chatMode'] === 'edit', 'a cancelled request leaves the mode alone');
+  await waitState((s) => chatValue(s, 'mode') === 'edit', 'a cancelled request leaves the mode alone');
 
   /* ================================================================== */
   /* 8. The unchanged page and the transcript                           */
@@ -703,7 +704,7 @@ try {
   host.receive({ type: 'mode', value: 'plan' });
   await settle();
   assert.equal(
-    stateFile()['plato.chatMode'],
+    chatValue(stateFile(), 'mode'),
     'plan',
     'the final mode survives in workspaceState',
   );

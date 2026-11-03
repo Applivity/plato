@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -257,10 +258,10 @@ try {
     'the fold says what it accounted for, and that nothing was removed',
   );
   const folded = await waitState(
-    (s) => (s['plato.chatLog'] || []).some((e) => e.k === 'compact'),
+    (s) => (chatValue(s, 'log') || []).some((e) => e.k === 'compact'),
     'the summary row in the log',
   );
-  const foldedLog = folded['plato.chatLog'];
+  const foldedLog = chatValue(folded, 'log');
   assert.equal(
     foldedLog.length,
     seedLog.length + 1,
@@ -296,7 +297,7 @@ try {
   );
   assert.equal(titlePost.text, 'Field test run', 'the title comes from the model');
   await waitState(
-    (s) => s['plato.chatTitle'] === 'Field test run',
+    (s) => chatValue(s, 'title') === 'Field test run',
     'the generated title persisted',
   );
 
@@ -310,7 +311,7 @@ try {
     'the renamed title',
     mark,
   );
-  await waitState((s) => s['plato.chatTitle'] === 'Release run', 'the rename persisted');
+  await waitState((s) => chatValue(s, 'title') === 'Release run', 'the rename persisted');
 
   await setScript([{ text: 'Second answer.' }]);
   mark = posts.length;
@@ -321,7 +322,7 @@ try {
     0,
     'a later run does not overwrite a title the user set',
   );
-  assert.equal(stateFile()['plato.chatTitle'], 'Release run');
+  assert.equal(chatValue(stateFile(), 'title'), 'Release run');
 
   /* ================================================================== */
   /* 4. History lists the live chat first, then the saved chat and runs */
@@ -354,14 +355,14 @@ try {
   assert.equal(resumed.log[0].text, 'Old question');
   assert.equal(resumed.log[1].text, 'Old answer');
   await waitState(
-    (s) => s['plato.chatTitle'] === 'Older conversation',
+    (s) => chatValue(s, 'title') === 'Older conversation',
     'the resumed title persisted',
   );
   const afterResume = await waitState(
-    (s) => (s['plato.chatLog'] || []).length === 2,
+    (s) => (chatValue(s, 'log') || []).length === 2,
     'the resumed log persisted',
   );
-  assert.equal(afterResume['plato.chatLog'][0].text, 'Old question');
+  assert.equal(chatValue(afterResume, 'log')[0].text, 'Old question');
 
   /* ================================================================== */
   /* 6. A resume is refused while a run is active                       */

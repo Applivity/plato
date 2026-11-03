@@ -42,6 +42,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -839,7 +840,7 @@ try {
   assert.equal(afterStop.cursor, 5, 'Stop did not let the model take its next step');
 
   // The card is recorded in the conversation, so a reload rebuilds it.
-  const log = stateFile()['plato.chatLog'] ?? [];
+  const log = chatValue(stateFile(), 'log') ?? [];
   assert.ok(
     log.some((e) => e.k === 'stuck-open' && e.title === 'Plato is stuck'),
     'the stuck card is written to the log before the promise',

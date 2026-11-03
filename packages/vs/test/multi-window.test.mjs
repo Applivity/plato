@@ -20,6 +20,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -245,15 +246,15 @@ try {
   const stateOne = readJson(WINDOW_ONE);
   const stateTwo = readJson(WINDOW_TWO);
   assert.ok(
-    (stateOne['plato.chatLog'] || []).some((e) => e.text === 'Window one task.'),
+    (chatValue(stateOne, 'log') || []).some((e) => e.text === 'Window one task.'),
     'window one has its own task',
   );
   assert.ok(
-    !(stateOne['plato.chatLog'] || []).some((e) => e.text === 'Window two task.'),
+    !(chatValue(stateOne, 'log') || []).some((e) => e.text === 'Window two task.'),
     'window one does not have window two\'s task',
   );
   assert.ok(
-    (stateTwo['plato.chatLog'] || []).some((e) => e.text === 'Window two task.'),
+    (chatValue(stateTwo, 'log') || []).some((e) => e.text === 'Window two task.'),
     'window two has its own task',
   );
 

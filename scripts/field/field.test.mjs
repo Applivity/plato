@@ -177,7 +177,9 @@ async function setScript(steps, needles = [], modelsDelayMs = 0) {
   const res = await fetch(`${STUB}/__script`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ steps, needles, modelsDelayMs }),
+    // titleMode 'prompt' gives each conversation a title taken from its own
+    // prompt, so two open chat tabs are distinguishable in the workbench.
+    body: JSON.stringify({ steps, needles, modelsDelayMs, titleMode: 'prompt' }),
   });
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }

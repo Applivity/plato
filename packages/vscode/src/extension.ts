@@ -585,7 +585,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   );
 
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('plato.openChat', () => {
+    vscode.commands.registerCommand('plato.openChat', async () => {
       // Command targeting: the active tab, else the last focused, else the
       // most recent; with nothing open, an indexed conversation is adopted
       // before a blank one is made.
@@ -594,7 +594,11 @@ export function activate(ctx: vscode.ExtensionContext): void {
         t.panel.reveal();
         return;
       }
-      void openTab();
+      // Awaited, not fired: opening the first chat is asynchronous now (the
+      // tab index is read first), and a host that awaits the command -- the
+      // Visual Studio shim does -- must not be told the chat exists before its
+      // HTML is set.
+      await openTab();
     }),
   );
 
