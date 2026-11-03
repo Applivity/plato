@@ -273,7 +273,15 @@ const server = createServer(async (req, res) => {
   // script — see rule 1 at the top of this file.
   if (offered === 0) {
     log[log.length - 1].consumedStep = 'auxiliary';
-    const title = 'Field test run';
+    // Tabs need distinguishable labels. A fixed title made every conversation
+    // "Field test run", which is fine for the header but makes two open chat
+    // tabs indistinguishable in the workbench. Derive it from the prompt
+    // instead; the seed is what a real title call is shown.
+    const seedText = String(userTexts[userTexts.length - 1] ?? '')
+      .replace(/^User:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const title = seedText.length > 0 ? seedText.slice(0, 30) : 'Field test run';
     if (body.stream === true) return textFrames(res, title, 'stop');
     return json(res, 200, {
       choices: [{ index: 0, message: { role: 'assistant', content: title }, finish_reason: 'stop' }],

@@ -112,7 +112,7 @@ import {
   describeDiagLook,
   type DiagSnapshot,
 } from './diagnostics.js';
-import { chatHtml } from './webview.js';
+import { chatHtml, type ChatCaps } from './webview.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { rmSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -279,13 +279,215 @@ function readStringList(cfg: vscode.WorkspaceConfiguration, key: string): string
 }
 
 export function activate(ctx: vscode.ExtensionContext): void {
-  // One chat panel per window; re-running the command reveals it instead
-  // of spawning a blank second one.
-  let live: vscode.WebviewPanel | undefined;
-  let host: ChatHost | undefined;
+  const caps = hostCapabilities();
+  // The open conversations of this window. Each entry owns its own panel and
+  // its own ChatHost; nothing in this map is shared between chats except the
+  // process they run in.
+  interface OpenTab {
+    id: string;
+    panel: vscode.WebviewPanel;
+    host: ChatHost;
+    lastFocusedAt: number;
+  }
+  const tabs = new Map<string, OpenTab>();
+  // A closed tab stays in the stored index until its archive lands. This set
+  // keeps `openTab` from adopting it back during that window.
+  const closing = new Set<string>();
+  let lastActiveTabId: string | null = null;
+  // The legacy conversation is moved into tab one before any tab is built.
+  const tabsReady = migrateChatKeys(ctx);
   // D49bq: the activity-bar list re-reads the stored chats when it is shown, and
   // once the panel has closed — which is when a conversation is archived.
   const chatsChanged = new vscode.EventEmitter<void>();
+
+  const mostRecent = (): OpenTab | undefined => {
+    let newest: OpenTab | undefined;
+    for (const t of tabs.values()) {
+      if (newest === undefined || t.lastFocusedAt > newest.lastFocusedAt) {
+        newest = t;
+      }
+    }
+    return newest;
+  };
+
+  /**
+   * The command target: the active panel, else the last one focused, else the
+   * most recently used remaining tab. Closing a tab removes it from the map
+   * before this can see it, so a disposed panel is never returned.
+   */
+  const activeTab = (): OpenTab | undefined => {
+    for (const t of tabs.values()) {
+      if (t.panel.active) return t;
+    }
+    if (lastActiveTabId !== null) {
+      const remembered = tabs.get(lastActiveTabId);
+      if (remembered !== undefined) return remembered;
+    }
+    return mostRecent();
+  };
+
+  /** Every other open tab, for the shell's target picker (slice 3). */
+  const broadcastPeers = (): void => {
+    for (const t of tabs.values()) {
+      const peers = [...tabs.values()]
+        .filter((x) => x.id !== t.id)
+        .map((x) => ({
+          id: x.id,
+          name: x.host.displayName,
+          busy: x.host.busy,
+        }));
+      void t.panel.webview.postMessage({ type: 'peers', peers });
+    }
+  };
+
+  const listOpenTabs = (selfId: string): OpenTabInfo[] =>
+    [...tabs.values()]
+      .sort((a, b) => a.lastFocusedAt - b.lastFocusedAt)
+      .map((t) => ({
+        id: t.id,
+        name: t.host.displayName,
+        busy: t.host.busy,
+        count: t.host.messageCount,
+        current: t.id === selfId,
+      }));
+
+  const focusTab = (id: string): void => {
+    const t = tabs.get(id);
+    if (t !== undefined) {
+      t.panel.reveal();
+      return;
+    }
+    void openTab(id);
+  };
+
+  const newTabId = (): string =>
+    `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+  /** "Plato", then the smallest unused "Plato N" while a chat has no title. */
+  const fallbackName = (): string => {
+    if (tabs.size === 0) return 'Plato';
+    const used = new Set([...tabs.values()].map((t) => t.host.displayName));
+    let n = 2;
+    while (used.has(`Plato ${n}`)) n += 1;
+    return `Plato ${n}`;
+  };
+
+  async function attach(
+    panel: vscode.WebviewPanel,
+    tabId: string,
+  ): Promise<OpenTab> {
+    await tabsReady;
+    const index = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
+    if (!index.some((t) => t.id === tabId)) {
+      index.push({ id: tabId, createdAt: Date.now() });
+      await ctx.workspaceState.update(TAB_INDEX_KEY, index);
+    }
+    panel.webview.html = chatHtml(caps);
+    const host = new ChatHost(panel, ctx, tabId, {
+      displayName: fallbackName(),
+      onStateChange: broadcastPeers,
+      newTab: () => {
+        void openTab(undefined, { fresh: true });
+      },
+      ...(caps.tabs
+        ? { tabs: { list: listOpenTabs, focus: focusTab } }
+        : {}),
+    });
+    const entry: OpenTab = {
+      id: tabId,
+      panel,
+      host,
+      lastFocusedAt: Date.now(),
+    };
+    tabs.set(tabId, entry);
+    lastActiveTabId = tabId;
+    // A host shim may not implement view-state events (the Visual Studio one
+    // does not). That only costs the focus memory; it must not break opening.
+    if (typeof panel.onDidChangeViewState === 'function') {
+      panel.onDidChangeViewState((e) => {
+        if (e.webviewPanel.active) {
+          lastActiveTabId = tabId;
+          entry.lastFocusedAt = Date.now();
+          broadcastPeers();
+        }
+      });
+    }
+    // The fix that makes closing safe for every tab, not only the tracked one:
+    // this listener belongs to THIS panel, so its host always cancels, awaits
+    // and archives its own conversation (D41 + D49bn).
+    panel.onDidDispose(() => {
+      tabs.delete(tabId);
+      closing.add(tabId);
+      if (lastActiveTabId === tabId) {
+        lastActiveTabId = mostRecent()?.id ?? null;
+      }
+      void (async () => {
+        await host.dispose();
+        // The tab is gone; the archived copy in History is the record now.
+        const now = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
+        await ctx.workspaceState.update(
+          TAB_INDEX_KEY,
+          now.filter((t) => t.id !== tabId),
+        );
+        await ctx.workspaceState.update(tabLogKey(tabId), undefined);
+        await ctx.workspaceState.update(tabTitleKey(tabId), undefined);
+        await ctx.workspaceState.update(tabModeKey(tabId), undefined);
+        closing.delete(tabId);
+        chatsChanged.fire();
+        broadcastPeers();
+      })();
+    });
+    host.sweepTranscripts();
+    chatsChanged.fire();
+    broadcastPeers();
+    return entry;
+  }
+
+  /**
+   * Open a panel. With no id, an indexed tab that is not on screen is adopted
+   * first (the conversation a reload has not restored yet); `fresh` is for
+   * "New Chat", which always gets a new id.
+   */
+  async function openTab(
+    tabId?: string,
+    opts: { fresh?: boolean } = {},
+  ): Promise<OpenTab> {
+    await tabsReady;
+    if (tabId !== undefined) {
+      const existing = tabs.get(tabId);
+      if (existing !== undefined) {
+        existing.panel.reveal();
+        return existing;
+      }
+    }
+    if (tabId === undefined && opts.fresh !== true) {
+      const index = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
+      const unrestored = index.filter(
+        (r) => !tabs.has(r.id) && !closing.has(r.id),
+      );
+      const last = unrestored[unrestored.length - 1];
+      if (last !== undefined) tabId = last.id;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      'platoChat',
+      fallbackName(),
+      // The first chat opens beside the editor, as it always has. A second
+      // chat opens as a TAB in the group that is active now, not as another
+      // column — "tabs" that split the window are not tabs.
+      tabs.size === 0 ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        // The DOM must survive the tab being hidden. A run that writes a file
+        // shows that file to wake a language server and reveals the chat again
+        // (D49av); without this the chat is torn down and rebuilt underneath
+        // that trip, which loses the live view — and the field harness cannot
+        // re-enter a webview whose document was replaced. The memory cost is
+        // per tab and is the price of the conversation staying live.
+        retainContextWhenHidden: true,
+      },
+    );
+    return attach(panel, tabId ?? newTabId());
+  }
 
   setTimeout(reclaimDeadProjects, 0);
 
@@ -380,57 +582,49 @@ export function activate(ctx: vscode.ExtensionContext): void {
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('plato.openChat', () => {
-      if (live) {
-        live.reveal(vscode.ViewColumn.Beside);
+      // Command targeting: the active tab, else the last focused, else the
+      // most recent; with nothing open, an indexed conversation is adopted
+      // before a blank one is made.
+      const t = activeTab();
+      if (t !== undefined) {
+        t.panel.reveal();
         return;
       }
-      const panel = vscode.window.createWebviewPanel(
-        'platoChat',
-        'Plato Chat',
-        vscode.ViewColumn.Beside,
-        {
-          enableScripts: true,
-          // Keep the DOM (and chat log) when the tab is hidden.
-          retainContextWhenHidden: true,
-        },
-      );
-      panel.onDidDispose(() => {
-        if (live !== panel) {
-          return;
-        }
-        const closing = host;
-        live = undefined;
-        host = undefined;
-        // D41: archive on close so History fills without New Chat. The sidebar
-        // row list is only right once that archive has landed.
-        void (async () => {
-          await closing?.dispose();
-          chatsChanged.fire();
-        })();
-      });
-      live = panel;
-      panel.webview.html = chatHtml();
-      host = new ChatHost(panel, ctx);
-      // D49ay: housekeeping, once per window. Compresses any transcript that has
-      // aged out; never deletes one.
-      host.sweepTranscripts();
+      void openTab();
     }),
   );
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('plato.newChat', async () => {
-      if (host) {
-        await host.newChat();
+      if (!caps.tabs) {
+        // A host without tabs (Visual Studio) keeps "New Chat" clearing in
+        // place: its tool window is the only surface there is.
+        const t = activeTab();
+        if (t !== undefined) {
+          await t.host.newChat();
+          return;
+        }
+        // No panel: a fresh conversation, not the last stored one that
+        // `openChat` would adopt.
+        await openTab(undefined, { fresh: true });
         return;
       }
-      // No panel yet: drop any stored conversation, then open fresh.
-      await ctx.workspaceState.update(LOG_KEY, []);
-      await vscode.commands.executeCommand('plato.openChat');
+      await openTab(undefined, { fresh: true });
+    }),
+  );
+
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand('plato.focusTab', (id?: unknown) => {
+      if (typeof id === 'string') focusTab(id);
     }),
   );
 
   // D49bq: the activity-bar launcher. It opens the panel; it is not the panel.
-  const chats = new PlatoChatsProvider(ctx, chatsChanged);
+  // The open chats are listed above the stored ones; a tab that is open but
+  // unsaved is still a conversation the user can reach.
+  const chats = new PlatoChatsProvider(ctx, chatsChanged, () =>
+    listOpenTabs(''),
+  );
   const tree = vscode.window.createTreeView('plato.chats', {
     treeDataProvider: chats,
   });
@@ -449,12 +643,48 @@ export function activate(ctx: vscode.ExtensionContext): void {
       if (typeof id !== 'string') {
         return;
       }
-      if (!live) {
-        await vscode.commands.executeCommand('plato.openChat');
+      if (!caps.tabs) {
+        // One surface: resume in place, as before.
+        const t = activeTab() ?? (await openTab());
+        await t.host.resumeSession(id);
+        return;
       }
-      await host?.resumeSession(id);
+      // A stored chat is its own conversation, so it gets its own tab. The
+      // History page inside a tab resumes in place instead — that is the
+      // user's choice of surface, and the two must not disagree.
+      const t = await openTab(undefined, { fresh: true });
+      await t.host.resumeSession(id);
     }),
   );
+
+  // Reload restore: VS Code keeps the panel count and position, and asks us to
+  // rebuild each one. The webview saved its tab id through setState, so the
+  // conversation — not just a blank panel — comes back.
+  if (typeof vscode.window.registerWebviewPanelSerializer === 'function') {
+    ctx.subscriptions.push(
+      vscode.window.registerWebviewPanelSerializer('platoChat', {
+      async deserializeWebviewPanel(
+        panel: vscode.WebviewPanel,
+        state: unknown,
+      ): Promise<void> {
+        const saved = state as { tabId?: unknown } | undefined;
+        const tabId =
+          saved !== undefined && typeof saved.tabId === 'string'
+            ? saved.tabId
+            : newTabId();
+        const existing = tabs.get(tabId);
+        if (existing !== undefined) {
+          // The user opened this conversation before VS Code got round to
+          // restoring it. Keep the one on screen; drop the duplicate.
+          panel.dispose();
+          existing.panel.reveal();
+          return;
+        }
+        await attach(panel, tabId);
+      },
+      }),
+    );
+  }
 }
 
 type PendingResolve = (v: boolean) => void;
@@ -482,6 +712,88 @@ const SESSIONS_MAX = 30;
 /** D49bj: the mode outlives the panel, like the title and the log. */
 const MODE_KEY = 'plato.chatMode';
 const MODES: readonly Mode[] = ['plan', 'edit', 'auto'];
+/**
+ * Tabs: one stored index of open conversations, and three keys per tab. The
+ * three keys above are the pre-tab layout. They are read once by the migration
+ * below and never written again; a tab read with no index entry falls back to
+ * them so a window upgraded mid-conversation keeps its chat.
+ */
+const TAB_INDEX_KEY = 'plato.chat.tabIndex';
+const TABS_MIGRATED_KEY = 'plato.chat.tabsMigrated';
+const tabLogKey = (id: string): string => `plato.chat.${id}.log`;
+const tabTitleKey = (id: string): string => `plato.chat.${id}.title`;
+const tabModeKey = (id: string): string => `plato.chat.${id}.mode`;
+
+interface TabRecord {
+  id: string;
+  createdAt: number;
+}
+
+/** One open tab, as the tree, the History page and the peer list see it. */
+interface OpenTabInfo {
+  id: string;
+  name: string;
+  busy: boolean;
+  count: number;
+  current: boolean;
+}
+
+/**
+ * The host-side capabilities the shared shell reads. The Visual Studio shim
+ * sets `globalThis.__platoCaps` to opt out; a real VS Code window has no such
+ * object and gets the full shell. The default is deliberately the capable one:
+ * absence means "this host did not restrict anything".
+ */
+function hostCapabilities(): ChatCaps {
+  const raw = (globalThis as { __platoCaps?: Partial<ChatCaps> }).__platoCaps;
+  if (raw === undefined) {
+    return { tabs: true, relay: true, noun: 'tab' };
+  }
+  return {
+    tabs: raw.tabs === true,
+    relay: raw.relay === true,
+    noun: raw.noun === 'window' ? 'window' : 'tab',
+  };
+}
+
+/**
+ * Serialise the read-modify-write on the archived-chat list. Two tabs can close
+ * at almost the same moment, and the second writer must see the first one's
+ * snapshot rather than a stale array copied before it landed.
+ */
+let sessionsWriteQueue: Promise<void> = Promise.resolve();
+function queueSessionsWrite(task: () => Promise<void>): Promise<void> {
+  const run = sessionsWriteQueue.then(task, task);
+  sessionsWriteQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Move the pre-tab conversation into tab one, once. The legacy keys stay where
+ * they are as a recovery copy; nothing reads them after the marker exists.
+ */
+async function migrateChatKeys(ctx: vscode.ExtensionContext): Promise<void> {
+  if (ctx.workspaceState.get<boolean>(TABS_MIGRATED_KEY, false)) {
+    return;
+  }
+  const index = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
+  if (index.length === 0) {
+    const legacyLog = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
+    const legacyTitle = ctx.workspaceState.get<string>(TITLE_KEY, '');
+    const legacyMode = ctx.workspaceState.get<string>(MODE_KEY, 'edit');
+    const hasMode = ctx.workspaceState.get<string>(MODE_KEY) !== undefined;
+    if (legacyLog.length > 0 || legacyTitle.length > 0 || hasMode) {
+      const id = 'legacy';
+      await ctx.workspaceState.update(tabLogKey(id), legacyLog);
+      await ctx.workspaceState.update(tabTitleKey(id), legacyTitle);
+      await ctx.workspaceState.update(tabModeKey(id), legacyMode);
+      await ctx.workspaceState.update(TAB_INDEX_KEY, [
+        { id, createdAt: Date.now() },
+      ]);
+    }
+  }
+  await ctx.workspaceState.update(TABS_MIGRATED_KEY, true);
+}
 
 interface StoredChat {
   id: string;
@@ -523,10 +835,19 @@ function whenLabel(iso: string): string {
  * because the run controls are built on the panel lifecycle (D49bn) — see that
  * decision for the alternative that was left open.
  */
+/** The expandable group that lists the conversations open right now. */
+class OpenTabsGroup extends vscode.TreeItem {
+  constructor(count: number) {
+    super(`Open (${count})`, vscode.TreeItemCollapsibleState.Expanded);
+    this.iconPath = new vscode.ThemeIcon('window');
+  }
+}
+
 class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   constructor(
     private readonly ctx: vscode.ExtensionContext,
     private readonly changed: vscode.EventEmitter<void>,
+    private readonly liveTabs: () => OpenTabInfo[],
   ) {}
 
   // A getter, not a field: the emitter is a constructor parameter property, and
@@ -540,7 +861,23 @@ class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   }
 
   getChildren(el?: vscode.TreeItem): vscode.TreeItem[] {
-    // Every row is a leaf: there is nothing to expand.
+    if (el instanceof OpenTabsGroup) {
+      return this.liveTabs().map((t) => {
+        const row = new vscode.TreeItem(
+          t.name,
+          vscode.TreeItemCollapsibleState.None,
+        );
+        row.description = t.busy ? 'running' : 'open';
+        row.iconPath = new vscode.ThemeIcon('comment-discussion');
+        row.command = {
+          command: 'plato.focusTab',
+          title: 'Show this chat',
+          arguments: [t.id],
+        };
+        return row;
+      });
+    }
+    // Every other row is a leaf: there is nothing to expand.
     if (el !== undefined) {
       return [];
     }
@@ -548,6 +885,10 @@ class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       this.action('Open Chat', 'plato.openChat', 'comment-discussion'),
       this.action('New Chat', 'plato.newChat', 'add'),
     ];
+    const live = this.liveTabs();
+    if (live.length > 0) {
+      rows.push(new OpenTabsGroup(live.length));
+    }
     for (const s of this.sessions().slice(0, 12)) {
       const row = new vscode.TreeItem(
         s.title && s.title.trim().length > 0 ? s.title : 'Untitled chat',
@@ -600,7 +941,12 @@ interface AskQuestion {
  * window reloads and restarts); the webview renders whatever it is given.
  */
 type Entry =
-  | { k: 'msg'; cls: string; who: string; text: string }
+  /**
+   * `from` is the relay tag: the name of the chat tab a message was sent from.
+   * It is provenance for the reader, not text for the model — the model sees
+   * the message as an ordinary turn from the person at this keyboard.
+   */
+  | { k: 'msg'; cls: string; who: string; text: string; from?: string }
   /**
    * D49ag: `digest` is what the call WAS FOR (see `digestToolCall`), `ok`
    * whether it worked. Without them this row recorded only that something ran,
@@ -691,6 +1037,21 @@ interface RunCtx {
   attach?: string[];
   /** D49o: root-relative image paths, read as BYTES at run start. */
   images?: string[];
+}
+
+/** What a host needs from the window that owns it. */
+interface ChatHostOptions {
+  /** The name this tab shows until a conversation title exists. */
+  displayName?: string;
+  /** Called when a run starts or ends, so the peer list stays truthful. */
+  onStateChange?: () => void;
+  /** "New Chat" from inside the shell: open another tab. */
+  newTab?: () => void;
+  /** The other open conversations, for History and (slice 3) the picker. */
+  tabs?: {
+    list: (selfId: string) => OpenTabInfo[];
+    focus: (id: string) => void;
+  };
 }
 
 class ChatHost {
@@ -904,16 +1265,25 @@ class ChatHost {
   constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly ctx: vscode.ExtensionContext,
+    private readonly tabId: string,
+    private readonly opts: ChatHostOptions = {},
   ) {
-    this.log = ctx.workspaceState.get<Entry[]>(LOG_KEY, []);
+    this.log = ctx.workspaceState.get<Entry[]>(tabLogKey(tabId), []);
     // D40: the conversation title survives reloads with the log.
-    this.chatTitle = ctx.workspaceState.get<string>(TITLE_KEY, '');
+    this.chatTitle = ctx.workspaceState.get<string>(tabTitleKey(tabId), '');
     // D49bj: and the mode survives them too. Validated on the way in because
     // this value comes off disk — the picker is the only writer and offers only
     // the three, but a stored file is a boundary, and an unrecognised value
     // would otherwise reach the permission table and deny every tool.
-    const storedMode = ctx.workspaceState.get<string>(MODE_KEY, 'edit');
+    const storedMode = ctx.workspaceState.get<string>(tabModeKey(tabId), 'edit');
     this.mode = MODES.find((m) => m === storedMode) ?? 'edit';
+    // The model is snapshotted per tab. The picker still writes the global
+    // setting, so the NEXT tab inherits the choice, but a pick in one tab can
+    // no longer move a conversation that is already open.
+    this.modelOverride = vscode.workspace
+      .getConfiguration('plato')
+      .get<string>('model', 'anthropic:claude-sonnet-4-5');
+    this.applyPanelTitle();
     this.panel.webview.onDidReceiveMessage(
       async (m: { type?: string; [k: string]: unknown }) => {
         if (m.type === 'mode' && typeof m.value === 'string') {
@@ -939,12 +1309,25 @@ class ChatHost {
           this.send('mode-request-done');
           return;
         }
+        // The shell's "＋ new" when tabs are available: another conversation,
+        // not a wipe of this one.
+        if (m.type === 'new-tab') {
+          this.opts.newTab?.();
+          return;
+        }
+        // A History row for another open tab: bring that panel forward.
+        if (m.type === 'focusTab' && typeof m.id === 'string') {
+          this.opts.tabs?.focus(m.id);
+          return;
+        }
         // D40: user renamed the conversation title from the header chip.
         if (m.type === 'rename' && typeof m.value === 'string') {
           const v = m.value.trim().slice(0, 80);
           this.chatTitle = v;
           this.titleManuallySet = true;
-          await this.ctx.workspaceState.update(TITLE_KEY, v);
+          await this.ctx.workspaceState.update(tabTitleKey(this.tabId), v);
+          this.applyPanelTitle();
+          this.opts.onStateChange?.();
           this.send('title', v);
           return;
         }
@@ -1679,6 +2062,9 @@ class ChatHost {
           void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
+            // The shell saves this so a reload restores THIS conversation, not
+            // merely a panel of the same type.
+            tabId: this.tabId,
             hasConnections: readConnections().length > 0,
             model: this.effectiveModel(),
             title: this.chatTitle,
@@ -1695,6 +2081,26 @@ class ChatHost {
         }
       },
     );
+  }
+
+  /** What the tree, History and the peer list call this conversation. */
+  get displayName(): string {
+    return this.chatTitle.trim() || this.opts.displayName || 'Plato';
+  }
+
+  /** Whether a run is active — the peer list's "running" state. */
+  get busy(): boolean {
+    return this.running;
+  }
+
+  /** Message rows, for the History page's per-tab count. */
+  get messageCount(): number {
+    return this.log.filter((e) => e.k === 'msg').length;
+  }
+
+  /** The editor tab label follows the conversation title. */
+  private applyPanelTitle(): void {
+    this.panel.title = this.displayName;
   }
 
   /**
@@ -1781,8 +2187,9 @@ class ChatHost {
     this.mode = next;
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
-    // D49bj: the choice outlives the panel, as the model choice does.
-    void this.ctx.workspaceState.update(MODE_KEY, next);
+    // D49bj: the choice outlives the panel, as the model choice does. It
+    // belongs to this tab, not to the window.
+    void this.ctx.workspaceState.update(tabModeKey(this.tabId), next);
     // D49cb: a switch the MODEL asked for changes host state without a click in
     // this view, so the picker has to be told. Without this message the chip
     // still read `plan` while the permission table was `edit` — the same silent
@@ -2471,7 +2878,7 @@ class ChatHost {
     if (this.log.length > LOG_MAX) {
       this.recordTrim(LOG_MAX);
     }
-    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    await this.ctx.workspaceState.update(tabLogKey(this.tabId), this.log);
     // A fold grew the log: let the next archive snapshot it instead of being
     // skipped by the growth guard.
     this.archivedUpTo = 0;
@@ -3132,35 +3539,40 @@ class ChatHost {
     return this.ctx.workspaceState.get<StoredChat[]>(SESSIONS_KEY, []);
   }
 
-  /** Archives the current conversation (called before New Chat clears). */
-  private async archiveCurrentChat(): Promise<void> {
-    const msgs = this.log.filter((e) => e.k === 'msg');
-    if (msgs.length === 0) {
-      return;
-    }
-    // D41: skip when nothing new was said since the last archive —
-    // closing and reopening the same conversation must not stack
-    // duplicate history snapshots.
-    if (this.log.length <= this.archivedUpTo) {
-      return;
-    }
-    const first = msgs.find((e) => e.k === 'msg' && e.cls === 'you');
-    const sessions = this.sessions();
-    sessions.unshift({
-      id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-      // D40: the model-generated / user-renamed title wins; the first
-      // user message is only the fallback.
-      title:
-        this.chatTitle ||
-        ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
-      ts: new Date().toISOString(),
-      log: [...this.log],
+  /** Archives the current conversation (called when the tab closes). */
+  private archiveCurrentChat(): Promise<void> {
+    // The read-modify-write runs in a queue shared by every host in this
+    // window: two tabs can close within the same tick, and the second archive
+    // must see the first one's snapshot rather than overwrite it.
+    return queueSessionsWrite(async () => {
+      const msgs = this.log.filter((e) => e.k === 'msg');
+      if (msgs.length === 0) {
+        return;
+      }
+      // D41: skip when nothing new was said since the last archive —
+      // closing and reopening the same conversation must not stack
+      // duplicate history snapshots.
+      if (this.log.length <= this.archivedUpTo) {
+        return;
+      }
+      const first = msgs.find((e) => e.k === 'msg' && e.cls === 'you');
+      const sessions = this.sessions();
+      sessions.unshift({
+        id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        // D40: the model-generated / user-renamed title wins; the first
+        // user message is only the fallback.
+        title:
+          this.chatTitle ||
+          ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
+        ts: new Date().toISOString(),
+        log: [...this.log],
+      });
+      await this.ctx.workspaceState.update(
+        SESSIONS_KEY,
+        sessions.slice(0, SESSIONS_MAX),
+      );
+      this.archivedUpTo = this.log.length;
     });
-    await this.ctx.workspaceState.update(
-      SESSIONS_KEY,
-      sessions.slice(0, SESSIONS_MAX),
-    );
-    this.archivedUpTo = this.log.length;
   }
 
   /**
@@ -3188,10 +3600,12 @@ class ChatHost {
     }
     this.log.length = 0;
     this.log.push(...s.log.slice(-LOG_MAX));
-    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    await this.ctx.workspaceState.update(tabLogKey(this.tabId), this.log);
     // D40: resuming adopts the archived session's title.
     this.chatTitle = s.title || '';
-    await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
+    await this.ctx.workspaceState.update(tabTitleKey(this.tabId), this.chatTitle);
+    this.applyPanelTitle();
+    this.opts.onStateChange?.();
     // D41: the resumed content is already in History — only
     // messages sent from here on should archive again.
     this.archivedUpTo = this.log.length;
@@ -3368,26 +3782,48 @@ class ChatHost {
       ts: string;
       count: number;
       current?: boolean;
+      live?: boolean;
+      tabId?: string;
     }[] = this.sessions().map((s) => ({
       id: s.id,
       title: s.title,
       ts: s.ts,
       count: s.log.filter((e) => e.k === 'msg').length,
     }));
-    // D42: the live conversation is the first History entry so the
-    // page is never empty while a chat is open.
-    const curMsgs = this.log.filter((e) => e.k === 'msg').length;
-    if (curMsgs > 0) {
-      const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
-      chats.unshift({
-        id: '__current__',
-        title:
-          this.chatTitle ||
-          ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
-        ts: new Date().toISOString(),
-        count: curMsgs,
-        current: true,
-      });
+    const open = this.opts.tabs?.list(this.tabId);
+    if (open !== undefined) {
+      // Every open conversation is a History entry, the current one first.
+      // "Current" returns to the chat; another row brings its panel forward;
+      // a stored row resumes in this tab.
+      const rows = [...open].sort(
+        (a, b) => Number(b.current) - Number(a.current),
+      );
+      chats.unshift(
+        ...rows.map((t) => ({
+          id: `__tab__${t.id}`,
+          tabId: t.id,
+          title: t.name,
+          ts: new Date().toISOString(),
+          count: t.count,
+          current: t.current,
+          live: true,
+        })),
+      );
+    } else {
+      // A host without tabs (Visual Studio) has one live conversation.
+      const curMsgs = this.log.filter((e) => e.k === 'msg').length;
+      if (curMsgs > 0) {
+        const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
+        chats.unshift({
+          id: '__current__',
+          title:
+            this.chatTitle ||
+            ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
+          ts: new Date().toISOString(),
+          count: curMsgs,
+          current: true,
+        });
+      }
     }
     void this.panel.webview.postMessage({
       type: 'history',
@@ -3525,7 +3961,7 @@ class ChatHost {
     if (this.log.length > LOG_MAX) {
       this.recordTrim(LOG_MAX);
     }
-    void this.ctx.workspaceState.update(LOG_KEY, this.log);
+    void this.ctx.workspaceState.update(tabLogKey(this.tabId), this.log);
   }
 
   /**
@@ -3548,12 +3984,14 @@ class ChatHost {
     }
     await this.archiveCurrentChat();
     this.log.length = 0;
-    await this.ctx.workspaceState.update(LOG_KEY, this.log);
+    await this.ctx.workspaceState.update(tabLogKey(this.tabId), this.log);
     // D40: a new chat gets a fresh title.
     this.chatTitle = '';
     this.titleManuallySet = false;
     this.archivedUpTo = 0;
-    await this.ctx.workspaceState.update(TITLE_KEY, '');
+    await this.ctx.workspaceState.update(tabTitleKey(this.tabId), '');
+    this.applyPanelTitle();
+    this.opts.onStateChange?.();
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
     // D49bc: a new chat is a new session, so the reveals go with the other two.
@@ -3713,7 +4151,12 @@ class ChatHost {
         }
         this.chatTitle = fallback;
       }
-      await this.ctx.workspaceState.update(TITLE_KEY, this.chatTitle);
+      await this.ctx.workspaceState.update(
+        tabTitleKey(this.tabId),
+        this.chatTitle,
+      );
+      this.applyPanelTitle();
+      this.opts.onStateChange?.();
       this.send('title', this.chatTitle);
     } catch (e) {
       // Diagnostics only (Extension Host console); the UI stays silent.
@@ -4333,6 +4776,7 @@ class ChatHost {
       },
     });
     this.running = true;
+    this.opts.onStateChange?.();
     // D49bm: a pause asked for before the controller existed. Applied now, so a
     // click during the setup is honoured rather than swallowed.
     if (this.pendingPause) {
@@ -4715,6 +5159,7 @@ class ChatHost {
         this.send('notice', line);
       }
       this.running = false;
+      this.opts.onStateChange?.();
       // D49aq: cleared with the run, so no later approval can report against a
       // run that has ended.
       this.runBus = null;
