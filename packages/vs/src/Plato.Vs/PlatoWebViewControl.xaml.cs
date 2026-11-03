@@ -47,7 +47,7 @@ namespace Plato.Vs
         private bool _navigated;
         private bool _disposed;
 
-        public PlatoWebViewControl(SidecarHost sidecar)
+        internal PlatoWebViewControl(SidecarHost sidecar)
         {
             InitializeComponent();
             _sidecar = sidecar;

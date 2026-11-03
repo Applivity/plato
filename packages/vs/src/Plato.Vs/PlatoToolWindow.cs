@@ -35,7 +35,7 @@ namespace Plato.Vs
             package.RegisterWindow(this);
         }
 
-        public WindowSlot Slot { get; }
+        internal WindowSlot Slot { get; }
 
         public PlatoWebViewControl WebViewControl { get; }
 
