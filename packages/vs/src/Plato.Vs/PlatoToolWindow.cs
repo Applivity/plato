@@ -39,6 +39,8 @@ namespace Plato.Vs
 
         public PlatoWebViewControl WebViewControl { get; }
 
+        internal SidecarHost Sidecar => _sidecar;
+
         public Task ShutdownAsync() => _sidecar.StopAsync();
 
         protected override void Dispose(bool disposing)
