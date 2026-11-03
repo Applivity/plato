@@ -20,18 +20,30 @@ namespace Plato.Vs.Native
 
         public static string SettingsFile => Path.Combine(RoamingRoot, "settings.json");
 
-        public static string WorkspaceStateFile(string root) =>
-            Path.Combine(RoamingRoot, "workspace-state", ProjectKey(root) + ".json");
+        /// <summary>
+        /// The live conversation of one Plato window: its log, title and mode.
+        /// Each window gets its own file, so two windows cannot overwrite each
+        /// other's state.
+        /// </summary>
+        public static string WorkspaceStateFile(string root, string windowId) =>
+            Path.Combine(RoamingRoot, "workspace-state", ProjectKey(root) + "-" + windowId + ".json");
+
+        /// <summary>
+        /// The archived-chat list. It is shared by every window of a project,
+        /// because History is one list, not one list per window.
+        /// </summary>
+        public static string SharedChatsFile(string root) =>
+            Path.Combine(RoamingRoot, "workspace-state", ProjectKey(root) + "-chats.json");
 
         public static string LogsDirectory => Path.Combine(LocalRoot, "logs");
 
         public static string WebView2UserData => Path.Combine(LocalRoot, "WebView2");
 
-        public static string NewLogFile()
+        public static string NewLogFile(string windowId)
         {
             Directory.CreateDirectory(LogsDirectory);
             var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
-            return Path.Combine(LogsDirectory, "host-" + stamp + ".log");
+            return Path.Combine(LogsDirectory, "host-" + stamp + "-" + windowId + ".log");
         }
 
         /// <summary>

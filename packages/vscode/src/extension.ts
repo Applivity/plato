@@ -279,7 +279,7 @@ function readStringList(cfg: vscode.WorkspaceConfiguration, key: string): string
 }
 
 export function activate(ctx: vscode.ExtensionContext): void {
-  const caps = hostCapabilities();
+  const caps = hostCapabilities(ctx);
   // The open conversations of this window. Each entry owns its own panel and
   // its own ChatHost; nothing in this map is shared between chats except the
   // process they run in.
@@ -421,7 +421,11 @@ export function activate(ctx: vscode.ExtensionContext): void {
       if (lastActiveTabId === tabId) {
         lastActiveTabId = mostRecent()?.id ?? null;
       }
-      void (async () => {
+      // Returning the promise lets the Visual Studio shim hold its sidecar open
+      // until the archive is written; VS Code ignores the return value. Every
+      // panel returns it, so the guarantee covers any window, not one tracked
+      // panel.
+      return (async () => {
         await host.dispose();
         // The tab is gone; the archived copy in History is the record now.
         const now = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
@@ -740,12 +744,19 @@ interface OpenTabInfo {
 
 /**
  * The host-side capabilities the shared shell reads. The Visual Studio shim
- * sets `globalThis.__platoCaps` to opt out; a real VS Code window has no such
- * object and gets the full shell. The default is deliberately the capable one:
- * absence means "this host did not restrict anything".
+ * states them on the extension context it builds (`capabilities`, an invented
+ * field no real VS Code context has) and can also set `globalThis.__platoCaps`
+ * before the extension loads; the context wins because it is the one place the
+ * shim already owns. A real VS Code window has neither and gets the full shell.
+ * The default is deliberately the capable one: absence means "this host did not
+ * restrict anything".
  */
-function hostCapabilities(): ChatCaps {
-  const raw = (globalThis as { __platoCaps?: Partial<ChatCaps> }).__platoCaps;
+function hostCapabilities(ctx?: unknown): ChatCaps {
+  const fromContext = (ctx as { capabilities?: Partial<ChatCaps> } | undefined)
+    ?.capabilities;
+  const raw =
+    fromContext ??
+    (globalThis as { __platoCaps?: Partial<ChatCaps> }).__platoCaps;
   if (raw === undefined) {
     return { tabs: true, relay: true, noun: 'tab' };
   }
