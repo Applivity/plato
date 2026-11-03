@@ -402,8 +402,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
         live = undefined;
         host = undefined;
         // D41: archive on close so History fills without New Chat. The sidebar
-        // row list is only right once that archive has landed.
-        void (async () => {
+        // row list is only right once that archive has landed. Returning the
+        // promise lets the Visual Studio shim hold the sidecar open until the
+        // archive is written; VS Code ignores the return value.
+        return (async () => {
           await closing?.dispose();
           chatsChanged.fire();
         })();

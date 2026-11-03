@@ -159,6 +159,10 @@ function init(params: Record<string, unknown>): unknown {
     typeof params['workspaceStateFile'] === 'string'
       ? params['workspaceStateFile']
       : join(stateDir, 'workspace-state', `${projectKey(root)}.json`);
+  const sharedStateFile =
+    typeof params['sharedStateFile'] === 'string'
+      ? params['sharedStateFile']
+      : undefined;
 
   const settings = readSettings(settingsPath);
   host = start({
@@ -168,6 +172,7 @@ function init(params: Record<string, unknown>): unknown {
     secrets: {},
     secretStore,
     workspaceStateFile,
+    sharedStateFile,
     transport,
   });
   log('info', `sidecar started for ${root} (${String(params['version'] ?? '')})`);
@@ -216,9 +221,18 @@ async function handleRequest(message: {
         break;
       case 'panel.close': {
         // The tool window was closed. Disposing the panel stops the run, as
-        // closing the chat tab does in the VS Code host.
-        const panel = host?.panel() as { dispose?: () => void } | null;
-        panel?.dispose?.();
+        // closing the chat tab does in the VS Code host. The response is sent
+        // only after the run has unwound and the chat has been archived, so
+        // the shell can stop the process without cutting its own archive short.
+        const panel = host?.panel() as {
+          disposeAsync?: () => Promise<void>;
+          dispose?: () => void;
+        } | null;
+        if (panel?.disposeAsync) {
+          await panel.disposeAsync();
+        } else {
+          panel?.dispose?.();
+        }
         result = { ok: true };
         break;
       }
@@ -266,8 +280,15 @@ async function shutdown(): Promise<void> {
   }
   stopping = true;
   try {
-    const panel = host?.panel() as { dispose?: () => void } | null;
-    panel?.dispose?.();
+    const panel = host?.panel() as {
+      disposeAsync?: () => Promise<void>;
+      dispose?: () => void;
+    } | null;
+    if (panel?.disposeAsync) {
+      await panel.disposeAsync();
+    } else {
+      panel?.dispose?.();
+    }
   } catch (error) {
     console.error(`[plato-host] shutdown: ${String(error)}`);
   }

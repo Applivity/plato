@@ -29,6 +29,12 @@
           <ButtonText>Plato: Manage API Keys</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidPlatoCmdSet" id="cmdidNewWindow" priority="0x0104" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_MM_TOOLSADDINS" />
+        <Strings>
+          <ButtonText>Plato: New Window</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -39,6 +45,7 @@
       <IDSymbol name="cmdidNewChat" value="0x0101" />
       <IDSymbol name="cmdidSetApiKey" value="0x0102" />
       <IDSymbol name="cmdidManageKeys" value="0x0103" />
+      <IDSymbol name="cmdidNewWindow" value="0x0104" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>
