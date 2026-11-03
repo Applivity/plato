@@ -15,6 +15,8 @@ import {
   type Mode,
   type ReasoningConfig,
   type RunEndReason,
+  type SessionPeer,
+  type SendOutcome,
   type StuckRequest,
   loadImageAttachment,
   looksLikeImage,
@@ -119,6 +121,13 @@ export interface ExecuteOptions {
   provider?: ChatProvider;
   /** Injected by the scripted runs; builds a real philosopher otherwise. */
   observerProvider?: (spec: ObserverSpec) => ChatProvider | null;
+  /** D49cq: live sessions this run may list and message. */
+  sessions?: {
+    list: () => Promise<SessionPeer[]>;
+    send: (to: string, text: string) => Promise<SendOutcome>;
+  };
+  /** D49cq: `'session'` when another session sent this task (depth 1). */
+  origin?: 'user' | 'session';
 }
 
 /** `~/.plato` state is shared with the extension (D49bw). */
@@ -429,6 +438,10 @@ export async function executeTask(
       compact: { mode: 'auto', threshold: config.compactionThreshold },
       ...(mcp.servers.length === 0 ? {} : { mcpServers: mcp.servers }),
       ...(options.history === undefined ? {} : { history: options.history }),
+      // D49cq: the registry and the delivery live in the CLI's live session;
+      // a host without one keeps both tools off.
+      ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
+      ...(options.origin === undefined ? {} : { origin: options.origin }),
       // Passing this is what offers `request_mode` to the model and adds the
       // prompt paragraph; a host without it keeps the prose fallback (D49cb).
       ...(requestMode === undefined

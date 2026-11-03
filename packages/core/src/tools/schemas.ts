@@ -18,6 +18,61 @@ export interface ToolDeclarationOpts {
    * which is worse than not offering the tool.
    */
   modeRequest?: boolean;
+  /**
+   * D49cq: the host has live sessions to list. Offered only where the registry
+   * exists; a host without it would answer a right question with an error.
+   */
+  listSessions?: boolean;
+  /**
+   * D49cq: the host can deliver to another session. Never set for a run that
+   * itself arrived from another session — depth 1 is the whole chain rule.
+   */
+  sendToSession?: boolean;
+}
+
+/**
+ * D49cq: what other Plato sessions are doing on this machine. Read-only and
+ * cheap; it is also how the model discovers the id or unique name that
+ * `send_to_session` needs.
+ */
+function listSessionsTool(): CanonicalTool {
+  return {
+    name: 'list_sessions',
+    description:
+      'List the other Plato sessions running on this machine — terminal, VS Code windows, and Visual Studio windows. Each entry has an id, a name, the host, whether it is busy, and a short summary of what it is working on. Use it when another session may already hold what this task needs, then send that session one message with send_to_session.',
+    parameters: { type: 'object', properties: {} },
+  };
+}
+
+/**
+ * D49cq: one short text message to another session. The other session's user
+ * sees who sent it, and the receiving model is told it came from another agent,
+ * never from its own user. The receiving session keeps its own mode, so a
+ * message cannot widen what that session is allowed to do.
+ */
+function sendToSessionTool(): CanonicalTool {
+  return {
+    name: 'send_to_session',
+    description:
+      'Send a short text message to another Plato session on this machine. Address it by the id list_sessions returned, or by a name that only one session has; a shared name is refused, so prefer the id. The other session\'s user sees the sender and the text. The receiving session answers in its own window, and this version has no reply back to you. Use it to ask for a fact or a result that session already has; never to ask for work you would not do yourself.',
+    parameters: {
+      type: 'object',
+      properties: {
+        to: {
+          type: 'string',
+          description:
+            'The id from list_sessions (preferred), or a name that exactly one live session has.',
+        },
+        text: {
+          type: 'string',
+          maxLength: 4000,
+          description:
+            'The message, under 4000 characters. Say who you are and what you need; the other session cannot see your conversation.',
+        },
+      },
+      required: ['to', 'text'],
+    },
+  };
 }
 
 /**
@@ -332,6 +387,9 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
     // D49cb: after ask_user because both are ways to stop and let the user
     // decide — but this one is the only one that can actually change a mode.
     ...(opts.modeRequest ? [requestModeTool()] : []),
+    // D49cq: live sessions are an optional host capability, like request_mode.
+    ...(opts.listSessions ? [listSessionsTool()] : []),
+    ...(opts.sendToSession ? [sendToSessionTool()] : []),
     {
       name: 'web_fetch',
       description:

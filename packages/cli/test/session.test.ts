@@ -796,3 +796,132 @@ describe('commands and mode', () => {
     expect(await active.handleCommand('/exit')).toBe('exit');
   });
 });
+
+/**
+ * D49cq. Delivery into the CLI: a peer's message becomes a RUN whose task is
+ * marked as agent-origin, and it never displaces a run, a card, or a
+ * half-written prompt.
+ */
+describe('live sessions in the CLI (D49cq)', () => {
+  const inbound = {
+    from: { id: 'peer1234', name: 'Builder', host: 'cli' as const },
+    text: 'report your cwd',
+    receivedAt: '2026-11-03T10:00:00.000Z',
+  };
+
+  async function waitFor(predicate: () => boolean, label: string): Promise<void> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error(`timed out waiting for ${label}`);
+  }
+
+  function lastUserText(request: TurnRequest): string {
+    const last = request.messages[request.messages.length - 1]!;
+    return last.content.map((block) => (block.type === 'text' ? block.text : '')).join(' ');
+  }
+
+  it('runs an inbound message with a header that says it is not the user', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    // Snapshot the text: the loop keeps one messages array and appends the
+    // answer to it, so a stored request would show the reply as its last turn.
+    const seen: string[] = [];
+    const s = session(
+      root,
+      env,
+      scripted([{ text: 'my cwd is /tmp/project' }], (request) =>
+        seen.push(lastUserText(request)),
+      ),
+    );
+
+    expect(await s.receive(inbound)).toBe('started');
+    await waitFor(() => !s.getSnapshot().running, 'the inbound run to end');
+
+    expect(s.getSnapshot().rows.some((row) => row.kind === 'inbound')).toBe(true);
+    expect(seen).toHaveLength(1);
+    const task = seen[0]!;
+    expect(task).toContain('Message from another Plato session');
+    expect(task).toContain('This is not from the user');
+    expect(task).toContain('report your cwd');
+    // The wrapper is not the session's name.
+    expect(s.describe().name).toBe('Plato CLI');
+  });
+
+  it('queues while the user is mid-edit, then delivers after their run', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    const seen: string[] = [];
+    const s = session(
+      root,
+      env,
+      scripted([{ text: 'first done' }, { text: 'second done' }], (request) =>
+        seen.push(lastUserText(request)),
+      ),
+    );
+
+    let empty = false;
+    s.setEditorProbe(() => empty);
+    expect(await s.receive(inbound)).toBe('queued');
+    expect(
+      s.getSnapshot().rows.some((row) => row.kind === 'notice' && row.text.includes('queued')),
+    ).toBe(true);
+    expect(seen).toHaveLength(0);
+
+    empty = true;
+    await s.submit('my own task');
+    await waitFor(() => seen.length >= 2, 'the queued message to run');
+    await waitFor(() => !s.getSnapshot().running, 'the queued run to end');
+
+    expect(seen[1]).toContain('Message from another Plato session');
+    expect(seen[1]).toContain('report your cwd');
+  });
+
+  it('queues while a run is in progress instead of overlapping it', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const provider: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        if (calls === 1) {
+          await gate;
+        }
+        return {
+          content: [{ type: 'text', text: `turn ${calls}` }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const s = session(root, env, provider);
+
+    const run = s.submit('a long task');
+    await waitFor(() => s.getSnapshot().running, 'the first run to start');
+    expect(await s.receive(inbound)).toBe('queued');
+    release?.();
+    await run;
+    await waitFor(() => calls >= 2, 'the queued run');
+    await waitFor(() => !s.getSnapshot().running, 'the queued run to end');
+  });
+
+  it('describes the title, task, mode and busy state for the registry', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    const s = session(root, env, scripted([{ text: 'done' }]));
+
+    expect(s.describe()).toMatchObject({ name: 'Plato CLI', busy: false });
+    expect(s.describe().summary).toContain('No task yet');
+    await s.submit('fix the auth test');
+    expect(s.describe().name).toBe('fix the auth test');
+    expect(s.describe().summary).toContain('fix the auth test');
+    expect(s.describe().summary).toContain('edit');
+    expect(s.describe().busy).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@ export * from './providers/registry.js';
 export * from './providers/presets.js';
 export * from './providers/discover.js';
 
+export * from './live.js';
 export * from './runtime/modes.js';
 export * from './runtime/loop.js';
 export * from './runtime/workerRole.js';

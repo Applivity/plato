@@ -52,8 +52,18 @@ export function createSession(
   };
 }
 
-function titleFor(history: StoredSession['history']): string {
-  const first = history.find((entry) => entry.role === 'user');
+/**
+ * D49cq: the fixed opening of the header a run sees when another session sent
+ * the message. It lives here so the title can skip such a turn: a session whose
+ * first task came from a peer is not named after the wrapper.
+ */
+export const INBOUND_MARKER = '[Message from another Plato session —';
+
+/** The name a session shows in saved lists and in the live registry. */
+export function titleFor(history: StoredSession['history']): string {
+  const first = history.find(
+    (entry) => entry.role === 'user' && !entry.text.startsWith(INBOUND_MARKER),
+  );
   if (first === undefined) {
     return '';
   }

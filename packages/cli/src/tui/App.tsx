@@ -1,5 +1,5 @@
 import { Box, Static, Text, useInput, useWindowSize } from 'ink';
-import { useEffect, useState, useSyncExternalStore, type ReactElement } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react';
 import {
   EMPTY_EDITOR,
   backspace,
@@ -61,6 +61,15 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   const [choice, setChoice] = useState(0);
   // Esc closes the menu for the text it was showing; the next keystroke reopens it.
   const [menuDismissedAt, setMenuDismissedAt] = useState<string | null>(null);
+
+  // D49cq: an inbound message must never swallow a half-written prompt, so the
+  // session asks whether the editor is empty at the moment the message lands.
+  // A ref keeps that answer current without re-subscribing on every keystroke.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+  useEffect(() => {
+    session.setEditorProbe(() => editorRef.current.text.length === 0);
+  }, [session]);
 
   const query = slashQuery(editor.text);
   const matches = query === null ? [] : suggest(query);
@@ -375,6 +384,10 @@ export function RowView({ row, columns }: { row: Row; columns: number }): ReactE
       return <Text dimColor>{row.text}</Text>;
     case 'notice':
       return <Text dimColor>{row.text}</Text>;
+    case 'inbound':
+      // D49cq: a message from another session is neither the user's turn nor a
+      // notice; blue and the ↳ glyph say where it came from.
+      return <Text color={COLOURS ? 'blue' : undefined}>{row.text}</Text>;
     case 'error':
       return <Text color="red">{row.text}</Text>;
   }

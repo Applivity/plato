@@ -41,9 +41,11 @@ export type ToolName =
   | 'grep'
   | 'glob'
   | 'web_fetch'
-  | 'git';
+  | 'git'
+  | 'list_sessions'
+  | 'send_to_session';
 
-type Kind = 'read' | 'write' | 'shell' | 'net';
+type Kind = 'read' | 'write' | 'shell' | 'net' | 'relay';
 
 const TOOL_KIND: Record<ToolName, Kind> = {
   read_file: 'read',
@@ -63,6 +65,11 @@ const TOOL_KIND: Record<ToolName, Kind> = {
   bash_output: 'read',
   kill_shell: 'shell',
   web_fetch: 'net',
+  // D49cq: looking at other sessions touches nothing, so it is a read. Sending
+  // them a message is a RELAY: plan denies it outright (see `decide`), edit and
+  // auto allow it with no card.
+  list_sessions: 'read',
+  send_to_session: 'relay',
 };
 
 export type Decision = 'allow' | 'ask' | 'deny';
@@ -104,6 +111,16 @@ export function decide(tool: string, mode: Mode): Decision {
   // untrusted. In `plan` and `edit` egress still asks.
   if (kind === 'net') {
     return mode === 'auto' ? 'allow' : 'ask';
+  }
+  // D49cq: **a relay is a side effect outside this workspace, and plan refuses
+  // it with no card.** The founder's reason is the one that decides it: a
+  // plan-mode run that could relay would make an auto tab perform the very
+  // action plan refused — plan would be laundering its own prohibition. It costs
+  // a plan-mode session nothing it cannot say in its own chat. Edit and auto
+  // allow it without a card, so peer messaging stays usable; the RECEIVING
+  // session's mode and approvals still govern what it does with the text.
+  if (kind === 'relay') {
+    return mode === 'plan' ? 'deny' : 'allow';
   }
   if (mode === 'plan') {
     return kind === 'read' ? 'allow' : 'deny';

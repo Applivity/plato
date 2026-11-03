@@ -9,6 +9,8 @@ import { hostOf, isPrivateHostname } from '../tools/web.js';
 import type { ImageMime } from '../providers/types.js';
 import type { ToolArgs } from '../tools/execute.js';
 import type { McpServer } from '../mcp/client.js';
+import { MAX_MESSAGE_CHARS } from '../live.js';
+import type { SessionPeer, SendOutcome } from '../live.js';
 import type {
   CanonicalContent,
   CanonicalMessage,
@@ -19,6 +21,9 @@ import type {
 import { decideWithArgs, isWriteTool } from './modes.js';
 import { recordWrites } from './undo.js';
 import type { Mode } from './modes.js';
+
+/** D49cq: per-run cap on cross-session messages, the same number as the team cap. */
+const MAX_SESSION_SENDS = 5;
 import { secretRefusal } from './modes.js';
 import { containmentRefusal } from '../security/paths.js';
 import { maskText, type SecretVault } from '../security/mask.js';
@@ -475,6 +480,22 @@ export interface LoopOptions {
    */
   requestMode?: (req: { mode: Mode; reason: string }) => Promise<{ ok: boolean; note: string }>;
   /**
+   * D49cq: the live sessions this host can see and message. Its presence is what
+   * offers `list_sessions`; `send_to_session` additionally needs `origin` to be
+   * `'user'`. A host without the registry leaves both off, exactly as a host
+   * without a mode card leaves `request_mode` off.
+   */
+  sessions?: {
+    list: () => Promise<SessionPeer[]>;
+    send: (to: string, text: string) => Promise<SendOutcome>;
+  };
+  /**
+   * D49cq: where this run's task came from. `'session'` means another Plato
+   * session sent it, so this run may not send another one — depth 1, enforced
+   * here rather than in each host.
+   */
+  origin?: 'user' | 'session';
+  /**
    * Started MCP servers (D06). Their tools join the model's tool list
    * as mcp_<server>_<tool> and route through the mode policy like
    * shell-class actions.
@@ -694,6 +715,9 @@ async function runLoop(
   // D37: the provider's authoritative inputTokens from the previous
   // turn. Used as a secondary line in the context tooltip.
   let lastInputTokens: number | undefined;
+  // D49cq: a run may message other sessions at most this many times. The depth
+  // rule stops A→B→C; this stops A→B, A→B, A→B from becoming a spam loop.
+  let sessionSends = 0;
   // D37: compaction config. Default = auto at 80% of max context.
   const compactCfg = {
     mode: opts.compact?.mode ?? 'auto',
@@ -702,7 +726,12 @@ async function runLoop(
 
   // Tool surface: built-ins + MCP (mcp_<server>_<tool>) (D06).
   const mcpByTool = new Map<string, { srv: McpServer; tool: string }>();
-  const allTools = toolDeclarations({ modeRequest: opts.requestMode !== undefined });
+  const allTools = toolDeclarations({
+    modeRequest: opts.requestMode !== undefined,
+    listSessions: opts.sessions !== undefined,
+    // D49cq: a run that arrived from another session never sees the send tool.
+    sendToSession: opts.sessions !== undefined && opts.origin !== 'session',
+  });
   for (const srv of opts.mcpServers ?? []) {
     for (const t of srv.tools) {
       const full = srv.fullName(t.name);
@@ -1195,6 +1224,125 @@ async function runLoop(
             return {
               ok: false,
               output: `request_mode failed: ${e instanceof Error ? e.message : 'error'}`,
+            };
+          }
+        }
+        // D49cq: live sessions. These branches are here, not in the executor,
+        // because the HOST owns the registry and the delivery — core only
+        // validates and shapes what the model sees. Policy has already run:
+        // plan denies send_to_session before this point.
+        if (name === 'list_sessions') {
+          if (!opts.sessions) {
+            return { ok: false, output: 'list_sessions is not available in this host.' };
+          }
+          try {
+            const peers = await opts.sessions.list();
+            if (peers.length === 0) {
+              return { ok: true, output: 'No other live Plato sessions.' };
+            }
+            return {
+              ok: true,
+              output: peers
+                .map(
+                  (peer, index) =>
+                    `${index + 1}. ${peer.id}  ${peer.name}  ${peer.host}  ${
+                      peer.busy ? 'busy' : 'idle'
+                    }\n   ${peer.summary}`,
+                )
+                .join('\n'),
+            };
+          } catch (e) {
+            return {
+              ok: false,
+              output: `list_sessions failed: ${e instanceof Error ? e.message : 'error'}`,
+            };
+          }
+        }
+        if (name === 'send_to_session') {
+          // The declaration already omits the tool in such a run; this is the
+          // second lock, for a provider that calls it anyway.
+          if (opts.origin === 'session') {
+            return {
+              ok: false,
+              output:
+                'send_to_session: this run started from another session\'s message, and may not send one.',
+            };
+          }
+          if (!opts.sessions) {
+            return { ok: false, output: 'send_to_session is not available in this host.' };
+          }
+          if (sessionSends >= MAX_SESSION_SENDS) {
+            return {
+              ok: false,
+              output: `send_to_session: this run has already sent ${MAX_SESSION_SENDS} messages.`,
+            };
+          }
+          const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
+          const text = typeof args['text'] === 'string' ? args['text'] : '';
+          if (to.length === 0) {
+            return { ok: false, output: 'send_to_session: name a session with "to".' };
+          }
+          if (text.trim().length === 0) {
+            return { ok: false, output: 'send_to_session: the message is empty.' };
+          }
+          if (text.length > MAX_MESSAGE_CHARS) {
+            return {
+              ok: false,
+              output: `send_to_session: the message is ${text.length} characters; the limit is ${MAX_MESSAGE_CHARS}.`,
+            };
+          }
+          sessionSends += 1;
+          try {
+            const res = await opts.sessions.send(to, text);
+            if (res.ok) {
+              return {
+                ok: true,
+                output:
+                  res.status === 'queued'
+                    ? `queued at ${res.to.name} [${res.to.id}] — it is busy`
+                    : `delivered to ${res.to.name} [${res.to.id}]`,
+              };
+            }
+            switch (res.reason) {
+              case 'unknown':
+                return { ok: false, output: `no live session matches "${to}".` };
+              case 'ambiguous':
+                return {
+                  ok: false,
+                  output: `more than one session matches "${to}": ${
+                    res.detail ?? 'several'
+                  }. Address one by id.`,
+                };
+              case 'self':
+                return { ok: false, output: 'that is this session.' };
+              case 'closed':
+                return { ok: false, output: `session ${to} is no longer running.` };
+              case 'empty':
+                return { ok: false, output: 'send_to_session: the message is empty.' };
+              case 'too-long':
+                return {
+                  ok: false,
+                  output: `send_to_session: the message is over ${MAX_MESSAGE_CHARS} characters.`,
+                };
+              case 'not-accepting':
+                return {
+                  ok: false,
+                  output:
+                    res.detail === undefined
+                      ? `session ${to} is running non-interactively and cannot take messages.`
+                      : `session ${to} refused the message: ${res.detail}`,
+                };
+              case 'error':
+                return {
+                  ok: false,
+                  output: `send_to_session failed: ${res.detail ?? 'delivery failed'}`,
+                };
+            }
+            return { ok: false, output: 'send_to_session failed: unknown error' };
+          } catch (e) {
+            return {
+              ok: false,
+              output: `send_to_session failed: ${e instanceof Error ? e.message : 'error'}`,
             };
           }
         }

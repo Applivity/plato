@@ -2719,3 +2719,179 @@ describe('a run that sees .gitignore paths', () => {
     expect(notices.join('\n')).not.toContain('.gitignore');
   });
 });
+
+/**
+ * D49cq. The two live-session tools are host capabilities, like request_mode:
+ * a run without them never sees them, a run whose task came from another
+ * session sees only the list, and policy still runs first.
+ */
+describe('live sessions in the loop (D49cq)', () => {
+  const PEER = {
+    id: 'aaaa1111',
+    name: 'Builder',
+    summary: 'building the thing (edit)',
+    host: 'cli' as const,
+    busy: false,
+    cwd: '/tmp/project',
+    started: '2026-11-03T00:00:00.000Z',
+  };
+
+  function recorder(
+    result:
+      | { ok: true; to: typeof PEER; status: 'accepted' | 'queued' }
+      | { ok: false; reason: 'unknown' | 'ambiguous' | 'self' | 'closed' | 'not-accepting'; detail?: string } = {
+      ok: true,
+      to: PEER,
+      status: 'accepted',
+    },
+  ) {
+    const sent: { to: string; text: string }[] = [];
+    return {
+      sent,
+      sessions: {
+        list: async () => [PEER],
+        send: async (to: string, text: string) => {
+          sent.push({ to, text });
+          return result;
+        },
+      },
+    };
+  }
+
+  /** Calls one tool `times` times, then finishes; collects tools and results. */
+  function caller(
+    name: string,
+    input: Record<string, unknown>,
+    times: number,
+    onRequest: (request: TurnRequest) => void,
+  ): ChatProvider {
+    let turn = 0;
+    return {
+      id: 'anthropic',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        onRequest(request);
+        turn += 1;
+        if (turn <= times) {
+          return {
+            content: [{ type: 'tool_use', id: `call-${turn}`, name, input }],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+  }
+
+  function collect(request: TurnRequest, names: Set<string>, results: Set<string>): void {
+    for (const tool of request.tools) names.add(tool.name);
+    for (const message of request.messages) {
+      for (const block of message.content) {
+        if (block.type === 'tool_result') results.add(block.content);
+      }
+    }
+  }
+
+  it('offers both tools to a user-origin run with the capability', async () => {
+    const names = new Set<string>();
+    const results = new Set<string>();
+    const rec = recorder();
+    const p = caller('list_sessions', {}, 1, (request) => collect(request, names, results));
+    await runAgentLoop({ ...BASE, provider: p, sessions: rec.sessions });
+    expect(names.has('list_sessions')).toBe(true);
+    expect(names.has('send_to_session')).toBe(true);
+    expect([...results].join(' ')).toContain('Builder');
+    expect([...results].join(' ')).toContain('aaaa1111');
+  });
+
+  it('hides send_to_session from a run that arrived from another session', async () => {
+    const names = new Set<string>();
+    const results = new Set<string>();
+    const rec = recorder();
+    const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
+      collect(request, names, results),
+    );
+    const r = await runAgentLoop({ ...BASE, provider: p, sessions: rec.sessions, origin: 'session' });
+    expect(r.reason).toBe('complete');
+    expect(names.has('list_sessions')).toBe(true);
+    expect(names.has('send_to_session')).toBe(false);
+    // A provider that calls it anyway is refused, and nothing is delivered.
+    expect([...results].join(' ')).toContain('may not send one');
+    expect(rec.sent).toHaveLength(0);
+  });
+
+  it('refuses send_to_session in plan mode before the host is asked', async () => {
+    const results = new Set<string>();
+    const rec = recorder();
+    const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
+      collect(request, new Set(), results),
+    );
+    await runAgentLoop({ ...BASE, getMode: () => 'plan', provider: p, sessions: rec.sessions });
+    expect([...results].join(' ')).toContain('not permitted in plan mode');
+    expect(rec.sent).toHaveLength(0);
+  });
+
+  it('maps a refusal to the sentence the model reads', async () => {
+    const results = new Set<string>();
+    const rec = recorder({
+      ok: false,
+      reason: 'ambiguous',
+      detail: 'aaaa1111 (Builder), bbbb2222 (Builder)',
+    });
+    const p = caller('send_to_session', { to: 'Builder', text: 'ping' }, 1, (request) =>
+      collect(request, new Set(), results),
+    );
+    await runAgentLoop({ ...BASE, provider: p, sessions: rec.sessions });
+    expect([...results].join(' ')).toContain('more than one session matches');
+    expect([...results].join(' ')).toContain('Address one by id');
+  });
+
+  it('caps a run at five messages', async () => {
+    const results = new Set<string>();
+    const rec = recorder();
+    // Distinct text each time: identical calls would trip the repetition guard
+    // before the cap, which would test the wrong refusal.
+    let turn = 0;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        collect(request, new Set(), results);
+        turn += 1;
+        if (turn <= 6) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: `call-${turn}`,
+                name: 'send_to_session',
+                input: { to: 'aaaa1111', text: `ping ${turn}` },
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    await runAgentLoop({ ...BASE, provider: p, sessions: rec.sessions });
+    expect(rec.sent).toHaveLength(5);
+    expect([...results].join(' ')).toContain('already sent 5 messages');
+  });
+
+  it('leaves both tools out entirely when the host has no registry', async () => {
+    const names = new Set<string>();
+    const p = caller('list_sessions', {}, 1, (request) => collect(request, names, new Set()));
+    await runAgentLoop({ ...BASE, provider: p });
+    expect(names.has('list_sessions')).toBe(false);
+    expect(names.has('send_to_session')).toBe(false);
+  });
+});

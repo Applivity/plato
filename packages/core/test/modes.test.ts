@@ -332,3 +332,36 @@ describe('the ask_user declaration keeps the question card small (D49ak)', () =>
     expect(ask().description).toContain('instead of padding the options');
   });
 });
+
+/**
+ * D49cq. A relay is a side effect outside this workspace. Plan refuses it with
+ * no card — otherwise a plan-mode run could make an auto tab perform the very
+ * action plan refused, and plan would be laundering its own prohibition. Edit
+ * and auto allow it with no card so peer messaging stays usable; the receiving
+ * session's mode still governs what it does with the text.
+ */
+describe('live-session tools (D49cq)', () => {
+  it('denies send_to_session in plan, and allows it in edit and auto', () => {
+    expect(decide('send_to_session', 'plan')).toBe('deny');
+    expect(decide('send_to_session', 'edit')).toBe('allow');
+    expect(decide('send_to_session', 'auto')).toBe('allow');
+  });
+
+  it('allows list_sessions everywhere: it only reads', () => {
+    expect(decide('list_sessions', 'plan')).toBe('allow');
+    expect(decide('list_sessions', 'edit')).toBe('allow');
+    expect(decide('list_sessions', 'auto')).toBe('allow');
+  });
+
+  it('declares both tools only when the host offers the capability', () => {
+    const without = toolDeclarations().map((tool) => tool.name);
+    expect(without).not.toContain('list_sessions');
+    expect(without).not.toContain('send_to_session');
+    const withList = toolDeclarations({ listSessions: true }).map((tool) => tool.name);
+    expect(withList).toContain('list_sessions');
+    expect(withList).not.toContain('send_to_session');
+    const both = toolDeclarations({ listSessions: true, sendToSession: true }).map((t) => t.name);
+    expect(both).toContain('list_sessions');
+    expect(both).toContain('send_to_session');
+  });
+});
