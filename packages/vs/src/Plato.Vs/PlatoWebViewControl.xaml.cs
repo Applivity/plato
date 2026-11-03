@@ -246,10 +246,11 @@ namespace Plato.Vs
         {
             // A page message is proof the user is working in this window, even
             // if the frame notification has not arrived yet.
-            if (ThreadHelper.CheckAccess())
+            _ = _jtf.RunAsync(async () =>
             {
+                await _jtf.SwitchToMainThreadAsync();
                 PlatoPackage.Instance?.NoteActive(this);
-            }
+            });
 
             var sidecar = _sidecar;
             if (sidecar == null)

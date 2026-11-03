@@ -53,11 +53,11 @@ namespace Plato.Vs
         /// </summary>
         public int OnShow(int fShow)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (fShow == (int)__FRAMESHOW.FRAMESHOW_WinShown ||
                 fShow == (int)__FRAMESHOW.FRAMESHOW_TabActivated ||
                 fShow == 12)
             {
-                ThreadHelper.ThrowIfNotOnUIThread();
                 PlatoPackage.Instance?.NoteActive(this);
             }
 

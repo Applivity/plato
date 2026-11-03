@@ -172,6 +172,7 @@ namespace Plato.Vs
 
         internal void NoteActive(PlatoWebViewControl control)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             var window = _windows.FirstOrDefault(
                 candidate => ReferenceEquals(candidate.WebViewControl, control));
             if (window != null)
