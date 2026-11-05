@@ -163,6 +163,53 @@ function addressWarning(host: string): string {
   );
 }
 
+/** One sentence for a host with no registry, shared by both callers below. */
+const RELAY_UNAVAILABLE = 'send_to_session is not available in this host.';
+
+/**
+ * D49cq (amended): the relay refusals that must land BEFORE the plan-mode card.
+ *
+ * In plan mode a relay now asks, and the card is the decision. A call that can
+ * never run must never reach it: a card for a send the depth rule forbids — or
+ * one the model already made unsendable — asks the user to judge something that
+ * cannot happen, and a card that means nothing teaches everyone to click through
+ * the ones that mean something.
+ *
+ * One function for both callers, so the card's pre-flight and the executor's
+ * checks cannot disagree about what is sendable. Whether a target RESOLVES is
+ * left to the registry, because only it can answer that.
+ */
+function relayRefusal(
+  args: ToolArgs,
+  origin: 'user' | 'session' | undefined,
+  sendsSoFar: number,
+  available: boolean,
+): string | null {
+  // The declaration already omits send_to_session from a run that arrived from
+  // another session; this is the lock for a provider that calls it anyway.
+  if (origin === 'session') {
+    return "send_to_session: this run started from another session's message, and may not send one.";
+  }
+  if (!available) {
+    return RELAY_UNAVAILABLE;
+  }
+  if (sendsSoFar >= MAX_SESSION_SENDS) {
+    return `send_to_session: this run has already sent ${MAX_SESSION_SENDS} messages.`;
+  }
+  const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
+  if (to.length === 0) {
+    return 'send_to_session: name a session with "to".';
+  }
+  const text = typeof args['text'] === 'string' ? args['text'] : '';
+  if (text.trim().length === 0) {
+    return 'send_to_session: the message is empty.';
+  }
+  if (text.length > MAX_MESSAGE_CHARS) {
+    return `send_to_session: the message is ${text.length} characters; the limit is ${MAX_MESSAGE_CHARS}.`;
+  }
+  return null;
+}
+
 /**
  * Builds the approval-card preview. Reads the target file and simulates
  * the change in memory; never writes. Best-effort: falls back to a plain
@@ -196,6 +243,29 @@ async function buildApprovalPreview(
       `This sends a request to:\n\n  ${url}${addressWarning(hostOf(url))}` +
       `${redirectNote}\n\nA request cannot be un-sent. ` +
       `The page comes back as untrusted text — Plato will not follow instructions found in it.`
+    );
+  }
+  if (tool === 'send_to_session') {
+    // D49cq (amended): in plan mode this card IS the decision, so it must carry
+    // the two things a person judges — where the message goes and what it says.
+    // "Send a message?" with an argument dump would be theatre: the text can be
+    // 4,000 characters, and no one can approve what they cannot read.
+    const to =
+      typeof args['to'] === 'string' && args['to'].trim().length > 0
+        ? args['to'].trim()
+        : '(no target)';
+    const text = typeof args['text'] === 'string' ? args['text'] : '';
+    // Capped: the card is a terminal card too, and a long message must not push
+    // the buttons off the screen. The marker says there is more, so the cap is
+    // never mistaken for the whole message.
+    const shown =
+      text.length > 600
+        ? `${text.slice(0, 600)}\n…[the message continues; ${text.length} characters in all]`
+        : text;
+    return (
+      `Send this message to another Plato session:\n\n  ${to}\n\n${shown}` +
+      `\n\nThe receiving session keeps its own mode and approvals — this message ` +
+      `cannot widen what it is allowed to do. Nothing is sent unless you allow it.`
     );
   }
   if (tool === 'apply_diff' || tool === 'apply_patch') {
@@ -1142,6 +1212,38 @@ async function runLoop(
       const mode = opts.getMode();
       const platform = opts.platform ?? process.platform;
       const decision = decideWithArgs(name, mode, args, platform);
+
+      // D49cq (amended): plan mode ASKS before a relay, so a call that can never
+      // run is refused here — before the card exists, not after the user has
+      // judged a message that was never sendable. The executor runs the same
+      // check for the modes that reach it without a card.
+      if (decision === 'ask' && name === 'send_to_session') {
+        const relay = relayRefusal(
+          args,
+          opts.origin,
+          sessionSends,
+          opts.sessions !== undefined,
+        );
+        if (relay !== null) {
+          bus.emit({
+            type: 'tool-event',
+            runId,
+            tool: name,
+            phase: 'refused',
+            args,
+            reason: 'relay',
+          });
+          results.push({
+            type: 'tool_result',
+            toolUseId: call.id,
+            content: relay,
+            isError: true,
+          });
+          judge(name, args, relay, 'blocked');
+          continue;
+        }
+      }
+
       let allowed = decision === 'allow';
 
       if (decision === 'deny') {
@@ -1178,17 +1280,24 @@ async function runLoop(
         });
         bus.emit({ type: 'approval-decided', runId, tool: name, allowed });
         if (!allowed) {
+          // D49cq (amended): a declined relay says what did NOT happen, so the
+          // model can act on it — offer the message again only if the user asks,
+          // and carry on without it.
+          const declined =
+            name === 'send_to_session'
+              ? 'send_to_session: the user declined to send this message. Nothing was sent. Continue without it, and do not ask again unless they raise it.'
+              : 'user declined this action';
           results.push({
             type: 'tool_result',
             toolUseId: call.id,
-            content: 'user declined this action',
+            content: declined,
             isError: true,
           });
           bus.emit({ type: 'tool-event', runId, tool: name, phase: 'declined', args });
           // D49aw: the user's own refusal is invisible here. Counting it would
           // raise "you look stuck" at the user because the USER said no — and in
           // `edit`/`act` mode that is five clicks away from a nuisance.
-          judge(name, args, 'user declined this action', 'declined');
+          judge(name, args, declined, 'declined');
           continue;
         }
       }
@@ -1259,41 +1368,24 @@ async function runLoop(
           }
         }
         if (name === 'send_to_session') {
-          // The declaration already omits the tool in such a run; this is the
-          // second lock, for a provider that calls it anyway.
-          if (opts.origin === 'session') {
-            return {
-              ok: false,
-              output:
-                'send_to_session: this run started from another session\'s message, and may not send one.',
-            };
-          }
-          if (!opts.sessions) {
-            return { ok: false, output: 'send_to_session is not available in this host.' };
-          }
-          if (sessionSends >= MAX_SESSION_SENDS) {
-            return {
-              ok: false,
-              output: `send_to_session: this run has already sent ${MAX_SESSION_SENDS} messages.`,
-            };
-          }
+          // The same pre-flight the plan-mode card runs, so the two cannot
+          // disagree: depth, the per-run cap, and a message that cannot be sent.
+          const refusal = relayRefusal(
+            args,
+            opts.origin,
+            sessionSends,
+            opts.sessions !== undefined,
+          );
+          if (refusal !== null) return { ok: false, output: refusal };
+          // The helper has already refused an absent host; this narrows the
+          // type for the call below and can never fire.
+          const sessions = opts.sessions;
+          if (sessions === undefined) return { ok: false, output: RELAY_UNAVAILABLE };
           const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
           const text = typeof args['text'] === 'string' ? args['text'] : '';
-          if (to.length === 0) {
-            return { ok: false, output: 'send_to_session: name a session with "to".' };
-          }
-          if (text.trim().length === 0) {
-            return { ok: false, output: 'send_to_session: the message is empty.' };
-          }
-          if (text.length > MAX_MESSAGE_CHARS) {
-            return {
-              ok: false,
-              output: `send_to_session: the message is ${text.length} characters; the limit is ${MAX_MESSAGE_CHARS}.`,
-            };
-          }
           sessionSends += 1;
           try {
-            const res = await opts.sessions.send(to, text);
+            const res = await sessions.send(to, text);
             if (res.ok) {
               return {
                 ok: true,
