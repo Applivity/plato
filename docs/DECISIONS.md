@@ -7528,10 +7528,17 @@ and a Visual Studio window share no memory.
 - **Depth is one hop.** A run whose task arrived from another session does not
   get `send_to_session` at all, and a forced call is refused. Two agents cannot
   ping-pong; every further hop needs a person.
-- **Plan mode denies the send, with no card.** Plan's contract in this product is
-  refuse-and-hand-back, not ask: it raises no cards for any non-read tool.
-  Allowing a plan-mode run to relay would let it make an `auto` session perform
-  the very action plan refused — plan laundering its own prohibition.
+- **Plan mode asks, with a card (amended 2026-11-05).** Plan first denied the
+  send outright, on the rule that plan raises no cards for a non-read tool. The
+  founder corrected it, and he was right: **the card is what prevents the
+  laundering**, because a person reads the target and the text and decides,
+  while a hard refusal only taught the model to stop asking. The card names the
+  target as the model addressed it, shows the text (cut at 600 characters with
+  a continuation marker), and says the receiving session keeps its own mode and
+  approvals. A call that can never run — depth, no registry, the five-send cap,
+  empty target, empty text, over 4,000 characters — is refused **before** the
+  card, by the same helper the executor calls, so the card never asks about
+  something that cannot happen. Edit and auto still send with no card.
 - **The receiving model is told what it is reading.** A fixed header names the
   sender, says the text is not from the user, and tells the model to act only if
   it helps the work and to say who asked. The receiving user sees a line naming
