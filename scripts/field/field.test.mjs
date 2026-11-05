@@ -1522,11 +1522,35 @@ describe('Plato field tests — real VS Code', function () {
           await field.switchToChatFrame();
         }
         await field.clickElement(await field.driver.findElement(By.id('hist')));
-        await field.driver.sleep(800);
+        // The host builds the History payload asynchronously and the page only
+        // switches when it arrives. A fixed sleep was the old assumption and it
+        // is what failed once under load: the page had not opened, `storedChats`
+        // saw no rows, and the BACK click hit a hidden button. Wait for the
+        // page state instead.
+        await waitForHistory(true);
       };
       const leaveHistory = async () => {
         await field.clickElement(await field.driver.findElement(By.id('hback')));
-        await field.driver.sleep(400);
+        await waitForHistory(false);
+      };
+      /**
+       * Waits for the History page to be OPEN or CLOSED — the page's own state,
+       * not a guess about how long the host takes. Bounded, and loud on timeout.
+       */
+      const waitForHistory = async (open, timeoutMs = 15000) => {
+        const deadline = Date.now() + timeoutMs;
+        for (;;) {
+          const shown = await field.driver
+            .executeScript("return document.body.classList.contains('show-history');")
+            .catch(() => null);
+          if (shown === open) return;
+          if (Date.now() > deadline) {
+            throw new Error(
+              `HISTORY: the page did not ${open ? 'open' : 'close'} within ${timeoutMs}ms`,
+            );
+          }
+          await field.driver.sleep(150);
+        }
       };
 
       await field.newChat();
@@ -1615,20 +1639,37 @@ describe('Plato field tests — real VS Code', function () {
 
       // Back to B: the archive must have grown by exactly the closed chat, and
       // the newest stored chat must be A's conversation.
+      //
+      // Two timing assumptions meet here. The History page opens only when the
+      // host's answer arrives, and under load a fixed sleep was too short: the
+      // reproduced failure was the BACK click hitting a page that had never
+      // opened (see `waitForHistory`). The archive itself is written by the
+      // panel's own async dispose, AFTER the run it cancelled has unwound, and
+      // History does not update itself afterwards — so one read can also arrive
+      // before the archive lands. Both are waited for now: the page's state,
+      // and the count. The 30s deadline still fails the case if the archive
+      // never arrives, so a lost snapshot cannot pass as slow.
       await field.activateTabByLabel(bLabel);
       await field.switchToChatFrame();
-      await field.driver.sleep(1500);
-      await openHistory();
-      const storedAfter = await storedChats();
       // The stored list is capped (30). In a full run it is already full, so a
       // new archive can be accompanied by the oldest one dropping off. One new
       // row is therefore `min(before + 1, 30)`; which row it is, the click
       // below proves.
       const expected = Math.min(storedBefore + 1, 30);
-      if (storedAfter !== expected) {
-        throw new Error(
-          `HISTORY: archived chats went ${storedBefore} → ${storedAfter}; expected ${expected}`,
-        );
+      let storedAfter = storedBefore;
+      const archiveDeadline = Date.now() + 30000;
+      for (;;) {
+        await field.driver.sleep(500);
+        await openHistory();
+        storedAfter = await storedChats();
+        // Stay in History on a match: the row click below happens there.
+        if (storedAfter === expected) break;
+        await leaveHistory();
+        if (Date.now() > archiveDeadline) {
+          throw new Error(
+            `HISTORY: archived chats went ${storedBefore} → ${storedAfter}; expected ${expected} within 30s`,
+          );
+        }
       }
       const rows = await field.driver.findElements(By.css('.runitem'));
       let storedRow = null;
@@ -1658,6 +1699,207 @@ describe('Plato field tests — real VS Code', function () {
       });
       console.log(
         `  case 37: tabs independent, closed run cancelled, other run complete, archives +1 (${storedBefore} → ${storedAfter})`,
+      );
+    });
+  }
+
+  /**
+   * D49cq, the GUI half: two real chats in one real window, talking.
+   *
+   * The stub now plays a step when the prompt MATCHES it (`match`), because two
+   * conversations share one script and one cursor: tab A's next turn would
+   * otherwise take the step a run in tab B had just started for. That is a
+   * harness change, and it is what makes the rest of this case deterministic.
+   *
+   * What it proves, in the order a person would meet it:
+   *   - the picker lists the OTHER tab from the registry, with its host and
+   *     whether it is busy;
+   *   - sending to an idle chat starts a run THERE, whose task carries the
+   *     provenance header, and whose model is not offered send_to_session
+   *     (depth 1);
+   *   - sending to a busy chat is acknowledged as queued and runs after the run
+   *     it waited behind;
+   *   - a refused send says so on the row that asked (the outcome comes from
+   *     the host, never from the click);
+   *   - a closed chat disappears from the picker, and its entry is gone from
+   *     the registry.
+   */
+  if (only.length === 0 || only.includes(38)) {
+    it('case 38 — one chat messages another: start, queue, refuse, registry truth', async () => {
+      await setScript([
+        { match: 'TAB A: open', text: 'TAB A is open.' },
+        { match: 'TAB B: standby', text: 'TAB B is standing by.' },
+        { match: 'check the parser', text: 'The parser is fine.' },
+        // Long enough that the other tab can be reached and the message sent
+        // while this run is still live on a loaded machine.
+        { match: 'TAB B: slow run', text: 'The slow run finished.', delayMs: 30000 },
+        { match: 'and the lexer', text: 'The lexer is fine too.' },
+      ]);
+
+      // A: one ordinary run, so the chat has a title and a live session.
+      await field.newChat();
+      field.cardsSeen = [];
+      field.decisions = [];
+      await field.setMode('auto');
+      const beforeA = await field.send('TAB A: open');
+      await field.waitRunEnd(beforeA, { tag: 'tab-a' });
+      // The tab label follows the generated title, which lands during the run.
+      // Settle before reading it, or a later activation is aimed at a stale name.
+      await field.driver.sleep(800);
+      const aLabel = await field.openNewTab(); // leaves us in B
+      await field.setMode('auto');
+      const beforeB = await field.send('TAB B: standby');
+      await field.waitRunEnd(beforeB, { tag: 'tab-b' });
+      await field.webview.switchBack();
+      await field.driver.sleep(800);
+      const bLabel = await field.activeEditorLabel();
+      if (!bLabel || bLabel === aLabel) {
+        throw new Error(`TABS: A and B did not get distinct labels ("${aLabel}" / "${bLabel}")`);
+      }
+
+      // Back to A, whose picker must find B through the registry.
+      await field.activateTabByLabel(aLabel);
+      await field.switchToChatFrame();
+      const findPeer = (list, want) =>
+        list.find((p) => p.name === want || p.name.includes(want) || want.includes(p.name));
+      await field.openRelay();
+      const peers = await field.waitForRelayState(bLabel, 'idle');
+      const bPeer = findPeer(peers, bLabel);
+      if (bPeer.host !== 'VS Code') {
+        throw new Error(`PICKER: B is listed as "${bPeer.host}", not VS Code`);
+      }
+      if (peers.some((p) => p.name === aLabel || p.name.includes(aLabel))) {
+        throw new Error('PICKER: the picker offers this chat to itself');
+      }
+
+      // Send to idle B: a run starts over there.
+      const beforeInbound = new Set(field.transcripts());
+      await field.pickRelayPeer(bLabel);
+      await field.sendRelay('check the parser');
+      const sentRow = await field.waitRelayOutcome();
+      if (!sentRow || !sentRow.state.startsWith('sent to')) {
+        throw new Error(`RELAY: an accepted send reported "${sentRow && sentRow.state}"`);
+      }
+      if (!sentRow.who.includes(bLabel)) {
+        throw new Error(`RELAY: the row does not name the target (${sentRow.who})`);
+      }
+      const [inboundFile] = await field.waitForNewRuns(beforeInbound, 1);
+      const inboundEvents = await field.waitRunTerminal(inboundFile, 90000);
+      const inboundEnd = inboundEvents.find((e) => e.type === 'run-completed');
+      if (inboundEnd === undefined || inboundEnd.reason === 'cancelled') {
+        throw new Error(`RELAY: the run started by the message did not complete (${inboundEnd && inboundEnd.reason})`);
+      }
+      const inboundText = readFileSync(inboundFile, 'utf8');
+      if (!inboundText.includes('Message from another Plato session')) {
+        throw new Error('RELAY: the receiving run was not told where the task came from');
+      }
+      if (!inboundText.includes('check the parser')) {
+        throw new Error('RELAY: the receiving run does not carry the message');
+      }
+      // Depth 1: the engine must not offer a session-origin run the send tool.
+      const log = await stubLog();
+      const inboundCalls = log.log.filter((entry) =>
+        (entry.userTexts || []).some((t) => String(t).includes('check the parser')));
+      if (inboundCalls.length === 0) {
+        throw new Error('RELAY: the stub has no record of the receiving turn');
+      }
+      for (const entry of inboundCalls) {
+        if ((entry.toolNames || []).includes('send_to_session')) {
+          throw new Error('RELAY: a session-origin run was offered send_to_session (depth 1 broken)');
+        }
+      }
+
+      // B's screen drew the sender, not the user's own words.
+      await field.webview.switchBack();
+      await field.activateTabByLabel(bLabel);
+      await field.switchToChatFrame();
+      const bScreen = await field.logText();
+      // The sender line is drawn uppercase (the row's label style), and
+      // `logText` reads RENDERED text — so this comparison is case-blind.
+      if (!bScreen.toLowerCase().includes(('From ' + aLabel).toLowerCase())) {
+        throw new Error(`RELAY: B's screen does not name the sender (${aLabel})`);
+      }
+
+      // Queue path: B is busy, so the next message must wait, say so, and then
+      // run by itself when the slow run ends.
+      const beforeSlow = new Set(field.transcripts());
+      await field.send('TAB B: slow run');
+      const [slowFile] = await field.waitForNewRuns(beforeSlow, 1);
+      await field.webview.switchBack();
+      await field.activateTabByLabel(aLabel);
+      await field.switchToChatFrame();
+      await field.refreshRelay();
+      // "running" is the registry's own answer about B's live run — the page
+      // must not be the one guessing it.
+      await field.waitForRelayState(bLabel, 'running');
+      await field.pickRelayPeer(bLabel);
+      await field.sendRelay('and the lexer');
+      const queuedRow = await field.waitRelayOutcome();
+      if (!queuedRow || !queuedRow.state.includes('queued')) {
+        throw new Error(`RELAY: a send to a busy chat reported "${queuedRow && queuedRow.state}"`);
+      }
+      const slowEvents = await field.waitRunTerminal(slowFile, 120000);
+      if (!slowEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('RELAY: B\'s slow run never ended');
+      }
+      const fresh = await field.waitForNewRuns(beforeSlow, 2, 120000);
+      const queuedFile = fresh.find((f) => f !== slowFile);
+      if (queuedFile === undefined) {
+        throw new Error('RELAY: the queued message never started its own run');
+      }
+      const queuedEvents = await field.waitRunTerminal(queuedFile, 90000);
+      if (!queuedEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('RELAY: the queued run never completed');
+      }
+      const queuedText = readFileSync(queuedFile, 'utf8');
+      if (!queuedText.includes('and the lexer')) {
+        throw new Error('RELAY: the queued run does not carry the queued message');
+      }
+
+      // Refusal path: the transport refuses an oversized message and the row
+      // says so. B is live but idle again.
+      await field.pickRelayPeer(bLabel);
+      await field.sendRelay('x'.repeat(4100));
+      const refusedRow = await field.waitRelayOutcome();
+      if (!refusedRow || refusedRow.state !== 'not sent — the message is too long') {
+        throw new Error(`RELAY: an oversized send reported "${refusedRow && refusedRow.state}"`);
+      }
+      if (!refusedRow.bad) {
+        throw new Error('RELAY: a refusal is not marked as a failure');
+      }
+
+      // Registry truth: closing B removes it from the picker and the registry.
+      await field.webview.switchBack();
+      await field.activateTabByLabel(bLabel);
+      await field.closeChat();
+      await field.activateTabByLabel(aLabel);
+      await field.switchToChatFrame();
+      await field.refreshRelay();
+      const deadline = Date.now() + 20000;
+      let gone = false;
+      let stillListed = [];
+      while (Date.now() < deadline) {
+        stillListed = await field.relayPeers();
+        gone = !stillListed.some((p) => p.name === bLabel);
+        if (gone) break;
+        await field.driver.sleep(500);
+      }
+      if (!gone) {
+        throw new Error(`REGISTRY: the closed chat is still offered (${stillListed.map((p) => p.name).join(', ')})`);
+      }
+
+      MANIFEST.push({
+        case: 38,
+        run: 1,
+        mode: 'auto',
+        orchestration: 'solo',
+        title: 'One chat messages another: start, queue, refuse, registry truth',
+        transcript: queuedFile,
+        transcriptOk: true,
+        screenFailures: [],
+      });
+      console.log(
+        `  case 38: A → B started a run, queued behind a live run, refused an oversized send, and left the registry when closed`,
       );
     });
   }

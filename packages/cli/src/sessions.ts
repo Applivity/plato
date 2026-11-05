@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { Mode } from '@applivity/plato-core';
+import { INBOUND_MARKER, type Mode } from '@applivity/plato-core';
 import type { Team } from './config.js';
 import { platoHome, projectKey, type Env } from './paths.js';
 
@@ -52,12 +52,10 @@ export function createSession(
   };
 }
 
-/**
- * D49cq: the fixed opening of the header a run sees when another session sent
- * the message. It lives here so the title can skip such a turn: a session whose
- * first task came from a peer is not named after the wrapper.
- */
-export const INBOUND_MARKER = '[Message from another Plato session —';
+// D49cq: the marker and the header live in core, beside the transport, so every
+// host writes the same words. Re-exported because `session.ts` imported them
+// from here before the GUI hosts needed them.
+export { INBOUND_MARKER };
 
 /** The name a session shows in saved lists and in the live registry. */
 export function titleFor(history: StoredSession['history']): string {
