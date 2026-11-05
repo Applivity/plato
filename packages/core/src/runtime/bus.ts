@@ -29,8 +29,12 @@ export type ToolPhase =
  * D49aq: which guard refused a call. A fixed vocabulary rather than the
  * refusal sentence, because the sentence can quote the argument — and the
  * transcript's whole rule (D24c) is that arguments never reach the file.
+ *
+ * `relay` (D49cq, amended) is the pre-flight on `send_to_session`: a run that
+ * arrived from another session, or a message that is empty or too long, is
+ * refused before the plan-mode card can ask about it.
  */
-export type RefusalReason = 'secret' | 'containment';
+export type RefusalReason = 'secret' | 'containment' | 'relay';
 
 export type AgentEvent =
   // D49bj: the mode the run STARTED in. Required, not optional, so an emitter

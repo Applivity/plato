@@ -71,7 +71,7 @@ From the Mac:
 ```sh
 git --git-dir=/Users/ai/Desktop/plato-sync/plato.git \
   bundle create /tmp/plato-sync.bundle --all
-scp /tmp/plato-sync.bundle omega@192.168.4.62:C:/src/plato-sync.bundle
+scp /tmp/plato-sync.bundle omega@192.168.4.137:C:/src/plato-sync.bundle
 ```
 
 From the Windows machine:
@@ -102,7 +102,9 @@ git merge --ff-only origin/main
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
-is `192.168.4.62`. SSH routes between them. If SMB is wanted, a macOS sharing
+is `192.168.4.137` — **DHCP-assigned; it was `192.168.4.62` until 2026-11-05**, so
+confirm the address before a run, and verify a new one by comparing its host key
+with the entry already in `known_hosts`. SSH routes between them. If SMB is wanted, a macOS sharing
 user and a credentialed `net use` are required; guest access is blocked by
 Windows 10.
 
@@ -147,7 +149,7 @@ The Windows agent creates a Git bundle at `C:\src\vs-m2.bundle` at each
 checkpoint. The Mac pulls it into the main working tree:
 
 ```sh
-scp omega@192.168.4.62:C:/src/vs-m2.bundle /tmp/vs-m2.bundle
+scp omega@192.168.4.137:C:/src/vs-m2.bundle /tmp/vs-m2.bundle
 git -C /Users/ai/Desktop/plato fetch /tmp/vs-m2.bundle 'refs/heads/*:refs/remotes/win/*'
 git -C /Users/ai/Desktop/plato log --oneline win/vs/m2
 ```
@@ -173,7 +175,7 @@ pnpm --dir packages/vs test
 ```
 
 The Mac host name is `AIs-Mac-mini`; the IP is `10.0.10.119`. The Windows host
-is on `192.168.4.62`. SSH routes between them. SMB does not.
+is on `192.168.4.137`. SSH routes between them. SMB does not.
 
 The M0 Windows verification is complete; its evidence is in PROGRESS. The
 `windows/m0` branch is merged and deleted, so a fresh clone uses `main`.
@@ -213,7 +215,7 @@ full history. This is acceptable only on a trusted local network. If that is
 not acceptable, use SSH or a password-protected share instead.
 
 The SSH key for the Windows machine is `~/.ssh/plato_windows` on the Mac. The
-public key is added to `omega@192.168.4.62`. The private key has no passphrase
+public key is added to `omega@192.168.4.137`. The private key has no passphrase
 so non-interactive commands can run; it is readable only by the Mac user.
 
 ## Ownership

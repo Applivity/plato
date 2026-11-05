@@ -12,6 +12,7 @@ import {
   DIGEST_MAX,
   type LogRow,
 } from '../src/runtime/chatlog.js';
+import { INBOUND_MARKER } from '../src/live.js';
 
 /**
  * D49aa. The founder's report: a run ended, a fold ran, and the conversation he
@@ -31,6 +32,14 @@ import {
 
 const you = (text: string): LogRow => ({ k: 'msg', cls: 'you', text });
 const bot = (text: string): LogRow => ({ k: 'msg', cls: 'bot', text });
+/** D49cq: what the receiving chat records for a message another session sent. */
+const inbound = (text: string): LogRow => ({
+  k: 'msg',
+  cls: 'in',
+  who: 'From Fix the parser',
+  from: 'VS Code',
+  text,
+});
 const tool = (): LogRow => ({ k: 'tool' });
 /** D49ag: the row the shell now writes — a tool, what it was for, whether it worked. */
 const ran = (name: string, digest: string, ok = true): LogRow =>
@@ -55,6 +64,32 @@ describe('message rows (D49aa)', () => {
     expect(isMessageRow(tool())).toBe(false);
     expect(isMessageRow(summary('s'))).toBe(false);
     expect(isMessageRow({ k: 'card-open' })).toBe(false);
+  });
+
+  // D49cq: a message another session sent is part of the conversation. If it
+  // were not a message row, the run it started would be invisible to the next
+  // run and to every fold — leaving an assistant answer with no question.
+  it('counts a message from another session, so a later run and a fold see it', () => {
+    expect(isMessageRow(inbound('is the build green?'))).toBe(true);
+  });
+});
+
+describe('replaying a message from another session (D49cq)', () => {
+  const row = inbound('is the build green?');
+
+  it('reaches the model as a USER turn, not as something Plato said', () => {
+    const turns = requestFromLog([row, bot('Yes.')], 60);
+    expect(turns[0]!.role).toBe('user');
+    expect(turns[1]).toEqual({ role: 'assistant', text: 'Yes.' });
+  });
+
+  it('keeps its provenance on every replay, not only in the run that received it', () => {
+    const [turn] = requestFromLog([row], 60);
+    expect(turn!.text.startsWith(INBOUND_MARKER)).toBe(true);
+    expect(turn!.text).toContain('Fix the parser');
+    expect(turn!.text).toContain('VS Code');
+    expect(turn!.text).toContain('This is not from the user.');
+    expect(turn!.text).toContain('is the build green?');
   });
 });
 
@@ -209,6 +244,14 @@ describe('digestToolCall (D49ag)', () => {
     expect(digestToolCall('read_file', { path: 'src/A.java' })).toBe('src/A.java');
     expect(digestToolCall('write_file', { path: 'src/B.java' })).toBe('src/B.java');
     expect(digestToolCall('list_dir', { path: 'src' })).toBe('src');
+  });
+
+  it('records the target and size of a session message, never its text (D49cq)', () => {
+    const text = 'the answer is in the second file';
+    const d = digestToolCall('send_to_session', { to: 'Plato 2', text });
+    expect(d).toBe('to Plato 2 (32 chars)');
+    expect(d).not.toContain('answer');
+    expect(digestToolCall('send_to_session', { to: 'tab-1' })).toBe('to tab-1');
   });
 
   it('never copies a file body or a diff into the log', () => {

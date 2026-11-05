@@ -52,6 +52,14 @@ const MODELS = (process.env['PLATO_STUB_MODELS'] ?? 'stub-model')
 /** Cursor into the current script, plus the log of what we were asked. */
 let steps = [];
 let cursor = 0;
+/**
+ * D49cq: which steps have been played. Two chat tabs share this stub, and one
+ * sequential cursor cannot tell them apart — tab A's second turn would take the
+ * step a run in tab B had just started for. A step carrying `match` is played
+ * when the last user message contains that text; steps without one keep the
+ * strict order every other case relies on.
+ */
+let played = new Set();
 /** D49cg follow-on: the observer's own script, consumed by its own cursor. */
 let observerSteps = [];
 let observerCursor = 0;
@@ -151,12 +159,14 @@ const server = createServer(async (req, res) => {
     // anything but luck.
     modelsDelayMs = Number(body.modelsDelayMs) || 0;
     cursor = 0;
+    played = new Set();
     log = [];
     return json(res, 200, { ok: true, steps: steps.length });
   }
   if (url === '/__reset' && req.method === 'POST') {
     steps = [];
     cursor = 0;
+    played = new Set();
     observerSteps = [];
     observerCursor = 0;
     log = [];
@@ -296,7 +306,21 @@ const server = createServer(async (req, res) => {
     });
   }
 
-  if (cursor >= steps.length) {
+  // D49cq: a step that names its prompt wins over the order; without one, the
+  // strict script order stands exactly as before.
+  const lastUser = String(userTexts[userTexts.length - 1] ?? '');
+  const pickStep = () => {
+    for (let i = 0; i < steps.length; i += 1) {
+      if (played.has(i)) continue;
+      const match = steps[i] && typeof steps[i].match === 'string' ? steps[i].match : '';
+      if (match.length > 0 && lastUser.includes(match)) return i;
+    }
+    while (cursor < steps.length && played.has(cursor)) cursor += 1;
+    return cursor < steps.length ? cursor : -1;
+  };
+
+  const chosen = pickStep();
+  if (chosen < 0) {
     // Running past the script is a test-authoring error, and it must be loud:
     // returning a silent empty answer here would look like Plato misbehaving.
     log[log.length - 1].consumedStep = 'PAST_END';
@@ -307,8 +331,7 @@ const server = createServer(async (req, res) => {
       usage: { prompt_tokens: 10, completion_tokens: 10 },
     });
   }
-
-  const step = steps[cursor];
+  const step = steps[chosen];
   // D49bm: a step may hold its answer for a moment before it is sent. Without
   // this the stub replies in microseconds and a whole run is over before a
   // driver has clicked anything, so no test could catch a run mid-flight — and
@@ -321,8 +344,14 @@ const server = createServer(async (req, res) => {
     // and look like a stub crash rather than the stop the user asked for.
     if (res.writableEnded || res.destroyed) return;
   }
-  log[log.length - 1].consumedStep = cursor;
-  cursor += 1;
+  // D49cq: a step is marked used only when it is SENT, not when its request
+  // arrives. That is the stub's old rule and case 37 depends on it: two slow
+  // runs started while the first is held both take the one slow step, so each
+  // is still in flight when its tab is closed. Marking at arrival made the
+  // second run fall past the end of the script and finish instantly.
+  if (chosen === cursor) cursor += 1;
+  played.add(chosen);
+  log[log.length - 1].consumedStep = chosen;
   if (body.stream === true) return playStep(res, step);
   const calls = Array.isArray(step.calls) ? step.calls : step.tool ? [{ tool: step.tool, args: step.args ?? {} }] : [];
   return json(res, 200, {
@@ -335,7 +364,7 @@ const server = createServer(async (req, res) => {
           ...(calls.length > 0
             ? {
                 tool_calls: calls.map((c, i) => ({
-                  id: `call_${cursor - 1}_${i}`,
+                  id: `call_${chosen}_${i}`,
                   type: 'function',
                   function: { name: c.tool, arguments: JSON.stringify(c.args ?? {}) },
                 })),

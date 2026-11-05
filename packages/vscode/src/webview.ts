@@ -13,6 +13,12 @@ export interface ChatCaps {
   tabs: boolean;
   relay: boolean;
   noun: 'tab' | 'window';
+  /**
+   * D49cq: which host this window is, for the live-session registry. The
+   * extension defaults to `vscode`; the Visual Studio shim says `vs` on the
+   * context it builds. It is not a rendering switch — the shell never reads it.
+   */
+  host?: 'cli' | 'vscode' | 'vs';
 }
 
 export function chatHtml(
@@ -200,12 +206,20 @@ export function chatHtml(
               margin-bottom:2px; }
   .msg.you { border-left:2px solid var(--pl-accent); padding-left:8px; }
   .msg.bot  { border-left:2px solid var(--pl-border); padding-left:8px; }
-  /* Provenance for a message sent from another chat tab. It sits on the user
-     row, not in the text the model receives. */
+  /* D49cq: a message another session sent. It is NOT the user's own words, so
+     it must not be painted like them — a different edge colour, and a chip
+     that names the host it came from. */
+  .msg.in { border-left:2px solid var(--vscode-charts-blue,#4aa3df);
+            padding-left:8px; }
   .relay-tag { display:inline-block; margin-left:8px; padding:0 6px;
                border:1px solid var(--pl-border); border-radius:8px;
                font-size:10px; letter-spacing:.04em; color:var(--pl-muted);
                text-transform:none; vertical-align:middle; }
+  /* D49cq: the outcome of a send, on the row that asked for it. It replaces a
+     guess: the host is the only thing that knows whether a peer took it. */
+  .relay-state { display:block; margin-top:2px; font-size:11px;
+                 color:var(--pl-muted); }
+  .relay-state.bad { color:var(--vscode-testing-iconFailed, #f14c4c); }
   .msg.sys, .msg.tool { color:var(--pl-muted); font-size:12px; }
   /* D47f: a philosopher notice is tinted with that philosopher's colour, so
      two of them speaking in a row are told apart at a glance. */
@@ -1155,6 +1169,43 @@ export function chatHtml(
                             cursor:pointer; }
   .queue-row .queue-start:hover { color:var(--vscode-editor-foreground);
                                   border-color:var(--vscode-focusBorder, #6a6a6a); }
+  /* D49cq: the send-to-session panel. It sits above the composer, like the
+     attachment and queue rows, and is drawn ONLY when this host says it can
+     relay — the capability object, never a guess about the host. */
+  .relay-row { padding:4px 10px 8px; border-top:1px solid var(--pl-border); }
+  .relay-row[hidden] { display:none; }
+  .relay-head { display:flex; align-items:center; gap:8px; font-size:11px;
+                letter-spacing:.06em; text-transform:uppercase;
+                color:var(--pl-muted); margin-bottom:4px; }
+  .relay-head .relay-title { flex:1; }
+  .relay-row .ac-x { width:16px; height:16px; padding:0; border:none;
+                     border-radius:50%; background:transparent;
+                     color:var(--pl-muted); cursor:pointer; font-size:13px;
+                     line-height:1; }
+  .relay-row .ac-x:hover { color:var(--vscode-testing-iconFailed, #f14c4c); }
+  .relay-peers { display:flex; flex-direction:column; gap:2px;
+                 max-height:132px; overflow-y:auto; margin-bottom:6px; }
+  .relay-peer { display:flex; align-items:center; gap:8px; width:100%;
+                padding:3px 7px; border:1px solid transparent;
+                border-radius:4px; background:transparent;
+                font-family:inherit; font-size:11.5px; text-align:left;
+                color:var(--vscode-editor-foreground); cursor:pointer; }
+  .relay-peer:hover { background:rgba(128,128,128,.08); }
+  .relay-peer[aria-pressed="true"] { border-color:var(--vscode-focusBorder, #6a6a6a);
+                                     background:rgba(128,128,128,.10); }
+  .relay-peer .rp-name { flex:1; overflow:hidden; text-overflow:ellipsis;
+                         white-space:nowrap; }
+  .relay-peer .rp-host, .relay-peer .rp-busy { flex:none; font-size:10px;
+                         letter-spacing:.04em; color:var(--pl-muted); }
+  .relay-peer .rp-busy.busy { color:var(--vscode-charts-yellow, #d9a441); }
+  .relay-empty { font-size:11.5px; color:var(--pl-muted); padding:2px 0 6px; }
+  .relay-compose { display:flex; align-items:flex-end; gap:6px; }
+  .relay-text { flex:1; min-height:30px; max-height:96px; resize:vertical;
+                font-family:inherit; font-size:12px; padding:5px 7px;
+                color:var(--vscode-input-foreground, inherit);
+                background:var(--vscode-input-background, rgba(128,128,128,.08));
+                border:1px solid var(--pl-border); border-radius:4px; }
+  .relay-note { margin-top:4px; font-size:11px; color:var(--pl-muted); }
   .bar-btn { font-family:inherit; font-size:11.5px; padding:4px 10px;
              border:1px solid var(--pl-border); border-radius:4px;
              background:transparent; color:var(--pl-muted); cursor:pointer; }
@@ -1384,6 +1435,23 @@ export function chatHtml(
        the send; a queued message outlives runs, so the two must not share a
        container that is cleared at different times. -->
   <div class="attach-row queue-row" id="queueRow" hidden></div>
+  <!-- D49cq: the send-to-session panel. Hidden until the capability object says
+       this host can relay; a host that cannot send still SHOWS what arrives. -->
+  <div class="relay-row" id="relayRow" hidden>
+    <div class="relay-head">
+      <span class="relay-title">Send to another session</span>
+      <button id="relayClose" class="ac-x" type="button"
+              aria-label="Close the session list">&times;</button>
+    </div>
+    <div class="relay-peers" id="relayPeers"></div>
+    <div class="relay-compose">
+      <textarea id="relayText" class="relay-text" rows="2"
+                aria-label="Message to the selected session"
+                placeholder="Message&hellip;"></textarea>
+      <button id="relaySend" class="bar-btn" type="button">Send</button>
+    </div>
+    <div class="relay-note" id="relayNote" role="status"></div>
+  </div>
   <div class="composer-bar">
     <div class="bar-left">
       <button id="cmds" class="cmd-btn" type="button" title="Commands (/…)"
@@ -1413,6 +1481,18 @@ export function chatHtml(
           </svg>
         </button>
       </div>
+      <!-- D49cq: message another live session. Unhidden by the script only when
+           the capability object says relay. -->
+      <button id="relayBtn" class="clip-btn" type="button" hidden
+              title="Message another Plato session"
+              aria-label="Message another Plato session">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 12h13"></path>
+          <polyline points="12 7 17 12 12 17"></polyline>
+        </svg>
+      </button>
     </div>
     <span class="bar-spacer"></span>
     <!-- D49bm: the label and title are set by paintPause(), never by the click.
@@ -2139,18 +2219,149 @@ export function chatHtml(
   const htitle = document.getElementById('htitle');
   let hRuns = [];
   let hChats = [];
-  // Host-sent list of the other open conversations. Slice 3's target picker
-  // reads this; nothing else does yet.
+  // ---- D49cq: send a message to another live session --------------------
+  //
+  // Everything here is driven by the capability object and the peers
+  // message, never by a guess about which host this is. CAPS.relay is the
+  // SEND capability: with it false the button and this panel do not exist,
+  // while a received message still renders — receive and send are separate.
   let peers = [];
+  let relayPeer = '';
+  let relaySeq = 0;
+  const relayPending = new Map();
+  const relayRow = document.getElementById('relayRow');
+  const relayBtn = document.getElementById('relayBtn');
+  const relayPeersEl = document.getElementById('relayPeers');
+  const relayTextEl = document.getElementById('relayText');
+  const relayNote = document.getElementById('relayNote');
+  const relaySendBtn = document.getElementById('relaySend');
 
-  /**
-   * Send a message to another agent session. The transport is fixed here so
-   * the Visual Studio host can implement the same three message types; the
-   * picker that chooses the target and the origin rules are slice 3.
-   */
-  function relayOut(to, text) {
-    if (!CAPS.relay) return;
-    vsapi.postMessage({ type: 'relay-out', to: String(to), text: String(text) });
+  function hostWord(h) {
+    return h === 'vs' ? 'Visual Studio' : h === 'cli' ? 'Terminal' : 'VS Code';
+  }
+
+  function relayOpen() { return !relayRow.hidden; }
+
+  function setRelayNote(text, bad) {
+    relayNote.textContent = text || '';
+    relayNote.classList.toggle('bad', !!bad);
+  }
+
+  function renderPeers() {
+    relayPeersEl.textContent = '';
+    if (peers.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'relay-empty';
+      empty.textContent = 'No other Plato sessions are running.';
+      relayPeersEl.appendChild(empty);
+      return;
+    }
+    for (const p of peers) {
+      const id = String(p.id || '');
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'relay-peer';
+      row.dataset.peer = id;
+      row.setAttribute('aria-pressed', String(id === relayPeer));
+      if (p.summary) { row.title = String(p.summary); }
+      const name = document.createElement('span');
+      name.className = 'rp-name';
+      name.textContent = String(p.name || id || 'session');
+      const host = document.createElement('span');
+      host.className = 'rp-host';
+      host.textContent = hostWord(String(p.host || 'vscode'));
+      const state = document.createElement('span');
+      state.className = 'rp-busy' + (p.busy ? ' busy' : '');
+      state.textContent = p.busy ? 'running' : 'idle';
+      row.append(name, host, state);
+      row.addEventListener('click', () => {
+        relayPeer = id;
+        renderPeers();
+        setRelayNote('');
+        relayTextEl.focus();
+      });
+      relayPeersEl.appendChild(row);
+    }
+  }
+
+  function openRelay() {
+    if (!CAPS.relay) { return; }
+    relayRow.hidden = false;
+    relayBtn.setAttribute('aria-expanded', 'true');
+    renderPeers();
+    setRelayNote('Choose a session, then type. A busy session takes the message after its run.');
+    // A list a second old can say "idle" for a chat that just started a run.
+    vsapi.postMessage({ type: 'peers-refresh' });
+    relayTextEl.focus();
+  }
+
+  function closeRelay() {
+    relayRow.hidden = true;
+    relayBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  const RELAY_REASONS = {
+    unavailable: 'this window cannot send messages',
+    empty: 'there is no message',
+    unknown: 'that session is no longer running',
+    ambiguous: 'more than one session matches that name',
+    self: 'that is this chat',
+    closed: 'that session has closed',
+    'too-long': 'the message is too long',
+    'not-accepting': 'the other session refused it',
+    error: 'delivery failed',
+  };
+
+  function sendRelay() {
+    if (!CAPS.relay) { return; }
+    const peer = peers.find((p) => String(p.id || '') === relayPeer);
+    if (peer === undefined) { setRelayNote('Choose a session first.', true); return; }
+    const text = relayTextEl.value.trim();
+    if (text.length === 0) { setRelayNote('Type a message first.', true); return; }
+    const id = 'r' + (++relaySeq);
+    // The row is drawn by THIS page, and the outcome is filled in by the host
+    // when it answers: the page never assumes a message was delivered.
+    const row = addMsg('you', 'You → ' + String(peer.name || peer.id), text);
+    relayPending.set(id, { row: row, name: String(peer.name || peer.id) });
+    vsapi.postMessage({ type: 'relay-out', to: String(peer.id), text: text, id: id });
+    relayTextEl.value = '';
+    setRelayNote('Sending…');
+  }
+
+  function relayOutcome(id, payload) {
+    const pending = relayPending.get(id);
+    if (pending === undefined) { return; }
+    relayPending.delete(id);
+    const p = payload || {};
+    const line = document.createElement('span');
+    line.className = 'relay-state';
+    if (p.ok === true && p.status === 'queued') {
+      line.textContent = 'queued — it is busy; it will run when the current run ends';
+    } else if (p.ok === true) {
+      line.textContent = 'sent to ' + String(p.to || pending.name);
+    } else {
+      line.classList.add('bad');
+      line.textContent = 'not sent — ' + (RELAY_REASONS[String(p.reason)] || 'delivery failed');
+    }
+    pending.row.appendChild(line);
+    setRelayNote('');
+  }
+
+  if (CAPS.relay) {
+    relayBtn.hidden = false;
+    relayBtn.setAttribute('aria-expanded', 'false');
+    relayBtn.addEventListener('click', () => {
+      if (relayOpen()) { closeRelay(); } else { openRelay(); }
+    });
+    document.getElementById('relayClose').addEventListener('click', closeRelay);
+    relaySendBtn.addEventListener('click', sendRelay);
+    relayTextEl.addEventListener('keydown', (e) => {
+      // Enter sends, Shift+Enter is a new line — the chat composer's rule.
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendRelay();
+      }
+    });
   }
   document.getElementById('hist').addEventListener('click', () => {
     vsapi.postMessage({ type: 'openHistory' });
@@ -4643,24 +4854,46 @@ export function chatHtml(
       case 'mode-state':
         if (typeof m.text === 'string') setMode(m.text);
         break;
-      // The other open conversations, kept for the target picker. Nothing is
-      // drawn from this yet; the host is the source of truth for names and
-      // whether a run is active.
+      // D49cq: every other live session, from the registry. The host is the
+      // source of truth for names, hosts and whether a run is active.
       case 'peers':
         peers = Array.isArray(m.peers) ? m.peers : [];
+        if (relayOpen()) { renderPeers(); }
         break;
-      // A message from another agent session, relayed by the host. It is drawn
-      // with a provenance tag — never as the model's words, and never as this
-      // user's unmarked instruction. The relay's origin and depth are core's
-      // to decide (slice 3); this host only renders what it is given.
+      // D49cq: the host's answer to one relay-out. It lands on the row that
+      // asked, so "sent", "queued" and "refused" are never guessed here.
+      case 'relay-result':
+        relayOutcome(String((m.text || {}).id || ''), m.text || {});
+        break;
+      // D49cq: a message from another live session, delivered by the host. It
+      // is drawn with the sender's name and host — never as the model's words,
+      // and never as this user's own instruction. When it STARTS a run, the run
+      // UI is set from the host's account (started), not from anything this
+      // page assumed.
       case 'relay-in': {
-        if (typeof m.text !== 'string') break;
-        const row = addMsg('you', 'You', m.text);
-        if (typeof m.from === 'string' && m.from) {
-          const tag = document.createElement('span');
-          tag.className = 'relay-tag';
-          tag.textContent = 'from ' + m.from;
-          row.appendChild(tag);
+        if (typeof m.text !== 'string') { break; }
+        if (m.row !== false) {
+          const who = m.name ? 'From ' + String(m.name) : 'From another session';
+          const row = addMsg('in', who, m.text);
+          if (m.host) {
+            const tag = document.createElement('span');
+            tag.className = 'relay-tag';
+            tag.textContent = hostWord(String(m.host));
+            row.appendChild(tag);
+          }
+          if (m.queued === true) {
+            const queued = document.createElement('span');
+            queued.className = 'relay-state';
+            queued.textContent = 'queued behind the current run';
+            row.appendChild(queued);
+          }
+        }
+        if (m.started === true) {
+          busy = true;
+          runT0 = Date.now();
+          refreshChip();
+          setRunUi(true);
+          setStatus('Plato is thinking');
         }
         break;
       }
@@ -4714,13 +4947,22 @@ export function chatHtml(
     // entries merge into one summary line, any other entry ends the chain.
     if (t.k !== 'tool') { flushToolBuffer(); }
     switch (t.k) {
-      case 'msg':
+      case 'msg': {
         if (t.cls === 'bot' && t.html) {
           addMsg('bot', t.who, String(t.html), true);
-        } else {
-          addMsg(t.cls || 'bot', t.who, String(t.text));
+          break;
+        }
+        const row = addMsg(t.cls || 'bot', t.who, String(t.text));
+        // D49cq: a replayed incoming message keeps its sender's host, exactly
+        // as the live row showed it.
+        if (t.cls === 'in' && t.from) {
+          const tag = document.createElement('span');
+          tag.className = 'relay-tag';
+          tag.textContent = String(t.from);
+          row.appendChild(tag);
         }
         break;
+      }
       case 'tool':
         // D49as: same rule on a reload as live — a refused call gets its own
         // line and breaks the summary chain.
