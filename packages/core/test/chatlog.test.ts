@@ -246,6 +246,14 @@ describe('digestToolCall (D49ag)', () => {
     expect(digestToolCall('list_dir', { path: 'src' })).toBe('src');
   });
 
+  it('records the target and size of a session message, never its text (D49cq)', () => {
+    const text = 'the answer is in the second file';
+    const d = digestToolCall('send_to_session', { to: 'Plato 2', text });
+    expect(d).toBe('to Plato 2 (32 chars)');
+    expect(d).not.toContain('answer');
+    expect(digestToolCall('send_to_session', { to: 'tab-1' })).toBe('to tab-1');
+  });
+
   it('never copies a file body or a diff into the log', () => {
     const body = 'x'.repeat(50_000);
     const d = digestToolCall('write_file', { path: 'src/B.java', content: body });

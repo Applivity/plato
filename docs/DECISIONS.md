@@ -7542,8 +7542,11 @@ and a Visual Studio window share no memory.
 - **The receiving model is told what it is reading.** A fixed header names the
   sender, says the text is not from the user, and tells the model to act only if
   it helps the work and to say who asked. The receiving user sees a line naming
-  the sender. The sending run's transcript records the outgoing text, so nothing
-  leaves unseen.
+  the sender. **The sending run's transcript records that a message was sent, to
+  whom, and how long — never its text (amended 2026-11-05).** The text is model
+  prose written for another session, and the persisted record keeps model prose
+  out of it exactly as `request_mode`'s reason does (D49cb). The receiving
+  session holds the text itself, and the sender's own conversation shows it.
 - **One-way in v1.** There is no reply primitive; a reply is a later decision,
   not an oversight. The CLI registers only interactive sessions, because a
   non-interactive run has no inbox and nobody to read it.

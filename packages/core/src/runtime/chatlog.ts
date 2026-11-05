@@ -182,6 +182,20 @@ export function digestToolCall(
       if (id.length > 0) parts.push(id);
       break;
     }
+    case 'send_to_session': {
+      // D49cq: the TARGET and the SIZE, not the text. The digest is persisted
+      // and replayed into folds, and the text is model prose written for
+      // another session — it stays out of the record exactly as `request_mode`'s
+      // reason does (D49cb). The receiving session holds the text itself, and
+      // the sender's own conversation shows it.
+      const to = one(args['to'], 60);
+      if (to.length > 0) parts.push('to ' + to);
+      const text = args['text'];
+      if (typeof text === 'string' && text.length > 0) {
+        parts.push(`(${text.length} chars)`);
+      }
+      break;
+    }
     default:
       break;
   }
