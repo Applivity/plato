@@ -1,10 +1,6 @@
 import { render } from 'ink';
 import { createElement } from 'react';
-import {
-  createLiveSession,
-  unregisterOnExit,
-  type LiveSession,
-} from '@applivity/plato-core';
+import { createLiveSession, type LiveSession } from '@applivity/plato-core';
 import { App } from './tui/App.js';
 import { Session, type SessionOptions } from './session.js';
 import { platoHome } from './paths.js';
@@ -36,13 +32,10 @@ export async function runInteractive(options: InteractiveOptions): Promise<numbe
     live = undefined;
   }
 
-  const id = live?.id;
-  const onProcessExit = (): void => {
-    // Async work cannot run in an exit handler; removing the entry and socket
-    // synchronously is what makes a clean exit look clean to other sessions.
-    if (id !== undefined) unregisterOnExit(home, id);
-  };
-  if (id !== undefined) process.once('exit', onProcessExit);
+  // The registry installs ONE `process.once('exit')` for every session this
+  // process opens (D49cq), so a clean exit still unregisters synchronously even
+  // when a window holds a dozen chat tabs. A per-session listener here would be
+  // the second one for this process.
 
   let instance: ReturnType<typeof render> | undefined;
   const onExit = (): void => {
@@ -58,7 +51,6 @@ export async function runInteractive(options: InteractiveOptions): Promise<numbe
     { exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
-  if (id !== undefined) process.off('exit', onProcessExit);
   await live?.close();
   return 0;
 }

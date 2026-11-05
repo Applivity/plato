@@ -239,6 +239,24 @@ describe('the live registry (D49cq)', () => {
     expect(existsSync(path)).toBe(true);
   }, 10_000);
 
+  it('adds one exit hook for the process, not one per session', async () => {
+    // Twelve chat tabs in one VS Code window is an ordinary session. One
+    // `process.once('exit')` per session would trip Node's listener warning at
+    // eleven, so the registry installs the hook once, on the first session, and
+    // the rest only join the set it reads.
+    const home = await tempHome();
+    const lives: LiveSession[] = [];
+    let afterFirst = -1;
+    for (let i = 0; i < 12; i += 1) {
+      const started = await startLive({ home, name: `Tab ${i}` });
+      lives.push(started.live);
+      if (i === 0) afterFirst = process.listenerCount('exit');
+    }
+    expect(lives).toHaveLength(12);
+    expect(entries(home)).toHaveLength(12);
+    expect(process.listenerCount('exit')).toBe(afterFirst);
+  });
+
   it('closes the connection on a wrong token, before any delivery', async () => {
     const home = await tempHome();
     const b = await startLive({ home });

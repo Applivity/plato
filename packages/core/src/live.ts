@@ -259,6 +259,55 @@ function reapIfSame(dir: string, entry: Entry, platform: Platform): void {
   }
 }
 
+/**
+ * Removes one session's entry and socket, synchronously — all `process.once`
+ * handlers on `exit` can do.
+ */
+function removeSessionFiles(dir: string, id: string, platform: Platform): void {
+  const path = join(dir, `${id}.json`);
+  const entry = readEntry(path);
+  if (entry === null) return;
+  try {
+    unlinkSync(path);
+  } catch {
+    // Already reaped by someone else.
+  }
+  if (platform === 'win32') return;
+  try {
+    unlinkSync(entry.endpoint);
+  } catch {
+    // The socket was already gone.
+  }
+}
+
+/**
+ * The sessions this process has open, so ONE exit handler can clean up after
+ * all of them.
+ *
+ * A `process.once('exit')` per session was the obvious shape and the wrong one:
+ * every ChatHost in a VS Code window is a session, and twelve tabs is ordinary,
+ * so the eleventh would trip Node's MaxListenersExceededWarning. The hook is
+ * installed by the first session and never again; it reads the set at exit, so
+ * a session that closed earlier is simply not in it.
+ */
+const openSessions = new Set<{ dir: string; id: string; platform: Platform }>();
+let exitHookInstalled = false;
+
+function installExitHook(registration: {
+  dir: string;
+  id: string;
+  platform: Platform;
+}): void {
+  openSessions.add(registration);
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.once('exit', () => {
+    for (const session of openSessions) {
+      removeSessionFiles(session.dir, session.id, session.platform);
+    }
+  });
+}
+
 interface Hello {
   type: 'hello';
   v: number;
@@ -573,6 +622,11 @@ export async function createLiveSession(
   }, HEARTBEAT_MS);
   heartbeat.unref();
 
+  // Registered only after the entry exists, so the hook never tries to clean up
+  // a session that failed to start. One hook for the whole process.
+  const registration = { dir, id, platform };
+  installExitHook(registration);
+
   let closed = false;
 
   const list = async (): Promise<SessionPeer[]> => {
@@ -697,6 +751,7 @@ export async function createLiveSession(
   const close = async (): Promise<void> => {
     if (closed) return;
     closed = true;
+    openSessions.delete(registration);
     clearInterval(heartbeat);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     try {
@@ -723,29 +778,4 @@ export async function createLiveSession(
     refresh,
     close,
   };
-}
-
-/**
- * A best-effort synchronous unregister for `process.on('exit')`, where async
- * work cannot run. Removes the entry and the socket; the entry is the address,
- * so a session that vanishes this way is never dialled.
- */
-export function unregisterOnExit(home: string, id: string, platform = process.platform): void {
-  const dir = join(home, 'live');
-  const path = join(dir, `${id}.json`);
-  const entry = readEntry(path);
-  if (entry !== null) {
-    try {
-      unlinkSync(path);
-    } catch {
-      // Nothing to do.
-    }
-    if (platform !== 'win32') {
-      try {
-        unlinkSync(entry.endpoint);
-      } catch {
-        // Nothing to do.
-      }
-    }
-  }
 }
