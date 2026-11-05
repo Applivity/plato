@@ -32,6 +32,7 @@ namespace Plato.Vs.Bridge
         private readonly string _entryPath;
         private readonly string _workingDirectory;
         private readonly string _logPath;
+        private readonly string _windowId;
         private readonly SemaphoreSlim _writeGate = new SemaphoreSlim(1, 1);
         private readonly Dictionary<long, PendingRequest> _pending = new Dictionary<long, PendingRequest>();
         private readonly object _logGate = new object();
@@ -39,15 +40,21 @@ namespace Plato.Vs.Bridge
         private Process? _process;
         private long _nextId;
         private bool _disposed;
+        private Task? _stop;
 
-        public SidecarHost(IServiceProvider serviceProvider, JoinableTaskFactory jtf, string extensionDirectory)
+        public SidecarHost(
+            IServiceProvider serviceProvider,
+            JoinableTaskFactory jtf,
+            string extensionDirectory,
+            string windowId)
         {
             _serviceProvider = serviceProvider;
             _jtf = jtf;
             _workingDirectory = extensionDirectory;
             _nodePath = Path.Combine(extensionDirectory, "sidecar", "node.exe");
             _entryPath = Path.Combine(extensionDirectory, "sidecar", "plato-host.cjs");
-            _logPath = PlatoPaths.NewLogFile();
+            _windowId = windowId;
+            _logPath = PlatoPaths.NewLogFile(windowId);
         }
 
         public string? Root { get; private set; }
@@ -119,7 +126,8 @@ namespace Plato.Vs.Bridge
                     root,
                     settingsPath = PlatoPaths.SettingsFile,
                     stateDir = PlatoPaths.RoamingRoot,
-                    workspaceStateFile = PlatoPaths.WorkspaceStateFile(root),
+                    workspaceStateFile = PlatoPaths.WorkspaceStateFile(root, _windowId),
+                    sharedStateFile = PlatoPaths.SharedChatsFile(root),
                     version = "0.1.5",
                 },
                 TimeSpan.FromSeconds(20)).ConfigureAwait(false);
@@ -504,6 +512,34 @@ namespace Plato.Vs.Bridge
             {
                 request.Completion.TrySetException(new InvalidOperationException(reason));
             }
+        }
+
+        /// <summary>
+        /// Stops the sidecar in the order the chat lifecycle needs. The host
+        /// disposes the panel first, which cancels and awaits the run and then
+        /// archives the chat (D41/D49bn); only when that call returns is the
+        /// process ended. A window that closes therefore cannot cut its own
+        /// archive short.
+        /// </summary>
+        public Task StopAsync() => _stop ??= StopCoreAsync();
+
+        private async Task StopCoreAsync()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                await RequestAsync("panel.close", new { }, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+            }
+            catch (Exception error)
+            {
+                Log("panel.close: " + error.Message);
+            }
+
+            Dispose();
         }
 
         public void Dispose()

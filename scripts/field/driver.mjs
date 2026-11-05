@@ -55,7 +55,142 @@ export class Field {
   }
 
   async enter(inFrame = true) {
-    if (inFrame) await this.webview.switchToFrame();
+    if (inFrame) await this.switchToChatFrame();
+  }
+
+  /**
+   * Enter the chat webview. The tester's locator can find no iframe while a
+   * panel is being rebuilt right after a close, even though the document has
+   * one — so this falls back to the iframes the document itself reports, and
+   * names what it saw if neither works.
+   */
+  async switchToChatFrame(timeoutMs = 15000) {
+    // Prefer the iframe of the ACTIVE editor group. The tester's geometry picks
+    // the first webview editor it knows about, which is the wrong conversation
+    // once a second chat tab exists.
+    try {
+      await this.driver.switchTo().defaultContent();
+    } catch {
+      /* already at the top level */
+    }
+    const marked = await this.driver
+      .executeScript(`
+        document.querySelectorAll('iframe[data-plato-target]')
+          .forEach((f) => f.removeAttribute('data-plato-target'));
+        const group = document.querySelector('.editor-group-container.active');
+        if (!group) return false;
+        const r = group.getBoundingClientRect();
+        // Chat tabs are stacked webview overlays with identical geometry, so
+        // rectangles cannot tell them apart. The topmost element at the centre
+        // of the active editor area IS the conversation on screen.
+        let frame = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        if (frame && frame.tagName !== 'IFRAME') {
+          frame = frame.closest ? frame.closest('iframe') : null;
+        }
+        if (!frame || frame.tagName !== 'IFRAME') {
+          // Last resort: the last overlay in the document.
+          const all = document.querySelectorAll('iframe');
+          frame = all.length > 0 ? all[all.length - 1] : null;
+        }
+        if (!frame) return false;
+        frame.setAttribute('data-plato-target', '1');
+        return true;
+      `)
+      .catch(() => false);
+    if (marked) {
+      try {
+        const target = await this.driver.findElement(
+          By.css('iframe[data-plato-target="1"]'),
+        );
+        await this.driver.switchTo().frame(target);
+        const active = await this.driver.findElements(By.id('active-frame'));
+        if (active.length > 0) {
+          await this.driver.switchTo().frame(active[0]);
+          return;
+        }
+        await this.driver.switchTo().defaultContent();
+      } catch {
+        try {
+          await this.driver.switchTo().defaultContent();
+        } catch {
+          /* nothing to reset */
+        }
+      }
+    }
+    try {
+      await this.webview.switchToFrame(3000);
+      return;
+    } catch {
+      this.log('  the tester could not enter the webview — trying the document fallback');
+    }
+    const deadline = Date.now() + timeoutMs;
+    let seen = 0;
+    while (Date.now() < deadline) {
+      try {
+        await this.driver.switchTo().defaultContent();
+      } catch {
+        /* already at the top level */
+      }
+      seen = await this.driver
+        .executeScript('return document.querySelectorAll("iframe").length')
+        .catch(() => 0);
+      if (seen > 0) {
+        // More than one chat tab means more than one iframe can be in the
+        // document (a retained webview stays alive while hidden). The VISIBLE
+        // one is the one to type into; a hidden copy would put this case's
+        // prompt in the wrong conversation. Display state is the first filter,
+        // area the tie-break.
+        const frames = await this.driver.findElements(By.css('iframe'));
+        const shown = [];
+        for (const frame of frames) {
+          try {
+            if (await frame.isDisplayed()) shown.push(frame);
+          } catch {
+            /* a detached frame is not a candidate */
+          }
+        }
+        const pool = shown.length > 0 ? shown : frames;
+        let best = null;
+        let bestArea = -1;
+        for (const frame of pool) {
+          try {
+            const r = await frame.getRect();
+            const area = r.width * r.height;
+            if (area > bestArea) {
+              best = frame;
+              bestArea = area;
+            }
+          } catch {
+            /* a detached frame is not a candidate */
+          }
+        }
+        if (seen > 1) {
+          this.log(`  ${seen} webview iframe(s) in the document, ${shown.length} displayed`);
+        }
+        if (best !== null) {
+          try {
+            await this.driver.switchTo().frame(best);
+            const active = await this.driver.findElements(By.id('active-frame'));
+            if (active.length > 0) {
+              await this.driver.switchTo().frame(active[0]);
+              this.log('  entered the webview through the document fallback');
+              return;
+            }
+            await this.driver.switchTo().defaultContent();
+          } catch {
+            try {
+              await this.driver.switchTo().defaultContent();
+            } catch {
+              /* nothing to reset */
+            }
+          }
+        }
+      }
+      await this.driver.sleep(250);
+    }
+    throw new Error(
+      `no chat iframe appeared within ${timeoutMs}ms (iframes seen: ${seen})`,
+    );
   }
 
   async leave() {
@@ -98,7 +233,7 @@ export class Field {
     } catch {
       // Nothing showing, or the center is unreachable — carry on either way.
     }
-    await this.webview.switchToFrame();
+    await this.switchToChatFrame();
   }
 
   /**
@@ -129,14 +264,20 @@ export class Field {
     // D49az: start from a clean surface, whatever the previous case left behind.
     // See `settleUi` for the failing acceptance run that put this here.
     await this.settleUi();
+    // With tabs, "+ new" opens ANOTHER conversation and leaves this one open.
+    // Remember which tab that is: the suite wants one clean surface per case,
+    // so the old tab is closed afterwards — close-and-open is exactly how the
+    // product says to clear a conversation, and it keeps per-case isolation.
+    await this.webview.switchBack();
+    const oldLabel = await this.activeEditorLabel();
+    await this.switchToChatFrame();
     await this.clickElement(await this.driver.findElement(By.id('new')));
     await this.driver.sleep(700);
-    // The host asks before it discards a conversation. That dialog is VS Code's
-    // own modal, so it lives in the workbench DOM and NOT inside the webview
-    // frame — the driver has to step out to answer it. An unanswered modal
-    // blocks every later click with an error that names the iframe rather than
-    // the dialog, so this is easy to misread as a webview problem.
+    // A host without tabs asks before discarding a conversation. That dialog is
+    // VS Code's own modal, so it lives in the workbench DOM and NOT inside the
+    // webview frame — the driver has to step out to answer it.
     await this.webview.switchBack();
+    if (oldLabel) await this.waitForActiveLabelChange(oldLabel);
     const confirm = await this.driver.findElements(
       By.xpath("//div[contains(@class,'monaco-dialog-box')]//a[normalize-space(text())='New Chat']"),
     );
@@ -144,7 +285,14 @@ export class Field {
       await this.clickElement(confirm[0]);
       await this.driver.sleep(700);
     }
-    await this.webview.switchToFrame();
+    if (oldLabel) {
+      try {
+        await this.closeTabByLabel(oldLabel, { notActive: true });
+      } catch (e) {
+        this.log(`  the previous chat tab could not be closed (${String(e?.message ?? e)})`);
+      }
+    }
+    await this.switchToChatFrame();
     // A new chat that did NOT start is the most expensive silent failure in this
     // file. The host refuses "New Chat" while a run is active, so the next prompt
     // then lands in the PREVIOUS conversation — and its run, its transcript and
@@ -725,12 +873,13 @@ export class Field {
     // wrong reason: the caller asserts the RUN ended as cancelled, which a close
     // that did nothing cannot produce. The falsification in DECISIONS shows
     // exactly that failure.
+    // The ACTIVE tab is the one to close: the driver was just inside its
+    // frame. With tabs, several conversations can carry the same label, so a
+    // label is no longer an identity.
     const result = await this.driver.executeScript(`
       const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
-      const tab = tabs.find((t) =>
-        ((t.getAttribute('aria-label') || '') + ' ' + (t.textContent || ''))
-          .includes('Plato Chat'));
-      if (!tab) return 'no-tab:' + tabs.length;
+      const tab = tabs.find((t) => t.classList.contains('active'));
+      if (!tab) return 'no-active-tab:' + tabs.length;
       const btn = tab.querySelector('.tab-actions-right .action-label')
         || tab.querySelector('.close-action')
         || tab.querySelector('.codicon-close')
@@ -740,10 +889,306 @@ export class Field {
       return 'clicked';
     `);
     if (result !== 'clicked') {
-      throw new Error(`the Plato Chat tab could not be closed (${result})`);
+      throw new Error(`the active chat tab could not be closed (${result})`);
     }
     await this.driver.sleep(1500);
     this.log('  closed the chat panel');
+  }
+
+  /**
+   * Marks the webview iframes that are in the document now, so a tab switch
+   * can wait for the old document to go before entering a frame. Called at the
+   * top level, around an action that changes the active tab.
+   */
+  async markCurrentFrames() {
+    await this.driver.executeScript(`
+      document.querySelectorAll('iframe').forEach((f) => f.setAttribute('data-plato-stale', '1'));
+    `);
+  }
+
+  /** Waits until every iframe marked by `markCurrentFrames` is gone. */
+  async waitForStaleFramesGone(timeoutMs = 15000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const left = await this.driver.executeScript(
+        "return document.querySelectorAll('iframe[data-plato-stale]').length",
+      );
+      if (left === 0) return true;
+      await this.driver.sleep(200);
+    }
+    this.log('  the previous webview document was still in the DOM after a tab switch');
+    return false;
+  }
+
+  /** The label of the editor tab that is active in the workbench. */
+  async activeEditorLabel() {
+    const raw = await this.driver.executeScript(`
+      const t = document.querySelector('.tab.active, .tabs-container .tab.active');
+      if (!t) return '';
+      return (t.getAttribute('aria-label')
+        || (t.querySelector('.label-name') && t.querySelector('.label-name').textContent)
+        || t.textContent || '').trim();
+    `);
+    // VS Code's accessibility label appends the group ("…, Editor Group 1");
+    // the tab's visible title does not, and a label with the suffix matches no
+    // tab.
+    return String(raw)
+      .replace(/,\s*Editor Group[^,]*$/i, '')
+      .trim();
+  }
+
+  /** Waits until the active editor is no longer `from`. Top level only. */
+  async waitForActiveLabelChange(from, timeoutMs = 5000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const now = await this.activeEditorLabel();
+      if (now.length > 0 && now !== from) return now;
+      await this.driver.sleep(200);
+    }
+    return '';
+  }
+
+  /**
+   * Activates a workbench tab by its label. `notActive` picks the copy that is
+   * NOT on screen — how two tabs sharing a label are told apart.
+   * Leaves the driver at top level; the caller enters the frame.
+   */
+  async activateTabByLabel(label, { notActive = false } = {}) {
+    // Prefer the page object's own openEditor: it drives the workbench the way
+    // VS Code expects, where a synthetic click on the tab label can be a no-op.
+    // The label must be unique — the scripted title now derives from the
+    // prompt, so two open conversations do not share one.
+    await this.markCurrentFrames();
+    try {
+      const { EditorView } = await import('vscode-extension-tester');
+      await new EditorView().openEditor(label);
+      await this.driver.sleep(900);
+      const active = await this.activeEditorLabel();
+      if (active.includes(label)) {
+        await this.waitForStaleFramesGone();
+        return;
+      }
+    } catch {
+      // Fall through to the direct click and the verdict below.
+    }
+    // Click the tab's own label, not the tab chrome, and return the tab's
+    // position so the activation can be VERIFIED. Clicking the wrong copy of
+    // two identically labelled tabs leaves the run where it was, and the send
+    // that follows then lands in the wrong conversation — silently.
+    const idx = await this.driver.executeScript(
+      `
+      const want = arguments[0]; const skipActive = arguments[1];
+      const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
+      const match = tabs.filter((t) =>
+        ((t.getAttribute('aria-label') || '') + ' ' + (t.textContent || '')).includes(want));
+      const target = skipActive ? match.find((t) => !t.classList.contains('active')) : match[0];
+      if (!target) return -1;
+      const at = tabs.indexOf(target);
+      (target.querySelector('.label-name') || target).click();
+      return at;
+    `,
+      label,
+      notActive,
+    );
+    if (idx < 0) {
+      throw new Error(`no editor tab matching "${label}" could be activated`);
+    }
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const active = await this.driver.executeScript(
+        `
+        const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
+        return tabs.findIndex((t) => t.classList.contains('active'));
+      `,
+      );
+      if (active === idx) {
+        await this.driver.sleep(900);
+        await this.waitForStaleFramesGone();
+        return;
+      }
+      if (attempt === 5) {
+        // One more try on the tab element itself; some layouts do not take the
+        // click on the label.
+        await this.driver.executeScript(
+          `
+          const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
+          const want = arguments[0]; const skipActive = arguments[1];
+          const match = tabs.filter((t) =>
+            ((t.getAttribute('aria-label') || '') + ' ' + (t.textContent || '')).includes(want));
+          const target = skipActive ? match.find((t) => !t.classList.contains('active')) : match[0];
+          if (target) target.click();
+        `,
+          label,
+          notActive,
+        );
+      }
+      await this.driver.sleep(200);
+    }
+    throw new Error(`the tab matching "${label}" did not become active`);
+  }
+
+  /** Closes a workbench tab by label. Top level only. */
+  async closeTabByLabel(label, { notActive = false } = {}) {
+    const result = await this.driver.executeScript(
+      `
+      const want = arguments[0]; const skipActive = arguments[1];
+      const tabs = Array.from(document.querySelectorAll('.tab, .tabs-container .tab'));
+      const match = tabs.filter((t) =>
+        ((t.getAttribute('aria-label') || '') + ' ' + (t.textContent || '')).includes(want));
+      const target = skipActive ? match.find((t) => !t.classList.contains('active')) : match[0];
+      if (!target) return 'no-tab';
+      const btn = target.querySelector('.tab-actions-right .action-label')
+        || target.querySelector('.close-action')
+        || target.querySelector('.codicon-close')
+        || target.querySelector('[title="Close"]');
+      if (!btn) return 'no-close-button';
+      btn.click();
+      return 'clicked';
+    `,
+      label,
+      notActive,
+    );
+    if (result !== 'clicked') {
+      throw new Error(`the tab matching "${label}" could not be closed (${result})`);
+    }
+    await this.driver.sleep(1500);
+  }
+
+  /**
+   * With tabs, the header's "+ new" opens another conversation and leaves this
+   * one open. Returns the label of the tab that was left behind. Leaves the
+   * driver at top level; the caller enters the new frame.
+   */
+  async openNewTab() {
+    await this.webview.switchBack();
+    const oldLabel = await this.activeEditorLabel();
+    // The old conversation's iframe can still be the only iframe in the
+    // document for a moment after the new tab opens; entering it would type
+    // into the wrong conversation. Mark it and wait for it to go.
+    await this.markCurrentFrames();
+    await this.switchToChatFrame();
+    await this.clearToasts();
+    await this.clickElement(await this.driver.findElement(By.id('new')));
+    await this.driver.sleep(1200);
+    await this.webview.switchBack();
+    if (oldLabel) await this.waitForActiveLabelChange(oldLabel);
+    await this.waitForStaleFramesGone();
+    // The only iframe may still be the previous conversation for a moment.
+    // A new tab is empty, so wait until the frame on screen is — otherwise the
+    // next prompt lands in the old conversation and starts the wrong run.
+    await this.waitForEmptyChat();
+    return oldLabel;
+  }
+
+  /** Enters the chat frame repeatedly until the visible conversation is empty. */
+  async waitForEmptyChat(timeoutMs = 15000) {
+    const started = Date.now();
+    let diagDone = false;
+    while (Date.now() - started < timeoutMs) {
+      await this.switchToChatFrame();
+      const seen = await this.driver
+        .executeScript(
+          "const l = document.getElementById('log'); return l ? l.children.length : -1;",
+        )
+        .catch(() => -1);
+      if (seen === 0) return true;
+      await this.webview.switchBack();
+      if (!diagDone) {
+        diagDone = true;
+        await this.driver.sleep(1000);
+        const diag = await this.driver
+          .executeScript(`
+            const active = document.querySelector('.tab.active');
+            const groups = Array.from(document.querySelectorAll('.editor-group-container')).map((g) => {
+              const r = g.getBoundingClientRect();
+              return { cls: g.className, w: Math.round(r.width), h: Math.round(r.height),
+                       active: g.classList.contains('active'),
+                       iframes: Array.from(g.querySelectorAll('iframe')).map((f) => {
+                         const fr = f.getBoundingClientRect();
+                         return { x: Math.round(fr.x), y: Math.round(fr.y),
+                                  w: Math.round(fr.width), h: Math.round(fr.height),
+                                  cls: f.className,
+                                  parent: f.parentElement ? f.parentElement.className : '',
+                                  grand: f.parentElement && f.parentElement.parentElement
+                                    ? f.parentElement.parentElement.className : '' };
+                       }) };
+            });
+            const groupRect = (() => {
+              const g = document.querySelector('.editor-group-container.active');
+              if (!g) return null;
+              const r = g.getBoundingClientRect();
+              return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+            })();
+            const frames = Array.from(document.querySelectorAll('iframe')).map((f) => {
+              const fr = f.getBoundingClientRect();
+              const chain = [];
+              let el = f;
+              for (let i = 0; i < 4 && el; i += 1) {
+                chain.push(el.className || el.tagName);
+                el = el.parentElement;
+              }
+              return { x: Math.round(fr.x), y: Math.round(fr.y), w: Math.round(fr.width),
+                       h: Math.round(fr.height),
+                       vis: f.checkVisibility ? f.checkVisibility() : null, chain };
+            });
+            return { tab: active ? (active.getAttribute('aria-label') || active.textContent || '').trim() : null,
+                     tabCls: active ? active.className : null,
+                     groupRect,
+                     all: frames.length, frames };
+          `)
+          .catch((e) => ({ error: String(e.message ?? e) }));
+        this.log(`  DIAG after new tab: ${JSON.stringify(diag)}`);
+      }
+      await this.driver.sleep(300);
+    }
+    throw new Error(
+      `the new tab did not show an empty conversation within ${timeoutMs}ms`,
+    );
+  }
+
+  /** Parses one transcript file into its events. */
+  readRun(file) {
+    return readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter((e) => e !== null);
+  }
+
+  /** Transcripts of runs that started after `before`, once there are `want`. */
+  async waitForNewRuns(before, want, timeoutMs = 60000) {
+    const started = Date.now();
+    let fresh = [];
+    while (Date.now() - started < timeoutMs) {
+      fresh = this.transcripts().filter((f) => !before.has(f));
+      if (fresh.length >= want) return fresh;
+      await this.driver.sleep(250);
+    }
+    throw new Error(
+      `only ${fresh.length} of ${want} new runs appeared within ${timeoutMs}ms`,
+    );
+  }
+
+  /** One transcript's events, once it carries an ending. */
+  async waitRunTerminal(file, timeoutMs = 180000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const events = this.readRun(file);
+      if (
+        events.some(
+          (e) => e.type === 'run-completed' || e.type === 'run-failed',
+        )
+      ) {
+        return events;
+      }
+      await this.driver.sleep(300);
+    }
+    throw new Error(`the run in ${file} did not end within ${timeoutMs}ms`);
   }
 
   /**
@@ -786,7 +1231,7 @@ export class Field {
         } catch {
           /* it may already be the active tab */
         }
-        await this.webview.switchToFrame();
+        await this.switchToChatFrame();
         await this.driver.sleep(400);
         this.log('  reopened the chat panel');
         return;

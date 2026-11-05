@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -42,15 +41,16 @@ namespace Plato.Vs
 
         private Task? _initialize;
         private Task? _opening;
-        private SidecarHost? _sidecar;
+        private readonly SidecarHost _sidecar;
         private string? _pendingHtml;
         private bool _coreReady;
         private bool _navigated;
         private bool _disposed;
 
-        public PlatoWebViewControl()
+        internal PlatoWebViewControl(SidecarHost sidecar)
         {
             InitializeComponent();
+            _sidecar = sidecar;
             _jtf = ThreadHelper.JoinableTaskFactory;
             Loaded += OnLoaded;
         }
@@ -84,12 +84,9 @@ namespace Plato.Vs
         {
             var package = PlatoPackage.Instance
                 ?? throw new InvalidOperationException("The Plato package is not initialized.");
-            _sidecar = package.Sidecar
-                ?? throw new InvalidOperationException("The Plato sidecar is not initialized.");
 
             await _jtf.SwitchToMainThreadAsync();
-            Directory.CreateDirectory(PlatoPaths.WebView2UserData);
-            var environment = await CoreWebView2Environment.CreateAsync(null, PlatoPaths.WebView2UserData);
+            var environment = await package.GetWebViewEnvironmentAsync();
             await WebView.EnsureCoreWebView2Async(environment);
 
             var core = WebView.CoreWebView2;
@@ -175,7 +172,7 @@ namespace Plato.Vs
                 return;
             }
 
-            await _sidecar!.StartAsync(root!);
+            await _sidecar.StartAsync(root!);
             await _sidecar.RequestAsync("command", new { command = "plato.openChat" }, TimeSpan.FromSeconds(30));
         }
 
@@ -247,6 +244,14 @@ namespace Plato.Vs
 
         private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
         {
+            // A page message is proof the user is working in this window, even
+            // if the frame notification has not arrived yet.
+            _ = _jtf.RunAsync(async () =>
+            {
+                await _jtf.SwitchToMainThreadAsync();
+                PlatoPackage.Instance?.NoteActive(this);
+            });
+
             var sidecar = _sidecar;
             if (sidecar == null)
             {
@@ -286,11 +291,10 @@ namespace Plato.Vs
         private void OnSolutionChanged()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            var package = PlatoPackage.Instance;
-            var root = package?.Solutions?.GetRoot();
-            if (package?.Sidecar != null && !string.IsNullOrEmpty(root))
+            var root = PlatoPackage.Instance?.Solutions?.GetRoot();
+            if (!string.IsNullOrEmpty(root))
             {
-                _ = package.Sidecar.RequestAsync("solution.changed", new { root }, TimeSpan.FromSeconds(10));
+                _ = _sidecar.RequestAsync("solution.changed", new { root }, TimeSpan.FromSeconds(10));
             }
         }
 

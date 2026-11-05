@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -167,9 +168,10 @@ function waitPost(predicate, label, from = 0, timeoutMs = 60_000) {
 const settle = (ms = 300) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function chatLog() {
-  return JSON.parse(
-    readFileSync(join(STATE, 'workspace-state.json'), 'utf8'),
-  )['plato.chatLog'];
+  return chatValue(
+    JSON.parse(readFileSync(join(STATE, 'workspace-state.json'), 'utf8')),
+    'log',
+  );
 }
 
 function echoRows() {

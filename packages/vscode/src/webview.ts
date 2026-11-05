@@ -3,7 +3,21 @@
  * The log is restored by the host from workspaceState; this file only
  * renders messages and forwards user actions.
  */
-export function chatHtml(): string {
+/**
+ * What the host says this window can do. The shell is shared with the Visual
+ * Studio extension, whose tool window has no tabs; it opts out by setting
+ * `globalThis.__platoCaps` on the host side, which the extension turns into the
+ * object below. A real VS Code window sets nothing and gets the full shell.
+ */
+export interface ChatCaps {
+  tabs: boolean;
+  relay: boolean;
+  noun: 'tab' | 'window';
+}
+
+export function chatHtml(
+  caps: ChatCaps = { tabs: true, relay: true, noun: 'tab' },
+): string {
   const nonce = getNonce();
   return `<!DOCTYPE html>
 <html lang="en">
@@ -186,6 +200,12 @@ export function chatHtml(): string {
               margin-bottom:2px; }
   .msg.you { border-left:2px solid var(--pl-accent); padding-left:8px; }
   .msg.bot  { border-left:2px solid var(--pl-border); padding-left:8px; }
+  /* Provenance for a message sent from another chat tab. It sits on the user
+     row, not in the text the model receives. */
+  .relay-tag { display:inline-block; margin-left:8px; padding:0 6px;
+               border:1px solid var(--pl-border); border-radius:8px;
+               font-size:10px; letter-spacing:.04em; color:var(--pl-muted);
+               text-transform:none; vertical-align:middle; }
   .msg.sys, .msg.tool { color:var(--pl-muted); font-size:12px; }
   /* D47f: a philosopher notice is tinted with that philosopher's colour, so
      two of them speaking in a row are told apart at a glance. */
@@ -1262,7 +1282,7 @@ export function chatHtml(): string {
   .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
 </style>
 </head>
-<body>
+<body data-plato-tabs="${caps.tabs}" data-plato-relay="${caps.relay}" data-plato-noun="${caps.noun}">
 <header>
   <div class="hrow htop">
     <span class="brand">Plato</span>
@@ -1427,6 +1447,19 @@ export function chatHtml(): string {
 </div>
 <script nonce="${nonce}">
   const vsapi = acquireVsCodeApi();
+  // The build's webview minifier reads this block as raw text, so no
+  // interpolation may appear inside it. The host writes the capabilities as
+  // body attributes; this turns them back into the documented object.
+  const capAttr = (name, fallback) => {
+    const v = document.body.getAttribute(name);
+    return v === null ? fallback : v;
+  };
+  const CAPS = {
+    tabs: capAttr('data-plato-tabs', 'true') === 'true',
+    relay: capAttr('data-plato-relay', 'true') === 'true',
+    noun: capAttr('data-plato-noun', 'tab') === 'window' ? 'window' : 'tab',
+  };
+  window.__platoCaps = CAPS;
   const log = document.getElementById('log');
   const q = document.getElementById('q');
   // D49ak: edit replaced act as the default — it is the middle mode.
@@ -1989,11 +2022,17 @@ export function chatHtml(): string {
 
 
   document.getElementById('go').addEventListener('click', ask);
+  // With tabs, "+ new" opens another conversation and this one stays open.
+  // A window without them (Visual Studio) keeps the clearing behaviour, which
+  // is the only sensible meaning of "new" when there is one surface.
+  document.getElementById('new').title = CAPS.tabs
+    ? 'Open a new chat tab'
+    : 'Start a new chat (clears this conversation)';
   document.getElementById('new').addEventListener('click', () => {
     // D44a: a fresh chat drops any chips. The host's newChat resets
     // pendingAttachments and pendingHistory, so no attach-clear is needed.
     clearChips();
-    vsapi.postMessage({ type: 'newChat' });
+    vsapi.postMessage({ type: CAPS.tabs ? 'new-tab' : 'newChat' });
   });
   // D43: the empty state's CTA opens Settings → Providers (which
   // auto-opens the section when zero providers exist, D38b).
@@ -2100,6 +2139,19 @@ export function chatHtml(): string {
   const htitle = document.getElementById('htitle');
   let hRuns = [];
   let hChats = [];
+  // Host-sent list of the other open conversations. Slice 3's target picker
+  // reads this; nothing else does yet.
+  let peers = [];
+
+  /**
+   * Send a message to another agent session. The transport is fixed here so
+   * the Visual Studio host can implement the same three message types; the
+   * picker that chooses the target and the origin rules are slice 3.
+   */
+  function relayOut(to, text) {
+    if (!CAPS.relay) return;
+    vsapi.postMessage({ type: 'relay-out', to: String(to), text: String(text) });
+  }
   document.getElementById('hist').addEventListener('click', () => {
     vsapi.postMessage({ type: 'openHistory' });
   });
@@ -2133,14 +2185,23 @@ export function chatHtml(): string {
         // D42: the first entry is the live conversation - clicking it
         // just returns to the chat, same as the Back button.
         const isCurrent = !!c.current;
+        const isLive = !!c.live;
         item.appendChild(el('div', 'rm',
           String(c.ts || '').replace('T', ' ').slice(0, 19)
           + ' \u00b7 ' + c.count + ' messages \u00b7 '
-          + (isCurrent ? 'current chat \u00b7 click to open' : 'click to resume')));
+          + (isCurrent ? 'current chat \u00b7 click to open'
+            : isLive ? 'open in another tab \u00b7 click to switch'
+            : 'click to resume')));
         if (isCurrent) {
           item.classList.add('current');
           item.addEventListener('click', () => {
             document.body.classList.remove('show-history');
+          });
+        } else if (isLive && typeof c.tabId === 'string') {
+          // Another open conversation: bring its panel forward rather than
+          // loading a copy into this tab.
+          item.addEventListener('click', () => {
+            vsapi.postMessage({ type: 'focusTab', id: c.tabId });
           });
         } else {
           item.addEventListener('click', () => {
@@ -4408,6 +4469,11 @@ export function chatHtml(): string {
         break;
       case 'restore':
         document.body.classList.remove('show-settings', 'show-history');
+        // The tab id is what makes a reload restore THIS conversation. The
+        // Visual Studio shim stubs setState, so the call is safe there too.
+        if (typeof m.tabId === 'string' && m.tabId) {
+          try { vsapi.setState({ tabId: m.tabId }); } catch { /* not a panel */ }
+        }
         render(m.log);
         // D40: restore the conversation title with the log.
         if (typeof m.title === 'string') setTitle(m.title);
@@ -4577,6 +4643,27 @@ export function chatHtml(): string {
       case 'mode-state':
         if (typeof m.text === 'string') setMode(m.text);
         break;
+      // The other open conversations, kept for the target picker. Nothing is
+      // drawn from this yet; the host is the source of truth for names and
+      // whether a run is active.
+      case 'peers':
+        peers = Array.isArray(m.peers) ? m.peers : [];
+        break;
+      // A message from another agent session, relayed by the host. It is drawn
+      // with a provenance tag — never as the model's words, and never as this
+      // user's unmarked instruction. The relay's origin and depth are core's
+      // to decide (slice 3); this host only renders what it is given.
+      case 'relay-in': {
+        if (typeof m.text !== 'string') break;
+        const row = addMsg('you', 'You', m.text);
+        if (typeof m.from === 'string' && m.from) {
+          const tag = document.createElement('span');
+          tag.className = 'relay-tag';
+          tag.textContent = 'from ' + m.from;
+          row.appendChild(tag);
+        }
+        break;
+      }
       case 'done': {
         flushToolBuffer();
         finish();

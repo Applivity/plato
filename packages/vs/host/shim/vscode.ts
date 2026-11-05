@@ -6,7 +6,18 @@
  * existing IDE host can run outside VS Code. The Visual Studio C# shell will
  * replace the transport with stdio JSON-RPC in M2.
  */
-import { promises as fsp, readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import {
+  promises as fsp,
+  closeSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULTS } from '../defaults.ts';
@@ -32,8 +43,19 @@ export interface ShimConfig {
   secretStore?: SecretStorageLike;
   /** Per-project chat log file (M2); defaults to stateDir/workspace-state.json. */
   workspaceStateFile?: string;
+  /**
+   * The archived-chat list shared by every Plato window of a project. Without
+   * it the sessions key stays in the workspace file, as in the M1 spike.
+   */
+  sharedStateFile?: string;
   transport: ShimTransport;
 }
+
+/**
+ * What this host can honour. The Visual Studio host gives each chat its own
+ * window and does not relay in this slice; the shell reads this when it lands.
+ */
+export const __capabilities = { tabs: false, relay: false, noun: 'window' } as const;
 
 let config: ShimConfig | null = null;
 
@@ -321,6 +343,213 @@ class Memento {
   }
 }
 
+/**
+ * Test seam: runs after the shared file has been read and before it is
+ * written, while the lock is held. Production leaves it null.
+ */
+export type SharedWriteHook = () => Promise<void> | void;
+
+let sharedWriteHook: SharedWriteHook | null = null;
+
+export function __setSharedWriteHook(hook: SharedWriteHook | null): void {
+  sharedWriteHook = hook;
+}
+
+const SHARED_LOCK_STALE_MS = 5_000;
+const SHARED_LOCK_WAIT_MS = 10_000;
+
+function lockPathFor(file: string): string {
+  return file.replace(/\.json$/i, '') + '.lock';
+}
+
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * One writer at a time around a shared file. `wx` is an exclusive create on
+ * both Windows and macOS. A lock older than five seconds is treated as
+ * abandoned and broken; a live writer holds it for milliseconds.
+ */
+async function withSharedLock<T>(
+  file: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const lock = lockPathFor(file);
+  const token = `${process.pid}:${Math.random().toString(36).slice(2)}`;
+  const deadline = Date.now() + SHARED_LOCK_WAIT_MS;
+  let handle: number;
+  for (;;) {
+    try {
+      handle = openSync(lock, 'wx');
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw error;
+      }
+
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > SHARED_LOCK_STALE_MS) {
+          unlinkSync(lock);
+          continue;
+        }
+      } catch {
+        // The lock disappeared between the open and the stat; retry.
+      }
+
+      if (Date.now() >= deadline) {
+        throw new Error(`shared chats: timed out waiting for ${lock}`);
+      }
+
+      await pause(10 + Math.floor(Math.random() * 20));
+    }
+  }
+
+  let wroteToken = false;
+  try {
+    writeSync(handle, token);
+    wroteToken = true;
+  } finally {
+    closeSync(handle);
+  }
+
+  try {
+    return await action();
+  } finally {
+    try {
+      if (!wroteToken || readFileSync(lock, 'utf8') === token) {
+        unlinkSync(lock);
+      }
+    } catch {
+      // Already released, or broken as stale by another writer.
+    }
+  }
+}
+
+/**
+ * The extension writes every workspace value through one object. Two Plato
+ * windows share the archived-chat list but not the live log, so the sessions
+ * key is routed to a shared file and merged by chat id. Without the merge a
+ * window that archived later would replace the whole list with its own copy
+ * and the other window's chats would vanish from History.
+ *
+ * The read-modify-write runs under an inter-process lock. The old code checked
+ * only its own ids after writing; a peer that wrote between the read and the
+ * write was silently dropped. The check now also requires every id that was in
+ * the file before the merge, and those entries are carried into the next
+ * attempt if any of them vanishes.
+ */
+export class WorkspaceMemento {
+  private static readonly SharedKey = 'plato.chatSessions';
+
+  private readonly local: Memento;
+
+  constructor(
+    localFile: string,
+    private readonly sharedFile?: string,
+  ) {
+    this.local = new Memento(localFile);
+  }
+
+  private get isShared(): boolean {
+    return this.sharedFile !== undefined;
+  }
+
+  get<T>(key: string, defaultValue?: T): T {
+    if (!this.isShared || key !== WorkspaceMemento.SharedKey) {
+      return this.local.get(key, defaultValue);
+    }
+
+    // Re-read rather than cache: another window may have archived since this
+    // one started, and History must show it.
+    const shared = readJson(this.sharedFile!);
+    return (key in shared ? shared[key] : defaultValue) as T;
+  }
+
+  async update(key: string, value: unknown): Promise<void> {
+    if (!this.isShared || key !== WorkspaceMemento.SharedKey) {
+      await this.local.update(key, value);
+      return;
+    }
+
+    const file = this.sharedFile!;
+    const incoming = Array.isArray(value)
+      ? (value as Array<{ id?: unknown }>)
+      : [];
+
+    await withSharedLock(file, async () => {
+      let carry: Array<{ id?: unknown }> = [];
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const disk = readJson(file);
+        const existing = Array.isArray(disk[key])
+          ? (disk[key] as Array<{ id?: unknown }>)
+          : [];
+        const incomingIds = new Set(incoming.map((entry) => entry?.id));
+        const carryIds = new Set(carry.map((entry) => entry?.id));
+        const merged = [
+          ...incoming,
+          ...carry.filter((entry) => !incomingIds.has(entry?.id)),
+          ...existing.filter(
+            (entry) =>
+              !incomingIds.has(entry?.id) && !carryIds.has(entry?.id),
+          ),
+        ];
+
+        if (sharedWriteHook !== null) {
+          await sharedWriteHook();
+        }
+
+        writeJson(file, { ...disk, [key]: merged });
+
+        const check = readJson(file);
+        const written = Array.isArray(check[key])
+          ? (check[key] as Array<{ id?: unknown }>)
+          : [];
+        const writtenIds = new Set(written.map((entry) => entry?.id));
+        const ownIdsKept = incoming.every((entry) =>
+          writtenIds.has(entry?.id),
+        );
+        const carriedKept = carry.every((entry) =>
+          writtenIds.has(entry?.id),
+        );
+        const priorKept = existing.every((entry) =>
+          writtenIds.has(entry?.id),
+        );
+        if (ownIdsKept && carriedKept && priorKept) {
+          return;
+        }
+
+        // A writer that did not honour the lock removed an entry. Carry it
+        // into the next attempt, which re-reads and merges again.
+        const missing = existing.filter(
+          (entry) => !writtenIds.has(entry?.id),
+        );
+        for (const entry of missing) {
+          if (
+            !carryIds.has(entry?.id) &&
+            !incomingIds.has(entry?.id)
+          ) {
+            carry.push(entry);
+            carryIds.add(entry?.id);
+          }
+        }
+      }
+
+      throw new Error('shared chats: the merge could not be verified');
+    });
+  }
+
+  keys(): readonly string[] {
+    const keys = new Set(this.local.keys());
+    if (this.isShared) {
+      for (const key of Object.keys(readJson(this.sharedFile!))) {
+        keys.add(key);
+      }
+    }
+    return [...keys];
+  }
+}
+
 class SecretStorage {
   private readonly data: Record<string, string>;
   readonly onDidChange = new EventEmitter<{ key: string }>().event;
@@ -353,7 +582,8 @@ class WebviewPanelImpl {
 
   private html = '';
   private receive: ((msg: any) => unknown) | null = null;
-  private readonly disposeEmitter = new EventEmitter<void>();
+  private readonly disposeListeners = new Set<(e: void) => unknown>();
+  private disposal: Promise<void> | null = null;
 
   constructor(
     readonly viewType: string,
@@ -362,7 +592,12 @@ class WebviewPanelImpl {
     readonly options: unknown,
   ) {
     const self = this;
-    this.onDidDispose = this.disposeEmitter.event;
+    this.onDidDispose = (listener) => {
+      this.disposeListeners.add(listener);
+      return new Disposable(() => {
+        this.disposeListeners.delete(listener);
+      });
+    };
     this.webview = {
       get html(): string {
         return self.html;
@@ -400,9 +635,24 @@ class WebviewPanelImpl {
     cfg().transport.reveal();
   }
 
-  dispose(): void {
-    this.disposeEmitter.fire();
+  /**
+   * Disposes the panel and resolves only after every listener has finished.
+   * The chat host's listener cancels and awaits the run and then archives the
+   * chat; the shell uses this promise to know it may stop the sidecar.
+   */
+  disposeAsync(): Promise<void> {
+    return (this.disposal ??= this.disposeCoreAsync());
+  }
+
+  private async disposeCoreAsync(): Promise<void> {
+    const results = [...this.disposeListeners].map((listener) => listener());
+    this.disposeListeners.clear();
+    await Promise.all(results.map((result) => Promise.resolve(result)));
     cfg().transport.disposed();
+  }
+
+  dispose(): void {
+    void this.disposeAsync();
   }
 
   receiveMessage(msg: unknown): void {
@@ -867,10 +1117,12 @@ export function __createContext(): any {
   const c = cfg();
   return {
     subscriptions: [] as Disposable[],
-    workspaceState: new Memento(
+    workspaceState: new WorkspaceMemento(
       c.workspaceStateFile ?? join(c.stateDir, 'workspace-state.json'),
+      c.sharedStateFile,
     ),
     globalState: new Memento(join(c.stateDir, 'global-state.json')),
+    capabilities: __capabilities,
     secrets: c.secretStore ?? new SecretStorage(c.secrets),
     extensionUri: Uri.file(c.root),
     extensionPath: c.root,

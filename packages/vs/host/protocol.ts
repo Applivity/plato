@@ -29,6 +29,7 @@ export interface InitParams {
   settingsPath: string;
   stateDir: string;
   workspaceStateFile: string;
+  sharedStateFile?: string;
   version?: string;
 }
 

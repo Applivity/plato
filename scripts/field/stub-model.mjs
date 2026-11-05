@@ -58,6 +58,8 @@ let observerCursor = 0;
 let log = [];
 /** D49bo: how long `/models` is held before it answers. See `/__script`. */
 let modelsDelayMs = 0;
+/** 'prompt' derives the title from the request; 'fixed' answers "Field test run". */
+let titleMode = 'fixed';
 
 const textFrames = (res, text, finish) => {
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
@@ -140,6 +142,7 @@ const server = createServer(async (req, res) => {
     const body = await readBody(req);
     steps = Array.isArray(body.steps) ? body.steps : [];
     observerSteps = Array.isArray(body.observers) ? body.observers : [];
+    titleMode = body.titleMode === 'prompt' ? 'prompt' : 'fixed';
     observerCursor = 0;
     // D49bo: how long to hold the model-discovery response. The host asks for
     // this while PREPARING a run — before it is `running` — so stalling it widens
@@ -273,7 +276,19 @@ const server = createServer(async (req, res) => {
   // script — see rule 1 at the top of this file.
   if (offered === 0) {
     log[log.length - 1].consumedStep = 'auxiliary';
-    const title = 'Field test run';
+    // Tabs need distinguishable labels. A fixed title made every conversation
+    // "Field test run", which is fine for the header but makes two open chat
+    // tabs indistinguishable in the workbench. The field harness asks for the
+    // derived title with `titleMode: 'prompt'`; every other suite keeps the
+    // fixed one its assertions are written against.
+    const seedText = String(userTexts[userTexts.length - 1] ?? '')
+      .replace(/^User:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const title =
+      titleMode === 'prompt' && seedText.length > 0
+        ? seedText.slice(0, 30)
+        : 'Field test run';
     if (body.stream === true) return textFrames(res, title, 'stop');
     return json(res, 200, {
       choices: [{ index: 0, message: { role: 'assistant', content: title }, finish_reason: 'stop' }],

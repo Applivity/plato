@@ -177,7 +177,9 @@ async function setScript(steps, needles = [], modelsDelayMs = 0) {
   const res = await fetch(`${STUB}/__script`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ steps, needles, modelsDelayMs }),
+    // titleMode 'prompt' gives each conversation a title taken from its own
+    // prompt, so two open chat tabs are distinguishable in the workbench.
+    body: JSON.stringify({ steps, needles, modelsDelayMs, titleMode: 'prompt' }),
   });
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }
@@ -316,7 +318,10 @@ describe('Plato field tests — real VS Code', function () {
       const notes = [];
       // D49ca: cases 34 and 35 prove that a write was admitted or refused, so
       // their probe starts ABSENT rather than inheriting a previous run's file.
-      if (c.n === 34 || c.n === 35) {
+      // Case 36 also writes the probe, and `write_file` refuses to replace an
+      // existing file without `overwrite: true`. Leaving 34/35's copy behind
+      // makes 36 fail for a reason that has nothing to do with its subject.
+      if (c.n === 34 || c.n === 35 || c.n === 36) {
         rmSync(join(DEMO_REPO, MODE_PROBE), { force: true });
       }
 
@@ -1461,6 +1466,199 @@ describe('Plato field tests — real VS Code', function () {
           throw new Error(`case ${c.n} run ${i + 1}: ${failures.join(' | ')}`);
         }
       }
+    });
+  }
+
+  /**
+   * Case 37 — the tabs proof. Two conversations in two panels, a completed
+   * write in each, then a run in flight in BOTH, and one tab is closed.
+   *
+   * What makes it a check rather than a demonstration:
+   *   - the two writes land in different files and in different transcripts;
+   *   - the closed tab's run ends cancelled with the panel-close notice, and
+   *     the other tab's run still completes;
+   *   - the archived-chat count in History grows by exactly one, and the newest
+   *     archived chat is the closed tab's conversation.
+   *
+   * Falsified by the change it guards: with `dispose()` wired to one tracked
+   * panel, the closed tab's run keeps going and never archives — every one of
+   * the three checks above fails.
+   */
+  if (only.length === 0 || only.includes(37)) {
+    it('case 37 — two chat tabs run independently, and closing one stops only its run', async () => {
+      const A_FILE = 'tab-a-probe.txt';
+      const B_FILE = 'tab-b-probe.txt';
+      for (const f of [A_FILE, B_FILE]) {
+        rmSync(join(DEMO_REPO, f), { force: true });
+      }
+
+      const storedChats = async () => {
+        const rows = await field.driver.findElements(By.css('.runitem'));
+        let n = 0;
+        for (const row of rows) {
+          if ((await row.getText()).includes('click to resume')) n += 1;
+        }
+        return n;
+      };
+      const openHistory = async () => {
+        // A webview that was hidden and shown again is a NEW document, and the
+        // automation context still points at the old one. Re-enter only when
+        // the header cannot be seen from the current context, and say so.
+        let inside = false;
+        try {
+          inside = await field.driver.executeScript(
+            "return !!document.getElementById('hist');",
+          );
+        } catch {
+          inside = false;
+        }
+        if (!inside) {
+          field.log('  the driver was not inside the chat frame — re-entering');
+          try {
+            await field.webview.switchBack();
+          } catch {
+            /* already at the top level */
+          }
+          await field.switchToChatFrame();
+        }
+        await field.clickElement(await field.driver.findElement(By.id('hist')));
+        await field.driver.sleep(800);
+      };
+      const leaveHistory = async () => {
+        await field.clickElement(await field.driver.findElement(By.id('hback')));
+        await field.driver.sleep(400);
+      };
+
+      await field.newChat();
+      field.cardsSeen = [];
+      field.decisions = [];
+      await field.setMode('auto');
+
+      // Tab A: a completed write.
+      await setScript([
+        { tool: 'write_file', args: { path: A_FILE, content: 'tab A' } },
+        { text: 'TAB A wrote its file.' },
+      ]);
+      const beforeA = await field.send('TAB A: write the probe file');
+      const eventsA = await field.waitRunEnd(beforeA, { tag: 'tab-a' });
+      const aTranscript = field.lastTranscript;
+      if (!eventsA.some((e) => e.type === 'run-completed')) {
+        throw new Error('TAB A: the first run did not complete');
+      }
+      if (!existsSync(join(DEMO_REPO, A_FILE))) {
+        throw new Error('TAB A: the write did not land');
+      }
+
+      // Tab B: "+ new" opens another conversation and leaves A open.
+      const aLabel = await field.openNewTab();
+      await field.switchToChatFrame();
+      await field.setMode('auto');
+      await setScript([
+        { tool: 'write_file', args: { path: B_FILE, content: 'tab B' } },
+        { text: 'TAB B wrote its file.' },
+      ]);
+      const beforeB = await field.send('TAB B: write the probe file');
+      const eventsB = await field.waitRunEnd(beforeB, { tag: 'tab-b' });
+      const bTranscript = field.lastTranscript;
+      if (!eventsB.some((e) => e.type === 'run-completed')) {
+        throw new Error('TAB B: the first run did not complete');
+      }
+      if (!existsSync(join(DEMO_REPO, B_FILE))) {
+        throw new Error('TAB B: the write did not land');
+      }
+      if (aTranscript === bTranscript) {
+        throw new Error('TABS: both conversations wrote the SAME transcript');
+      }
+
+      // How many chats are already archived before this case closes anything.
+      await openHistory();
+      const storedBefore = await storedChats();
+      await leaveHistory();
+
+      // B is on screen. Start a slow run here, then start one in A as well.
+      await setScript([{ text: 'TAB SLOW reply', delayMs: 20000 }]);
+      const beforeSlowB = await field.send('TAB B: slow run');
+      const [slowBFile] = await field.waitForNewRuns(beforeSlowB, 1);
+
+      await field.webview.switchBack();
+      const bLabel = await field.activeEditorLabel();
+      await field.activateTabByLabel(aLabel, { notActive: true });
+      await field.switchToChatFrame();
+      // The frame, not just the tab, must be A's: a send into the wrong chat
+      // would become guidance for B's live run and start nothing.
+      const aVisible = await field.logText();
+      if (!aVisible.includes('TAB A: write the probe file')) {
+        throw new Error('TABS: the visible chat is not tab A after switching');
+      }
+      const beforeSlowA = new Set(field.transcripts());
+      await field.send('TAB A: slow run');
+      const [slowAFile] = await field.waitForNewRuns(beforeSlowA, 1);
+
+      // Close A while its run is in flight. Only A may stop.
+      await field.closeChat();
+      const aEvents = await field.waitRunTerminal(slowAFile, 30000);
+      const bEvents = await field.waitRunTerminal(slowBFile, 90000);
+
+      const aEnd = aEvents.find((e) => e.type === 'run-completed');
+      const bEnd = bEvents.find((e) => e.type === 'run-completed');
+      if (aEnd === undefined) throw new Error('TAB A: the run never ended after the close');
+      if (aEnd.reason !== 'cancelled') {
+        throw new Error(`TAB A: the closed tab's run ended "${aEnd.reason}", not cancelled`);
+      }
+      if (!aEvents.some((e) => e.type === 'notice' && /panel closed/i.test(String(e.text)))) {
+        throw new Error('TAB A: the transcript does not say the panel close stopped the run');
+      }
+      if (bEnd === undefined) throw new Error('TAB B: the run never ended');
+      if (bEnd.reason === 'cancelled') {
+        throw new Error('TAB B: closing the OTHER tab cancelled this run');
+      }
+
+      // Back to B: the archive must have grown by exactly the closed chat, and
+      // the newest stored chat must be A's conversation.
+      await field.activateTabByLabel(bLabel);
+      await field.switchToChatFrame();
+      await field.driver.sleep(1500);
+      await openHistory();
+      const storedAfter = await storedChats();
+      // The stored list is capped (30). In a full run it is already full, so a
+      // new archive can be accompanied by the oldest one dropping off. One new
+      // row is therefore `min(before + 1, 30)`; which row it is, the click
+      // below proves.
+      const expected = Math.min(storedBefore + 1, 30);
+      if (storedAfter !== expected) {
+        throw new Error(
+          `HISTORY: archived chats went ${storedBefore} → ${storedAfter}; expected ${expected}`,
+        );
+      }
+      const rows = await field.driver.findElements(By.css('.runitem'));
+      let storedRow = null;
+      for (const row of rows) {
+        if ((await row.getText()).includes('click to resume')) {
+          storedRow = row;
+          break;
+        }
+      }
+      if (storedRow === null) throw new Error('HISTORY: the archived chat row is missing');
+      await field.clickElement(storedRow);
+      await field.driver.sleep(1200);
+      const resumed = await field.logText();
+      if (!resumed.includes('TAB A: slow run')) {
+        throw new Error('HISTORY: the newest archived chat is not the closed tab');
+      }
+
+      MANIFEST.push({
+        case: 37,
+        run: 1,
+        mode: 'auto',
+        orchestration: 'solo',
+        title: 'Two chat tabs run independently; closing one stops only its run',
+        transcript: slowAFile,
+        transcriptOk: true,
+        screenFailures: [],
+      });
+      console.log(
+        `  case 37: tabs independent, closed run cancelled, other run complete, archives +1 (${storedBefore} → ${storedAfter})`,
+      );
     });
   }
 

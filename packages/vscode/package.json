@@ -17,7 +17,9 @@
     "Machine Learning",
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onWebviewPanel:platoChat"
+  ],
   "main": "./dist/extension.js",
   "scripts": {
     "build": "tsc -b && node esbuild.mjs",

@@ -30,6 +30,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -329,7 +330,7 @@ try {
   const state = JSON.parse(
     readFileSync(join(HOME, 'state', 'workspace-state.json'), 'utf8'),
   );
-  assert.equal(state['plato.chatMode'], 'plan', 'the mode was persisted');
+  assert.equal(chatValue(state, 'mode'), 'plan', 'the mode was persisted');
 
   // ---- transcript -------------------------------------------------------
   const runs = join(HOME, '.plato', 'runs');

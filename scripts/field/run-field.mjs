@@ -44,6 +44,9 @@ const SCRATCH_FILES = [
   'mode-switch-probe.txt',
   // D49cb: the real-model mode cases write this one.
   'mode-request-probe.txt',
+  // Tabs: case 37 writes one probe per chat tab.
+  'tab-a-probe.txt',
+  'tab-b-probe.txt',
 ];
 
 import { DATE_HELPER, DEMO_REPO, VIEW_MODEL } from './cases.mjs';

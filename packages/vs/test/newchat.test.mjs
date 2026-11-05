@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { chatValue } from './chat-state.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOME = mkdtempSync(join(tmpdir(), 'plato-vs-newchat-home-'));
@@ -181,8 +182,8 @@ try {
     'a cancel does not blank the conversation',
   );
   const afterCancel = stateFile();
-  assert.equal(afterCancel['plato.chatLog'].length, 2, 'the log is untouched');
-  assert.equal(afterCancel['plato.chatTitle'], 'Live title', 'the title is untouched');
+  assert.equal(chatValue(afterCancel, 'log').length, 2, 'the log is untouched');
+  assert.equal(chatValue(afterCancel, 'title'), 'Live title', 'the title is untouched');
   assert.equal(
     (afterCancel['plato.chatSessions'] || []).length,
     0,
@@ -205,10 +206,10 @@ try {
   assert.equal(blanked.title, '', 'a new chat has no title');
 
   const afterNew = await waitState(
-    (s) => (s['plato.chatLog'] || []).length === 0,
+    (s) => (chatValue(s, 'log') || []).length === 0,
     'the cleared log',
   );
-  assert.equal(afterNew['plato.chatTitle'], '', 'the title is reset');
+  assert.equal(chatValue(afterNew, 'title'), '', 'the title is reset');
 
   const archived = afterNew['plato.chatSessions'][0];
   assert.ok(archived, 'the conversation is in History');
