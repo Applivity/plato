@@ -15,6 +15,19 @@ founder approved this plan. The decision record is D49cf in
 [`docs/DECISIONS.md`](../../docs/DECISIONS.md). This file is the implementation
 plan and the definition of done.
 
+## Beyond the plan: several Plato windows (2026-11-03, D49cs)
+
+The plan above ends at M5. A capability added after it: **Visual Studio can
+show several Plato windows at once**, each with its own sidecar process and its
+own live state, sharing one History that is merged under a lock. It is
+multi-instance tool windows (`MultiInstances`, `Transient`), a New Window
+command, ids issued by the package, one WebView2 environment, and focus-based
+command routing. Field-verified on 2026 and 2022; the evidence is
+`C:\src\plato-vs-field\evidence\multi-window\`. Not verified: restoring
+windows across an IDE restart, which is out of the slice. The shared shell also
+carries the peer list and the incoming-message shape for session messaging, but
+the send feature itself is not wired into this host yet.
+
 ## Read this first
 
 You are building a Visual Studio 2026 host for the same Plato engine and the

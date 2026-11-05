@@ -7494,3 +7494,114 @@ This is the "D45c" complement: not just "UI first" but "we can break things on p
   account is deleted and the repository lives under the `Applivity`
   organization at github.com/Applivity/plato, public since 2026-11-02 (D49cp). Automation tokens need the `repo`
   scope for repo creation and push.
+
+**D49cq — Live sessions: one registry, one endpoint per session, two tools (2026-11-03).**
+
+The founder asked for what Claude Code already does between its own sessions:
+an agent names another session, or finds one from a description of the problem,
+and sends it a message. That requirement is what forces the design, because the
+three hosts are three different processes — a terminal session, a VS Code window
+and a Visual Studio window share no memory.
+
+- **The registry is an address book, never proof of life.** One JSON file per
+  live process under `~/.plato/live/` (id, name, summary, host, pid, busy,
+  endpoint, token; directory 0700, file 0600, atomic write). An id names the
+  process, not the conversation: a resumed conversation is a new process and
+  honestly gets a new id, while the title stays the user's name for it. A shared
+  name is refused rather than guessed, and every cross-session surface shows
+  `title [id]`.
+- **Liveness is a connect and handshake.** A crashed process leaves both its
+  entry and its socket behind, so neither is evidence. `list_sessions` probes and
+  hides a session that cannot answer within 250 ms; reaping needs a failed
+  handshake AND an entry older than 30 s, and is compare-and-delete. A wrong
+  answer here decides only what is shown; it corrupts nothing.
+- **The endpoint is per session**, not per app: a unix socket on macOS and Linux,
+  a named pipe on Windows (Node does not promise UDS there), newline-delimited
+  JSON, a 16 KiB frame cap, a 4,000-character message cap refused rather than
+  truncated, a 32-byte token from the 0600 entry, and an ack. The token is the
+  credential and its trust boundary is honest: any process run by the same user
+  can read it and impersonate a session; another user cannot.
+- **The tools live in the engine**, offered only where the host supplies two
+  callbacks (`describe`, `receive`), the same pattern `request_mode` already
+  uses. A host without them refuses cleanly rather than advertising a tool it
+  cannot honour.
+- **Depth is one hop.** A run whose task arrived from another session does not
+  get `send_to_session` at all, and a forced call is refused. Two agents cannot
+  ping-pong; every further hop needs a person.
+- **Plan mode denies the send, with no card.** Plan's contract in this product is
+  refuse-and-hand-back, not ask: it raises no cards for any non-read tool.
+  Allowing a plan-mode run to relay would let it make an `auto` session perform
+  the very action plan refused — plan laundering its own prohibition.
+- **The receiving model is told what it is reading.** A fixed header names the
+  sender, says the text is not from the user, and tells the model to act only if
+  it helps the work and to say who asked. The receiving user sees a line naming
+  the sender. The sending run's transcript records the outgoing text, so nothing
+  leaves unseen.
+- **One-way in v1.** There is no reply primitive; a reply is a later decision,
+  not an oversight. The CLI registers only interactive sessions, because a
+  non-interactive run has no inbox and nobody to read it.
+
+Rejected: an in-process bus only (cannot cross hosts or windows); pid checks as a
+liveness verdict (pid reuse); UDP or HTTP on loopback (a socket is simpler and
+does not open a port); letting the receiving session auto-answer with a relay
+without a person in the loop (unbounded chains).
+
+**D49cr — Chat tabs in VS Code: per-tab state and a per-panel close path (2026-11-03).**
+
+The founder asked for as many independent chats as Claude Code's tabs. The
+singleton was thin — one panel reference, one host, one set of chat keys — and
+the class underneath was already per chat.
+
+- **Storage is per tab**, `plato.chat.<id>.log/title/mode` plus a small index,
+  not one map: every row is written on each push, and one map would rewrite every
+  tab's log on every row. Archived chats keep their format and their 30 cap. The
+  legacy keys are migrated once into a `legacy` tab and left as a recovery
+  snapshot.
+- **The close path belongs to the panel.** D41 and D49bn (cancel, await, then
+  archive) were reached only through the one tracked panel; with tabs, the
+  untracked ones would have kept running with no UI and never archived. Every
+  panel now owns its handler, and archive writes are serialised so two closes
+  cannot lose a snapshot.
+- **`+ new` opens a tab**, and clearing a conversation becomes close-and-open,
+  which archives it by the existing rule. A model pick stays in its tab: each
+  tab snapshots `plato.model` when it is created, and the picker still writes the
+  global so the next tab inherits it.
+- **Restore is a serializer**, with the tab id saved by the shell through
+  `setState`; restore is lazy and unordered by the platform's own rules, so the
+  host rebuilds from the index rather than assuming what will come back.
+- **`retainContextWhenHidden` stays.** Removing it looked right until the field
+  suite showed a run that writes a file reveals the chat and tears a hidden
+  webview down — cases 36 and 37 failed. Per-tab memory is the price of a live
+  conversation.
+
+**D49cs — Multiple Plato windows in Visual Studio: one sidecar and one state per window (2026-11-03).**
+
+The founder's condition was that this must not be a hack. It is not: multi-instance
+tool windows are a documented SDK feature (`MultiInstances`, the instance id
+passed to `FindToolWindow`), and both supported hosts load our 17.14 SDK package.
+
+- **One sidecar per window**, owned by the pane rather than the package. The
+  shared host is one chat per process, so a second window attached to one sidecar
+  would show the same chat; making one sidecar serve several windows needs a
+  per-instance shim, a host map and a multiplexed protocol, and it couples
+  crashes. Per-window processes cost memory, not disk (the same `node.exe`
+  already ships), and give crash isolation.
+- **State splits the same way.** The live log, title and mode are per window; the
+  archived-chat list is shared and merged by chat id under an inter-process lock.
+  Without the merge, a window that archived later replaced the list with its own
+  copy and the other window's chats vanished from History — the lock test fails
+  on the previous code by losing exactly that chat. The merge may hold one entry
+  over the 30 cap until the next archive trims it; that is recorded, not fixed.
+- **Ids are ours, and never reused.** `Transient` because we create the windows;
+  a reused frame id would inherit a closed window's live log.
+- **Commands follow focus**, not creation: the pane reports activation and the
+  package moves it to the front, so New Chat acts on the window in front of the
+  user.
+- **One WebView2 environment** for every control, created once, because repeated
+  `CreateAsync` against one user-data folder is a documented source of
+  initialisation failures.
+
+Rejected: one window with several conversations switched inside it — it needs
+the same per-conversation state work and loses the side-by-side view, so it is
+not cheaper.
+
