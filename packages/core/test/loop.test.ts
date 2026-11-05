@@ -2824,15 +2824,141 @@ describe('live sessions in the loop (D49cq)', () => {
     expect(rec.sent).toHaveLength(0);
   });
 
-  it('refuses send_to_session in plan mode before the host is asked', async () => {
+  it('asks in plan, and a decline sends nothing and says what did not happen', async () => {
     const results = new Set<string>();
     const rec = recorder();
+    const previews: string[] = [];
+    // Over 600 characters but under the 4,000 limit: the card must cap what it
+    // shows without hiding that there is more.
+    const longText = 'report your cwd. '.repeat(80).trim();
+    expect(longText.length).toBeGreaterThan(600);
+    const p = caller('send_to_session', { to: 'Builder', text: longText }, 1, (request) =>
+      collect(request, new Set(), results),
+    );
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan',
+      provider: p,
+      sessions: rec.sessions,
+      approve: async (request) => {
+        previews.push(request.preview ?? '');
+        return false;
+      },
+    });
+    // The card names the target and carries the text, capped.
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toContain('Builder');
+    expect(previews[0]).toContain('report your cwd.');
+    expect(previews[0]).toContain('the message continues');
+    expect(previews[0]!.length).toBeLessThan(longText.length);
+    // Declining sent nothing and told the model so.
+    expect(rec.sent).toHaveLength(0);
+    const seen = [...results].join(' ');
+    expect(seen).toContain('declined to send this message');
+    expect(seen).toContain('Nothing was sent');
+  });
+
+  it('sends in plan when the user allows the card', async () => {
+    const results = new Set<string>();
+    const rec = recorder();
+    let cards = 0;
     const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
       collect(request, new Set(), results),
     );
-    await runAgentLoop({ ...BASE, getMode: () => 'plan', provider: p, sessions: rec.sessions });
-    expect([...results].join(' ')).toContain('not permitted in plan mode');
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan',
+      provider: p,
+      sessions: rec.sessions,
+      approve: async () => {
+        cards += 1;
+        return true;
+      },
+    });
+    expect(cards).toBe(1);
+    expect(rec.sent).toEqual([{ to: 'aaaa1111', text: 'ping' }]);
+    expect([...results].join(' ')).toContain('delivered to Builder');
+  });
+
+  it('raises no relay card in edit or auto', async () => {
+    for (const mode of ['edit', 'auto'] as const) {
+      const rec = recorder();
+      let cards = 0;
+      const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, () => {});
+      await runAgentLoop({
+        ...BASE,
+        getMode: () => mode,
+        provider: p,
+        sessions: rec.sessions,
+        approve: async () => {
+          cards += 1;
+          return true;
+        },
+      });
+      expect(cards).toBe(0);
+      expect(rec.sent).toHaveLength(1);
+    }
+  });
+
+  it('refuses a session-origin relay before the card, and says so on the bus', async () => {
+    const bus = new AgentBus();
+    const refused: { tool: string; reason?: string }[] = [];
+    bus.on((event) => {
+      if (event.type === 'tool-event' && event.phase === 'refused') {
+        refused.push({ tool: event.tool, reason: event.reason });
+      }
+    });
+    const results = new Set<string>();
+    const rec = recorder();
+    let cards = 0;
+    const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
+      collect(request, new Set(), results),
+    );
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan',
+      provider: p,
+      sessions: rec.sessions,
+      origin: 'session',
+      bus,
+      approve: async () => {
+        cards += 1;
+        return true;
+      },
+    });
+    // Depth is a hard rule even where plan would otherwise ask.
+    expect(cards).toBe(0);
     expect(rec.sent).toHaveLength(0);
+    expect([...results].join(' ')).toContain('may not send one');
+    expect(refused).toEqual([{ tool: 'send_to_session', reason: 'relay' }]);
+  });
+
+  it('refuses an unsendable message before the card', async () => {
+    const cases = [
+      { text: '   ', expected: 'the message is empty' },
+      { text: 'x'.repeat(4001), expected: 'characters; the limit is' },
+    ];
+    for (const item of cases) {
+      const results = new Set<string>();
+      const rec = recorder();
+      let cards = 0;
+      const p = caller('send_to_session', { to: 'aaaa1111', text: item.text }, 1, (request) =>
+        collect(request, new Set(), results),
+      );
+      await runAgentLoop({
+        ...BASE,
+        getMode: () => 'plan',
+        provider: p,
+        sessions: rec.sessions,
+        approve: async () => {
+          cards += 1;
+          return true;
+        },
+      });
+      expect(cards).toBe(0);
+      expect(rec.sent).toHaveLength(0);
+      expect([...results].join(' ')).toContain(item.expected);
+    }
   });
 
   it('maps a refusal to the sentence the model reads', async () => {

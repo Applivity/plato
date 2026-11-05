@@ -57,7 +57,10 @@ export const HEARTBEAT_MS = 10_000;
 /** An entry whose endpoint failed AND whose mtime is older may be reaped. */
 export const STALE_AFTER_MS = 30_000;
 
-/** What the host knows about itself; called at registration, on refresh, and on close. */
+/**
+ * What the host knows about itself; called at registration and on every
+ * `refresh()`. Close does not call it — the entry is being deleted, not updated.
+ */
 export interface SessionDescription {
   /** User-visible, ≤ 60 chars in practice. The chat title is the natural value. */
   name: string;
@@ -665,9 +668,20 @@ export async function createLiveSession(
     if (ack.status === 'refused') {
       return { ok: false, reason: 'not-accepting', ...(ack.reason === undefined ? {} : { detail: ack.reason }) };
     }
-    // No handshake, no welcome: the target is gone. Reap it if its heartbeat
-    // also says so, and say plainly that it is closed.
-    reapIfSame(dir, entryNow, platform);
+    // No handshake, no welcome: the target did not answer. That is not proof it
+    // is dead — a host can be blocked for longer than the 2 s window — so the
+    // entry is reaped only when its heartbeat says dead too, exactly as `list()`
+    // decides. Reaping on the timeout alone would let one chat unregister
+    // another live one.
+    let mtimeMs = 0;
+    try {
+      mtimeMs = statSync(join(dir, `${entryNow.id}.json`)).mtimeMs;
+    } catch {
+      // The entry is already gone; there is nothing to reap.
+    }
+    if (Date.now() - mtimeMs > STALE_AFTER_MS) {
+      reapIfSame(dir, entryNow, platform);
+    }
     return { ok: false, reason: 'closed' };
   };
 

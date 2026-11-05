@@ -9,7 +9,7 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { connect } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -186,6 +186,58 @@ describe('the live registry (D49cq)', () => {
     expect(await a.live.list()).toEqual([]);
     expect(existsSync(path)).toBe(false);
   });
+
+  it('keeps a fresh entry when a delivery times out', async () => {
+    // A slow peer is not a dead one. The first connection is the liveness probe
+    // and is answered; the second is the delivery and is not, so the sender
+    // waits out its 2 s window. The entry's heartbeat is fresh, and the send
+    // must NOT reap it — otherwise one chat can unregister another live one.
+    const home = await tempHome();
+    const a = await startLive({ home });
+    const dir = join(home, 'live');
+    const endpoint = join(dir, 'slowsess.sock');
+    let connections = 0;
+    const server = createServer((socket) => {
+      connections += 1;
+      socket.on('error', () => {});
+      if (connections === 1) {
+        socket.once('data', () => {
+          socket.write(
+            `${JSON.stringify({ type: 'welcome', v: 1, id: 'slowsess', name: 'Slow' })}\n`,
+          );
+        });
+      } else {
+        // Read and discard, so the sender's timeout close is seen.
+        socket.resume();
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(endpoint, () => resolve()));
+    cleanups.push(
+      () => new Promise<void>((resolve) => server.close(() => resolve())),
+    );
+    const slow = {
+      v: 1,
+      id: 'slowsess',
+      name: 'Slow',
+      summary: 'busy',
+      host: 'cli',
+      pid: 999999,
+      cwd: '/tmp',
+      started: '2026-11-05T00:00:00.000Z',
+      busy: false,
+      endpoint,
+      token: 'tok',
+      version: '0.0.0',
+    };
+    const path = join(dir, 'slowsess.json');
+    writeFileSync(path, JSON.stringify(slow), { mode: 0o600 });
+
+    expect(await a.live.send('slowsess', 'hello')).toEqual({
+      ok: false,
+      reason: 'closed',
+    });
+    expect(existsSync(path)).toBe(true);
+  }, 10_000);
 
   it('closes the connection on a wrong token, before any delivery', async () => {
     const home = await tempHome();

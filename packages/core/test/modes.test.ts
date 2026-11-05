@@ -334,15 +334,15 @@ describe('the ask_user declaration keeps the question card small (D49ak)', () =>
 });
 
 /**
- * D49cq. A relay is a side effect outside this workspace. Plan refuses it with
- * no card — otherwise a plan-mode run could make an auto tab perform the very
- * action plan refused, and plan would be laundering its own prohibition. Edit
- * and auto allow it with no card so peer messaging stays usable; the receiving
- * session's mode still governs what it does with the text.
+ * D49cq, amended. A relay is a side effect outside this workspace. Plan ASKS
+ * rather than refusing: the card is what stops plan laundering its own
+ * prohibition, because the person sees the target and the text and decides.
+ * Edit and auto allow it with no card so peer messaging stays usable; the
+ * receiving session's mode still governs what it does with the text.
  */
 describe('live-session tools (D49cq)', () => {
-  it('denies send_to_session in plan, and allows it in edit and auto', () => {
-    expect(decide('send_to_session', 'plan')).toBe('deny');
+  it('asks for send_to_session in plan, and allows it in edit and auto', () => {
+    expect(decide('send_to_session', 'plan')).toBe('ask');
     expect(decide('send_to_session', 'edit')).toBe('allow');
     expect(decide('send_to_session', 'auto')).toBe('allow');
   });
