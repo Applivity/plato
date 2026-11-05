@@ -848,6 +848,133 @@ export class Field {
     await this.driver.sleep(200);
   }
 
+  // ---- D49cq: the send-to-session panel ---------------------------------
+
+  /** Opens the session panel (the arrow beside the paperclip) if it is closed. */
+  async openRelay() {
+    const shown = await this.driver.executeScript(
+      "const r = document.getElementById('relayRow'); return !!r && !r.hidden;",
+    );
+    if (shown) return;
+    await this.clickElement(await this.driver.findElement(By.id('relayBtn')));
+    await this.driver.sleep(300);
+  }
+
+  /**
+   * Closes and reopens the panel. Opening is what asks the host for a fresh
+   * peer list, so a case that must see a peer's current busy state does this
+   * rather than trusting a list fetched before the run started.
+   */
+  async refreshRelay() {
+    await this.driver.executeScript(`
+      const row = document.getElementById('relayRow');
+      if (row && !row.hidden) document.getElementById('relayClose').click();
+    `);
+    await this.driver.sleep(120);
+    await this.openRelay();
+  }
+
+  /** The peers the panel is showing right now, as the PAGE drew them. */
+  async relayPeers() {
+    return await this.driver.executeScript(`
+      return [...document.querySelectorAll('.relay-peer')].map((r) => ({
+        id: r.dataset.peer,
+        name: ((r.querySelector('.rp-name') || {}).textContent || '').trim(),
+        host: ((r.querySelector('.rp-host') || {}).textContent || '').trim(),
+        state: ((r.querySelector('.rp-busy') || {}).textContent || '').trim(),
+      }));
+    `);
+  }
+
+  /**
+   * Waits until the picker shows a peer in a STATE ("idle" / "running").
+   *
+   * A reopened panel redraws the list it already had before the host answers,
+   * so "the row is present" is not the same as "the row is current". When the
+   * state does not arrive, the panel is reopened: opening is what asks the
+   * registry again, and that is also what a person would do.
+   */
+  async waitForRelayState(name, state, timeoutMs = 25000) {
+    const deadline = Date.now() + timeoutMs;
+    let peers = [];
+    let nudged = Date.now();
+    const hit = (p) =>
+      (p.name === name || p.name.includes(name) || name.includes(p.name)) &&
+      p.state === state;
+    while (Date.now() < deadline) {
+      peers = await this.relayPeers();
+      if (peers.some(hit)) return peers;
+      if (Date.now() - nudged > 2000) {
+        nudged = Date.now();
+        await this.refreshRelay();
+      }
+      await this.driver.sleep(300);
+    }
+    throw new Error(
+      `the picker never showed "${name}" as ${state} (saw: ${
+        peers.map((p) => `${p.name}:${p.state}`).join(', ') || 'nothing'
+      })`,
+    );
+  }
+
+  /** Selects a peer by its visible name. */
+  async pickRelayPeer(name) {
+    const ok = await this.driver.executeScript(`
+      const want = arguments[0];
+      const norm = (s) => (s || '').trim();
+      const row = [...document.querySelectorAll('.relay-peer')].find((r) => {
+        const n = norm((r.querySelector('.rp-name') || {}).textContent);
+        return n === want || n.includes(want) || want.includes(n);
+      });
+      if (!row) return false;
+      row.click();
+      return true;
+    `, name);
+    if (!ok) throw new Error(`no session named "${name}" in the picker`);
+    await this.driver.sleep(150);
+  }
+
+  /** Types a message and presses Send. The row is drawn; the outcome is not. */
+  async sendRelay(text) {
+    await this.driver.executeScript(`
+      const box = document.getElementById('relayText');
+      box.value = arguments[0];
+      document.getElementById('relaySend').click();
+    `, text);
+    await this.driver.sleep(150);
+  }
+
+  /** The newest outgoing relay row, as the page shows it. */
+  async lastRelayRow() {
+    return await this.driver.executeScript(`
+      const rows = [...document.querySelectorAll('#log .msg')].filter((d) => {
+        const who = (d.querySelector('.who') || {}).textContent || '';
+        return who.startsWith('You →');
+      });
+      const row = rows[rows.length - 1];
+      if (!row) return null;
+      const state = row.querySelector('.relay-state');
+      return {
+        who: (row.querySelector('.who') || {}).textContent || '',
+        text: row.textContent || '',
+        state: state ? state.textContent : '',
+        bad: state ? state.classList.contains('bad') : false,
+      };
+    `);
+  }
+
+  /** Waits for the host's answer to land on the newest outgoing row. */
+  async waitRelayOutcome(timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    let row = null;
+    while (Date.now() < deadline) {
+      row = await this.lastRelayRow();
+      if (row && row.state.length > 0) return row;
+      await this.driver.sleep(200);
+    }
+    return row;
+  }
+
   /**
    * D49bn: closes the chat panel the way a user does — the × on its tab.
    *
