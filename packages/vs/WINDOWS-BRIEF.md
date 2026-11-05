@@ -44,7 +44,7 @@ Read first:
   `windows/m0` (`16b3007`) is merged into `main` and deleted.
 - **SMB:** the Mac Desktop share rejects this machine (Windows 10 blocks guest
   SMB logons). Use SSH bundles, not SMB.
-- **SSH:** `ssh omega@192.168.4.62` from the Mac works with the installed key.
+- **SSH:** `ssh omega@192.168.4.137` from the Mac works with the installed key.
 
 ## M2 — PASSED (2026-10-23)
 
