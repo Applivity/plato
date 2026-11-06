@@ -23,7 +23,7 @@ import {
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { By, Key, until } from 'selenium-webdriver';
+import { By, Key } from 'selenium-webdriver';
 import {
   VSBrowser,
   WebView,
@@ -249,7 +249,23 @@ async function setApiKey(driver, key) {
     await box.sendKeys(Key.ENTER);
     await driver.sleep(600);
   }
-  const input = await driver.wait(until.elementLocated(By.css('.quick-input-box input')), 15000);
+  // Wait for a VISIBLE key box. The palette can close and reopen between the
+  // picker and the prompt, and an element located in the gap is not
+  // interactable — the failure seen as "element not interactable" on a fresh
+  // browser, which told the case nothing about Plato.
+  const deadline = Date.now() + 20000;
+  let input = null;
+  while (input === null && Date.now() < deadline) {
+    const boxes = await driver.findElements(By.css('.quick-input-box input'));
+    for (const box of boxes) {
+      if (await box.isDisplayed().catch(() => false)) {
+        input = box;
+        break;
+      }
+    }
+    if (input === null) await driver.sleep(200);
+  }
+  if (input === null) throw new Error('the API key prompt never appeared');
   await input.sendKeys(key);
   await input.sendKeys(Key.ENTER);
   await driver.sleep(600);
@@ -1740,180 +1756,223 @@ describe('Plato field tests — real VS Code', function () {
    *     the registry.
    */
   if (only.length === 0 || only.includes(38)) {
-    it('case 38 — one chat messages another: start, queue, refuse, registry truth', async () => {
+    it('case 38 — one chat messages another through the model: start, queue, refuse, registry truth', async () => {
+      // D49cq: the send is the MODEL's, not a panel's. The founder's call:
+      // asking the model is what a person does, and the send shows in the chat
+      // like any other tool call. This case therefore drives `send_to_session`
+      // and `list_sessions` through the stub and reads the TOOL RESULTS the
+      // model was shown — the only witness for a pre-flight refusal.
+      const LONG = 'x'.repeat(4100);
       await setScript([
-        { match: 'TAB A: open', text: 'TAB A is open.' },
         { match: 'TAB B: standby', text: 'TAB B is standing by.' },
-        { match: 'check the parser', text: 'The parser is fine.' },
-        // Long enough that the other tab can be reached and the message sent
-        // while this run is still live on a loaded machine.
+        { match: 'RELAY: check the parser', text: 'B: the parser is fine.' },
+        { match: 'RELAY: draft check', text: 'B: the draft did not matter.' },
         { match: 'TAB B: slow run', text: 'The slow run finished.', delayMs: 30000 },
-        { match: 'and the lexer', text: 'The lexer is fine too.' },
+        { match: 'RELAY: and the lexer', text: 'B: the lexer is fine too.' },
+        { match: 'TAB A: message idle B', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: standby', text: 'RELAY: check the parser' } }] },
+        { match: 'TAB A: message idle B', text: 'A: I asked B.' },
+        { match: 'TAB A: message drafted B', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: standby', text: 'RELAY: draft check' } }] },
+        { match: 'TAB A: message drafted B', text: 'A: I asked B again.' },
+        { match: 'TAB A: message busy B', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: standby', text: 'RELAY: and the lexer' } }] },
+        { match: 'TAB A: message busy B', text: 'A: B was busy.' },
+        { match: 'TAB A: oversize', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: standby', text: LONG } }] },
+        { match: 'TAB A: oversize', text: 'A: that was too long.' },
+        { match: 'TAB A: list after close', calls: [{ tool: 'list_sessions', args: {} }] },
+        { match: 'TAB A: list after close', text: 'A: listed.' },
       ]);
 
-      // A: one ordinary run, so the chat has a title and a live session.
+      /**
+       * The newest real agent turn whose CURRENT task contains `prompt`. The
+       * last user message is the task: a later run carries the earlier ones as
+       * history, so matching ANY user text finds the wrong turn.
+       */
+      const turnFor = async (prompt) => {
+        const log = await stubLog();
+        const hits = log.log.filter((e) => {
+          if (Number(e.toolsOffered) <= 0) return false;
+          // Tool results travel as `role:'user'` messages with no text, so the
+          // LAST user string can be empty. The task is the last NON-EMPTY one.
+          const texts = (e.userTexts || []).map(String).filter((t) => t.length > 0);
+          return String(texts[texts.length - 1] || '').includes(prompt);
+        });
+        return hits[hits.length - 1];
+      };
+      /** What the model was shown as tool results in that turn. */
+      const resultsFor = async (prompt) => {
+        const turn = await turnFor(prompt);
+        const log = await stubLog();
+        const recent = log.log.slice(-4).map((e) => ({
+          tools: e.toolsOffered,
+          last: String(((e.userTexts || []).map(String).filter(Boolean)).slice(-1)[0] || '').slice(0, 50),
+          results: (e.toolResults || []).length,
+          head: String(((e.toolResults || [])[0] || {}).head || '').slice(0, 70),
+        }));
+        if (turn === undefined) {
+          return '[no turn for "' + prompt + '"; recent ' + JSON.stringify(recent) + ']';
+        }
+        const out = (turn.toolResults || []).map((r) => String(r.head || '')).join('\n');
+        return out.length > 0 ? out : '[turn for "' + prompt + '" had no results; recent ' + JSON.stringify(recent) + ']';
+      };
+      /** A run whose header task contains `needle`, started after `before`. */
+      const waitForRun = async (before, needle, timeoutMs = 120000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          for (const f of field.transcripts().filter((x) => !before.has(x))) {
+            const first = readFileSync(f, 'utf8').split('\n')[0] || '{}';
+            let task = '';
+            try {
+              task = String(JSON.parse(first).task || '');
+            } catch {
+              task = '';
+            }
+            if (task.includes(needle)) return f;
+          }
+          await field.driver.sleep(250);
+        }
+        throw new Error(`RELAY: no run appeared for "${needle}"`);
+      };
+
+      // B first, so it has a title to address.
       await field.newChat();
       field.cardsSeen = [];
       field.decisions = [];
-      await field.setMode('auto');
-      const beforeA = await field.send('TAB A: open');
-      await field.waitRunEnd(beforeA, { tag: 'tab-a' });
-      // The tab label follows the generated title, which lands during the run.
-      // Settle before reading it, or a later activation is aimed at a stale name.
-      await field.driver.sleep(800);
-      const aLabel = await field.openNewTab(); // leaves us in B
       await field.setMode('auto');
       const beforeB = await field.send('TAB B: standby');
       await field.waitRunEnd(beforeB, { tag: 'tab-b' });
       await field.webview.switchBack();
       await field.driver.sleep(800);
       const bLabel = await field.activeEditorLabel();
-      if (!bLabel || bLabel === aLabel) {
-        throw new Error(`TABS: A and B did not get distinct labels ("${aLabel}" / "${bLabel}")`);
+      if (!bLabel || !bLabel.includes('TAB B: standby')) {
+        throw new Error(`RELAY: B's title is "${bLabel}", so it cannot be addressed by name`);
       }
 
-      // Back to A, whose picker must find B through the registry.
-      await field.activateTabByLabel(aLabel);
+      // A second tab; A asks its model to message B.
+      await field.openNewTab(); // leaves us in A
+      await field.setMode('auto');
+      const idleBefore = new Set(field.transcripts());
+      const beforeA = await field.send('TAB A: message idle B');
+      const idleRun = await waitForRun(idleBefore, 'RELAY: check the parser');
+      const aRun = await waitForRun(beforeA, 'TAB A: message idle B');
+      await field.waitRunTerminal(aRun, 90000);
+      await field.webview.switchBack();
+      await field.driver.sleep(800);
+      const aLabel = await field.activeEditorLabel();
+      if (!aLabel || aLabel === bLabel) {
+        throw new Error(`RELAY: A's label is "${aLabel}"`);
+      }
       await field.switchToChatFrame();
-      const findPeer = (list, want) =>
-        list.find((p) => p.name === want || p.name.includes(want) || want.includes(p.name));
-      await field.openRelay();
-      const peers = await field.waitForRelayState(bLabel, 'idle');
-      const bPeer = findPeer(peers, bLabel);
-      if (bPeer.host !== 'VS Code') {
-        throw new Error(`PICKER: B is listed as "${bPeer.host}", not VS Code`);
-      }
-      if (peers.some((p) => p.name === aLabel || p.name.includes(aLabel))) {
-        throw new Error('PICKER: the picker offers this chat to itself');
-      }
 
-      // Send to idle B: a run starts over there.
-      const beforeInbound = new Set(field.transcripts());
-      await field.pickRelayPeer(bLabel);
-      await field.sendRelay('check the parser');
-      const sentRow = await field.waitRelayOutcome();
-      if (!sentRow || !sentRow.state.startsWith('sent to')) {
-        throw new Error(`RELAY: an accepted send reported "${sentRow && sentRow.state}"`);
+      // The model was told it was delivered — B was idle after its own run.
+      const delivered = await resultsFor('TAB A: message idle B');
+      if (!delivered.includes('delivered to')) {
+        throw new Error(`RELAY: a send to an idle chat reported:\n${delivered}`);
       }
-      if (!sentRow.who.includes(bLabel)) {
-        throw new Error(`RELAY: the row does not name the target (${sentRow.who})`);
+      // B's run carries the message and the provenance header, and completes.
+      const idleEvents = await field.waitRunTerminal(idleRun, 90000);
+      if (!idleEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('RELAY: the run started by the message never completed');
       }
-      const [inboundFile] = await field.waitForNewRuns(beforeInbound, 1);
-      const inboundEvents = await field.waitRunTerminal(inboundFile, 90000);
-      const inboundEnd = inboundEvents.find((e) => e.type === 'run-completed');
-      if (inboundEnd === undefined || inboundEnd.reason === 'cancelled') {
-        throw new Error(`RELAY: the run started by the message did not complete (${inboundEnd && inboundEnd.reason})`);
-      }
-      const inboundText = readFileSync(inboundFile, 'utf8');
-      if (!inboundText.includes('Message from another Plato session')) {
+      const idleText = readFileSync(idleRun, 'utf8');
+      if (!idleText.includes('Message from another Plato session')) {
         throw new Error('RELAY: the receiving run was not told where the task came from');
       }
-      if (!inboundText.includes('check the parser')) {
+      if (!idleText.includes('RELAY: check the parser')) {
         throw new Error('RELAY: the receiving run does not carry the message');
       }
-      // Depth 1: the engine must not offer a session-origin run the send tool.
-      const log = await stubLog();
-      const inboundCalls = log.log.filter((entry) =>
-        (entry.userTexts || []).some((t) => String(t).includes('check the parser')));
-      if (inboundCalls.length === 0) {
+      // D49cq (amended): a session-origin run MAY answer the session that sent
+      // it, once — so the tool is offered. What it may not do is reach a THIRD
+      // session; that chain rule, and the reply run that cannot send at all,
+      // are case 40's.
+      const inboundTurn = await turnFor('RELAY: check the parser');
+      if (inboundTurn === undefined) {
         throw new Error('RELAY: the stub has no record of the receiving turn');
       }
-      for (const entry of inboundCalls) {
-        if ((entry.toolNames || []).includes('send_to_session')) {
-          throw new Error('RELAY: a session-origin run was offered send_to_session (depth 1 broken)');
-        }
+      if (!(inboundTurn.toolNames || []).includes('send_to_session')) {
+        throw new Error('RELAY: a session-origin run was not offered its one reply');
       }
 
-      // B's screen drew the sender, not the user's own words.
+      // An UNSENT DRAFT in the receiver must change nothing: the founder's
+      // other suspect. Type into B, do not send, then message it from A.
       await field.webview.switchBack();
       await field.activateTabByLabel(bLabel);
-      // Same lag as case 37: the iframe can trail the tab, and both chats are
-      // stacked overlays. Wait for the sender's name rather than sampling once.
-      const bDeadline = Date.now() + 15000;
-      let bScreen = '';
-      while (Date.now() < bDeadline) {
-        await field.switchToChatFrame();
-        bScreen = await field.logText().catch(() => '');
-        // The sender line is drawn uppercase (the row's label style), and
-        // `logText` reads RENDERED text — so this comparison is case-blind.
-        if (bScreen.toLowerCase().includes(('From ' + aLabel).toLowerCase())) break;
-        await field.webview.switchBack().catch(() => {});
-        await field.driver.sleep(250);
-      }
-      if (!bScreen.toLowerCase().includes(('From ' + aLabel).toLowerCase())) {
-        throw new Error(
-          `RELAY: B's screen does not name the sender (${aLabel}); showing "${bScreen
-            .replace(/\s+/g, ' ')
-            .slice(0, 140)}"`,
-        );
-      }
-
-      // Queue path: B is busy, so the next message must wait, say so, and then
-      // run by itself when the slow run ends.
-      const beforeSlow = new Set(field.transcripts());
-      await field.send('TAB B: slow run');
-      const [slowFile] = await field.waitForNewRuns(beforeSlow, 1);
+      await field.switchToChatFrame();
+      await field.type('a draft I never sent');
       await field.webview.switchBack();
       await field.activateTabByLabel(aLabel);
       await field.switchToChatFrame();
-      await field.refreshRelay();
-      // "running" is the registry's own answer about B's live run — the page
-      // must not be the one guessing it.
-      await field.waitForRelayState(bLabel, 'running');
-      await field.pickRelayPeer(bLabel);
-      await field.sendRelay('and the lexer');
-      const queuedRow = await field.waitRelayOutcome();
-      if (!queuedRow || !queuedRow.state.includes('queued')) {
-        throw new Error(`RELAY: a send to a busy chat reported "${queuedRow && queuedRow.state}"`);
+      const draftBefore = new Set(field.transcripts());
+      const beforeDraft = await field.send('TAB A: message drafted B');
+      const draftRun = await waitForRun(draftBefore, 'RELAY: draft check');
+      await field.waitRunTerminal(draftRun, 90000);
+      const draftA = await waitForRun(beforeDraft, 'TAB A: message drafted B');
+      await field.waitRunTerminal(draftA, 90000);
+      const draftResult = await resultsFor('TAB A: message drafted B');
+      if (!draftResult.includes('delivered to')) {
+        throw new Error(`RELAY: a draft in the receiver's composer changed the outcome:\n${draftResult}`);
+      }
+
+      // Queue behind a live run.
+      await field.webview.switchBack();
+      await field.activateTabByLabel(bLabel);
+      await field.switchToChatFrame();
+      // The draft is still in B's composer; clear it before B sends its own task.
+      await field.driver.executeScript("document.getElementById('q').value = '';");
+      const slowBefore = new Set(field.transcripts());
+      await field.send('TAB B: slow run');
+      const slowFile = await waitForRun(slowBefore, 'TAB B: slow run', 60000);
+      await field.webview.switchBack();
+      await field.activateTabByLabel(aLabel);
+      await field.switchToChatFrame();
+      const busyBefore = new Set(field.transcripts());
+      const beforeBusy = await field.send('TAB A: message busy B');
+      const busyA = await waitForRun(beforeBusy, 'TAB A: message busy B');
+      await field.waitRunTerminal(busyA, 90000);
+      const queued = await resultsFor('TAB A: message busy B');
+      if (!queued.includes('queued at')) {
+        throw new Error(`RELAY: a send to a busy chat reported:\n${queued}`);
       }
       const slowEvents = await field.waitRunTerminal(slowFile, 120000);
       if (!slowEvents.some((e) => e.type === 'run-completed')) {
-        throw new Error('RELAY: B\'s slow run never ended');
+        throw new Error("RELAY: B's slow run never ended");
       }
-      const fresh = await field.waitForNewRuns(beforeSlow, 2, 120000);
-      const queuedFile = fresh.find((f) => f !== slowFile);
-      if (queuedFile === undefined) {
-        throw new Error('RELAY: the queued message never started its own run');
-      }
-      const queuedEvents = await field.waitRunTerminal(queuedFile, 90000);
-      if (!queuedEvents.some((e) => e.type === 'run-completed')) {
+      const lexerRun = await waitForRun(busyBefore, 'RELAY: and the lexer');
+      const lexerEvents = await field.waitRunTerminal(lexerRun, 90000);
+      if (!lexerEvents.some((e) => e.type === 'run-completed')) {
         throw new Error('RELAY: the queued run never completed');
       }
-      const queuedText = readFileSync(queuedFile, 'utf8');
-      if (!queuedText.includes('and the lexer')) {
+      if (!readFileSync(lexerRun, 'utf8').includes('RELAY: and the lexer')) {
         throw new Error('RELAY: the queued run does not carry the queued message');
       }
 
-      // Refusal path: the transport refuses an oversized message and the row
-      // says so. B is live but idle again.
-      await field.pickRelayPeer(bLabel);
-      await field.sendRelay('x'.repeat(4100));
-      const refusedRow = await field.waitRelayOutcome();
-      if (!refusedRow || refusedRow.state !== 'not sent — the message is too long') {
-        throw new Error(`RELAY: an oversized send reported "${refusedRow && refusedRow.state}"`);
+      // Oversized: the engine refuses before anything is dialled.
+      const beforeOversize = await field.send('TAB A: oversize');
+      const oversizeA = await waitForRun(beforeOversize, 'TAB A: oversize');
+      await field.waitRunTerminal(oversizeA, 90000);
+      const oversize = await resultsFor('TAB A: oversize');
+      if (!oversize.includes('the limit is 4000')) {
+        throw new Error(`RELAY: an oversized send reported:\n${oversize}`);
       }
-      if (!refusedRow.bad) {
-        throw new Error('RELAY: a refusal is not marked as a failure');
+      // Nothing may start in the receiver. Count from AFTER the sender's own
+      // run, or its transcript would be mistaken for one.
+      const afterOversize = new Set(field.transcripts());
+      await field.driver.sleep(2000);
+      const extra = field.transcripts().filter((f) => !afterOversize.has(f));
+      if (extra.length > 0) {
+        throw new Error(`RELAY: an oversized message still started a run (${extra.join(', ')})`);
       }
 
-      // Registry truth: closing B removes it from the picker and the registry.
+      // Registry truth: close B, then have the MODEL list the sessions.
       await field.webview.switchBack();
       await field.activateTabByLabel(bLabel);
       await field.closeChat();
       await field.activateTabByLabel(aLabel);
       await field.switchToChatFrame();
-      await field.refreshRelay();
-      const deadline = Date.now() + 20000;
-      let gone = false;
-      let stillListed = [];
-      while (Date.now() < deadline) {
-        stillListed = await field.relayPeers();
-        gone = !stillListed.some((p) => p.name === bLabel);
-        if (gone) break;
-        await field.driver.sleep(500);
-      }
-      if (!gone) {
-        throw new Error(`REGISTRY: the closed chat is still offered (${stillListed.map((p) => p.name).join(', ')})`);
+      const beforeList = await field.send('TAB A: list after close');
+      const listA = await waitForRun(beforeList, 'TAB A: list after close');
+      await field.waitRunTerminal(listA, 90000);
+      const listed = await resultsFor('TAB A: list after close');
+      if (listed.includes('TAB B: standby')) {
+        throw new Error(`REGISTRY: the closed chat is still listed:\n${listed}`);
       }
 
       MANIFEST.push({
@@ -1921,14 +1980,313 @@ describe('Plato field tests — real VS Code', function () {
         run: 1,
         mode: 'auto',
         orchestration: 'solo',
-        title: 'One chat messages another: start, queue, refuse, registry truth',
-        transcript: queuedFile,
+        title: 'One chat messages another through the model: start, queue, refuse, registry truth',
+        transcript: lexerRun,
         transcriptOk: true,
         screenFailures: [],
       });
       console.log(
-        `  case 38: A → B started a run, queued behind a live run, refused an oversized send, and left the registry when closed`,
+        '  case 38: model sends start an idle chat, queue behind a live run, refuse an oversized text; a closed chat leaves the registry',
       );
+    });
+  }
+
+  /**
+   * D49cq, the founder's first point: the new-chat control belongs where a
+   * person looks for it — the editor title bar, beside the tab, the way Claude
+   * Code puts it. The risk is the `when` clause: `activeWebviewPanelId` must
+   * make the button appear on a Plato tab and NOWHERE else, or a Plato button
+   * lands on every editor. This case is that verification, and it also records
+   * the activity-bar container the founder could not see.
+   */
+  if (only.length === 0 || only.includes(39)) {
+    it('case 39 — the new-chat button is in the editor title bar, only on Plato', async () => {
+      const titleActions = async () => {
+        await field.webview.switchBack();
+        return await field.driver.executeScript(`
+          return [...document.querySelectorAll(
+            '.editor-actions .action-label, .editorTitle .action-label, .editor-title .action-label'
+          )].map((a) => ({
+            label: a.getAttribute('aria-label') || '',
+            title: a.getAttribute('title') || '',
+          }));
+        `);
+      };
+      const hasNewChat = (actions) => actions.some((a) =>
+        (a.label + ' ' + a.title).includes('Plato: New Chat'));
+
+      // The per-case wrapper has just opened a fresh chat and left the driver
+      // inside it, so there is nothing to open. Read the title bar of THAT
+      // chat: driving the command palette here was one more thing that could
+      // time out with a full suite's worth of tabs open.
+      const onChat = await titleActions();
+      if (!hasNewChat(onChat)) {
+        throw new Error(
+          `TITLE BAR: no "Plato: New Chat" action on a Plato tab (saw: ${JSON.stringify(onChat)})`,
+        );
+      }
+
+      // The activity bar: the founder could not see the owl. Record what the
+      // workbench actually holds, so "not registered" and "hidden in HIS
+      // profile" are distinguishable.
+      const containers = await field.driver.executeScript(`
+        return [...document.querySelectorAll('.activitybar .action-label, .activitybar .action-item')]
+          .map((a) => a.getAttribute('aria-label') || a.getAttribute('title') || '')
+          .filter((s) => s.length > 0);
+      `);
+      await field.shot('case-39-activitybar');
+      if (!containers.some((c) => c.toLowerCase().includes('plato'))) {
+        throw new Error(
+          `ACTIVITY BAR: no Plato container in a fresh profile (saw: ${JSON.stringify(containers)})`,
+        );
+      }
+
+      // Clicking it opens another chat — the button is wired, not decorative.
+      await field.webview.switchBack();
+      const before = await field.activeEditorLabel();
+      await field.driver.executeScript(`
+        const a = [...document.querySelectorAll('.editor-actions .action-label, .editorTitle .action-label')]
+          .find((x) => ((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || '')).includes('Plato: New Chat'));
+        a.click();
+      `);
+      await field.driver.sleep(1500);
+      const after = await field.activeEditorLabel();
+      if (after === before) {
+        throw new Error(`TITLE BAR: the button did not open a new chat ("${before}")`);
+      }
+      // No frame entry: everything left to check is in the WORKBENCH, and
+      // entering a just-created webview with a suite's worth of iframes around
+      // is the step that timed out, not any assertion about the button.
+
+      // A plain file editor must NOT carry it. Return to the top document
+      // explicitly: the tester's EditorView queries the workbench the moment it
+      // is built, and a frame context left over from the click makes that query
+      // fail with "no such element: .monaco-workbench".
+      try {
+        await field.webview.switchBack();
+      } catch {
+        /* already at the top level */
+      }
+      await field.driver.switchTo().defaultContent();
+      // A frame context left over from the click would make the next workbench
+      // lookup fail for a reason that has nothing to do with the title bar.
+      const top = await field.driver.executeScript(
+        "return !!document.querySelector('.monaco-workbench');",
+      );
+      if (top !== true) {
+        throw new Error('TITLE BAR: the driver is not at the workbench after the click');
+      }
+      // Open it from the Explorer: a plain click on the file, which is what a
+      // person does. Quick open and the tester's openEditor both proved
+      // unreliable from a workbench left by the click above.
+      const clickedFile = await field.driver.executeScript(`
+        const rows = [...document.querySelectorAll('.monaco-list-row')];
+        const row = rows.find((r) =>
+          ((r.getAttribute('aria-label') || '') + ' ' + (r.textContent || '')).includes('settings.gradle'));
+        if (!row) return false;
+        row.click();
+        return true;
+      `);
+      await field.driver.sleep(1500);
+      if (!clickedFile || !(await field.activeEditorLabel()).includes('settings.gradle')) {
+        throw new Error('TITLE BAR: the plain file editor did not open');
+      }
+      const onFile = await field.driver.executeScript(`
+        return [...document.querySelectorAll(
+          '.editor-actions .action-label, .editorTitle .action-label, .editor-title .action-label'
+        )].map((a) => ({
+          label: a.getAttribute('aria-label') || '',
+          title: a.getAttribute('title') || '',
+        }));
+      `);
+      if (hasNewChat(onFile)) {
+        throw new Error('TITLE BAR: the Plato button is on a plain file editor');
+      }
+      await field.shot('case-39-file-editor');
+
+      // Leave a chat in front for whatever runs after this one: close the file
+      // tab we opened, which re-activates the chat beside it. Running the Open
+      // Chat command here would need the command palette, and the case has
+      // already proved what it needed to.
+      await field.driver.executeScript(
+        "document.querySelector('.tab.active .tab-actions-right .action-label, .tab.active .close-action')?.click();",
+      ).catch(() => undefined);
+      await field.driver.sleep(900);
+
+      MANIFEST.push({
+        case: 39,
+        run: 1,
+        mode: 'auto',
+        orchestration: 'solo',
+        title: 'New chat in the editor title bar, only on Plato; the activity bar has its container',
+        transcript: '',
+        transcriptOk: true,
+        screenFailures: [],
+      });
+      console.log('  case 39: title-bar new-chat appears on Plato only; activity bar lists Plato');
+    });
+  }
+
+  /**
+   * D49cq (amended): one round trip, through the model, in two real chats.
+   *
+   *   A (user run)  →  B (session run: may answer once, to A only)
+   *                 →  A (reply run: may not send at all)
+   *
+   * The stub emits the tool calls, so this drives what a person does — ask the
+   * model — and reads what each model was actually offered and told: the reply
+   * tool is in B's declaration and absent from A's reply run, B's send is marked
+   * a reply, and A's forced attempt comes back refused.
+   */
+  if (only.length === 0 || only.includes(40)) {
+    it('case 40 — a message and its one reply, and the chain stops there', async () => {
+      await setScript([
+        { match: 'TAB B: answer', text: 'B ready.' },
+        { match: 'TAB A: warm up', text: 'A ready.' },
+        { match: 'RELAY: what is the status?', calls: [{ tool: 'send_to_session', args: { to: 'TAB A: warm up', text: 'RELAY: all good' } }] },
+        { match: 'RELAY: what is the status?', text: 'B: replied.' },
+        { match: 'RELAY: all good', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: answer', text: 'RELAY: again' } }] },
+        { match: 'RELAY: all good', text: 'A: the answer is all good.' },
+        { match: 'TAB A: ask B', calls: [{ tool: 'send_to_session', args: { to: 'TAB B: answer', text: 'RELAY: what is the status?' } }] },
+        { match: 'TAB A: ask B', text: 'A: asked B.' },
+      ]);
+
+      // The CURRENT task is the LAST user message; a later run repeats the
+      // earlier turns as history, so matching any user text finds the wrong one.
+      const turnFor = async (prompt) => {
+        const log = await stubLog();
+        const hits = log.log.filter((e) => {
+          if (Number(e.toolsOffered) <= 0) return false;
+          // Tool results travel as `role:'user'` messages with no text, so the
+          // LAST user string can be empty. The task is the last NON-EMPTY one.
+          const texts = (e.userTexts || []).map(String).filter((t) => t.length > 0);
+          return String(texts[texts.length - 1] || '').includes(prompt);
+        });
+        return hits[hits.length - 1];
+      };
+      const resultsFor = async (prompt) => {
+        const turn = await turnFor(prompt);
+        if (turn === undefined) return '';
+        return (turn.toolResults || []).map((r) => String(r.head || '')).join('\n');
+      };
+      const waitForRun = async (before, needle, timeoutMs = 120000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          for (const f of field.transcripts().filter((x) => !before.has(x))) {
+            const first = readFileSync(f, 'utf8').split('\n')[0] || '{}';
+            let task = '';
+            try {
+              task = String(JSON.parse(first).task || '');
+            } catch {
+              task = '';
+            }
+            if (task.includes(needle)) return f;
+          }
+          await field.driver.sleep(250);
+        }
+        throw new Error(`REPLY: no run appeared for "${needle}"`);
+      };
+
+      // B first, so it has a name A can address.
+      await field.newChat();
+      field.cardsSeen = [];
+      field.decisions = [];
+      await field.setMode('auto');
+      const beforeB = await field.send('TAB B: answer');
+      await field.waitRunEnd(beforeB, { tag: 'tab-b' });
+      await field.webview.switchBack();
+      await field.driver.sleep(800);
+      const bLabel = await field.activeEditorLabel();
+      if (!bLabel || !bLabel.includes('TAB B: answer')) {
+        throw new Error(`REPLY: B's title is "${bLabel}"`);
+      }
+
+      // A gets its own title before it messages anyone: B addresses A by
+      // NAME, and a chat still called "Plato 2" cannot be answered.
+      await field.openNewTab();
+      await field.setMode('auto');
+      const beforeWarm = await field.send('TAB A: warm up');
+      await field.waitRunEnd(beforeWarm, { tag: 'tab-a' });
+      await field.webview.switchBack();
+      await field.driver.sleep(800);
+      const aLabel = await field.activeEditorLabel();
+      if (!aLabel || !aLabel.includes('TAB A: warm up')) {
+        throw new Error(`REPLY: A's title is "${aLabel}"`);
+      }
+      await field.switchToChatFrame();
+
+      // A asks its model to message B. Everything else follows from that.
+      const beforeAsk = new Set(field.transcripts());
+      const beforeA = await field.send('TAB A: ask B');
+      const askRun = await waitForRun(beforeA, 'TAB A: ask B');
+      await field.waitRunTerminal(askRun, 90000);
+      await field.webview.switchBack();
+      await field.driver.sleep(300);
+      await field.switchToChatFrame();
+
+      const asked = await resultsFor('TAB A: ask B');
+      if (!asked.includes('delivered to')) {
+        throw new Error(`REPLY: A's message to B reported:\n${asked}`);
+      }
+
+      // B's run was offered the send tool (as a REPLY, to A) and used it.
+      const bTurn = await turnFor('RELAY: what is the status?');
+      if (bTurn === undefined) {
+        throw new Error('REPLY: the stub has no record of B answering A');
+      }
+      if (!(bTurn.toolNames || []).includes('send_to_session')) {
+        throw new Error('REPLY: B was not offered the reply tool');
+      }
+      const bSent = await resultsFor('RELAY: what is the status?');
+      // A may still be finishing its own run when the answer arrives, in which
+      // case the engine says the reply was queued. Both outcomes prove the
+      // send was MARKED a reply; the end of the chain is proved below.
+      if (!bSent.includes('reply delivered to') && !bSent.includes('your reply is queued at')) {
+        throw new Error(`REPLY: B's answer reported:\n${bSent}`);
+      }
+
+      // A's reply run: it ran, it is labelled as a reply, and it cannot send.
+      const replyRun = await waitForRun(beforeAsk, 'RELAY: all good');
+      const replyEvents = await field.waitRunTerminal(replyRun, 120000);
+      if (!replyEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('REPLY: the reply run never completed');
+      }
+      const replyText = readFileSync(replyRun, 'utf8');
+      if (!replyText.includes('Reply from another Plato session')) {
+        throw new Error('REPLY: the reply run was not told it was an answer');
+      }
+      const replyTurn = await turnFor('RELAY: all good');
+      if (replyTurn === undefined) {
+        throw new Error('REPLY: the stub has no record of the reply run');
+      }
+      if ((replyTurn.toolNames || []).includes('send_to_session')) {
+        throw new Error('REPLY: a reply run was offered send_to_session');
+      }
+      const refused = await resultsFor('RELAY: all good');
+      if (!refused.includes('exchange is over')) {
+        throw new Error(`REPLY: a reply run's forced send was not refused:\n${refused}`);
+      }
+
+      // The window shows the answer as somebody else's, named as a reply.
+      await field.webview.switchBack();
+      await field.activateTabByLabel(aLabel);
+      await field.switchToChatFrame();
+      const screen = await field.logText();
+      if (!screen.toLowerCase().includes(('Reply from ' + bLabel).toLowerCase())) {
+        throw new Error(`REPLY: the window does not label the answer (${bLabel})`);
+      }
+
+      MANIFEST.push({
+        case: 40,
+        run: 1,
+        mode: 'auto',
+        orchestration: 'solo',
+        title: 'A message and its one reply; the chain stops at the reply',
+        transcript: replyRun,
+        transcriptOk: true,
+        screenFailures: [],
+      });
+      console.log('  case 40: B replied once to A, A could not send again, and the window labels the answer');
     });
   }
 
