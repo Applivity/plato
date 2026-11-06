@@ -1,8 +1,8 @@
 <UserControl x:Class="Plato.Vs.PlatoWebViewControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf">
-  <Grid>
-    <wv2:WebView2 x:Name="WebView" />
-  </Grid>
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- The browser element is created in code, and only when this control has a
+       real surface (loaded, visible, non-zero size). A WebView2 created before
+       that can end up attached to a host that the finished dock discards. -->
+  <Grid x:Name="Host" />
 </UserControl>

@@ -619,6 +619,13 @@ namespace Plato.Vs.Bridge
             }
         }
 
+        /// <summary>
+        /// Writes one line into this window's log. The window's own file is the
+        /// only place a person can look later, so a state change the shell
+        /// makes on its own (a rebuilt view) must appear here.
+        /// </summary>
+        internal void LogNote(string message) => Log(message);
+
         private void Log(string message)
         {
             try
