@@ -109,6 +109,21 @@ export function resolveRecommended(
   return hits.length === 1 ? hits[0] : undefined;
 }
 
+/**
+ * D49cq (amended): where a run's task came from, and therefore what it may send.
+ *
+ * `user` — the person typed it: up to five messages to anyone.
+ * `session` — another session sent it: exactly one reply, to that sender only.
+ * `reply` — the message was itself a reply: the exchange is over, no sending.
+ */
+export type RunOrigin = 'user' | 'session' | 'reply';
+
+/** The session that sent the task a session-origin run is answering. */
+export interface RunOriginPeer {
+  id: string;
+  name: string;
+}
+
 export interface ApprovalRequest {
   tool: string;
   args: ToolArgs;
@@ -167,13 +182,24 @@ function addressWarning(host: string): string {
 const RELAY_UNAVAILABLE = 'send_to_session is not available in this host.';
 
 /**
+ * D49cq (amended): a run answering another session sends exactly once. The
+ * whole chain rule is A → B → A: the first answer is the last word, so two
+ * agents cannot talk past it.
+ */
+const MAX_REPLY_SENDS = 1;
+
+function samePeer(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
  * D49cq (amended): the relay refusals that must land BEFORE the plan-mode card.
  *
- * In plan mode a relay now asks, and the card is the decision. A call that can
- * never run must never reach it: a card for a send the depth rule forbids — or
- * one the model already made unsendable — asks the user to judge something that
- * cannot happen, and a card that means nothing teaches everyone to click through
- * the ones that mean something.
+ * In plan mode a relay asks, and the card is the decision. A call that can never
+ * run must never reach it: a card for a send the chain rule forbids — or one the
+ * model already made unsendable — asks the user to judge something that cannot
+ * happen, and a card that means nothing teaches everyone to click through the
+ * ones that mean something.
  *
  * One function for both callers, so the card's pre-flight and the executor's
  * checks cannot disagree about what is sendable. Whether a target RESOLVES is
@@ -181,22 +207,38 @@ const RELAY_UNAVAILABLE = 'send_to_session is not available in this host.';
  */
 function relayRefusal(
   args: ToolArgs,
-  origin: 'user' | 'session' | undefined,
+  origin: RunOrigin | undefined,
+  originFrom: RunOriginPeer | undefined,
   sendsSoFar: number,
   available: boolean,
 ): string | null {
-  // The declaration already omits send_to_session from a run that arrived from
-  // another session; this is the lock for a provider that calls it anyway.
-  if (origin === 'session') {
-    return "send_to_session: this run started from another session's message, and may not send one.";
+  // A reply ends the exchange. The declaration already omits the tool from such
+  // a run; this is the lock for a provider that calls it anyway.
+  if (origin === 'reply') {
+    return 'send_to_session: this run started from a reply, so the exchange is over. Nothing was sent. Answer in your own window.';
   }
   if (!available) {
     return RELAY_UNAVAILABLE;
   }
-  if (sendsSoFar >= MAX_SESSION_SENDS) {
+  const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
+  if (origin === 'session') {
+    // A run that arrived from a message exists to answer it. Without the
+    // sender's identity there is no one it may address.
+    if (originFrom === undefined) {
+      return 'send_to_session: this run does not know which session sent it, so it cannot reply.';
+    }
+    if (sendsSoFar >= MAX_REPLY_SENDS) {
+      return 'send_to_session: this run has already sent its one reply.';
+    }
+    if (to.length === 0) {
+      return 'send_to_session: name the session that sent you this task with "to".';
+    }
+    if (!samePeer(to, originFrom.id) && !samePeer(to, originFrom.name)) {
+      return `send_to_session: this run may send only to the session that sent it — ${originFrom.name} [${originFrom.id}]. Nothing was sent.`;
+    }
+  } else if (sendsSoFar >= MAX_SESSION_SENDS) {
     return `send_to_session: this run has already sent ${MAX_SESSION_SENDS} messages.`;
   }
-  const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
   if (to.length === 0) {
     return 'send_to_session: name a session with "to".';
   }
@@ -229,6 +271,12 @@ async function buildApprovalPreview(
    * user nothing about the change they are approving.
    */
   vault?: SecretVault,
+  /**
+   * D49cq (amended): this send is the answer to the session that sent the run's
+   * task, so the card says so — a person approving a reply is reading something
+   * different from a person approving a fresh message.
+   */
+  reply = false,
 ): Promise<string> {
   if (tool === 'web_fetch') {
     // D49p: the URL IS what leaves the machine, so it is what the user must see.
@@ -262,8 +310,11 @@ async function buildApprovalPreview(
       text.length > 600
         ? `${text.slice(0, 600)}\n…[the message continues; ${text.length} characters in all]`
         : text;
+    const heading = reply
+      ? 'Send this reply to the session that messaged you:'
+      : 'Send this message to another Plato session:';
     return (
-      `Send this message to another Plato session:\n\n  ${to}\n\n${shown}` +
+      `${heading}\n\n  ${to}\n\n${shown}` +
       `\n\nThe receiving session keeps its own mode and approvals — this message ` +
       `cannot widen what it is allowed to do. Nothing is sent unless you allow it.`
     );
@@ -550,21 +601,35 @@ export interface LoopOptions {
    */
   requestMode?: (req: { mode: Mode; reason: string }) => Promise<{ ok: boolean; note: string }>;
   /**
-   * D49cq: the live sessions this host can see and message. Its presence is what
-   * offers `list_sessions`; `send_to_session` additionally needs `origin` to be
-   * `'user'`. A host without the registry leaves both off, exactly as a host
-   * without a mode card leaves `request_mode` off.
+   * D49cq (amended): the live sessions this host can see and message. Its
+   * presence is what offers `list_sessions`; `send_to_session` is offered unless
+   * the run arrived from a reply. A host without the registry leaves both off,
+   * exactly as a host without a mode card leaves `request_mode` off.
+   *
+   * `reply` marks the text as an answer, so the receiving run knows it must not
+   * send again.
    */
   sessions?: {
     list: () => Promise<SessionPeer[]>;
-    send: (to: string, text: string) => Promise<SendOutcome>;
+    send: (
+      to: string,
+      text: string,
+      options?: { reply?: boolean },
+    ) => Promise<SendOutcome>;
   };
   /**
-   * D49cq: where this run's task came from. `'session'` means another Plato
-   * session sent it, so this run may not send another one — depth 1, enforced
-   * here rather than in each host.
+   * D49cq (amended): where this run's task came from. `'session'` means another
+   * session sent it, so this run may send exactly one reply and only back to the
+   * sender; `'reply'` means the message was itself a reply, so it may not send
+   * at all. The chain is A → B → A and stops.
    */
-  origin?: 'user' | 'session';
+  origin?: RunOrigin;
+  /**
+   * The session that sent a `'session'`-origin task. Required for that run to
+   * reply — without it there is nobody it is allowed to address, so it gets no
+   * send tool. Ignored for any other origin.
+   */
+  originFrom?: RunOriginPeer;
   /**
    * Started MCP servers (D06). Their tools join the model's tool list
    * as mcp_<server>_<tool> and route through the mode policy like
@@ -799,8 +864,16 @@ async function runLoop(
   const allTools = toolDeclarations({
     modeRequest: opts.requestMode !== undefined,
     listSessions: opts.sessions !== undefined,
-    // D49cq: a run that arrived from another session never sees the send tool.
-    sendToSession: opts.sessions !== undefined && opts.origin !== 'session',
+    // D49cq (amended): a user run may send; a session run may reply once to its
+    // sender, so it needs the sender to be offered the tool at all; a run that
+    // arrived from a reply never sees it.
+    sendToSession:
+      opts.sessions !== undefined &&
+      opts.origin !== 'reply' &&
+      (opts.origin !== 'session' || opts.originFrom !== undefined),
+    ...(opts.origin === 'session' && opts.originFrom !== undefined
+      ? { replyTo: opts.originFrom }
+      : {}),
   });
   for (const srv of opts.mcpServers ?? []) {
     for (const t of srv.tools) {
@@ -1221,6 +1294,7 @@ async function runLoop(
         const relay = relayRefusal(
           args,
           opts.origin,
+          opts.originFrom,
           sessionSends,
           opts.sessions !== undefined,
         );
@@ -1268,7 +1342,14 @@ async function runLoop(
 
       if (decision === 'ask') {
         bus.emit({ type: 'tool-event', runId, tool: name, phase: 'requested', args });
-        const preview = await buildApprovalPreview(opts.root, name, args, undefined, opts.secretVault);
+        const preview = await buildApprovalPreview(
+          opts.root,
+          name,
+          args,
+          undefined,
+          opts.secretVault,
+          opts.origin === 'session',
+        );
         bus.emit({ type: 'approval-requested', runId, tool: name, preview });
         const host = approvalHost(name, args);
         allowed = await opts.approve({
@@ -1307,6 +1388,10 @@ async function runLoop(
       }
       bus.emit({ type: 'tool-event', runId, tool: name, phase: 'allowed', args });
 
+      // D49cq (amended): set by a send that reached its target, so the record
+      // can say whether this run sent or replied — the target and the size, never
+      // the text (the same rule that strips tool args).
+      let relayDigest: { kind: 'send' | 'reply'; to: string; chars: number } | undefined;
       const outcome = await (async () => {
         // D49cb: request_mode routes through the host's mode card. The loop
         // never changes the mode: it validates the request, asks the host, and
@@ -1369,10 +1454,12 @@ async function runLoop(
         }
         if (name === 'send_to_session') {
           // The same pre-flight the plan-mode card runs, so the two cannot
-          // disagree: depth, the per-run cap, and a message that cannot be sent.
+          // disagree: the chain rule, the per-run cap, and a message that cannot
+          // be sent.
           const refusal = relayRefusal(
             args,
             opts.origin,
+            opts.originFrom,
             sessionSends,
             opts.sessions !== undefined,
           );
@@ -1383,10 +1470,27 @@ async function runLoop(
           if (sessions === undefined) return { ok: false, output: RELAY_UNAVAILABLE };
           const to = typeof args['to'] === 'string' ? args['to'].trim() : '';
           const text = typeof args['text'] === 'string' ? args['text'] : '';
+          // A run that arrived from a message is answering it, so the text is
+          // marked as a reply and the receiving run cannot send again.
+          const isReply = opts.origin === 'session';
           sessionSends += 1;
           try {
-            const res = await sessions.send(to, text);
+            const res = await sessions.send(to, text, isReply ? { reply: true } : undefined);
             if (res.ok) {
+              relayDigest = {
+                kind: isReply ? 'reply' : 'send',
+                to: res.to.id,
+                chars: text.length,
+              };
+              if (isReply) {
+                return {
+                  ok: true,
+                  output:
+                    res.status === 'queued'
+                      ? `your reply is queued at ${res.to.name} [${res.to.id}] — it is busy`
+                      : `reply delivered to ${res.to.name} [${res.to.id}]`,
+                };
+              }
               return {
                 ok: true,
                 output:
@@ -1397,7 +1501,12 @@ async function runLoop(
             }
             switch (res.reason) {
               case 'unknown':
-                return { ok: false, output: `no live session matches "${to}".` };
+                return {
+                  ok: false,
+                  output: isReply
+                    ? 'send_to_session: the session that sent you this task is no longer running, so the reply could not be delivered.'
+                    : `no live session matches "${to}".`,
+                };
               case 'ambiguous':
                 return {
                   ok: false,
@@ -1552,6 +1661,7 @@ async function runLoop(
         phase: 'done',
         ok: outcome.ok,
         args,
+        ...(relayDigest === undefined ? {} : { relay: relayDigest }),
       });
       // D49av: the host gets one chance to add to what the model is told about a
       // successful write — how else would Plato learn that the editor reports it

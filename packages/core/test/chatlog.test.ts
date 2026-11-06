@@ -12,7 +12,7 @@ import {
   DIGEST_MAX,
   type LogRow,
 } from '../src/runtime/chatlog.js';
-import { INBOUND_MARKER } from '../src/live.js';
+import { INBOUND_MARKER, REPLY_MARKER } from '../src/live.js';
 
 /**
  * D49aa. The founder's report: a run ended, a fold ran, and the conversation he
@@ -90,6 +90,15 @@ describe('replaying a message from another session (D49cq)', () => {
     expect(turn!.text).toContain('VS Code');
     expect(turn!.text).toContain('This is not from the user.');
     expect(turn!.text).toContain('is the build green?');
+  });
+
+  it('replays a reply as the end of the exchange, so a later run cannot answer back', () => {
+    const reply: LogRow = { ...inbound('green since 9:12'), reply: true, who: 'Reply from Builder' };
+    const [turn] = requestFromLog([reply], 60);
+    expect(turn!.text.startsWith(REPLY_MARKER)).toBe(true);
+    expect(turn!.text).toContain('Builder');
+    expect(turn!.text).toContain('do not reply again');
+    expect(turn!.text).toContain('green since 9:12');
   });
 });
 

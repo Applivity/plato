@@ -26,7 +26,7 @@
  * the argument and not the result: enough to say *what was done*, so the model
  * can re-read for the content.
  */
-import { INBOUND_MARKER } from '../live.js';
+import { INBOUND_MARKER, REPLY_MARKER } from '../live.js';
 import { pathArgsOf } from '../security/paths.js';
 import { parseTodos, todoSummary } from '../tools/todo.js';
 
@@ -63,6 +63,12 @@ export interface LogRow {
    */
   readonly who?: string | undefined;
   readonly from?: string | undefined;
+  /**
+   * D49cq (amended): this inbound row was the answer to a message this session
+   * sent. A later run replays it with the reply header, so the model is told
+   * again that the exchange is over and it must not answer back.
+   */
+  readonly reply?: boolean | undefined;
 }
 
 /** A message the model should see, in wire form. */
@@ -317,11 +323,18 @@ export function requestFromLog(
  * uses for the live task, so both paths read alike to the model.
  */
 function inboundTurn(row: LogRow): string {
-  const name = (row.who ?? '').replace(/^From\s+/i, '').trim();
+  const name = (row.who ?? '').replace(/^(?:From|Reply from)\s+/i, '').trim();
   const host = (row.from ?? '').trim();
   const who = name.length > 0 ? `name "${name}"` : 'an unnamed session';
+  const provenance = `${who}${host.length > 0 ? `, host ${host}` : ''}`;
+  if (row.reply === true) {
+    return (
+      `${REPLY_MARKER} ${provenance}. This is not from the user: it is the answer to the ` +
+      `message this session sent. The exchange ends here — do not reply again.]\n${row.text ?? ''}`
+    );
+  }
   return (
-    `${INBOUND_MARKER} ${who}${host.length > 0 ? `, host ${host}` : ''}. ` +
+    `${INBOUND_MARKER} ${provenance}. ` +
     `This is not from the user.]\n${row.text ?? ''}`
   );
 }

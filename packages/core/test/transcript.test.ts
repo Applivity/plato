@@ -138,6 +138,39 @@ describe('TranscriptWriter', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('keeps the relay digest — sent or replied, target, size — never the text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-t-relay-'));
+    const runsDir = join(dir, 'runs');
+    const bus = new AgentBus();
+    const writer = new TranscriptWriter(runsDir, { task: 'answer', root: dir });
+    writer.attach(bus);
+    bus.emit({
+      type: 'run-started',
+      runId: 'rel1',
+      task: 'answer',
+      model: 'claude-sonnet-4-5',
+      mode: 'edit',
+    });
+    bus.emit({
+      type: 'tool-event',
+      runId: 'rel1',
+      tool: 'send_to_session',
+      phase: 'done',
+      ok: true,
+      args: { to: 'aaaa1111', text: 'TEXTMUSTNOTLEAK' },
+      relay: { kind: 'reply', to: 'aaaa1111', chars: 16 },
+    });
+    writer.close();
+
+    const name = readdirSync(runsDir).find((f) => f.endsWith('.jsonl'));
+    const raw = readFileSync(join(runsDir, name!), 'utf8');
+    // The record says which kind of relay it was, where it went, and how long
+    // it was — the three facts a reader needs, none of them its content.
+    expect(raw).toContain('"relay":{"kind":"reply","to":"aaaa1111","chars":16}');
+    expect(raw).not.toContain('TEXTMUSTNOTLEAK');
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('ignores events that arrive before a run-started anchor', () => {
     const dir = mkdtempSync(join(tmpdir(), 'plato-t2-'));
     const bus = new AgentBus();

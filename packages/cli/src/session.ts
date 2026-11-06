@@ -21,6 +21,8 @@ import type {
   InboundMessage,
   LiveSession,
   ReceiveResult,
+  RunOrigin,
+  RunOriginPeer,
   SessionDescription,
 } from '@applivity/plato-core';
 import {
@@ -297,7 +299,11 @@ export class Session {
       return 'queued';
     }
     this.append('inbound', row);
-    void this.submit(inboundTask(message), 'session');
+    void this.submit(
+      inboundTask(message),
+      message.reply ? 'reply' : 'session',
+      { id: message.from.id, name: message.from.name },
+    );
     return 'started';
   }
 
@@ -315,10 +321,22 @@ export class Session {
       'inbound',
       `↳ from ${next.from.name} [${next.from.id}]: ${next.text}`,
     );
-    void this.submit(inboundTask(next), 'session');
+    void this.submit(
+      inboundTask(next),
+      next.reply ? 'reply' : 'session',
+      { id: next.from.id, name: next.from.name },
+    );
   }
 
-  async submit(task: string, origin: 'user' | 'session' = 'user'): Promise<void> {
+  /**
+   * D49cq (amended): `origin` is where the task came from. A `'session'` run may
+   * send one reply back to `originFrom`; a `'reply'` run may not send at all.
+   */
+  async submit(
+    task: string,
+    origin: RunOrigin = 'user',
+    originFrom?: RunOriginPeer,
+  ): Promise<void> {
     if (this.state.running) {
       return;
     }
@@ -354,10 +372,12 @@ export class Session {
         : {
             sessions: {
               list: () => this.live!.list(),
-              send: (to: string, text: string) => this.live!.send(to, text),
+              send: (to: string, text: string, sendOptions?: { reply?: boolean }) =>
+                this.live!.send(to, text, sendOptions),
             },
           }),
-      ...(origin === 'session' ? { origin } : {}),
+      ...(origin === 'user' ? {} : { origin }),
+      ...(originFrom === undefined ? {} : { originFrom }),
       ...(this.history.length === 0 ? {} : { history: this.history }),
     };
 

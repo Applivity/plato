@@ -16,6 +16,7 @@ import {
   createLiveSession,
   inboundTask,
   INBOUND_MARKER,
+  REPLY_MARKER,
   MAX_MESSAGE_CHARS,
   type InboundMessage,
   type LiveSession,
@@ -89,6 +90,7 @@ describe('the session-origin header (D49cq)', () => {
       inboundTask({
         from: { id: 'abc123', name: 'Fix the parser', host: 'vscode' },
         text: 'what did you change?',
+        reply: false,
         receivedAt: '2026-11-05T00:00:00.000Z',
       }),
     ).toBe(
@@ -102,9 +104,24 @@ describe('the session-origin header (D49cq)', () => {
     const task = inboundTask({
       from: { id: 'x', name: 'n', host: 'cli' },
       text: 't',
+      reply: false,
       receivedAt: '2026-11-05T00:00:00.000Z',
     });
     expect(task.startsWith(INBOUND_MARKER)).toBe(true);
+  });
+
+  it('opens a reply with its own marker, and says the exchange is over', () => {
+    const task = inboundTask({
+      from: { id: 'abc123', name: 'Builder', host: 'cli' },
+      text: 'the parser is fixed',
+      reply: true,
+      receivedAt: '2026-11-05T00:00:00.000Z',
+    });
+    expect(task.startsWith(REPLY_MARKER)).toBe(true);
+    expect(task).not.toContain(INBOUND_MARKER);
+    expect(task).toContain('the answer to the message this session sent');
+    expect(task).toContain('do not reply again');
+    expect(task).toContain('the parser is fixed');
   });
 });
 
@@ -149,6 +166,15 @@ describe('the live registry (D49cq)', () => {
     expect(b.received).toHaveLength(1);
     expect(b.received[0]!.from).toMatchObject({ id: a.live.id, name: 'A', host: 'cli' });
     expect(b.received[0]!.text).toBe('report your cwd');
+  });
+
+  it('marks only the message the sender called a reply', async () => {
+    const home = await tempHome();
+    const a = await startLive({ home, name: 'A' });
+    const b = await startLive({ home, name: 'B' });
+    await a.live.send(b.live.id, 'a question');
+    await a.live.send(b.live.id, 'the answer', { reply: true });
+    expect(b.received.map((message) => message.reply)).toEqual([false, true]);
   });
 
   it('reports queued when the target queues the message', async () => {
