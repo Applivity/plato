@@ -53,11 +53,11 @@ export interface ShimConfig {
 
 /**
  * What this host can honour. The Visual Studio host gives each chat its own
- * window and does not relay in this slice; the shell reads this when it lands.
+ * window and relays through its own sidecar; sending needs no C# change.
  * `host` is not a rendering switch — it names this process in the live-session
  * registry, so a VS Code window can tell a Visual Studio window from a tab.
  */
-export const __capabilities = { tabs: false, relay: false, noun: 'window', host: 'vs' } as const;
+export const __capabilities = { tabs: false, relay: true, noun: 'window', host: 'vs' } as const;
 
 let config: ShimConfig | null = null;
 
