@@ -7547,6 +7547,10 @@ and a Visual Studio window share no memory.
   prose written for another session, and the persisted record keeps model prose
   out of it exactly as `request_mode`'s reason does (D49cb). The receiving
   session holds the text itself, and the sender's own conversation shows it.
+- **A Visual Studio window sends with no C# (2026-11-06).** `relay-out` goes to the
+  extension inside the window's own sidecar, where `live.send` already lives, so
+  enabling the control is one capability flag and the C# shell carries nothing.
+  Verified on Visual Studio 2022 against the 0.2.0 package.
 - **One-way in v1.** There is no reply primitive; a reply is a later decision,
   not an oversight. The CLI registers only interactive sessions, because a
   non-interactive run has no inbox and nobody to read it.
