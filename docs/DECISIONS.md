@@ -622,6 +622,9 @@ a reserved slot for upcoming command / document affordances
 (h) *Mode icons.* Inline SVGs, no extra request: plan = play
 triangle, edit = pencil, act = terminal, auto = refresh arc.
 Icons inherit their color from the active mode class.
+
+D39g was recorded in PROGRESS's change log rather than here.
+
 **D40 — Conversation title: model-generated, editable; compact pill removed (M4.1, 0.15.0).**
 Three founder directives:
 
@@ -692,7 +695,9 @@ was still empty after New Chat. Root causes and fixes:
   returns to the chat. Pre-D41 chats were never archived and are
   unrecoverable.
   (D42b later found the initial History render was dropping the
-  chats payload at the webview dispatch site — see PROGRESS.)
+  chats payload at the webview dispatch site — see PROGRESS. The
+  lettered D42 sub-decisions, D42b–D42h, were recorded in PROGRESS's
+  change log rather than here.)
 
 **D39e — Composer polish: ring back inside the textbox, act = orange, border fix (M4.1, 0.15.0).**
 

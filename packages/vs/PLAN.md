@@ -24,9 +24,11 @@ multi-instance tool windows (`MultiInstances`, `Transient`), a New Window
 command, ids issued by the package, one WebView2 environment, and focus-based
 command routing. Field-verified on 2026 and 2022; the evidence is
 `C:\src\plato-vs-field\evidence\multi-window\`. Not verified: restoring
-windows across an IDE restart, which is out of the slice. The shared shell also
-carries the peer list and the incoming-message shape for session messaging, but
-the send feature itself is not wired into this host yet.
+windows across an IDE restart, which is out of the slice. The shared shell
+carries the peer list and the incoming-message shape for session messaging, and
+since 0.2.0 the send feature is wired into this host: a Visual Studio window can
+message another session and receive a reply. It was field-verified on Visual
+Studio 2026 and 2022.
 
 ## Read this first
 
