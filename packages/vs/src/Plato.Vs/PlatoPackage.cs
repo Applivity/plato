@@ -19,7 +19,7 @@ namespace Plato.Vs
     /// WebView2 environment they share.
     /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-    [InstalledProductRegistration("Plato by Applivity", "AI coding agent for Visual Studio", "0.1.5")]
+    [InstalledProductRegistration("Plato by Applivity", "AI coding agent for Visual Studio", "0.2.0")]
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [ProvideToolWindow(
         typeof(PlatoToolWindow),

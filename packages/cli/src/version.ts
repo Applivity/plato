@@ -5,4 +5,4 @@
  * A literal means the shipped bundle carries the version without reading JSON
  * at run time (D49bw).
  */
-export const VERSION = '0.1.5';
+export const VERSION = '0.2.0';
