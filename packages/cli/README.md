@@ -171,6 +171,15 @@ failure, refusal, or cancel, and `2` for a usage error.
 Without a terminal, an approval is refused and the model is told why. The run
 does not hang. `--mode auto` is the unattended mode.
 
+### Other Plato sessions
+
+Sessions running on this machine can see each other and exchange one message.
+Ask Plato to list them — each entry names the session, the host it runs in,
+whether it is busy, and what it is working on — then ask it to send one a
+message. The receiving session shows who asked and starts work if it is idle. A
+session that was started by an incoming message cannot send one onward, and a
+Plan-mode session asks before it sends.
+
 ## Commands
 
 | Command | Purpose |

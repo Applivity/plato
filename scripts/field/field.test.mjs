@@ -1607,12 +1607,27 @@ describe('Plato field tests — real VS Code', function () {
       await field.webview.switchBack();
       const bLabel = await field.activeEditorLabel();
       await field.activateTabByLabel(aLabel, { notActive: true });
-      await field.switchToChatFrame();
       // The frame, not just the tab, must be A's: a send into the wrong chat
-      // would become guidance for B's live run and start nothing.
-      const aVisible = await field.logText();
+      // would become guidance for B's live run and start nothing. Chat tabs are
+      // stacked overlays with identical geometry, so the iframe can lag the tab
+      // by a moment. Wait for A's own words instead of sampling once; a chat
+      // that never shows them still fails, and the message names what was on
+      // screen so a real wrong-chat defect is not mistaken for slow rendering.
+      const aDeadline = Date.now() + 15000;
+      let aVisible = '';
+      while (Date.now() < aDeadline) {
+        await field.switchToChatFrame();
+        aVisible = await field.logText().catch(() => '');
+        if (aVisible.includes('TAB A: write the probe file')) break;
+        await field.webview.switchBack().catch(() => {});
+        await field.driver.sleep(250);
+      }
       if (!aVisible.includes('TAB A: write the probe file')) {
-        throw new Error('TABS: the visible chat is not tab A after switching');
+        throw new Error(
+          `TABS: the visible chat is not tab A after switching (showing "${aVisible
+            .replace(/\s+/g, ' ')
+            .slice(0, 140)}")`,
+        );
       }
       const beforeSlowA = new Set(field.transcripts());
       await field.send('TAB A: slow run');
@@ -1812,12 +1827,25 @@ describe('Plato field tests — real VS Code', function () {
       // B's screen drew the sender, not the user's own words.
       await field.webview.switchBack();
       await field.activateTabByLabel(bLabel);
-      await field.switchToChatFrame();
-      const bScreen = await field.logText();
-      // The sender line is drawn uppercase (the row's label style), and
-      // `logText` reads RENDERED text — so this comparison is case-blind.
+      // Same lag as case 37: the iframe can trail the tab, and both chats are
+      // stacked overlays. Wait for the sender's name rather than sampling once.
+      const bDeadline = Date.now() + 15000;
+      let bScreen = '';
+      while (Date.now() < bDeadline) {
+        await field.switchToChatFrame();
+        bScreen = await field.logText().catch(() => '');
+        // The sender line is drawn uppercase (the row's label style), and
+        // `logText` reads RENDERED text — so this comparison is case-blind.
+        if (bScreen.toLowerCase().includes(('From ' + aLabel).toLowerCase())) break;
+        await field.webview.switchBack().catch(() => {});
+        await field.driver.sleep(250);
+      }
       if (!bScreen.toLowerCase().includes(('From ' + aLabel).toLowerCase())) {
-        throw new Error(`RELAY: B's screen does not name the sender (${aLabel})`);
+        throw new Error(
+          `RELAY: B's screen does not name the sender (${aLabel}); showing "${bScreen
+            .replace(/\s+/g, ' ')
+            .slice(0, 140)}"`,
+        );
       }
 
       // Queue path: B is busy, so the next message must wait, say so, and then

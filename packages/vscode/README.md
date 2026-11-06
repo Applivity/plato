@@ -28,6 +28,21 @@ Plato is pre-release.
 
 *Edit mode: the real diff, and one decision before anything changes.*
 
+## Several chats at once
+
+**＋ new** opens another chat. Each chat keeps its own conversation, mode, model
+and approvals, and closing one stops only its own run and files it in History.
+The sidebar lists what is open, and commands act on the chat you last used.
+
+## Chats can message each other
+
+A chat can send a message to another open chat — by name, or by finding it from
+what it is working on. The chat that receives it shows who asked: it starts work
+if it is idle, and waits its turn if a run is already going. A chat that was
+started by such a message cannot pass one on, so two agents cannot talk in a
+loop. In Plan mode, sending asks you first, on a card that names the target and
+shows the text.
+
 ## Install
 
 Install from the Visual Studio Marketplace:
