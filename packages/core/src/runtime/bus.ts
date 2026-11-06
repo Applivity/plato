@@ -97,6 +97,13 @@ export type AgentEvent =
       args?: unknown;
       /** D49aq: set only on phase 'refused'. */
       reason?: RefusalReason;
+      /**
+       * D49cq (amended): a send that reached a target, recorded as a digest —
+       * whether it was an ordinary message or a reply, where it went, and how
+       * long it was. Deliberately NOT the text: the message body is model prose
+       * and args are stripped from the file for the same reason.
+       */
+      relay?: { kind: 'send' | 'reply'; to: string; chars: number };
     }
   | { type: 'approval-requested'; runId: string; tool: string; preview: string }
   /**

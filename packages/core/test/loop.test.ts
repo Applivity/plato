@@ -2745,13 +2745,17 @@ describe('live sessions in the loop (D49cq)', () => {
       status: 'accepted',
     },
   ) {
-    const sent: { to: string; text: string }[] = [];
+    const sent: { to: string; text: string; reply: boolean }[] = [];
     return {
       sent,
       sessions: {
         list: async () => [PEER],
-        send: async (to: string, text: string) => {
-          sent.push({ to, text });
+        send: async (
+          to: string,
+          text: string,
+          options?: { reply?: boolean },
+        ) => {
+          sent.push({ to, text, reply: options?.reply === true });
           return result;
         },
       },
@@ -2808,7 +2812,7 @@ describe('live sessions in the loop (D49cq)', () => {
     expect([...results].join(' ')).toContain('aaaa1111');
   });
 
-  it('hides send_to_session from a run that arrived from another session', async () => {
+  it('hides send_to_session when a session-origin run has no sender to reply to', async () => {
     const names = new Set<string>();
     const results = new Set<string>();
     const rec = recorder();
@@ -2820,8 +2824,159 @@ describe('live sessions in the loop (D49cq)', () => {
     expect(names.has('list_sessions')).toBe(true);
     expect(names.has('send_to_session')).toBe(false);
     // A provider that calls it anyway is refused, and nothing is delivered.
-    expect([...results].join(' ')).toContain('may not send one');
+    expect([...results].join(' ')).toContain('does not know which session sent it');
     expect(rec.sent).toHaveLength(0);
+  });
+
+  it('offers a session-origin run its one reply, to its sender only', async () => {
+    const names = new Set<string>();
+    const declaration = new Map<string, string>();
+    const results = new Set<string>();
+    const rec = recorder();
+    let turn = 0;
+    const texts = ['first reply', 'second reply'];
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        for (const tool of request.tools) {
+          names.add(tool.name);
+          declaration.set(tool.name, tool.description);
+        }
+        for (const message of request.messages) {
+          for (const block of message.content) {
+            if (block.type === 'tool_result') results.add(block.content);
+          }
+        }
+        turn += 1;
+        if (turn <= 2) {
+          return {
+            content: [
+              {
+                type: 'tool_use',
+                id: `call-${turn}`,
+                name: 'send_to_session',
+                input: { to: 'Builder', text: texts[turn - 1] },
+              },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    // The run record must say this was a reply, and to whom, without the text.
+    const bus = new AgentBus();
+    const digests: unknown[] = [];
+    bus.on((event) => {
+      if (
+        event.type === 'tool-event' &&
+        event.tool === 'send_to_session' &&
+        event.phase === 'done' &&
+        event.relay !== undefined
+      ) {
+        digests.push(event.relay);
+      }
+    });
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      sessions: rec.sessions,
+      origin: 'session',
+      originFrom: { id: 'aaaa1111', name: 'Builder' },
+      bus,
+    });
+    // The tool IS offered, and its description says this is a reply.
+    expect(names.has('send_to_session')).toBe(true);
+    expect(declaration.get('send_to_session')).toContain('one reply');
+    expect(declaration.get('send_to_session')).toContain('Builder');
+    // Exactly one message left, marked as a reply, and the result says so.
+    expect(rec.sent).toEqual([
+      { to: 'Builder', text: 'first reply', reply: true },
+    ]);
+    const seen = [...results].join(' ');
+    expect(seen).toContain('reply delivered to Builder');
+    expect(seen).toContain('already sent its one reply');
+    expect(digests).toEqual([{ kind: 'reply', to: 'aaaa1111', chars: 11 }]);
+  });
+
+  it('refuses a session-origin run that addresses any other session', async () => {
+    const results = new Set<string>();
+    const rec = recorder();
+    const p = caller('send_to_session', { to: 'bbbb2222', text: 'ping' }, 1, (request) =>
+      collect(request, new Set(), results),
+    );
+    await runAgentLoop({
+      ...BASE,
+      provider: p,
+      sessions: rec.sessions,
+      origin: 'session',
+      originFrom: { id: 'aaaa1111', name: 'Builder' },
+    });
+    expect(rec.sent).toHaveLength(0);
+    const seen = [...results].join(' ');
+    expect(seen).toContain('may send only to the session that sent it');
+    expect(seen).toContain('Builder [aaaa1111]');
+  });
+
+  it('refuses a run that arrived from a reply, before any card', async () => {
+    const bus = new AgentBus();
+    const refused: { tool: string; reason?: string }[] = [];
+    bus.on((event) => {
+      if (event.type === 'tool-event' && event.phase === 'refused') {
+        refused.push({ tool: event.tool, reason: event.reason });
+      }
+    });
+    const names = new Set<string>();
+    const results = new Set<string>();
+    const rec = recorder();
+    let cards = 0;
+    const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
+      collect(request, names, results),
+    );
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan',
+      provider: p,
+      sessions: rec.sessions,
+      origin: 'reply',
+      originFrom: { id: 'aaaa1111', name: 'Builder' },
+      bus,
+      approve: async () => {
+        cards += 1;
+        return true;
+      },
+    });
+    expect(names.has('send_to_session')).toBe(false);
+    expect(cards).toBe(0);
+    expect(refused).toEqual([{ tool: 'send_to_session', reason: 'relay' }]);
+    expect([...results].join(' ')).toContain('the exchange is over');
+  });
+
+  it('asks before a reply in plan mode, with the reply card', async () => {
+    const rec = recorder();
+    const previews: string[] = [];
+    const p = caller('send_to_session', { to: 'aaaa1111', text: 'the answer' }, 1, () => {});
+    await runAgentLoop({
+      ...BASE,
+      getMode: () => 'plan',
+      provider: p,
+      sessions: rec.sessions,
+      origin: 'session',
+      originFrom: { id: 'aaaa1111', name: 'Builder' },
+      approve: async (request) => {
+        previews.push(request.preview ?? '');
+        return true;
+      },
+    });
+    expect(previews).toHaveLength(1);
+    expect(previews[0]).toContain('Send this reply');
+    expect(previews[0]).toContain('the answer');
+    expect(rec.sent).toEqual([{ to: 'aaaa1111', text: 'the answer', reply: true }]);
   });
 
   it('asks in plan, and a decline sends nothing and says what did not happen', async () => {
@@ -2861,6 +3016,13 @@ describe('live sessions in the loop (D49cq)', () => {
   it('sends in plan when the user allows the card', async () => {
     const results = new Set<string>();
     const rec = recorder();
+    const bus = new AgentBus();
+    const digests: unknown[] = [];
+    bus.on((event) => {
+      if (event.type === 'tool-event' && event.phase === 'done' && event.relay !== undefined) {
+        digests.push(event.relay);
+      }
+    });
     let cards = 0;
     const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
       collect(request, new Set(), results),
@@ -2870,14 +3032,17 @@ describe('live sessions in the loop (D49cq)', () => {
       getMode: () => 'plan',
       provider: p,
       sessions: rec.sessions,
+      bus,
       approve: async () => {
         cards += 1;
         return true;
       },
     });
     expect(cards).toBe(1);
-    expect(rec.sent).toEqual([{ to: 'aaaa1111', text: 'ping' }]);
+    expect(rec.sent).toEqual([{ to: 'aaaa1111', text: 'ping', reply: false }]);
     expect([...results].join(' ')).toContain('delivered to Builder');
+    // A user-origin send is recorded as a send, never as a reply.
+    expect(digests).toEqual([{ kind: 'send', to: 'aaaa1111', chars: 4 }]);
   });
 
   it('raises no relay card in edit or auto', async () => {
@@ -2898,39 +3063,6 @@ describe('live sessions in the loop (D49cq)', () => {
       expect(cards).toBe(0);
       expect(rec.sent).toHaveLength(1);
     }
-  });
-
-  it('refuses a session-origin relay before the card, and says so on the bus', async () => {
-    const bus = new AgentBus();
-    const refused: { tool: string; reason?: string }[] = [];
-    bus.on((event) => {
-      if (event.type === 'tool-event' && event.phase === 'refused') {
-        refused.push({ tool: event.tool, reason: event.reason });
-      }
-    });
-    const results = new Set<string>();
-    const rec = recorder();
-    let cards = 0;
-    const p = caller('send_to_session', { to: 'aaaa1111', text: 'ping' }, 1, (request) =>
-      collect(request, new Set(), results),
-    );
-    await runAgentLoop({
-      ...BASE,
-      getMode: () => 'plan',
-      provider: p,
-      sessions: rec.sessions,
-      origin: 'session',
-      bus,
-      approve: async () => {
-        cards += 1;
-        return true;
-      },
-    });
-    // Depth is a hard rule even where plan would otherwise ask.
-    expect(cards).toBe(0);
-    expect(rec.sent).toHaveLength(0);
-    expect([...results].join(' ')).toContain('may not send one');
-    expect(refused).toEqual([{ tool: 'send_to_session', reason: 'relay' }]);
   });
 
   it('refuses an unsendable message before the card', async () => {

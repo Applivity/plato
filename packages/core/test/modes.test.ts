@@ -364,4 +364,23 @@ describe('live-session tools (D49cq)', () => {
     expect(both).toContain('list_sessions');
     expect(both).toContain('send_to_session');
   });
+
+  it('tells a replying run which mode it is in, and names its sender', () => {
+    const send = (opts: Parameters<typeof toolDeclarations>[0]) =>
+      toolDeclarations(opts).find((tool) => tool.name === 'send_to_session');
+    const replying = send({
+      sendToSession: true,
+      replyTo: { id: 'aaaa1111', name: 'Builder' },
+    });
+    expect(replying?.description).toContain('one reply');
+    expect(replying?.description).toContain('Builder');
+    expect(replying?.description).toContain('aaaa1111');
+    expect(replying?.description).toContain('the sender cannot reply to your reply');
+    // A user run is starting a conversation, not closing one, and its
+    // description must not read as if it were.
+    const starting = send({ sendToSession: true });
+    expect(starting?.description).not.toContain('Send your one reply');
+    expect(starting?.description).not.toContain('exactly one message');
+    expect(starting?.description).toContain('may send you one reply');
+  });
 });

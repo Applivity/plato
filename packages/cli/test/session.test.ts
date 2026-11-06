@@ -2,7 +2,12 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ChatProvider, TurnRequest, TurnResponse } from '@applivity/plato-core';
+import type {
+  ChatProvider,
+  LiveSession,
+  TurnRequest,
+  TurnResponse,
+} from '@applivity/plato-core';
 import { loadConfig, type PlatoConfig } from '../src/config.js';
 import { Session } from '../src/session.js';
 import { latestSession } from '../src/sessions.js';
@@ -806,6 +811,7 @@ describe('live sessions in the CLI (D49cq)', () => {
   const inbound = {
     from: { id: 'peer1234', name: 'Builder', host: 'cli' as const },
     text: 'report your cwd',
+    reply: false,
     receivedAt: '2026-11-03T10:00:00.000Z',
   };
 
@@ -820,6 +826,30 @@ describe('live sessions in the CLI (D49cq)', () => {
   function lastUserText(request: TurnRequest): string {
     const last = request.messages[request.messages.length - 1]!;
     return last.content.map((block) => (block.type === 'text' ? block.text : '')).join(' ');
+  }
+
+  /** Enough of a LiveSession for the run wiring: no peers, an accepted send. */
+  function fakeLive(): LiveSession {
+    return {
+      id: 'me1234',
+      name: 'Plato CLI',
+      list: async () => [],
+      send: async () => ({
+        ok: true,
+        to: {
+          id: 'peer1234',
+          name: 'Builder',
+          summary: '',
+          host: 'cli',
+          busy: false,
+          cwd: '',
+          started: '',
+        },
+        status: 'accepted',
+      }),
+      refresh: () => {},
+      close: async () => {},
+    };
   }
 
   it('runs an inbound message with a header that says it is not the user', async () => {
@@ -876,6 +906,50 @@ describe('live sessions in the CLI (D49cq)', () => {
 
     expect(seen[1]).toContain('Message from another Plato session');
     expect(seen[1]).toContain('report your cwd');
+  });
+
+  it('gives a message-origin run one reply back to its sender', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    const tools: string[][] = [];
+    const s = session(
+      root,
+      env,
+      scripted([{ text: 'answered' }], (request) =>
+        tools.push(request.tools.map((tool) => tool.name)),
+      ),
+    );
+    s.setLive(fakeLive());
+
+    expect(await s.receive(inbound)).toBe('started');
+    await waitFor(() => !s.getSnapshot().running, 'the inbound run to end');
+
+    // The sender is passed to the loop, so the run may answer it and only it.
+    expect(tools[0]).toContain('send_to_session');
+  });
+
+  it('runs a reply as the end of the exchange, with no send tool at all', async () => {
+    const root = tempDir('plato-cli-live-root-');
+    const env = environment();
+    const seen: string[] = [];
+    const tools: string[][] = [];
+    const s = session(
+      root,
+      env,
+      scripted([{ text: 'noted' }], (request) => {
+        seen.push(lastUserText(request));
+        tools.push(request.tools.map((tool) => tool.name));
+      }),
+    );
+    s.setLive(fakeLive());
+
+    expect(await s.receive({ ...inbound, reply: true })).toBe('started');
+    await waitFor(() => !s.getSnapshot().running, 'the reply run to end');
+
+    expect(seen[0]).toContain('Reply from another Plato session');
+    expect(seen[0]).toContain('do not reply again');
+    expect(tools[0]).not.toContain('send_to_session');
+    expect(tools[0]).toContain('list_sessions');
   });
 
   it('queues while a run is in progress instead of overlapping it', async () => {

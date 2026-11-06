@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { INBOUND_MARKER, type Mode } from '@applivity/plato-core';
+import { INBOUND_MARKER, REPLY_MARKER, type Mode } from '@applivity/plato-core';
 import type { Team } from './config.js';
 import { platoHome, projectKey, type Env } from './paths.js';
 
@@ -59,8 +59,13 @@ export { INBOUND_MARKER };
 
 /** The name a session shows in saved lists and in the live registry. */
 export function titleFor(history: StoredSession['history']): string {
+  // D49cq (amended): a reply is another session's words too, so it must not
+  // become the conversation's name any more than a message does.
   const first = history.find(
-    (entry) => entry.role === 'user' && !entry.text.startsWith(INBOUND_MARKER),
+    (entry) =>
+      entry.role === 'user' &&
+      !entry.text.startsWith(INBOUND_MARKER) &&
+      !entry.text.startsWith(REPLY_MARKER),
   );
   if (first === undefined) {
     return '';

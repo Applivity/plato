@@ -24,10 +24,14 @@ export interface ToolDeclarationOpts {
    */
   listSessions?: boolean;
   /**
-   * D49cq: the host can deliver to another session. Never set for a run that
-   * itself arrived from another session — depth 1 is the whole chain rule.
+   * D49cq (amended): the host can deliver to another session. A run that
+   * arrived from another session may send too, but only as a reply, and this
+   * field then carries the sender — the one session the reply may address.
+   * Absent for a run whose message was itself a reply: that run may not send at
+   * all, so the tool is not offered to it.
    */
   sendToSession?: boolean;
+  replyTo?: { id: string; name: string };
 }
 
 /**
@@ -45,16 +49,48 @@ function listSessionsTool(): CanonicalTool {
 }
 
 /**
- * D49cq: one short text message to another session. The other session's user
- * sees who sent it, and the receiving model is told it came from another agent,
- * never from its own user. The receiving session keeps its own mode, so a
- * message cannot widen what that session is allowed to do.
+ * D49cq (amended): one short text message to another session, or the answer to
+ * one.
+ *
+ * The two descriptions are different because the RUN is different, and a model
+ * that has to guess which situation it is in will guess wrong. A user-origin
+ * run is starting a conversation and may send several; a run that arrived from
+ * another session is answering, may send once, and only back to the sender.
+ * When its own message was a reply it gets no tool at all, because the chain has
+ * already run its one round trip.
  */
-function sendToSessionTool(): CanonicalTool {
+function sendToSessionTool(replyTo?: { id: string; name: string }): CanonicalTool {
+  if (replyTo !== undefined) {
+    return {
+      name: 'send_to_session',
+      description:
+        `Send your one reply to the session that sent you this task: ${replyTo.name} [${replyTo.id}]. ` +
+        'This run started from another session\'s message, so it may send exactly one message, and only ' +
+        'to that session; any other target is refused. Your text is delivered as the reply, the sender ' +
+        'sees it as an ordinary message from another session, and the exchange ends there — the sender ' +
+        'cannot reply to your reply. Put the whole answer in this one message; there is no second turn.',
+      parameters: {
+        type: 'object',
+        properties: {
+          to: {
+            type: 'string',
+            description: `The session that sent you this task. Use its id (${replyTo.id}) or its name (${replyTo.name}); nothing else is accepted.`,
+          },
+          text: {
+            type: 'string',
+            maxLength: 4000,
+            description:
+              'Your reply, under 4000 characters. The sender cannot see your conversation, so give the full answer and say what it rests on.',
+          },
+        },
+        required: ['to', 'text'],
+      },
+    };
+  }
   return {
     name: 'send_to_session',
     description:
-      'Send a short text message to another Plato session on this machine. Address it by the id list_sessions returned, or by a name that only one session has; a shared name is refused, so prefer the id. The other session\'s user sees the sender and the text. The receiving session answers in its own window, and this version has no reply back to you. Use it to ask for a fact or a result that session already has; never to ask for work you would not do yourself.',
+      'Send a short text message to another Plato session on this machine. Address it by the id list_sessions returned, or by a name that only one session has; a shared name is refused, so prefer the id. The other session\'s user sees the sender and the text. The receiving session answers in its own window and may send you one reply, which you will receive as a message from another session; that answer is the end of the exchange. Use it to ask for a fact or a result that session already has; never to ask for work you would not do yourself.',
     parameters: {
       type: 'object',
       properties: {
@@ -389,7 +425,7 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
     ...(opts.modeRequest ? [requestModeTool()] : []),
     // D49cq: live sessions are an optional host capability, like request_mode.
     ...(opts.listSessions ? [listSessionsTool()] : []),
-    ...(opts.sendToSession ? [sendToSessionTool()] : []),
+    ...(opts.sendToSession ? [sendToSessionTool(opts.replyTo)] : []),
     {
       name: 'web_fetch',
       description:
