@@ -1,11 +1,27 @@
 {
   "name": "@applivity/plato",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "license": "Apache-2.0",
   "publishConfig": {
     "access": "public"
   },
   "description": "An AI coding agent for the terminal that shows its work, lets you steer mid-run, and stops at a safe point.",
+  "author": {
+    "name": "Applivity",
+    "url": "https://plato.applivity.com"
+  },
+  "keywords": [
+    "ai",
+    "ai-agent",
+    "coding-agent",
+    "cli",
+    "terminal",
+    "developer-tools",
+    "llm",
+    "anthropic",
+    "openai",
+    "code-assistant"
+  ],
   "homepage": "https://plato.applivity.com",
   "repository": {
     "type": "git",
