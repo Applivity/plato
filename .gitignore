@@ -65,3 +65,8 @@ Thumbs.db
 # goes away.
 docs/telemetry-notes.md
 
+
+# --- Release artifacts (built packages live in plato-artifacts/) ---
+packages/cli/*.tgz
+packages/vscode/*.vsix
+packages/vs/*.vsix
