@@ -111,7 +111,6 @@ import type {
   LiveSession,
   ReceiveResult,
   SessionDescription,
-  SessionPeer,
 } from '@applivity/plato-core';
 import type { DigestEntry } from '@applivity/plato-core';
 import type { TeamMember } from '@applivity/plato-core';
@@ -336,38 +335,6 @@ export function activate(ctx: vscode.ExtensionContext): void {
     return mostRecent();
   };
 
-  /**
-   * D49cq: every other live session, for the shell's target picker. The list
-   * comes from the registry, not from this window's tab map: a chat in another
-   * VS Code window, a Visual Studio window or a terminal is exactly as
-   * addressable as a tab beside this one, and only the registry knows them all.
-   */
-  const broadcastPeers = (): void => {
-    for (const t of tabs.values()) {
-      t.host.notifyPeers();
-    }
-  };
-
-  const listOpenTabs = (selfId: string): OpenTabInfo[] =>
-    [...tabs.values()]
-      .sort((a, b) => a.lastFocusedAt - b.lastFocusedAt)
-      .map((t) => ({
-        id: t.id,
-        name: t.host.displayName,
-        busy: t.host.busy,
-        count: t.host.messageCount,
-        current: t.id === selfId,
-      }));
-
-  const focusTab = (id: string): void => {
-    const t = tabs.get(id);
-    if (t !== undefined) {
-      t.panel.reveal();
-      return;
-    }
-    void openTab(id);
-  };
-
   const newTabId = (): string =>
     `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -393,13 +360,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
     panel.webview.html = chatHtml(caps);
     const host = new ChatHost(panel, ctx, tabId, {
       displayName: fallbackName(),
-      onStateChange: broadcastPeers,
       newTab: () => {
         void openTab(undefined, { fresh: true });
       },
-      ...(caps.tabs
-        ? { tabs: { list: listOpenTabs, focus: focusTab } }
-        : {}),
       capabilities: caps,
     });
     // D49cq: one endpoint per CHAT, not per window. The delivery callback is
@@ -438,7 +401,6 @@ export function activate(ctx: vscode.ExtensionContext): void {
         if (e.webviewPanel.active) {
           lastActiveTabId = tabId;
           entry.lastFocusedAt = Date.now();
-          broadcastPeers();
         }
       });
     }
@@ -468,12 +430,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
         await ctx.workspaceState.update(tabModeKey(tabId), undefined);
         closing.delete(tabId);
         chatsChanged.fire();
-        broadcastPeers();
       })();
     });
     host.sweepTranscripts();
     chatsChanged.fire();
-    broadcastPeers();
     return entry;
   }
 
@@ -651,18 +611,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
     }),
   );
 
-  ctx.subscriptions.push(
-    vscode.commands.registerCommand('plato.focusTab', (id?: unknown) => {
-      if (typeof id === 'string') focusTab(id);
-    }),
-  );
-
   // D49bq: the activity-bar launcher. It opens the panel; it is not the panel.
   // The open chats are listed above the stored ones; a tab that is open but
   // unsaved is still a conversation the user can reach.
-  const chats = new PlatoChatsProvider(ctx, chatsChanged, () =>
-    listOpenTabs(''),
-  );
+  const chats = new PlatoChatsProvider(ctx, chatsChanged);
   const tree = vscode.window.createTreeView('plato.chats', {
     treeDataProvider: chats,
   });
@@ -765,15 +717,6 @@ const tabModeKey = (id: string): string => `plato.chat.${id}.mode`;
 interface TabRecord {
   id: string;
   createdAt: number;
-}
-
-/** One open tab, as the tree, the History page and the peer list see it. */
-interface OpenTabInfo {
-  id: string;
-  name: string;
-  busy: boolean;
-  count: number;
-  current: boolean;
 }
 
 /**
@@ -906,19 +849,10 @@ function whenLabel(iso: string): string {
  * because the run controls are built on the panel lifecycle (D49bn) — see that
  * decision for the alternative that was left open.
  */
-/** The expandable group that lists the conversations open right now. */
-class OpenTabsGroup extends vscode.TreeItem {
-  constructor(count: number) {
-    super(`Open (${count})`, vscode.TreeItemCollapsibleState.Expanded);
-    this.iconPath = new vscode.ThemeIcon('window');
-  }
-}
-
 class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   constructor(
     private readonly ctx: vscode.ExtensionContext,
     private readonly changed: vscode.EventEmitter<void>,
-    private readonly liveTabs: () => OpenTabInfo[],
   ) {}
 
   // A getter, not a field: the emitter is a constructor parameter property, and
@@ -932,23 +866,7 @@ class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   }
 
   getChildren(el?: vscode.TreeItem): vscode.TreeItem[] {
-    if (el instanceof OpenTabsGroup) {
-      return this.liveTabs().map((t) => {
-        const row = new vscode.TreeItem(
-          t.name,
-          vscode.TreeItemCollapsibleState.None,
-        );
-        row.description = t.busy ? 'running' : 'open';
-        row.iconPath = new vscode.ThemeIcon('comment-discussion');
-        row.command = {
-          command: 'plato.focusTab',
-          title: 'Show this chat',
-          arguments: [t.id],
-        };
-        return row;
-      });
-    }
-    // Every other row is a leaf: there is nothing to expand.
+    // Every row is a leaf: there is nothing to expand.
     if (el !== undefined) {
       return [];
     }
@@ -956,10 +874,6 @@ class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
       this.action('Open Chat', 'plato.openChat', 'comment-discussion'),
       this.action('New Chat', 'plato.newChat', 'add'),
     ];
-    const live = this.liveTabs();
-    if (live.length > 0) {
-      rows.push(new OpenTabsGroup(live.length));
-    }
     for (const s of this.sessions().slice(0, 12)) {
       const row = new vscode.TreeItem(
         s.title && s.title.trim().length > 0 ? s.title : 'Untitled chat',
@@ -1017,7 +931,7 @@ type Entry =
    * It is provenance for the reader, not text for the model — the model sees
    * the message as an ordinary turn from the person at this keyboard.
    */
-  | { k: 'msg'; cls: string; who: string; text: string; from?: string }
+  | { k: 'msg'; cls: string; who: string; text: string; from?: string; reply?: boolean }
   /**
    * D49ag: `digest` is what the call WAS FOR (see `digestToolCall`), `ok`
    * whether it worked. Without them this row recorded only that something ran,
@@ -1109,10 +1023,14 @@ interface RunCtx {
   /** D49o: root-relative image paths, read as BYTES at run start. */
   images?: string[];
   /**
-   * D49cq: `'session'` when another session sent this task. The engine already
-   * refuses `send_to_session` in such a run; this only tells it which run it is.
+   * D49cq (amended): `'session'` when another session sent this task, `'reply'`
+   * when the task was itself an answer. A session run may answer its sender
+   * once; a reply run may not send at all. Core enforces both; this says which
+   * run it is, and `originFrom` says who sent it.
    */
-  origin?: 'user' | 'session';
+  origin?: 'user' | 'session' | 'reply';
+  /** D49cq: the session that sent this task — the only one a reply may address. */
+  originFrom?: { id: string; name: string };
   /**
    * D49cq: what the registry's summary says about this task. A session-origin
    * task carries the provenance header, and a peer should not read that back.
@@ -1124,16 +1042,9 @@ interface RunCtx {
 interface ChatHostOptions {
   /** The name this tab shows until a conversation title exists. */
   displayName?: string;
-  /** Called when a run starts or ends, so the peer list stays truthful. */
-  onStateChange?: () => void;
   /** "New Chat" from inside the shell: open another tab. */
   newTab?: () => void;
-  /** The other open conversations, for History and the peer picker. */
-  tabs?: {
-    list: (selfId: string) => OpenTabInfo[];
-    focus: (id: string) => void;
-  };
-  /** D49cq: what this window can do. The send control is gated on `relay`. */
+  /** D49cq: what this window can do. */
   capabilities: ChatCaps;
 }
 
@@ -1355,10 +1266,6 @@ class ChatHost {
   private lastTask = '';
   /** D49cq: messages from other sessions waiting behind a run. */
   private readonly pendingInbound: InboundMessage[] = [];
-  /** D49cq: the peer list is a probe round; never run two at once, and not twice a second. */
-  private peersInFlight = false;
-  private peersAt = 0;
-  private peersAgain = false;
 
   constructor(
     private readonly panel: vscode.WebviewPanel,
@@ -1411,11 +1318,6 @@ class ChatHost {
         // not a wipe of this one.
         if (m.type === 'new-tab') {
           this.opts.newTab?.();
-          return;
-        }
-        // A History row for another open tab: bring that panel forward.
-        if (m.type === 'focusTab' && typeof m.id === 'string') {
-          this.opts.tabs?.focus(m.id);
           return;
         }
         // D40: user renamed the conversation title from the header chip.
@@ -2140,21 +2042,6 @@ class ChatHost {
           resolve?.(m.allow === true);
           return;
         }
-        // D49cq: the user's own message to another session, from the picker.
-        // The outcome is posted back as `relay-result`, never assumed here.
-        if (m.type === 'relay-out') {
-          const id = typeof m.id === 'string' ? m.id : '';
-          const to = typeof m.to === 'string' ? m.to : '';
-          const text = typeof m.text === 'string' ? m.text : '';
-          void this.relayOut(id, to, text);
-          return;
-        }
-        // The picker just opened: a list that is a second old can still say
-        // "idle" for a chat that started a run. Ask the registry now.
-        if (m.type === 'peers-refresh') {
-          this.notifyPeers(true);
-          return;
-        }
         if (m.type === 'ask' && typeof m.text === 'string') {
           // consume now
           const attach = this.pendingAttachments.splice(0);
@@ -2258,9 +2145,13 @@ class ChatHost {
     this.push({
       k: 'msg',
       cls: 'in',
-      who: `From ${from.name}`,
+      who: message.reply ? `Reply from ${from.name}` : `From ${from.name}`,
       text,
       from: hostWordOf(from.host),
+      // D49cq (amended): kept on the row so a later run replays the answer with
+      // the reply header — the exchange is over, and the model must know that
+      // then too, not only in the run that received it.
+      ...(message.reply ? { reply: true } : {}),
     });
     if (this.busy) {
       this.pendingInbound.push(message);
@@ -2269,6 +2160,7 @@ class ChatHost {
         text,
         name: from.name,
         host: from.host,
+        reply: message.reply,
         started: false,
         queued: true,
       });
@@ -2279,11 +2171,13 @@ class ChatHost {
       text,
       name: from.name,
       host: from.host,
+      reply: message.reply,
       started: true,
       queued: false,
     });
     this.startRun(inboundTask(message), {
-      origin: 'session',
+      origin: message.reply ? 'reply' : 'session',
+      originFrom: { id: from.id, name: from.name },
       summary: `↳ from ${from.name}: ${text}`,
     });
     return 'started';
@@ -2305,94 +2199,21 @@ class ChatHost {
       text: next.text,
       name: next.from.name,
       host: next.from.host,
+      reply: next.reply,
       started: true,
       queued: false,
       row: false,
     });
     this.startRun(inboundTask(next), {
-      origin: 'session',
+      origin: next.reply ? 'reply' : 'session',
+      originFrom: { id: next.from.id, name: next.from.name },
       summary: `↳ from ${next.from.name}: ${next.text}`,
     });
   }
 
-  /** D49cq: the registry's view of the other live sessions, for the picker. */
-  notifyPeers(force = false): void {
-    if (!this.opts.capabilities.relay) return;
-    if (this.live === undefined) {
-      void this.panel.webview.postMessage({ type: 'peers', peers: [] });
-      return;
-    }
-    if (this.peersInFlight) {
-      this.peersAgain = true;
-      return;
-    }
-    if (!force && Date.now() - this.peersAt < 1000) return;
-    this.peersInFlight = true;
-    void (async () => {
-      let peers: SessionPeer[] = [];
-      try {
-        peers = await this.live!.list();
-      } catch {
-        peers = [];
-      }
-      this.peersInFlight = false;
-      this.peersAt = Date.now();
-      // `list()` never returns this chat: the transport knows the caller's id.
-      void this.panel.webview.postMessage({
-        type: 'peers',
-        peers: peers.map((p) => ({
-          id: p.id,
-          name: p.name,
-          busy: p.busy,
-          host: p.host,
-          summary: p.summary,
-        })),
-      });
-      if (this.peersAgain) {
-        this.peersAgain = false;
-        this.notifyPeers(true);
-      }
-    })();
-  }
-
-  /**
-   * D49cq: the user's own send, from the shell's picker. The outcome goes back
-   * to the row that asked, so "sent", "queued" and "refused" are never guessed
-   * by the page.
-   */
-  private async relayOut(id: string, to: string, text: string): Promise<void> {
-    const answer = (body: Record<string, unknown>): void => {
-      void this.panel.webview.postMessage({ type: 'relay-result', text: body });
-    };
-    if (!this.opts.capabilities.relay || this.live === undefined) {
-      answer({ id, ok: false, reason: 'unavailable' });
-      return;
-    }
-    if (to.trim().length === 0 || text.trim().length === 0) {
-      answer({ id, ok: false, reason: 'empty' });
-      return;
-    }
-    try {
-      const res = await this.live.send(to, text);
-      answer(
-        res.ok
-          ? { id, ok: true, status: res.status, to: res.to.name, host: res.to.host }
-          : { id, ok: false, reason: res.reason, detail: res.detail ?? '' },
-      );
-    } catch (e) {
-      answer({
-        id,
-        ok: false,
-        reason: 'error',
-        detail: e instanceof Error ? e.message : 'error',
-      });
-    }
-  }
-
-  /** D49cq: publish title, mode and busy wherever the peer list can see them. */
+  /** D49cq: publish the title, task, mode and busy state to the registry. */
   private stateChanged(): void {
     this.live?.refresh();
-    this.opts.onStateChange?.();
   }
 
   /** Message rows, for the History page's per-tab count. */
@@ -4094,48 +3915,28 @@ class ChatHost {
       ts: string;
       count: number;
       current?: boolean;
-      live?: boolean;
-      tabId?: string;
     }[] = this.sessions().map((s) => ({
       id: s.id,
       title: s.title,
       ts: s.ts,
       count: s.log.filter((e) => e.k === 'msg').length,
     }));
-    const open = this.opts.tabs?.list(this.tabId);
-    if (open !== undefined) {
-      // Every open conversation is a History entry, the current one first.
-      // "Current" returns to the chat; another row brings its panel forward;
-      // a stored row resumes in this tab.
-      const rows = [...open].sort(
-        (a, b) => Number(b.current) - Number(a.current),
-      );
-      chats.unshift(
-        ...rows.map((t) => ({
-          id: `__tab__${t.id}`,
-          tabId: t.id,
-          title: t.name,
-          ts: new Date().toISOString(),
-          count: t.count,
-          current: t.current,
-          live: true,
-        })),
-      );
-    } else {
-      // A host without tabs (Visual Studio) has one live conversation.
-      const curMsgs = this.log.filter((e) => e.k === 'msg').length;
-      if (curMsgs > 0) {
-        const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
-        chats.unshift({
-          id: '__current__',
-          title:
-            this.chatTitle ||
-            ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
-          ts: new Date().toISOString(),
-          count: curMsgs,
-          current: true,
-        });
-      }
+    // This conversation, then the saved ones. Open conversations are editor
+    // tabs now, and that is where they are switched between: a History page
+    // that also listed them made the list a third thing to read (Open (2),
+    // Open, saved…) and the founder could not tell what he was looking at.
+    const curMsgs = this.log.filter((e) => e.k === 'msg').length;
+    if (curMsgs > 0) {
+      const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
+      chats.unshift({
+        id: '__current__',
+        title:
+          this.chatTitle ||
+          ((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80),
+        ts: new Date().toISOString(),
+        count: curMsgs,
+        current: true,
+      });
     }
     void this.panel.webview.postMessage({
       type: 'history',
@@ -4620,6 +4421,14 @@ class ChatHost {
     // through and ran two runs at once.
     if (this.runInFlight) return;
     this.runInFlight = true;
+    // D49cq: the registry must say BUSY from here, not from the moment the run
+    // reaches the wire. `receive()` already queues for the whole preparation
+    // window (`runInFlight`), and preparation is not instant — it reads the key,
+    // may fetch the model pool, and starts MCP servers (up to 20 s each). With-
+    // out this write a peer lists the chat as idle, sends, and is told the
+    // message was queued: the exact contradiction the founder met. Publishing
+    // the same flag that decides the queueing is what makes the two agree.
+    this.live?.refresh();
     this.runPromise = this.run(task, ctx).finally(() => {
       this.runInFlight = false;
       // D49cq: the registry's busy flag was last written inside the run's own
@@ -5234,10 +5043,21 @@ class ChatHost {
           : {
               sessions: {
                 list: () => this.live!.list(),
-                send: (to: string, text: string) => this.live!.send(to, text),
+                // D49cq (amended): the reply flag rides the send. Dropping it
+                // would make a reply arrive as a fresh message, and the chain
+                // could continue instead of ending where it must.
+                send: (to: string, text: string, options?: { reply?: boolean }) =>
+                  this.live!.send(to, text, options),
               },
             }),
-        ...(ctx.origin === 'session' ? { origin: ctx.origin } : {}),
+        // D49cq (amended): where the task came from decides what the run may
+        // send — a user run sends; a session run answers its sender once; a
+        // reply run does not send at all. Core owns the rule; the host supplies
+        // the sender, without which core offers no reply tool.
+        ...(ctx.origin === 'session' || ctx.origin === 'reply'
+          ? { origin: ctx.origin }
+          : {}),
+        ...(ctx.originFrom === undefined ? {} : { originFrom: ctx.originFrom }),
         approve: (req) => this.approve(req),
         getMode: () => this.mode,
         // D49cb: the model can ask; the user's card is what changes anything.

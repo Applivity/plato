@@ -40,7 +40,8 @@
       },
       {
         "command": "plato.newChat",
-        "title": "Plato: New Chat"
+        "title": "Plato: New Chat",
+        "icon": "$(add)"
       },
       {
         "command": "plato.manageKeys",
@@ -79,6 +80,13 @@
           "command": "plato.newChat",
           "group": "navigation@2",
           "when": "view == plato.chats"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "plato.newChat",
+          "group": "navigation@1",
+          "when": "activeWebviewPanelId == 'platoChat'"
         }
       ],
       "commandPalette": [
