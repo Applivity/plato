@@ -14,6 +14,7 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -187,6 +188,35 @@ async function setScript(steps, needles = [], modelsDelayMs = 0) {
 /** What the model was actually asked — the harness's second witness. */
 async function stubLog() {
   return (await fetch(`${STUB}/__log`)).json();
+}
+
+/**
+ * Waits for a live session named `name` in THIS workspace's registry.
+ *
+ * The chat's title is generated after the run, so the name it is addressable by
+ * is not knowable at send time — it is waited for rather than guessed at. The
+ * `cwd` filter keeps a founder's own open window out of the answer.
+ */
+async function waitForLiveEntry(name, timeoutMs = 20000) {
+  const dir = join(homedir(), '.plato', 'live');
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.json')) continue;
+        try {
+          const e = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+          if (e.name === name && e.cwd === DEMO_REPO) return e;
+        } catch {
+          /* mid-write */
+        }
+      }
+    } catch {
+      /* no registry yet */
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
 }
 
 /**
@@ -2000,7 +2030,7 @@ describe('Plato field tests — real VS Code', function () {
    * the activity-bar container the founder could not see.
    */
   if (only.length === 0 || only.includes(39)) {
-    it('case 39 — the new-chat button is in the editor title bar, only on Plato', async () => {
+    it('case 39 — the Plato mark is in every editor title bar and opens a new chat', async () => {
       const titleActions = async () => {
         await field.webview.switchBack();
         return await field.driver.executeScript(`
@@ -2015,10 +2045,8 @@ describe('Plato field tests — real VS Code', function () {
       const hasNewChat = (actions) => actions.some((a) =>
         (a.label + ' ' + a.title).includes('Plato: New Chat'));
 
-      // The per-case wrapper has just opened a fresh chat and left the driver
-      // inside it, so there is nothing to open. Read the title bar of THAT
-      // chat: driving the command palette here was one more thing that could
-      // time out with a full suite's worth of tabs open.
+      // A Plato tab carries it. The `when` clause must keep it there after the
+      // plain-file case below is added.
       const onChat = await titleActions();
       if (!hasNewChat(onChat)) {
         throw new Error(
@@ -2041,44 +2069,38 @@ describe('Plato field tests — real VS Code', function () {
         );
       }
 
-      // Clicking it opens another chat — the button is wired, not decorative.
+      // A PLAIN FILE carries it too — the founder's rule: the mark is on every
+      // open editor, the way Claude Code's icon is, and it is how a tab is
+      // made. Open the file from the Explorer: a plain click on it, which is
+      // what a person does. Quick open and the tester's openEditor both proved
+      // unreliable from a workbench left by a click.
       await field.webview.switchBack();
-      const before = await field.activeEditorLabel();
-      await field.driver.executeScript(`
-        const a = [...document.querySelectorAll('.editor-actions .action-label, .editorTitle .action-label')]
-          .find((x) => ((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || '')).includes('Plato: New Chat'));
-        a.click();
-      `);
-      await field.driver.sleep(1500);
-      const after = await field.activeEditorLabel();
-      if (after === before) {
-        throw new Error(`TITLE BAR: the button did not open a new chat ("${before}")`);
-      }
-      // No frame entry: everything left to check is in the WORKBENCH, and
-      // entering a just-created webview with a suite's worth of iframes around
-      // is the step that timed out, not any assertion about the button.
-
-      // A plain file editor must NOT carry it. Return to the top document
-      // explicitly: the tester's EditorView queries the workbench the moment it
-      // is built, and a frame context left over from the click makes that query
-      // fail with "no such element: .monaco-workbench".
-      try {
-        await field.webview.switchBack();
-      } catch {
-        /* already at the top level */
-      }
       await field.driver.switchTo().defaultContent();
-      // A frame context left over from the click would make the next workbench
-      // lookup fail for a reason that has nothing to do with the title bar.
-      const top = await field.driver.executeScript(
-        "return !!document.querySelector('.monaco-workbench');",
-      );
-      if (top !== true) {
-        throw new Error('TITLE BAR: the driver is not at the workbench after the click');
+      // Show the Explorer by clicking its icon. The command palette is NOT
+      // used: with a webview editor active the tester's prompt can stall for
+      // five seconds, which is a harness fault that reads as a product
+      // failure. The icon TOGGLES its container, so it is clicked only while
+      // the tree is absent — clicking an open Explorer would hide it.
+      const explorerShown = async () =>
+        (await field.driver
+          .executeScript(`
+            const side = document.querySelector('.part.sidebar');
+            if (!side || side.getBoundingClientRect().width < 50) return false;
+            return document.querySelectorAll('.part.sidebar .monaco-list-row').length > 0;
+          `)
+          .catch(() => false)) === true;
+      for (let attempt = 0; attempt < 3 && !(await explorerShown()); attempt += 1) {
+        // A TRUSTED click: VS Code listens for real mouse events on the
+        // activity bar, so a JS-dispatched click there is ignored.
+        const { ActivityBar } = await import('vscode-extension-tester');
+        const control = await new ActivityBar().getViewControl('Explorer');
+        if (!control) throw new Error('TITLE BAR: the Explorer icon is not in the activity bar');
+        await field.clickElement(control);
+        await field.driver.sleep(900);
       }
-      // Open it from the Explorer: a plain click on the file, which is what a
-      // person does. Quick open and the tester's openEditor both proved
-      // unreliable from a workbench left by the click above.
+      if (!(await explorerShown())) {
+        throw new Error('TITLE BAR: the Explorer could not be shown');
+      }
       const clickedFile = await field.driver.executeScript(`
         const rows = [...document.querySelectorAll('.monaco-list-row')];
         const row = rows.find((r) =>
@@ -2091,26 +2113,37 @@ describe('Plato field tests — real VS Code', function () {
       if (!clickedFile || !(await field.activeEditorLabel()).includes('settings.gradle')) {
         throw new Error('TITLE BAR: the plain file editor did not open');
       }
-      const onFile = await field.driver.executeScript(`
-        return [...document.querySelectorAll(
-          '.editor-actions .action-label, .editorTitle .action-label, .editor-title .action-label'
-        )].map((a) => ({
-          label: a.getAttribute('aria-label') || '',
-          title: a.getAttribute('title') || '',
-        }));
-      `);
-      if (hasNewChat(onFile)) {
-        throw new Error('TITLE BAR: the Plato button is on a plain file editor');
+      const onFile = await titleActions();
+      if (!hasNewChat(onFile)) {
+        throw new Error('TITLE BAR: the Plato mark is missing on a plain file editor');
       }
       await field.shot('case-39-file-editor');
 
+      // Clicking the mark ON THE FILE opens a new chat tab.
+      const before = await field.activeEditorLabel();
+      await field.driver.executeScript(`
+        const a = [...document.querySelectorAll('.editor-actions .action-label, .editorTitle .action-label')]
+          .find((x) => ((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || '')).includes('Plato: New Chat'));
+        a.click();
+      `);
+      await field.driver.sleep(1500);
+      const after = await field.activeEditorLabel();
+      if (after === before || !/plato/i.test(after)) {
+        throw new Error(
+          `TITLE BAR: the mark on a file did not open a new chat ("${before}" → "${after}")`,
+        );
+      }
+      // The new conversation is a Plato tab, and it carries the mark as well.
+      const onNewChat = await titleActions();
+      if (!hasNewChat(onNewChat)) {
+        throw new Error(
+          `TITLE BAR: the new chat tab lost the mark (saw: ${JSON.stringify(onNewChat)})`,
+        );
+      }
+
       // Leave a chat in front for whatever runs after this one: close the file
-      // tab we opened, which re-activates the chat beside it. Running the Open
-      // Chat command here would need the command palette, and the case has
-      // already proved what it needed to.
-      await field.driver.executeScript(
-        "document.querySelector('.tab.active .tab-actions-right .action-label, .tab.active .close-action')?.click();",
-      ).catch(() => undefined);
+      // tab, which re-activates the new chat beside it.
+      await field.closeTabByLabel('settings.gradle', { notActive: true }).catch(() => undefined);
       await field.driver.sleep(900);
 
       MANIFEST.push({
@@ -2118,12 +2151,12 @@ describe('Plato field tests — real VS Code', function () {
         run: 1,
         mode: 'auto',
         orchestration: 'solo',
-        title: 'New chat in the editor title bar, only on Plato; the activity bar has its container',
+        title: 'The Plato mark is on a Plato tab and on a plain file, and opens a new chat',
         transcript: '',
         transcriptOk: true,
         screenFailures: [],
       });
-      console.log('  case 39: title-bar new-chat appears on Plato only; activity bar lists Plato');
+      console.log('  case 39: the Plato mark is on a plain file and on a Plato tab; a click opens a new chat');
     });
   }
 
@@ -2287,6 +2320,208 @@ describe('Plato field tests — real VS Code', function () {
         screenFailures: [],
       });
       console.log('  case 40: B replied once to A, A could not send again, and the window labels the answer');
+    });
+  }
+
+  /**
+   * The activity-bar container is a CHAT WINDOW again, not a list of
+   * sessions — the founder's words: "we can simple restore chat panel here."
+   *
+   * Four things are proved here, in the order a person meets them:
+   *   - the view is the composer, with no "+" in its header;
+   *   - it runs a conversation from its own composer;
+   *   - it is a live session a tab can address by name, through the model;
+   *   - hiding it and showing it again keeps the conversation, because the view
+   *     is hidden and not disposed.
+   */
+  if (only.length === 0 || only.includes(41)) {
+    it('case 41 — the activity bar is a chat that keeps its conversation and can be addressed', async () => {
+      await field.newChat();
+      field.cardsSeen = [];
+      field.decisions = [];
+
+      // The container's own command — the same one its icon runs.
+      await field.openSidebarChat();
+      await field.switchToSidebarFrame();
+      const shape = await field.driver.executeScript(`
+        return {
+          q: !!document.getElementById('q'),
+          go: !!document.getElementById('go'),
+          neu: !!document.getElementById('new'),
+          tabs: document.body.getAttribute('data-plato-tabs'),
+        };
+      `);
+      if (!shape.q || !shape.go) {
+        throw new Error(`SIDEBAR: the view is not a chat (saw ${JSON.stringify(shape)})`);
+      }
+      if (shape.neu) {
+        throw new Error('SIDEBAR: the chat still draws a "+" in its header');
+      }
+      if (shape.tabs !== 'false') {
+        throw new Error(`SIDEBAR: the view thinks it has tabs (data-plato-tabs=${shape.tabs})`);
+      }
+
+      // It is a conversation: it runs from its own composer.
+      await field.setMode('auto');
+      await setScript([{ match: 'TAB SIDE: hello', text: 'S: hello.' }]);
+      const beforeSide = await field.send('TAB SIDE: hello');
+      const sideEvents = await field.waitRunEnd(beforeSide, { tag: 'sidebar' });
+      if (!sideEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('SIDEBAR: its run did not complete');
+      }
+      await field.shot('case-41-sidebar-chat');
+
+      // The conversation title becomes its address. Waited for, not guessed at:
+      // the title call happens after the run.
+      const title = 'TAB SIDE: hello';
+      const entry = await waitForLiveEntry(title);
+      if (entry === null) {
+        throw new Error(`SIDEBAR: no live session named "${title}" is registered`);
+      }
+      if (entry.host !== 'vscode') {
+        throw new Error(`SIDEBAR: it is registered as "${entry.host}", not a VS Code chat`);
+      }
+
+      // Hidden and shown again. The view must survive this with its
+      // conversation intact — that is what makes it a window and not a list.
+      await field.hideSidebarChat();
+      await field.openSidebarChat();
+      await field.switchToSidebarFrame();
+      // The page may be the retained one or a rebuilt one; a rebuilt page asks
+      // the host for its log on 'ready', so the conversation is waited for
+      // rather than sampled once.
+      const restoreDeadline = Date.now() + 10000;
+      let again = { q: false, log: '' };
+      while (Date.now() < restoreDeadline) {
+        again = await field.driver.executeScript(`
+          return {
+            q: !!document.getElementById('q'),
+            log: (document.getElementById('log') || {}).textContent || '',
+          };
+        `);
+        if (again.q && String(again.log).includes(title)) break;
+        await field.driver.sleep(250);
+      }
+      if (!again.q) {
+        throw new Error('SIDEBAR: the composer is gone after hide/show');
+      }
+      if (!again.log.includes(title)) {
+        throw new Error(
+          `SIDEBAR: the conversation was lost across hide/show (log: "${
+            String(again.log).replace(/\s+/g, ' ').slice(0, 160)
+          }")`,
+        );
+      }
+
+      // A tab addresses it by name, through the model — the messaging feature,
+      // not a test-side shortcut.
+      await field.webview.switchBack();
+      await field.switchToChatFrame();
+      await field.setMode('auto');
+      await setScript([
+        { match: 'TAB A: list sessions', calls: [{ tool: 'list_sessions', args: {} }] },
+        { match: 'TAB A: list sessions', text: 'A: listed.' },
+        {
+          match: 'TAB A: message the sidebar',
+          calls: [
+            {
+              tool: 'send_to_session',
+              args: { to: title, text: 'TAB SIDE: from A' },
+            },
+          ],
+        },
+        { match: 'TAB A: message the sidebar', text: 'A: sent.' },
+        { match: 'TAB SIDE: from A', text: 'S: got it.' },
+      ]);
+
+      /** The tool results the model was shown in the last turn for `prompt`. */
+      const resultsFor = async (prompt) => {
+        const log = await stubLog();
+        const hits = log.log.filter((e) => {
+          if (Number(e.toolsOffered) <= 0) return false;
+          const texts = (e.userTexts || []).map(String).filter((t) => t.length > 0);
+          return String(texts[texts.length - 1] || '').includes(prompt);
+        });
+        const turn = hits[hits.length - 1];
+        return turn === undefined
+          ? ''
+          : (turn.toolResults || []).map((r) => String(r.head || '')).join('\n');
+      };
+      const waitForRun = async (before, needle, timeoutMs = 120000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          for (const f of field.transcripts().filter((x) => !before.has(x))) {
+            const first = readFileSync(f, 'utf8').split('\n')[0] || '{}';
+            let task = '';
+            try {
+              task = String(JSON.parse(first).task || '');
+            } catch {
+              task = '';
+            }
+            if (task.includes(needle)) return f;
+          }
+          await field.driver.sleep(250);
+        }
+        throw new Error(`SIDEBAR: no run appeared for "${needle}"`);
+      };
+
+      const listBefore = await field.send('TAB A: list sessions');
+      const listRun = await waitForRun(listBefore, 'TAB A: list sessions');
+      await field.waitRunTerminal(listRun, 90000);
+      const listed = await resultsFor('TAB A: list sessions');
+      if (!listed.includes(title)) {
+        throw new Error(`SIDEBAR: the model's session list does not name it:\n${listed}`);
+      }
+
+      const inboundBefore = new Set(field.transcripts());
+      const sendBefore = await field.send('TAB A: message the sidebar');
+      const sendRun = await waitForRun(sendBefore, 'TAB A: message the sidebar');
+      await field.waitRunTerminal(sendRun, 90000);
+      const delivered = await resultsFor('TAB A: message the sidebar');
+      if (!delivered.includes('delivered to')) {
+        throw new Error(`SIDEBAR: the send did not reach it:\n${delivered}`);
+      }
+      const inboundRun = await waitForRun(inboundBefore, 'TAB SIDE: from A');
+      const inboundEvents = await field.waitRunTerminal(inboundRun, 90000);
+      if (!inboundEvents.some((e) => e.type === 'run-completed')) {
+        throw new Error('SIDEBAR: the run started by the message never completed');
+      }
+      if (!readFileSync(inboundRun, 'utf8').includes('Message from another Plato session')) {
+        throw new Error('SIDEBAR: the inbound run was not told where the task came from');
+      }
+
+      // And the window shows it, named as a message from the other session.
+      await field.webview.switchBack();
+      await field.switchToSidebarFrame();
+      const seen = await field.logText();
+      if (!seen.includes('TAB SIDE: from A')) {
+        throw new Error(
+          `SIDEBAR: the message never appeared (log: "${seen
+            .replace(/\s+/g, ' ')
+            .slice(0, 160)}")`,
+        );
+      }
+      // The shell uppercases the row's label through CSS, and getText returns
+      // the RENDERED text, so this must not be case-sensitive.
+      if (!/from\s/i.test(seen)) {
+        throw new Error(
+          `SIDEBAR: the row does not name a sender (log: "${seen
+            .replace(/\s+/g, ' ')
+            .slice(0, 400)}")`,
+        );
+      }
+
+      MANIFEST.push({
+        case: 41,
+        run: 1,
+        mode: 'auto',
+        orchestration: 'solo',
+        title: 'The activity bar is a chat that keeps its conversation and can be addressed',
+        transcript: inboundRun,
+        transcriptOk: true,
+        screenFailures: [],
+      });
+      console.log('  case 41: the sidebar is a chat, survives hide/show, and a tab messaged it by name');
     });
   }
 

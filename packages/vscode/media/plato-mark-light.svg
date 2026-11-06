@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!--
+    Athena's owl, for the PLATO MARK in an editor's title bar on a LIGHT theme.
+    The same path data as plato.svg, with a fixed colour: an <img> does not
+    inherit currentColor, so the activity bar's copy cannot be reused here.
+    plato.svg itself is left untouched — the activity bar still recolours it.
+  -->
+  <path fill="#424242" d="M4.4 6.6 L3.6 0.6 L9.2 3.4 Z"/>
+  <path fill="#424242" d="M19.6 6.6 L20.4 0.6 L14.8 3.4 Z"/>
+  <path
+    fill="#424242"
+    fill-rule="evenodd"
+    d="M12 2.6 C6.4 2.6 3.6 6.6 3.6 11.2 L3.6 15.8 C3.6 19.4 7.0 21.6 12 21.6 C17.0 21.6 20.4 19.4 20.4 15.8 L20.4 11.2 C20.4 6.6 17.6 2.6 12 2.6 Z M8.4 7.2 a3.4 3.4 0 1 0 0 6.8 a3.4 3.4 0 1 0 0 -6.8 z M8.4 9.1 a1.5 1.5 0 1 0 0 3 a1.5 1.5 0 1 0 0 -3 z M15.6 7.2 a3.4 3.4 0 1 0 0 6.8 a3.4 3.4 0 1 0 0 -6.8 z M15.6 9.1 a1.5 1.5 0 1 0 0 3 a1.5 1.5 0 1 0 0 -3 z"
+  />
+  <path fill="#424242" d="M12 13.2 L14.0 16.6 L10.0 16.6 Z"/>
+</svg>

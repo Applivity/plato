@@ -157,6 +157,20 @@ try {
 
   await host.execute('plato.openChat');
   assert.ok(transport.html.includes('<title>Plato</title>'), 'chat HTML');
+  // The Visual Studio window has no editor title bar to hold a new-chat
+  // button, so its own header keeps one: the shim states no `newChat`
+  // capability and the shell draws the chip unless a host says false. This
+  // asserts the flag the page's script reads and the chip's markup. The
+  // script's removal for VS Code, and this chip's survival here, run only in
+  // a WebView2; no test below claims to witness the drawn header.
+  assert.ok(
+    transport.html.includes('data-plato-new="true"'),
+    'the Visual Studio window keeps the header new-chat chip',
+  );
+  assert.ok(
+    transport.html.includes('id="new"'),
+    'the new-chat chip is still in the chat markup',
+  );
   host.receive({ type: 'ready' });
   await waitPost((m) => m.type === 'restore', 'restore');
 

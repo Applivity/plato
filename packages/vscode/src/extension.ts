@@ -287,6 +287,84 @@ function readStringList(cfg: vscode.WorkspaceConfiguration, key: string): string
   return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [];
 }
 
+/**
+ * One chat's surface, whichever kind of view hosts it.
+ *
+ * The conversation does not care whether it lives in an editor tab or in the
+ * activity-bar view: it posts to `webview`, follows a title, and needs to know
+ * when it was shown and when it was disposed. The two adapters below are the
+ * whole of the difference, and `ChatHost` sees only this interface.
+ */
+interface ChatSurface {
+  readonly webview: vscode.Webview;
+  title: string;
+  readonly active: boolean;
+  reveal(preserveFocus?: boolean): void;
+  /** The listener's return value is passed back: the Visual Studio shim awaits it. */
+  onDispose(fn: () => void | Promise<void>): void;
+  /** Called when this surface becomes the one on screen. */
+  onActive(fn: () => void): void;
+}
+
+function tabSurface(panel: vscode.WebviewPanel): ChatSurface {
+  return {
+    webview: panel.webview,
+    get title(): string {
+      return panel.title;
+    },
+    set title(value: string) {
+      panel.title = value;
+    },
+    get active(): boolean {
+      return panel.active;
+    },
+    reveal(preserveFocus?: boolean): void {
+      panel.reveal(undefined, preserveFocus);
+    },
+    onDispose(fn: () => void | Promise<void>): void {
+      // Return the promise: the Visual Studio shim holds its sidecar open until
+      // the archive is written. VS Code ignores the return value.
+      panel.onDidDispose(() => fn());
+    },
+    onActive(fn: () => void): void {
+      // A host shim may not implement view-state events (the Visual Studio one
+      // does not). That only costs the focus memory; it must not break opening.
+      if (typeof panel.onDidChangeViewState !== 'function') return;
+      panel.onDidChangeViewState((e) => {
+        if (e.webviewPanel.active) fn();
+      });
+    },
+  };
+}
+
+function sideSurface(view: vscode.WebviewView): ChatSurface {
+  return {
+    webview: view.webview,
+    get title(): string {
+      return view.title ?? '';
+    },
+    set title(_value: string) {
+      // The view's name is its contribution ("Chat"), and renaming the
+      // container after the first message would make the activity bar follow a
+      // conversation. The conversation's own title is drawn inside the page.
+    },
+    get active(): boolean {
+      return view.visible;
+    },
+    reveal(preserveFocus?: boolean): void {
+      view.show(preserveFocus);
+    },
+    onDispose(fn: () => void | Promise<void>): void {
+      view.onDidDispose(() => fn());
+    },
+    onActive(fn: () => void): void {
+      view.onDidChangeVisibility(() => {
+        if (view.visible) fn();
+      });
+    },
+  };
+}
+
 export function activate(ctx: vscode.ExtensionContext): void {
   const caps = hostCapabilities(ctx);
   // The open conversations of this window. Each entry owns its own panel and
@@ -294,7 +372,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // process they run in.
   interface OpenTab {
     id: string;
-    panel: vscode.WebviewPanel;
+    panel: ChatSurface;
     host: ChatHost;
     lastFocusedAt: number;
   }
@@ -303,11 +381,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
   // keeps `openTab` from adopting it back during that window.
   const closing = new Set<string>();
   let lastActiveTabId: string | null = null;
-  // The legacy conversation is moved into tab one before any tab is built.
-  const tabsReady = migrateChatKeys(ctx);
-  // D49bq: the activity-bar list re-reads the stored chats when it is shown, and
-  // once the panel has closed — which is when a conversation is archived.
-  const chatsChanged = new vscode.EventEmitter<void>();
+  // The legacy conversation is moved into the activity-bar chat before any
+  // surface is built.
+  const tabsReady = migrateChatKeys(ctx, caps.tabs);
 
   const mostRecent = (): OpenTab | undefined => {
     let newest: OpenTab | undefined;
@@ -338,32 +414,49 @@ export function activate(ctx: vscode.ExtensionContext): void {
   const newTabId = (): string =>
     `t-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-  /** "Plato", then the smallest unused "Plato N" while a chat has no title. */
+  /**
+   * The smallest unused "Plato N". The bare name "Plato" belongs to the
+   * activity-bar chat — the one conversation that is always there — so a tab
+   * never takes it: two sessions under one name would make the send picker
+   * ambiguous at the moment it matters.
+   */
   const fallbackName = (): string => {
-    if (tabs.size === 0) return 'Plato';
-    const used = new Set([...tabs.values()].map((t) => t.host.displayName));
+    const used = new Set([
+      SIDE_NAME,
+      ...[...tabs.values()].map((t) => t.host.displayName),
+    ]);
     let n = 2;
     while (used.has(`Plato ${n}`)) n += 1;
     return `Plato ${n}`;
   };
 
+  /**
+   * Build a chat on a surface. `indexed` is what makes it a TAB: an entry in
+   * the stored index and in `tabs`, which is what `activeTab()`, the command
+   * and the serializer target. The activity-bar chat is not indexed — it is the
+   * one conversation that is always there — so its stored log, title and mode
+   * survive the view's disposal and come back with it.
+   */
   async function attach(
-    panel: vscode.WebviewPanel,
+    surface: ChatSurface,
     tabId: string,
+    opts: { indexed: boolean; caps: ChatCaps },
   ): Promise<OpenTab> {
     await tabsReady;
-    const index = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
-    if (!index.some((t) => t.id === tabId)) {
-      index.push({ id: tabId, createdAt: Date.now() });
-      await ctx.workspaceState.update(TAB_INDEX_KEY, index);
+    if (opts.indexed) {
+      const index = ctx.workspaceState.get<TabRecord[]>(TAB_INDEX_KEY, []);
+      if (!index.some((t) => t.id === tabId)) {
+        index.push({ id: tabId, createdAt: Date.now() });
+        await ctx.workspaceState.update(TAB_INDEX_KEY, index);
+      }
     }
-    panel.webview.html = chatHtml(caps);
-    const host = new ChatHost(panel, ctx, tabId, {
-      displayName: fallbackName(),
+    surface.webview.html = chatHtml(opts.caps);
+    const host = new ChatHost(surface, ctx, tabId, {
+      displayName: opts.indexed ? fallbackName() : SIDE_NAME,
       newTab: () => {
         void openTab(undefined, { fresh: true });
       },
-      capabilities: caps,
+      capabilities: opts.caps,
     });
     // D49cq: one endpoint per CHAT, not per window. The delivery callback is
     // this host's own `receive`, so a message for this conversation starts a
@@ -388,26 +481,27 @@ export function activate(ctx: vscode.ExtensionContext): void {
     }
     const entry: OpenTab = {
       id: tabId,
-      panel,
+      panel: surface,
       host,
       lastFocusedAt: Date.now(),
     };
-    tabs.set(tabId, entry);
-    lastActiveTabId = tabId;
-    // A host shim may not implement view-state events (the Visual Studio one
-    // does not). That only costs the focus memory; it must not break opening.
-    if (typeof panel.onDidChangeViewState === 'function') {
-      panel.onDidChangeViewState((e) => {
-        if (e.webviewPanel.active) {
-          lastActiveTabId = tabId;
-          entry.lastFocusedAt = Date.now();
-        }
+    if (opts.indexed) {
+      tabs.set(tabId, entry);
+      lastActiveTabId = tabId;
+      surface.onActive(() => {
+        lastActiveTabId = tabId;
+        entry.lastFocusedAt = Date.now();
       });
     }
-    // The fix that makes closing safe for every tab, not only the tracked one:
-    // this listener belongs to THIS panel, so its host always cancels, awaits
-    // and archives its own conversation (D41 + D49bn).
-    panel.onDidDispose(() => {
+    // The fix that makes closing safe for every chat: this listener belongs to
+    // THIS surface, so its host always cancels, awaits and archives its own
+    // conversation (D41 + D49bn).
+    surface.onDispose(() => {
+      if (!opts.indexed) {
+        // The activity-bar chat's own store — log, title and mode — stays put,
+        // so the view that replaces this one continues the conversation.
+        return host.dispose();
+      }
       tabs.delete(tabId);
       closing.add(tabId);
       if (lastActiveTabId === tabId) {
@@ -415,7 +509,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
       }
       // Returning the promise lets the Visual Studio shim hold its sidecar open
       // until the archive is written; VS Code ignores the return value. Every
-      // panel returns it, so the guarantee covers any window, not one tracked
+      // surface returns it, so the guarantee covers any window, not one tracked
       // panel.
       return (async () => {
         await host.dispose();
@@ -429,11 +523,9 @@ export function activate(ctx: vscode.ExtensionContext): void {
         await ctx.workspaceState.update(tabTitleKey(tabId), undefined);
         await ctx.workspaceState.update(tabModeKey(tabId), undefined);
         closing.delete(tabId);
-        chatsChanged.fire();
       })();
     });
     host.sweepTranscripts();
-    chatsChanged.fire();
     return entry;
   }
 
@@ -480,7 +572,10 @@ export function activate(ctx: vscode.ExtensionContext): void {
         retainContextWhenHidden: true,
       },
     );
-    return attach(panel, tabId ?? newTabId());
+    return attach(tabSurface(panel), tabId ?? newTabId(), {
+      indexed: true,
+      caps,
+    });
   }
 
   setTimeout(reclaimDeadProjects, 0);
@@ -611,41 +706,41 @@ export function activate(ctx: vscode.ExtensionContext): void {
     }),
   );
 
-  // D49bq: the activity-bar launcher. It opens the panel; it is not the panel.
-  // The open chats are listed above the stored ones; a tab that is open but
-  // unsaved is still a conversation the user can reach.
-  const chats = new PlatoChatsProvider(ctx, chatsChanged);
-  const tree = vscode.window.createTreeView('plato.chats', {
-    treeDataProvider: chats,
-  });
-  // The stored list changes while the view is hidden — a chat is archived when
-  // the panel closes — so re-read it every time the view is shown.
-  tree.onDidChangeVisibility((e) => {
-    if (e.visible) {
-      chatsChanged.fire();
-    }
-  });
-  // The provider itself owns nothing to release.
-  ctx.subscriptions.push(tree, chatsChanged);
-
-  ctx.subscriptions.push(
-    vscode.commands.registerCommand('plato.resumeChat', async (id?: unknown) => {
-      if (typeof id !== 'string') {
-        return;
-      }
-      if (!caps.tabs) {
-        // One surface: resume in place, as before.
-        const t = activeTab() ?? (await openTab());
-        await t.host.resumeSession(id);
-        return;
-      }
-      // A stored chat is its own conversation, so it gets its own tab. The
-      // History page inside a tab resumes in place instead — that is the
-      // user's choice of surface, and the two must not disagree.
-      const t = await openTab(undefined, { fresh: true });
-      await t.host.resumeSession(id);
-    }),
-  );
+  // The activity-bar container is a CHAT again, not a list of sessions.
+  // It is its own conversation — independent of every editor tab, and
+  // addressable by the messaging feature like one — and it is the only surface
+  // that carries the bare name "Plato". Saved chats stay one click away in the
+  // History page inside it.
+  //
+  // Registered only where tabs exist and the API is present, so the Visual
+  // Studio shim (one tool window, its own host) is untouched.
+  if (
+    caps.tabs &&
+    typeof vscode.window.registerWebviewViewProvider === 'function'
+  ) {
+    ctx.subscriptions.push(
+      vscode.window.registerWebviewViewProvider(
+        'plato.chats',
+        {
+          resolveWebviewView: (view) => {
+            view.webview.options = { enableScripts: true };
+            void attach(sideSurface(view), SIDE_ID, {
+              indexed: false,
+              // No header chip: a new conversation is made from the Plato mark
+              // in an editor's title bar, and this view has no tab bar to hold
+              // another conversation.
+              caps: { ...caps, tabs: false },
+            });
+          },
+        },
+        // The DOM must survive the view being hidden, exactly as it does for a
+        // tab: the conversation is live, and it is the one that is always
+        // there. Without this, switching to Explorer and back would rebuild the
+        // page and lose the view of a run in flight.
+        { webviewOptions: { retainContextWhenHidden: true } },
+      ),
+    );
+  }
 
   // Reload restore: VS Code keeps the panel count and position, and asks us to
   // rebuild each one. The webview saved its tab id through setState, so the
@@ -670,7 +765,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
           existing.panel.reveal();
           return;
         }
-        await attach(panel, tabId);
+        await attach(tabSurface(panel), tabId, { indexed: true, caps });
       },
       }),
     );
@@ -710,6 +805,13 @@ const MODES: readonly Mode[] = ['plan', 'edit', 'auto'];
  */
 const TAB_INDEX_KEY = 'plato.chat.tabIndex';
 const TABS_MIGRATED_KEY = 'plato.chat.tabsMigrated';
+/**
+ * The activity-bar chat. A conversation with stored state like any tab,
+ * but not IN the tab index — it is the one surface that is always there. The
+ * bare name "Plato" belongs to it; a tab starts at "Plato 2".
+ */
+const SIDE_ID = 'side';
+const SIDE_NAME = 'Plato';
 const tabLogKey = (id: string): string => `plato.chat.${id}.log`;
 const tabTitleKey = (id: string): string => `plato.chat.${id}.title`;
 const tabModeKey = (id: string): string => `plato.chat.${id}.mode`;
@@ -735,12 +837,23 @@ function hostCapabilities(ctx?: unknown): ChatCaps {
     fromContext ??
     (globalThis as { __platoCaps?: Partial<ChatCaps> }).__platoCaps;
   if (raw === undefined) {
-    return { tabs: true, relay: true, noun: 'tab', host: 'vscode' };
+    // VS Code opens a new conversation from the Plato mark in an
+    // editor's title bar, so its chat header does not draw a second one.
+    return {
+      tabs: true,
+      relay: true,
+      noun: 'tab',
+      newChat: false,
+      host: 'vscode',
+    };
   }
   return {
     tabs: raw.tabs === true,
     relay: raw.relay === true,
     noun: raw.noun === 'window' ? 'window' : 'tab',
+    // The Visual Studio shim sets no such field, and its tool window has no
+    // title bar of its own to put the mark in — so it keeps the header chip.
+    newChat: raw.newChat === false ? false : true,
     // D49cq: which host this process is, for the live-session registry. Not a
     // rendering switch — the shell never reads it.
     host: raw.host === 'vs' ? 'vs' : raw.host === 'cli' ? 'cli' : 'vscode',
@@ -783,10 +896,23 @@ function queueSessionsWrite(task: () => Promise<void>): Promise<void> {
 }
 
 /**
- * Move the pre-tab conversation into tab one, once. The legacy keys stay where
- * they are as a recovery copy; nothing reads them after the marker exists.
+ * Move the pre-tab conversation off the legacy keys, once. The legacy keys
+ * stay where they are as a recovery copy; nothing reads them after the marker
+ * exists.
+ *
+ * Where it moves to depends on the host. A window with the activity-bar chat
+ * puts it there, and deliberately NOT in the tab index: the index is the list
+ * of editor tabs, and that chat is not one. A host without that view (Visual
+ * Studio's single tool window) keeps the 0.27 behaviour — a "legacy" tab the
+ * next `openChat` adopts — because the only surface it has is that window. A
+ * window that already ran 0.27.0 keeps the legacy tab it made either way: the
+ * marker stops this path, and moving it now would leave the serializer
+ * restoring a duplicate.
  */
-async function migrateChatKeys(ctx: vscode.ExtensionContext): Promise<void> {
+async function migrateChatKeys(
+  ctx: vscode.ExtensionContext,
+  tabsAvailable: boolean,
+): Promise<void> {
   if (ctx.workspaceState.get<boolean>(TABS_MIGRATED_KEY, false)) {
     return;
   }
@@ -797,13 +923,15 @@ async function migrateChatKeys(ctx: vscode.ExtensionContext): Promise<void> {
     const legacyMode = ctx.workspaceState.get<string>(MODE_KEY, 'edit');
     const hasMode = ctx.workspaceState.get<string>(MODE_KEY) !== undefined;
     if (legacyLog.length > 0 || legacyTitle.length > 0 || hasMode) {
-      const id = 'legacy';
+      const id = tabsAvailable ? SIDE_ID : 'legacy';
       await ctx.workspaceState.update(tabLogKey(id), legacyLog);
       await ctx.workspaceState.update(tabTitleKey(id), legacyTitle);
       await ctx.workspaceState.update(tabModeKey(id), legacyMode);
-      await ctx.workspaceState.update(TAB_INDEX_KEY, [
-        { id, createdAt: Date.now() },
-      ]);
+      if (!tabsAvailable) {
+        await ctx.workspaceState.update(TAB_INDEX_KEY, [
+          { id, createdAt: Date.now() },
+        ]);
+      }
     }
   }
   await ctx.workspaceState.update(TABS_MIGRATED_KEY, true);
@@ -814,93 +942,6 @@ interface StoredChat {
   title: string;
   ts: string;
   log: Entry[];
-}
-
-/** A short "when" for the sidebar rows. The exact minute stops mattering fast. */
-function whenLabel(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return '';
-  }
-  const mins = Math.floor((Date.now() - d.getTime()) / 60_000);
-  if (mins < 1) {
-    return 'just now';
-  }
-  if (mins < 60) {
-    return `${mins} min ago`;
-  }
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) {
-    return `${hours} h ago`;
-  }
-  return d.toLocaleDateString();
-}
-
-/**
- * D49bq: the activity-bar launcher — Plato's presence beside Git, Search and
- * Extensions.
- *
- * A TREE, not a second webview: it takes the theme's colours for free, carries
- * no script surface, and every row is a command, so nothing here is reachable
- * only by clicking. It lists the two ways into the chat and the chats that are
- * already stored.
- *
- * It is deliberately NOT the chat itself. The conversation stays an editor tab,
- * because the run controls are built on the panel lifecycle (D49bn) — see that
- * decision for the alternative that was left open.
- */
-class PlatoChatsProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
-  constructor(
-    private readonly ctx: vscode.ExtensionContext,
-    private readonly changed: vscode.EventEmitter<void>,
-  ) {}
-
-  // A getter, not a field: the emitter is a constructor parameter property, and
-  // field initializers run before the constructor body assigns it.
-  get onDidChangeTreeData(): vscode.Event<void> {
-    return this.changed.event;
-  }
-
-  getTreeItem(el: vscode.TreeItem): vscode.TreeItem {
-    return el;
-  }
-
-  getChildren(el?: vscode.TreeItem): vscode.TreeItem[] {
-    // Every row is a leaf: there is nothing to expand.
-    if (el !== undefined) {
-      return [];
-    }
-    const rows: vscode.TreeItem[] = [
-      this.action('Open Chat', 'plato.openChat', 'comment-discussion'),
-      this.action('New Chat', 'plato.newChat', 'add'),
-    ];
-    for (const s of this.sessions().slice(0, 12)) {
-      const row = new vscode.TreeItem(
-        s.title && s.title.trim().length > 0 ? s.title : 'Untitled chat',
-        vscode.TreeItemCollapsibleState.None,
-      );
-      row.description = whenLabel(s.ts);
-      row.iconPath = new vscode.ThemeIcon('history');
-      row.command = {
-        command: 'plato.resumeChat',
-        title: 'Open this chat',
-        arguments: [s.id],
-      };
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  private sessions(): StoredChat[] {
-    return this.ctx.workspaceState.get<StoredChat[]>(SESSIONS_KEY, []);
-  }
-
-  private action(label: string, command: string, icon: string): vscode.TreeItem {
-    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-    item.command = { command, title: label };
-    item.iconPath = new vscode.ThemeIcon(icon);
-    return item;
-  }
 }
 
 /**
@@ -1251,7 +1292,7 @@ class ChatHost {
     // conversation goes back in front. Naming it is what makes that reliable —
     // closing the tab we opened was not, and a backgrounded chat is a chat the
     // user (and the field harness) can no longer reach.
-    this.panel.reveal(undefined, true);
+    this.panel.reveal(true);
   });
   /** D49av: what was known before the write in flight — see `onToolEvent`. */
   private pendingDiag: DiagSnapshot | null = null;
@@ -1268,7 +1309,7 @@ class ChatHost {
   private readonly pendingInbound: InboundMessage[] = [];
 
   constructor(
-    private readonly panel: vscode.WebviewPanel,
+    private readonly panel: ChatSurface,
     private readonly ctx: vscode.ExtensionContext,
     private readonly tabId: string,
     private readonly opts: ChatHostOptions,

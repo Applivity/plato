@@ -1,6 +1,6 @@
 {
   "name": "plato",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "An AI coding agent that plans in the open, takes your direction mid-run, and asks before it changes your code.",
@@ -18,7 +18,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onWebviewPanel:platoChat"
+    "onWebviewPanel:platoChat",
+    "onView:plato.chats"
   ],
   "main": "./dist/extension.js",
   "scripts": {
@@ -26,7 +27,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-0.27.0.vsix --force"
+    "install:vsix": "code --install-extension plato-0.28.0.vsix --force"
   },
   "contributes": {
     "commands": [
@@ -41,15 +42,14 @@
       {
         "command": "plato.newChat",
         "title": "Plato: New Chat",
-        "icon": "$(add)"
+        "icon": {
+          "light": "media/plato-mark-light.svg",
+          "dark": "media/plato-mark-dark.svg"
+        }
       },
       {
         "command": "plato.manageKeys",
         "title": "Plato: Manage API Keys"
-      },
-      {
-        "command": "plato.resumeChat",
-        "title": "Plato: Open a saved chat"
       }
     ],
     "viewsContainers": {
@@ -65,34 +65,17 @@
       "plato": [
         {
           "id": "plato.chats",
-          "name": "Chats"
+          "name": "Chat",
+          "type": "webview"
         }
       ]
     },
     "menus": {
-      "view/title": [
-        {
-          "command": "plato.openChat",
-          "group": "navigation@1",
-          "when": "view == plato.chats"
-        },
-        {
-          "command": "plato.newChat",
-          "group": "navigation@2",
-          "when": "view == plato.chats"
-        }
-      ],
       "editor/title": [
         {
           "command": "plato.newChat",
           "group": "navigation@1",
-          "when": "activeWebviewPanelId == 'platoChat'"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "plato.resumeChat",
-          "when": "false"
+          "when": "resourceScheme == file || activeWebviewPanelId == 'platoChat'"
         }
       ]
     },

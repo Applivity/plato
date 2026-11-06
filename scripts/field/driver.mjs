@@ -52,6 +52,13 @@ export class Field {
     this.watchLines = 0;
     /** The prompt of the run in progress, so `newChat` can prove the chat reset. */
     this.lastPrompt = null;
+    /**
+     * Which webview the driver last entered — 'chat' (an editor tab) or
+     * 'side' (the activity-bar view). `clearToasts` must leave a frame to reach
+     * the workbench, and before this it always came back to an editor tab, so a
+     * sidebar case silently sent its next prompt to the tab behind it.
+     */
+    this.frameTarget = null;
   }
 
   async enter(inFrame = true) {
@@ -106,6 +113,7 @@ export class Field {
         const active = await this.driver.findElements(By.id('active-frame'));
         if (active.length > 0) {
           await this.driver.switchTo().frame(active[0]);
+          this.frameTarget = 'chat';
           return;
         }
         await this.driver.switchTo().defaultContent();
@@ -119,6 +127,7 @@ export class Field {
     }
     try {
       await this.webview.switchToFrame(3000);
+      this.frameTarget = 'chat';
       return;
     } catch {
       this.log('  the tester could not enter the webview — trying the document fallback');
@@ -173,6 +182,7 @@ export class Field {
             const active = await this.driver.findElements(By.id('active-frame'));
             if (active.length > 0) {
               await this.driver.switchTo().frame(active[0]);
+              this.frameTarget = 'chat';
               this.log('  entered the webview through the document fallback');
               return;
             }
@@ -190,6 +200,96 @@ export class Field {
     }
     throw new Error(
       `no chat iframe appeared within ${timeoutMs}ms (iframes seen: ${seen})`,
+    );
+  }
+
+  /**
+   * Enters the activity-bar chat's frame.
+   *
+   * `switchToChatFrame` prefers the active EDITOR group, which is the right
+   * chat when the conversation is a tab — but the sidebar lives in a different
+   * part of the document, so entering it needs its own lookup.
+   */
+  async switchToSidebarFrame(timeoutMs = 15000) {
+    const deadline = Date.now() + timeoutMs;
+    let seen = 0;
+    while (Date.now() < deadline) {
+      try {
+        await this.driver.switchTo().defaultContent();
+      } catch {
+        /* already at the top level */
+      }
+      // The view's iframe is NOT a child of `.part.sidebar` in this build: the
+      // webview is hosted outside the part tree. Geometry is the reliable
+      // discriminator — the editor's own frame is the one INSIDE the editor
+      // part, and a view's frame (sidebar or auxiliary bar) is outside it.
+      seen = Number(
+        await this.driver
+          .executeScript(`
+            document.querySelectorAll('iframe[data-plato-side]')
+              .forEach((f) => f.removeAttribute('data-plato-side'));
+            const editor = document.querySelector('.part.editor');
+            if (!editor) return 0;
+            const e = editor.getBoundingClientRect();
+            const outside = [...document.querySelectorAll('iframe')].filter((f) => {
+              const r = f.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) return false;
+              const inside =
+                r.x >= e.x - 1 && r.x + r.width <= e.x + e.width + 1 &&
+                r.y >= e.y - 1 && r.y + r.height <= e.y + e.height + 1;
+              return !inside;
+            });
+            if (outside.length === 0) return 0;
+            // The largest is the chat; a small one would be another view.
+            outside.sort((a, b) => {
+              const ra = a.getBoundingClientRect();
+              const rb = b.getBoundingClientRect();
+              return ra.width * ra.height - rb.width * rb.height;
+            });
+            outside[outside.length - 1].setAttribute('data-plato-side', '1');
+            return outside.length;
+          `)
+          .catch(() => 0),
+      );
+      if (seen > 0) {
+        try {
+          const frame = await this.driver.findElement(
+            By.css('iframe[data-plato-side="1"]'),
+          );
+          await this.driver.switchTo().frame(frame);
+          const active = await this.driver.findElements(By.id('active-frame'));
+          if (active.length > 0) {
+            await this.driver.switchTo().frame(active[0]);
+          }
+          // Both shapes are valid: some VS Code builds render the content one
+          // frame down, and the caller's own composer check says which arrived.
+          this.frameTarget = 'side';
+          return;
+        } catch {
+          try {
+            await this.driver.switchTo().defaultContent();
+          } catch {
+            /* nothing to reset */
+          }
+        }
+      }
+      await this.driver.sleep(250);
+    }
+    const diag = await this.driver
+      .executeScript(`
+        const parts = [...document.querySelectorAll('.part')].map((p) => ({
+          cls: String(p.className),
+          iframes: p.querySelectorAll('iframe').length,
+        }));
+        const all = [...document.querySelectorAll('iframe')].map((f) => {
+          const r = f.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+        });
+        return { parts, all };
+      `)
+      .catch((e) => ({ error: String(e) }));
+    throw new Error(
+      `no sidebar chat iframe appeared within ${timeoutMs}ms (iframes seen: ${seen}; dom: ${JSON.stringify(diag)})`,
     );
   }
 
@@ -227,13 +327,20 @@ export class Field {
    */
   async clearToasts() {
     const { NotificationsCenter } = await import('vscode-extension-tester');
+    const back = this.frameTarget;
     await this.webview.switchBack();
     try {
       await new NotificationsCenter().clearAllNotifications();
     } catch {
       // Nothing showing, or the center is unreachable — carry on either way.
     }
-    await this.switchToChatFrame();
+    // Come back to the surface the driver was on. A sidebar case that
+    // came back to an editor tab sent its next prompt to the tab behind it.
+    if (back === 'side') {
+      await this.switchToSidebarFrame();
+    } else {
+      await this.switchToChatFrame();
+    }
   }
 
   /**
@@ -260,18 +367,103 @@ export class Field {
     await this.driver.sleep(3000);
   }
 
+  /** Whether an activity-bar container is the one on screen. */
+  async viewSelected(name) {
+    const { ActivityBar } = await import('vscode-extension-tester');
+    const control = await new ActivityBar().getViewControl(name);
+    if (!control) return false;
+    const klass = String((await control.getAttribute('class')) ?? '');
+    return klass.includes('checked');
+  }
+
+  /**
+   * Shows the activity-bar chat by opening its container, the way the
+   * activity-bar icon does. `openView` clicks only when the container is not
+   * already the active one, and a trusted click is used — VS Code listens for
+   * real mouse events on the activity bar, so a JS-dispatched click there is
+   * ignored.
+   */
+  async openSidebarChat() {
+    const { ActivityBar } = await import('vscode-extension-tester');
+    await this.webview.switchBack();
+    const control = await new ActivityBar().getViewControl('Plato');
+    if (!control) throw new Error('the Plato view container is not in the activity bar');
+    await control.openView();
+    await this.driver.sleep(900);
+    if (!(await this.viewSelected('Plato'))) {
+      throw new Error('the Plato activity-bar view could not be shown');
+    }
+  }
+
+  /**
+   * Shows a different activity-bar container. Plato's view is now hidden — not
+   * disposed — which is the state its conversation must survive.
+   */
+  async hideSidebarChat() {
+    const { ActivityBar } = await import('vscode-extension-tester');
+    await this.webview.switchBack();
+    const control = await new ActivityBar().getViewControl('Explorer');
+    if (!control) throw new Error('the Explorer view container is not in the activity bar');
+    await control.openView();
+    await this.driver.sleep(900);
+    if (await this.viewSelected('Plato')) {
+      throw new Error('the Plato activity-bar view did not hide');
+    }
+  }
+
+  /**
+   * Opens a new chat the way a person does — the Plato mark in the
+   * editor's title bar.
+   *
+   * The command palette is NOT used first. With a webview editor active, the
+   * tester's command prompt sends F1 to the active TAB, and that key can be
+   * swallowed while the page repaints: the observed failure is a five-second
+   * "Waiting until element is visible" inside the prompt, after which every
+   * later case fails the same way. A click on the mark is the same command by
+   * the real affordance, and it does not depend on keyboard focus. The command
+   * remains the fallback for a window with no editor at all.
+   */
+  async startNewChat() {
+    await this.webview.switchBack();
+    // Prefer the ACTIVE group's mark. A split window has one action row per
+    // group, and the first in document order is not necessarily the active
+    // one.
+    const clicked = await this.driver
+      .executeScript(`
+        const groups = [...document.querySelectorAll('.editor-group-container')];
+        const active = groups.find((g) => g.classList.contains('active'));
+        const pools = active ? [active] : groups;
+        for (const pool of pools) {
+          const a = [...pool.querySelectorAll('.editor-actions .action-label, .editorTitle .action-label, .editor-title .action-label')]
+            .find((x) =>
+              ((x.getAttribute('aria-label') || '') + ' ' + (x.getAttribute('title') || ''))
+                .includes('Plato: New Chat'));
+          if (a) { a.click(); return true; }
+        }
+        return false;
+      `)
+      .catch(() => false);
+    if (clicked) {
+      this.log('  new chat: clicked the Plato mark');
+      return;
+    }
+    this.log('  new chat: no mark on screen — using the command');
+    const { Workbench } = await import('vscode-extension-tester');
+    await new Workbench().executeCommand('Plato: New Chat');
+  }
+
   async newChat() {
     // D49az: start from a clean surface, whatever the previous case left behind.
     // See `settleUi` for the failing acceptance run that put this here.
     await this.settleUi();
-    // With tabs, "+ new" opens ANOTHER conversation and leaves this one open.
-    // Remember which tab that is: the suite wants one clean surface per case,
-    // so the old tab is closed afterwards — close-and-open is exactly how the
-    // product says to clear a conversation, and it keeps per-case isolation.
+    // The "+" inside the chat header is gone; the title-bar mark is how
+    // a new conversation is opened. Remember which tab is left behind: the
+    // suite wants one clean surface per case, so the old tab is closed
+    // afterwards — close-and-open is exactly how the product says to clear a
+    // conversation, and it keeps per-case isolation.
     await this.webview.switchBack();
     const oldLabel = await this.activeEditorLabel();
-    await this.switchToChatFrame();
-    await this.clickElement(await this.driver.findElement(By.id('new')));
+    await this.startNewChat();
     await this.driver.sleep(700);
     // A host without tabs asks before discarding a conversation. That dialog is
     // VS Code's own modal, so it lives in the workbench DOM and NOT inside the
@@ -1054,20 +1246,22 @@ export class Field {
   }
 
   /**
-   * With tabs, the header's "+ new" opens another conversation and leaves this
-   * one open. Returns the label of the tab that was left behind. Leaves the
-   * driver at top level; the caller enters the new frame.
+   * A new conversation opens in ANOTHER tab and leaves this one open. Returns
+   * the label of the tab that was left behind. Leaves the driver at top level;
+   * the caller enters the new frame.
    */
   async openNewTab() {
     await this.webview.switchBack();
     const oldLabel = await this.activeEditorLabel();
+    // A toast can sit over the title bar's action area too; clear it first.
+    await this.clearToasts();
     // The old conversation's iframe can still be the only iframe in the
     // document for a moment after the new tab opens; entering it would type
     // into the wrong conversation. Mark it and wait for it to go.
+    await this.webview.switchBack();
     await this.markCurrentFrames();
-    await this.switchToChatFrame();
-    await this.clearToasts();
-    await this.clickElement(await this.driver.findElement(By.id('new')));
+    // The header's "+" is gone; the title-bar mark is the control.
+    await this.startNewChat();
     await this.driver.sleep(1200);
     await this.webview.switchBack();
     if (oldLabel) await this.waitForActiveLabelChange(oldLabel);

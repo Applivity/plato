@@ -14,6 +14,15 @@ export interface ChatCaps {
   relay: boolean;
   noun: 'tab' | 'window';
   /**
+   * Whether the chat's own header offers "new chat". VS Code says no: a new
+   * conversation there is opened from the Plato button in an editor's title
+   * bar, and a second "+" beside the composer was the confusing control the
+   * founder asked to remove. The Visual Studio tool window has no title bar of
+   * its own to put that button in, so it keeps the one in the header — which is
+   * why this is a capability and not a fact about the shell.
+   */
+  newChat?: boolean;
+  /**
    * D49cq: which host this window is, for the live-session registry. The
    * extension defaults to `vscode`; the Visual Studio shim says `vs` on the
    * context it builds. It is not a rendering switch — the shell never reads it.
@@ -1296,7 +1305,7 @@ export function chatHtml(
   .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
 </style>
 </head>
-<body data-plato-tabs="${caps.tabs}" data-plato-relay="${caps.relay}" data-plato-noun="${caps.noun}">
+<body data-plato-tabs="${caps.tabs}" data-plato-relay="${caps.relay}" data-plato-noun="${caps.noun}" data-plato-new="${caps.newChat !== false}">
 <header>
   <div class="hrow htop">
     <span class="brand">Plato</span>
@@ -1472,6 +1481,7 @@ export function chatHtml(
     tabs: capAttr('data-plato-tabs', 'true') === 'true',
     relay: capAttr('data-plato-relay', 'true') === 'true',
     noun: capAttr('data-plato-noun', 'tab') === 'window' ? 'window' : 'tab',
+    newChat: capAttr('data-plato-new', 'true') === 'true',
   };
   window.__platoCaps = CAPS;
   const log = document.getElementById('log');
@@ -2039,15 +2049,24 @@ export function chatHtml(
   // With tabs, "+ new" opens another conversation and this one stays open.
   // A window without them (Visual Studio) keeps the clearing behaviour, which
   // is the only sensible meaning of "new" when there is one surface.
-  document.getElementById('new').title = CAPS.tabs
-    ? 'Open a new chat tab'
-    : 'Start a new chat (clears this conversation)';
-  document.getElementById('new').addEventListener('click', () => {
-    // D44a: a fresh chat drops any chips. The host's newChat resets
-    // pendingAttachments and pendingHistory, so no attach-clear is needed.
-    clearChips();
-    vsapi.postMessage({ type: CAPS.tabs ? 'new-tab' : 'newChat' });
-  });
+  const newBtn = document.getElementById('new');
+  if (CAPS.newChat) {
+    newBtn.title = CAPS.tabs
+      ? 'Open a new chat tab'
+      : 'Start a new chat (clears this conversation)';
+    newBtn.addEventListener('click', () => {
+      // D44a: a fresh chat drops any chips. The host's newChat resets
+      // pendingAttachments and pendingHistory, so no attach-clear is needed.
+      clearChips();
+      vsapi.postMessage({ type: CAPS.tabs ? 'new-tab' : 'newChat' });
+    });
+  } else {
+    // VS Code: a new conversation is opened from the Plato button in an
+    // editor's title bar. A second one beside the composer is the control the
+    // founder called confusing, so this surface does not draw it — removed
+    // rather than hidden, so the status row keeps its width.
+    newBtn.remove();
+  }
   // D43: the empty state's CTA opens Settings → Providers (which
   // auto-opens the section when zero providers exist, D38b).
   document.getElementById('emptyCta').addEventListener('click', () => {
