@@ -7685,3 +7685,43 @@ fallback for a window with no editor at all. The sidebar's session is named
 **Plato** only until its first conversation is titled; after that the generated
 title is the name other sessions see.
 
+**D49cu — The Visual Studio browser is created on a real surface and repaired in place (2026-11-07).**
+
+A second Plato window on Visual Studio 2022 could be drawn with its browser
+missing: the core answered, the sidecar ran, and nothing was painted, with no
+exception. It is intermittent, it predates 0.2.0, and it does not occur on
+2026. No deterministic trigger was found. The decision has three parts and two
+recorded limits.
+
+- **Create the browser only on a real surface.** The element is created when
+  the pane is loaded, visible and has a non-zero size. A window Visual Studio
+  has not finished placing must not initialise against a surface that is later
+  replaced — that is the shape of the original fault.
+- **Detect a missing browser, and repair in place.** Every two seconds the
+  control checks that a browser child exists under its own pane. Two
+  consecutive misses rebuild the element on the same sidecar and navigate the
+  last HTML again, so the conversation, the live session and the registry entry
+  survive; the window is not recreated. Each repair writes one line to that
+  window's log: `view rebuilt: <reason>`, or
+  `view rebuild failed (<reason>): <exception>`.
+- **The repair path must be reachable on demand, and only in a debug build.**
+  `PLATO_VS_HEAL_TEST=<n>` tears the browser child out of a live pane n times
+  after it draws. It is read only when set; the product never sets it.
+- **Verified:** Windows 10 / Visual Studio 2022 against the packaged build —
+  two windows drawn side by side, the forced fault repaired in about three
+  seconds, two faults in a row left one pane, one sidecar and one browser
+  child, normal runs logged no repair, and 14 host suites pass at `971801b9`.
+- **Limit: the exact package has not been run on Visual Studio 2026.** The
+  repair path there was proven on a build that differs only by an unused
+  diagnostics class. The 2026 desktop session dropped and left Visual Studio
+  2026 wedged at its start window; that machine needs a manual close and reopen
+  before the final smoke.
+- **Limit: no deterministic trigger for the original fault was found.** The
+  detector now ships, so a recurrence will leave a line in that window's log
+  rather than a silent blank pane.
+
+The package is `Plato.Vs.0.2.0.vsix`, 33,315,032 bytes, SHA-256
+`9d9d6542…efad`, built from `971801b9`. The version stays 0.2.0 because it has
+never been published. Superseded builds remain listed and labelled:
+`c1adad86…` from `962b3549` and `29eee2d9…` from `bb7c508f`.
+
