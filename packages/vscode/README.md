@@ -30,9 +30,14 @@ Plato is pre-release.
 
 ## Several chats at once
 
-**＋ new** opens another chat. Each chat keeps its own conversation, mode, model
-and approvals, and closing one stops only its own run and files it in History.
-The sidebar lists what is open, and commands act on the chat you last used.
+**The Plato mark in an editor's title bar** opens another chat — it is on every
+open file and on every Plato chat. Each chat keeps its own conversation, mode,
+model and approvals, and closing one stops only its own run and files it in
+History.
+
+The activity bar holds a chat of its own. It is always there, it keeps its
+conversation when you switch to Explorer and back, and other chats can message
+it like any tab. It is called **Plato** until its first conversation is titled.
 
 ## Chats can message each other
 

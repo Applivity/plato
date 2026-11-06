@@ -21,10 +21,12 @@ something goes stale, fix it where it lives instead of restating it elsewhere.
 This file used to carry the whole D47 series and `D37 → D43` release notes; both
 are now only in PROGRESS.
 
-## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; **Visual Studio 2022 support added 2026-10-28 (D49cn)**; VS M2, M3a, M3b checkpoint 1 with its correction round, M3b checkpoints 2a and 2b and M4a verified 2026-10-24; M4b verified 2026-10-26 with acceptance, the New Chat confirmation fixed 2026-10-26 (D49cj), and the M5 packaging phase done 2026-10-26; M3 and M4 complete; **Visual Studio 0.1.5 and VS Code 0.26.11 are live as of 2026-11-02, both listings carrying real-model images**; **multiple chat tabs in VS Code, multiple Plato windows in Visual Studio, and session-to-session messaging are merged into `main` on 2026-11-05, with the send feature wired in the terminal only**)
+## Current state (product verified 2026-10-19; CLI direction added 2026-10-21; Visual Studio direction added 2026-10-23; **Visual Studio 2022 support added 2026-10-28 (D49cn)**; VS M2, M3a, M3b checkpoint 1 with its correction round, M3b checkpoints 2a and 2b and M4a verified 2026-10-24; M4b verified 2026-10-26 with acceptance, the New Chat confirmation fixed 2026-10-26 (D49cj), and the M5 packaging phase done 2026-10-26; M3 and M4 complete; **Visual Studio 0.1.5 and VS Code 0.26.11 are live as of 2026-11-02, both listings carrying real-model images**; **multiple chat tabs in VS Code, multiple Plato windows in Visual Studio, and session-to-session messaging are merged into `main` on 2026-11-05, with the send feature wired in every host**; **the activity bar is a chat of its own and a new conversation comes from the Plato mark in any editor's title bar, 2026-11-06 (D49ct)**)
 
 
-**Release checkpoint — 0.2.0 prepared, Visual Studio held for 2026 (2026-11-06).** Three packages are built and hashed in `plato-artifacts/`, all from `main` `bb7c508f` and all verified on that binary: VS Code **0.27.0** (155,331 bytes, `9836a2ae…`, field suite 38/38), CLI **0.2.0** (324,159 bytes, `7026dcad…`) and Visual Studio **0.2.0** (33,311,828 bytes, `29eee2d9…`, smoke-verified on 2022 and 2026). The versions moved before the field test, so the tested binary is the release binary; the VS Code package was rebuilt afterwards for its README and carries the **same** `dist/extension.js` hash. Sending from a Visual Studio window works with **no C# change** — one capability flag — and was field-verified on Visual Studio 2022. **Visual Studio 2026 is now verified** - the box was up; its firewall drops ICMP, so ping-based checks lied. The founder's UX follow-up and the reply path are in the same commit, so all three packages were rebuilt and re-verified afterwards. Evidence: `C:\src\plato-vs-field\evidence\messaging\`.
+**Chat-surface checkpoint — the activity bar is a chat, and the mark opens tabs (2026-11-06).** The founder's second pass on 0.27.0 is `main` `962b3549`, committed and not pushed, and the 0.28.0 package was built and field-tested from it. The activity-bar container holds **a conversation of its own** — no tree, no rows, no "+", the saved chats in its History page — registered as a live session like a tab, created when the view is first shown, and **hidden rather than disposed** so the conversation returns with it. **A new conversation is opened from the Plato mark in every editor's title bar** (any file, every Plato tab); the chat header's "+" is gone in VS Code, and the Visual Studio tool window keeps its chip because it has no title bar of its own — one `newChat` capability separates the hosts. The migration is host-aware: VS Code moves the pre-tab conversation into the activity-bar chat; a host without that view keeps the 0.27 legacy tab, because Visual Studio's history test proved the single-line version lost the conversation there. Evidence: `tsc -b` clean, all 28 render suites, **field 39/39** with cases 39 and 41 re-run on the exact 0.28.0 package, and Visual Studio 14/14 host suites; falsified by reverting the `when` clause (case 39 fails) and by giving the sidebar `newChat: true` (case 41 fails). The field harness now opens a chat by clicking the mark rather than the command palette, because the prompt stalls with a webview editor active. **Nothing is pushed or published.**
+
+**Release checkpoint — 0.2.0 prepared, Visual Studio held for 2026 (2026-11-06).** Three packages are built and hashed in `plato-artifacts/`. CLI **0.2.0** (324,159 bytes, `7026dcad…`) and Visual Studio **0.2.0** (33,311,828 bytes, `29eee2d9…`, smoke-verified on 2022 and 2026) are built from `main` `bb7c508f`. VS Code is now **0.28.0** from `962b3549` (156,433 bytes, `bfac006d…e59f`, field suite 39/39); its 0.27.0 predecessor (155,331 bytes, `9836a2ae…`, field suite 38/38) is superseded. The versions moved before the field test, so the tested binary is the release binary; the **0.27.0** package was rebuilt afterwards for its README and carried the **same** `dist/extension.js` hash. **The same rule now applies to 0.28.0:** the README text was corrected after that package was built, so it must be rebuilt before publishing if the correction ships — the code inside is unchanged, and the package currently in `plato-artifacts/` carries the older listing text. Sending from a Visual Studio window works with **no C# change** — one capability flag — and was field-verified on Visual Studio 2022. **Visual Studio 2026 is now verified** - the box was up; its firewall drops ICMP, so ping-based checks lied. The founder's UX follow-up and the reply path are in the same commit, so all three packages were rebuilt and re-verified afterwards. Evidence: `C:\src\plato-vs-field\evidence\messaging\`.
 **Session checkpoint — several chats, and sessions that can message each other (2026-11-05).** `main` now carries three changes that were built and verified separately and merged here: **independent chat tabs in VS Code**, **independent Plato windows in Visual Studio**, and **a live-session registry in the engine** with `list_sessions` and `send_to_session` for the CLI (D49cq, D49cr, D49cs). **Plan mode now asks before a send, with a card that names the target and shows the text (2026-11-05).** **The windows and the tabs are done. The send feature is wired in the terminal only** — the two GUI hosts carry the peer list and the incoming-message shape but have no send control and no delivery yet, which is the next task. The merge itself found three defects that neither branch could see: the first chat could be reported open before its HTML existed (the Visual Studio shim awaits the command), the Visual Studio tests asserted the old single-chat keys, and the shared model stub had been changed to derive every title, which broke the history test. All three are fixed and covered by the suites. **Nothing is pushed or published**; `main` is `41baf24a` locally, and `feat/sessions`, `feat/tabs` and `feat/vs-windows` are merged and can be deleted after the push. **One open defect:** field case 37 flaked once inside a full run under load and passed alone and in two further full runs afterwards; no diagnosis.
 
 **Session checkpoint — the listings carry real-model images (2026-11-02).** Both Marketplaces now show real screenshots. The six Visual Studio captures were replaced with runs on Windows 10 against DeepSeek `deepseek-flash` (Visual Studio 2026 18.11, extension 0.1.4, a clean `DemoClean` solution, exactly 1000×500); the earlier set was scripted and its panel header read `stub-model`. The packages that carry them are live and verified from the public endpoint: **Visual Studio 0.1.5**, 33,293,851 bytes, SHA-256 `411f3262…2923` (`lastUpdated` `2026-11-02T17:14:40Z`), and **VS Code 0.26.11**, 147,249 bytes, SHA-256 `53406f04…ddf3` (`2026-11-02T17:17:48Z`); both anonymous downloads are byte-identical to the built packages, after gunzipping the Visual Studio gallery's gzip encoding. **The one manual step in a Visual Studio release is its Overview:** that page takes its text and images from the description field in the publisher portal, not from the README inside the package, so a package cannot ship its own screenshots — the 0.1.5 upload showed the old text with no images until the three images were pasted into the portal, and they render from `raw.githubusercontent.com`, the same host the VS Code listing uses. VS Code needs no such step: it renders the packaged README. `docs/media` holds three of the six Visual Studio images by the README's choice, and a six-pair drift check against the live site, with the site's positional filenames recorded, is in `docs/media/README.md`.
@@ -390,22 +392,22 @@ are now only in PROGRESS.
   and, if it does it every time, fails the run** — a malformed server reported honestly, which is the
   intended trade.
 
-- **Plato has an entry in the activity bar, and the conversation is still an editor tab (D49bq,
-  2026-10-08).** The founder asked why there is no Plato icon beside Git, Search and Extensions. There
-  was none because the manifest contributed no `viewsContainers` and no `views`, and the chat is a
-  `WebviewPanel` in `ViewColumn.Beside` — an editor tab, like an open file. It now contributes a
-  container holding one view, **Chats**: **Open Chat**, **New Chat**, then up to twelve stored chats
-  with a relative time, each one click from being restored. **The icon is Athena's owl (D49bs)** —
-  chosen from twelve marks drawn and rendered at 104, 24 and 16 pixels, because the speech bubble it
-  replaced was the first pass and read as generic. **It is a tree, not a second webview** —
-  theme colours for free, no script surface, and every row is a command. **The chat itself was NOT
-  moved into the sidebar, and that is deferred rather than rejected:** the run controls are built on
-  the panel lifecycle (**closing the panel stops the run**, D49bn), and a `WebviewView` has a
-  different one, in which "closed" never happens — only hidden. D49bq records what that work would
-  need. **One guard came with it:** `resumeSession`, the shared restore path, now **refuses while a
-  run is active**, a state the webview's History never offered and the sidebar does. **Verified in a
-  real window:** the activity bar reads `[…,"Claude Code","Plato","Cline"]`, the view opens as
-  **PLATO: CH…**, and its rows read **["Open Chat","New Chat"]**.
+- **The activity bar is a chat of its own, and the Plato mark makes new tabs (D49ct, 2026-11-06;
+  it replaces D49bq's tree, 2026-10-08).** The founder asked for the container to be a chat window,
+  and rejected the list of sessions. It now holds **a conversation, not a tree**: no rows, no Open
+  Chat / New Chat entries and no "+", with the saved chats one click away in the History page inside
+  it. The icon is still Athena's owl (D49bs). **The activity-bar chat is a live session like any
+  tab** — `send_to_session` addresses it by name — and it carries the bare name **Plato** until its
+  first conversation is titled; a tab starts at "Plato 2". It is created when the view is first
+  shown, not at window start, and it is **hidden, not disposed**, so its conversation and a run in
+  flight come back when the container is shown again. **A new conversation is opened from the Plato
+  mark in every editor's title bar** — on any open file and on every Plato tab — and that click is
+  how tabs are made. The chat header's "+" is gone in VS Code; the Visual Studio tool window keeps
+  its chip because it has no title bar, and one `newChat` capability separates the hosts. **The
+  migration is host-aware:** a host with tabs moves the pre-tab conversation into the activity-bar
+  chat, while a host without that view keeps the 0.27 `legacy` tab, because the Visual Studio
+  history test proved the single-line version lost the conversation there. **One guard from D49bq
+  stays:** `resumeSession`, the shared restore path, **refuses while a run is active**.
 
 - **The VSIX ships only what runs (D49br, 2026-10-08).** Found while answering how to hand a build to
   someone: there was **no `.vscodeignore`**, so packaging shipped the entire TypeScript source tree,
@@ -1283,7 +1285,7 @@ before any of it is trusted:**
    you write the documentation. When in doubt about what he will see, unpack the VSIX and read
    the built file back rather than trusting the command's own success message.
 8. `node scripts/field/acceptance.mjs --run` — **the acceptance test (M4's definition of
-   done) AND the **30** live field cases it is built on — **38 runs**, since a case may carry
+   done) AND the **39** live field cases it is built on — **50 runs**, since a case may carry
    several, and the run count is what the acceptance test reports — driven automatically in a real
    VS Code through the real webview.** It packages a fresh VSIX, runs every case, and prints
    the eight clauses with a pass or fail each; it exits non-zero unless all eight pass.
@@ -1358,6 +1360,13 @@ through M5, the carried-forward mode request is built (D49cc), and its `0.1.0` t
 publish-ready (2026-10-21).** The remaining step is the founder's: `npm whoami`, the `applivity`
 organisation, and the first publish. The rest of this
 section is the recorded backlog, and each item needs a decision rather than a handover.
+
+**Waiting on the founder, at the head of the queue:** push `main`, **rebuild the VS Code package**
+because the README's chat text changed after `plato-0.28.0.vsix` was built, and publish it. The code
+is field-tested from `962b3549` (see the chat-surface checkpoint), and nothing in the activity-bar
+change waits on engineering; only the listing text in the package is older than the tree. The CLI
+and Visual Studio stay at 0.2.0 from `bb7c508f`; the Visual Studio tool window keeps its header chip
+under this change, so its package needs no rebuild to stay correct.
 
 **Tier C is complete.** The ordered capability list held three
 items and all three are built and verified end to end: editor diagnostics (D49av), bounding `auto`

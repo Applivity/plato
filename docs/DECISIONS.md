@@ -7619,3 +7619,64 @@ Rejected: one window with several conversations switched inside it — it needs
 the same per-conversation state work and loses the side-by-side view, so it is
 not cheaper.
 
+**D49ct — The activity bar is a chat, and the Plato mark makes new tabs (2026-11-06).**
+
+The founder's second pass on 0.27.0 has one sentence at its centre: the
+activity-bar container is a chat window, not a list of sessions. The decision
+has four parts, and two consequences follow from them.
+
+- **The activity bar is a CHAT, not a list.** D49bq put a tree there — Open
+  Chat, New Chat, and up to twelve saved chats as rows — and the founder has
+  rejected it. The container now holds the conversation itself: no tree, no
+  rows, no "+", and the saved chats stay one click away in the History page
+  inside it. **Do not reintroduce the list.** The change is subtractive: every
+  action the tree offered is reachable from the chat page, so removing the tree
+  removes a surface rather than a capability.
+- **A new conversation is opened from the Plato mark in an editor's title
+  bar — in EVERY editor.** The title-bar action's `when` clause is
+  `resourceScheme == file || activeWebviewPanelId == 'platoChat'`, so the same
+  mark is on a plain file and on every Plato tab. That click is how tabs are
+  made now, and the chat header's "+" is gone in VS Code — removed rather than
+  hidden, so the status row keeps its width. The founder's rule: the mark is on
+  every open editor, the way Claude Code's own icon is.
+- **The activity-bar chat is its own session, and it is created when the view
+  is first shown.** It registers with the live-session registry like a tab, so
+  `send_to_session` addresses it by name. It is also the conversation that
+  carries the bare name **Plato**; a tab starts at "Plato 2", so two sessions
+  never share the name a person uses to pick one. It is deliberately NOT in the
+  tab index: it is the one conversation that is always there, which is why its
+  log, title and mode survive the view's disposal. Registration is lazy because
+  a view that has never been shown has no page and nothing to register — the
+  first time the person opens the container, the session appears.
+- **The view is HIDDEN, not disposed.** `retainContextWhenHidden` is set, and
+  the dispose path keeps the side chat's store, so switching to Explorer and
+  back returns to the same conversation, including a run in flight. Without
+  this the page is rebuilt and the view of the run is lost.
+- **One capability separates the hosts: `newChat`.** VS Code states
+  `newChat: false` and its page removes the header chip. The Visual Studio tool
+  window states nothing and keeps the chip, because it has no editor title bar
+  to put the mark in. The capability answers "does this host have another
+  affordance for a new conversation", not "can this host start one" — both
+  hosts can.
+- **The migration is host-aware, and the Visual Studio history test is why.**
+  A host with tabs (VS Code) moves the pre-tab conversation into the
+  activity-bar chat and deliberately not into the tab index. A host without
+  that view (Visual Studio's single tool window) keeps the 0.27 behaviour — a
+  `legacy` tab the next `openChat` adopts — because the single-line version lost
+  the conversation there and its history test failed on exactly that.
+
+The code change is one interface, `ChatSurface`, with two small adapters (an
+editor panel and a webview view). `ChatHost` does not learn which kind of view
+hosts it, so the conversation, the run, the approvals and the live session keep
+one implementation.
+
+**Harness note, recorded because it will otherwise look like a product defect
+in the field log.** The field harness now opens a chat by clicking the title-bar
+mark, not through the command palette. With a webview editor active, the
+tester's command prompt sends the key to the tab and stalls for five seconds;
+after one stall every later case fails the same way. The click is the real
+affordance and does not depend on keyboard focus. The command remains the
+fallback for a window with no editor at all. The sidebar's session is named
+**Plato** only until its first conversation is titled; after that the generated
+title is the name other sessions see.
+
