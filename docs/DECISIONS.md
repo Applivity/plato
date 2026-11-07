@@ -7690,8 +7690,8 @@ title is the name other sessions see.
 A second Plato window on Visual Studio 2022 could be drawn with its browser
 missing: the core answered, the sidecar ran, and nothing was painted, with no
 exception. It is intermittent, it predates 0.2.0, and it does not occur on
-2026. No deterministic trigger was found. The decision has three parts and two
-recorded limits.
+2026. No deterministic trigger was found. The decision has three parts and one
+recorded limit.
 
 - **Create the browser only on a real surface.** The element is created when
   the pane is loaded, visible and has a non-zero size. A window Visual Studio
@@ -7711,11 +7711,12 @@ recorded limits.
   two windows drawn side by side, the forced fault repaired in about three
   seconds, two faults in a row left one pane, one sidecar and one browser
   child, normal runs logged no repair, and 14 host suites pass at `971801b9`.
-- **Limit: the exact package has not been run on Visual Studio 2026.** The
-  repair path there was proven on a build that differs only by an unused
-  diagnostics class. The 2026 desktop session dropped and left Visual Studio
-  2026 wedged at its start window; that machine needs a manual close and reopen
-  before the final smoke.
+- **Verified on Visual Studio 2026 (2026-11-07), on the exact package after a
+  fresh start.** Two windows opened with their own conversations; a message
+  arrived while a window was idle and one reply reached the sender; the window
+  drew its own new-chat control; and no window logged a repair, which is the
+  correct result for a normal run. The repair path there was proven earlier on
+  a build that differs only by an unused diagnostics class.
 - **Limit: no deterministic trigger for the original fault was found.** The
   detector now ships, so a recurrence will leave a line in that window's log
   rather than a silent blank pane.
@@ -7724,4 +7725,14 @@ The package is `Plato.Vs.0.2.0.vsix`, 33,315,032 bytes, SHA-256
 `9d9d6542…efad`, built from `971801b9`. The version stays 0.2.0 because it has
 never been published. Superseded builds remain listed and labelled:
 `c1adad86…` from `962b3549` and `29eee2d9…` from `bb7c508f`.
+
+**D49cv — A website brief names the registry query, not a version number (2026-11-07).**
+
+A brief for the off-machine website builder must name the query that returns
+the current version, not carry a version number. The brief that produced the
+2026-11-07 site update said Visual Studio 0.1.5 while 0.2.0 was already live;
+the builder queried the live source, found 0.2.0, and was right. A number copied into
+a brief goes stale between writing and use, and the builder cannot know it did.
+The brief names the query — the npm registry or the Marketplace — and the live
+page, not the builder's message, is the witness that the change landed.
 
