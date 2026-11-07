@@ -10,8 +10,18 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
-**Pre-release.** This is `0.1.5`. The core of the agent is the same code the
+**Pre-release.** This is `0.2.2`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
+
+**0.2.2** updates this README to the current version; no code changed.
+
+**0.2.1** adds the author and keywords the npm page shows; no code changed.
+
+**0.2.0** adds session messaging. A Plato session can list the other Plato
+sessions on this machine and send one a message. The receiver shows who asked,
+starts work if it is idle, and queues the message behind a run that is already
+going. One answer comes back, and the session that answered cannot send it
+onward.
 
 **0.1.5** adds the source link above; no behaviour changed.
 
