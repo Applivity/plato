@@ -7852,7 +7852,12 @@ does the obvious thing where it sits.
 - **The command palette and the menu:** they still ask before clearing. Those
   paths can be reached without the visible control and without warning.
 - **Visual Studio** has one surface, so its header mark keeps the clearing
-  behaviour.
+  behaviour, and it clears at once with no dialog under the same rule. **The
+  shipped 0.2.1 package had to be rebuilt for this:** the first build omitted
+  the flag and its mark still asked, so the rule is not satisfied by a shared
+  page alone — the host's capability set carries it. Verified on Visual Studio
+  2022 and 2026 on 2026-11-11: one click cleared, the conversation was listed
+  in History, and no second window opened.
 - A `newChatTab` capability tells the page which action to post. The page marks
   a click on the header control, and the host skips the confirmation question
   for that path only; the command and menu paths carry no such mark and still
