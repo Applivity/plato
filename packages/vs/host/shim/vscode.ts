@@ -450,11 +450,27 @@ async function withSharedLock<T>(
  * write was silently dropped. The check now also requires every id that was in
  * the file before the merge, and those entries are carried into the next
  * attempt if any of them vanishes.
+ *
+ * The merge alone restored anything a window had just deleted: incoming was
+ * merged with `existing`, so a chat removed from this window's list came back
+ * from disk. A deletion is now a tombstone — an id this window had seen and no
+ * longer lists — and the merge drops tombstoned ids from `incoming` and from
+ * `existing` alike. Tombstones live beside the list in the same file, are
+ * shared by every window, and are pruned after a week.
  */
 export class WorkspaceMemento {
   private static readonly SharedKey = 'plato.chatSessions';
+  /** Removed ids, as {id: ISO timestamp}. Internal to the shared file. */
+  private static readonly DeletedKey = 'plato.chatSessions.deleted';
+  private static readonly TombstoneMs = 7 * 24 * 60 * 60 * 1000;
 
   private readonly local: Memento;
+  /**
+   * The ids this window has listed. An id that leaves this set on an update is
+   * a deletion by THIS window, and only then is it tombstoned — a peer's chat
+   * that this window never saw must survive its "Delete all".
+   */
+  private seen = new Set<string>();
 
   constructor(
     localFile: string,
@@ -475,7 +491,13 @@ export class WorkspaceMemento {
     // Re-read rather than cache: another window may have archived since this
     // one started, and History must show it.
     const shared = readJson(this.sharedFile!);
-    return (key in shared ? shared[key] : defaultValue) as T;
+    const list = key in shared ? shared[key] : defaultValue;
+    if (Array.isArray(list)) {
+      this.seen = new Set(
+        (list as Array<{ id?: unknown }>).map((entry) => String(entry?.id)),
+      );
+    }
+    return list as T;
   }
 
   async update(key: string, value: unknown): Promise<void> {
@@ -498,12 +520,41 @@ export class WorkspaceMemento {
           : [];
         const incomingIds = new Set(incoming.map((entry) => entry?.id));
         const carryIds = new Set(carry.map((entry) => entry?.id));
+
+        // Tombstones: prune the old ones, then add this window's removals.
+        const now = Date.now();
+        const floor = now - WorkspaceMemento.TombstoneMs;
+        const stored =
+          disk[WorkspaceMemento.DeletedKey] !== null &&
+          typeof disk[WorkspaceMemento.DeletedKey] === 'object'
+            ? (disk[WorkspaceMemento.DeletedKey] as Record<string, unknown>)
+            : {};
+        const deleted: Record<string, string> = {};
+        for (const [id, at] of Object.entries(stored)) {
+          const when = typeof at === 'string' ? Date.parse(at) : NaN;
+          if (Number.isFinite(when) && when >= floor) {
+            deleted[id] = at as string;
+          }
+        }
+        for (const id of this.seen) {
+          if (!incomingIds.has(id)) {
+            deleted[id] = new Date(now).toISOString();
+          }
+        }
+        const deletedIds = new Set(Object.keys(deleted));
+
         const merged = [
-          ...incoming,
-          ...carry.filter((entry) => !incomingIds.has(entry?.id)),
+          ...incoming.filter((entry) => !deletedIds.has(String(entry?.id))),
+          ...carry.filter(
+            (entry) =>
+              !incomingIds.has(entry?.id) &&
+              !deletedIds.has(String(entry?.id)),
+          ),
           ...existing.filter(
             (entry) =>
-              !incomingIds.has(entry?.id) && !carryIds.has(entry?.id),
+              !incomingIds.has(entry?.id) &&
+              !carryIds.has(entry?.id) &&
+              !deletedIds.has(String(entry?.id)),
           ),
         ];
 
@@ -511,23 +562,31 @@ export class WorkspaceMemento {
           await sharedWriteHook();
         }
 
-        writeJson(file, { ...disk, [key]: merged });
+        writeJson(file, {
+          ...disk,
+          [key]: merged,
+          [WorkspaceMemento.DeletedKey]: deleted,
+        });
 
         const check = readJson(file);
         const written = Array.isArray(check[key])
           ? (check[key] as Array<{ id?: unknown }>)
           : [];
         const writtenIds = new Set(written.map((entry) => entry?.id));
-        const ownIdsKept = incoming.every((entry) =>
-          writtenIds.has(entry?.id),
+        const tombstoned = new Set(
+          Object.keys(
+            (check[WorkspaceMemento.DeletedKey] ?? {}) as Record<string, unknown>,
+          ),
         );
-        const carriedKept = carry.every((entry) =>
-          writtenIds.has(entry?.id),
-        );
-        const priorKept = existing.every((entry) =>
-          writtenIds.has(entry?.id),
-        );
+        const kept = (entry: { id?: unknown }): boolean =>
+          writtenIds.has(entry?.id) || tombstoned.has(String(entry?.id));
+        const ownIdsKept = incoming.every(kept);
+        const carriedKept = carry.every(kept);
+        const priorKept = existing.every(kept);
         if (ownIdsKept && carriedKept && priorKept) {
+          // This window's list is now exactly `incoming`: an id it no longer
+          // lists is a deletion for this window, not for a peer.
+          this.seen = new Set(incoming.map((entry) => String(entry?.id)));
           return;
         }
 
@@ -539,7 +598,8 @@ export class WorkspaceMemento {
         for (const entry of missing) {
           if (
             !carryIds.has(entry?.id) &&
-            !incomingIds.has(entry?.id)
+            !incomingIds.has(entry?.id) &&
+            !tombstoned.has(String(entry?.id))
           ) {
             carry.push(entry);
             carryIds.add(entry?.id);
@@ -555,7 +615,10 @@ export class WorkspaceMemento {
     const keys = new Set(this.local.keys());
     if (this.isShared) {
       for (const key of Object.keys(readJson(this.sharedFile!))) {
-        keys.add(key);
+        // The tombstone map is internal bookkeeping, not a workspace value.
+        if (key !== WorkspaceMemento.DeletedKey) {
+          keys.add(key);
+        }
       }
     }
     return [...keys];
