@@ -244,6 +244,55 @@ describe('one-shot host', () => {
     expect(raw).not.toContain('hello-from-file');
   });
 
+  it('sends a read image to the model, and never to the screen or the record', async () => {
+    const root = tempDir('plato-cli-host-root-');
+    const env = environment();
+    // A real 1x1 transparent PNG: the sniffing is on the bytes, so a fake
+    // signature would test the wrong thing.
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    writeFileSync(join(root, 'dot.png'), png);
+    const requests: TurnRequest[] = [];
+    const result = await run({
+      root,
+      env,
+      mode: 'auto',
+      provider: scripted(
+        [
+          { tool: { name: 'read_image', input: { path: 'dot.png' } } },
+          { text: 'It is a dot.' },
+        ],
+        (request) => requests.push(request),
+      ),
+    });
+
+    expect(result.code).toBe(0);
+    // The image rides the user turn that carries the tool result, as a content
+    // part of its own. Without the core dispatch this assertion fails: the tool
+    // is unknown, the result is an error, and no image part exists.
+    const base64 = png.toString('base64');
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('"type":"image"');
+    expect(sent).toContain(base64);
+
+    // The terminal names the file when the call starts, confirms it without
+    // repeating the target, and never echoes the bytes.
+    expect(result.err).toContain('→ looking at an image: dot.png');
+    expect(result.err).toContain('✓ looking at an image');
+    expect(result.out).not.toContain(base64);
+    expect(result.err).not.toContain(base64);
+
+    // The run record has the call and not the image.
+    const dir = runsDir(root, env);
+    const files = readdirSync(dir).filter((name) => name.endsWith('.jsonl'));
+    expect(files).toHaveLength(1);
+    const raw = readFileSync(join(dir, files[0] ?? ''), 'utf8');
+    expect(raw).toContain('read_image');
+    expect(raw).not.toContain(base64);
+  });
+
   it('refuses a write in plan mode', async () => {
     const root = tempDir('plato-cli-host-root-');
     const env = environment();
@@ -645,6 +694,12 @@ describe('the live tool trace', () => {
     expect(toolLine({ tool: 'shell', phase: 'allowed', args: { command: 'pnpm build' } })).toBe(
       '→ running a command: pnpm build',
     );
+    expect(toolLine({ tool: 'read_image', phase: 'done', ok: true, args: { path: 'shot.png' } })).toBe(
+      '✓ looking at an image',
+    );
+    expect(
+      toolLine({ tool: 'read_image', phase: 'allowed', args: { path: 'shot.png' } }),
+    ).toBe('→ looking at an image: shot.png');
   });
 
   it('confirms a call without repeating its target, and names the one that failed', () => {

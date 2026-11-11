@@ -222,6 +222,7 @@ function toolTarget(event: ToolEvent): string | null {
     typeof value === 'string' && value.length > 0 ? value : null;
   switch (event.tool) {
     case 'read_file':
+    case 'read_image':
     case 'write_file':
     case 'apply_diff':
       return text(args['path']);

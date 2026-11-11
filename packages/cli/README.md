@@ -10,8 +10,14 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
-**Pre-release.** This is `0.2.2`. The core of the agent is the same code the
+**Pre-release.** This is `0.2.3`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
+
+**0.2.3** adds a `read_image` tool, so Plato can look at a screenshot or a
+diagram you point it at. A search can be limited to one folder. An edit that
+would change nothing says so instead of reporting success. Project instructions
+are read from every `AGENTS.md` and `CLAUDE.md` in the project, each labelled
+with where it came from.
 
 **0.2.2** updates this README to the current version; no code changed.
 
