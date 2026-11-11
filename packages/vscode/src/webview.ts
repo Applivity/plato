@@ -2073,7 +2073,15 @@ export function chatHtml(
       // D44a: a fresh chat drops any chips. The host's newChat resets
       // pendingAttachments and pendingHistory, so no attach-clear is needed.
       clearChips();
-      vsapi.postMessage({ type: CAPS.newChatTab ? 'new-tab' : 'newChat' });
+      // The fromHeader flag says this came from a visible button, so the host clears
+      // without a confirmation dialog: the conversation is archived, which makes
+      // the action recoverable. The menu/command path sets no such flag and
+      // keeps its confirmation.
+      vsapi.postMessage(
+        CAPS.newChatTab
+          ? { type: 'new-tab' }
+          : { type: 'newChat', fromHeader: true },
+      );
     });
   } else {
     // A host that cannot start another conversation does not draw a control

@@ -1467,7 +1467,9 @@ class ChatHost {
           return;
         }
         if (m.type === 'newChat') {
-          void this.newChat();
+          // D49cd: a click on the header mark clears at once; the command and
+          // menu paths reach `newChat` without the flag and keep the dialog.
+          void this.newChat({ fromHeader: m.fromHeader === true });
           return;
         }
         // Observer controls (D25f): effective at the loop's safe points.
@@ -4129,22 +4131,30 @@ class ChatHost {
   }
 
   /**
-   * Start a new conversation: confirm, clear the persisted log, reset the
+   * Start a new conversation: archive, clear the persisted log, reset the
    * per-session write consents (a new chat is a new session, D23), and
    * blank the webview. Refuses while a run is active.
+   *
+   * D49cd: the confirmation is kept for the command and menu paths, which have
+   * no visible button behind them. The header mark passes `fromHeader` and
+   * clears at once: the button is visible, and the conversation is archived,
+   * so asking to confirm something retrievable is the guard that becomes a
+   * nuisance.
    */
-  async newChat(): Promise<void> {
+  async newChat(opts: { fromHeader?: boolean } = {}): Promise<void> {
     if (this.running) {
       this.send('notice', 'A run is active — wait for it to finish before starting a new chat.');
       return;
     }
-    const pick = await vscode.window.showWarningMessage(
-      'Start a new chat? The current conversation will be cleared.',
-      { modal: true },
-      'New Chat',
-    );
-    if (pick !== 'New Chat') {
-      return;
+    if (opts.fromHeader !== true) {
+      const pick = await vscode.window.showWarningMessage(
+        'Start a new chat? The current conversation will be cleared.',
+        { modal: true },
+        'New Chat',
+      );
+      if (pick !== 'New Chat') {
+        return;
+      }
     }
     await this.archiveCurrentChat();
     this.log.length = 0;

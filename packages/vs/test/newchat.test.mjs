@@ -237,6 +237,26 @@ try {
   assert.equal(archived.log.length, 2, 'the archive holds the whole conversation');
   assert.equal(archived.log[0].text, 'First question');
 
+  /* ================================================================== */
+  /* 3. The header mark clears at once (D49cd)                          */
+  /* ================================================================== */
+  // The conversation is empty now; what this proves is the ABSENCE of the
+  // dialog. The menu/command path above kept its confirmation; a click on the
+  // visible header mark must post a fresh empty restore and ask nothing.
+  const beforeHeader = requests.length;
+  mark = posts.length;
+  host.receive({ type: 'newChat', fromHeader: true });
+  await waitPost(
+    (m) => m.type === 'restore' && Array.isArray(m.log) && m.log.length === 0,
+    'the header clear',
+    mark,
+  );
+  assert.equal(
+    requests.filter((r, i) => i >= beforeHeader && r.method === 'ui.message').length,
+    0,
+    'the header mark clears with no confirmation dialog',
+  );
+
   host.panel()?.dispose();
 
   console.log('PASS gap 16 New Chat confirmation');

@@ -69,6 +69,10 @@ const shape = (p) => p.evaluate(() => {
   const kinds = posted.map((m) => m.type);
   check('with newChatTab false the mark posts the clearing action', kinds.includes('newChat'), kinds);
   check('and it does not ask the host to open a tab', !kinds.includes('new-tab'), kinds);
+  // The host clears at once only for a click on this visible button; the menu
+  // and command paths reach the same handler without the flag and keep asking.
+  const clear = posted.find((m) => m.type === 'newChat');
+  check('the clearing click says it came from the header button', clear?.fromHeader === true, clear);
   checkPageClean(p, 'new chat clears');
   await p.close();
 }

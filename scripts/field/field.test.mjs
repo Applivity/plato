@@ -2632,17 +2632,16 @@ describe('Plato field tests — real VS Code', function () {
       await field.driver.executeScript(
         `const b = document.getElementById('new'); if (b) b.click();`,
       );
-      // The host asks before clearing. That dialog is VS Code's own modal, in
-      // the workbench DOM — not inside the webview frame.
       await field.webview.switchBack();
-      const confirm = await field.driver.findElements(
-        By.xpath("//div[contains(@class,'monaco-dialog-box')]//a[normalize-space(text())='New Chat']"),
+      // The founder asked for Claude Code's behaviour: ONE click clears. A
+      // modal here is the friction he rejected, so its presence is the failure.
+      await field.driver.sleep(600);
+      const dialog = await field.driver.executeScript(
+        `return !!document.querySelector('.monaco-dialog-box');`,
       );
-      if (confirm.length === 0) {
-        throw new Error('SIDEBAR: the clear asked for no confirmation, so the click did nothing');
+      if (dialog) {
+        throw new Error('SIDEBAR: clearing from the header mark still opened a confirmation dialog');
       }
-      await field.clickElement(confirm[0]);
-      await field.driver.sleep(800);
       await field.switchToSidebarFrame();
       let cleared = { log: 'x', title: 'x', composer: false };
       const clearDeadline = Date.now() + 10000;
