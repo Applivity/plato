@@ -7785,6 +7785,9 @@ The cost was paid per write and the message repeated what the run already knew.
 - **Recorded limit:** in Visual Studio the bridge never reports language-server
   diagnostics. Every language there goes blind after its one line. This
   pre-dates the change and is now quieter, not fixed.
+- **The CLI has no diagnostics reporting at all.** This rule governs the two
+  editor windows. A CLI release does not carry it, and a release note must not
+  claim that it does.
 
 **D49cz — Project instructions are merged, base to specific (2026-11-11).**
 
