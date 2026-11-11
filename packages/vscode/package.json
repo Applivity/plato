@@ -1,6 +1,6 @@
 {
   "name": "plato",
-  "version": "0.28.2",
+  "version": "0.28.3",
   "private": true,
   "license": "Apache-2.0",
   "description": "An AI coding agent that plans in the open, takes your direction mid-run, and asks before it changes your code.",
@@ -27,7 +27,7 @@
     "bundle": "node esbuild.mjs",
     "test": "node -e \"console.log('no unit tests in the shell; core carries the logic')\"",
     "package": "pnpm vsce package --no-dependencies",
-    "install:vsix": "code --install-extension plato-0.28.2.vsix --force"
+    "install:vsix": "code --install-extension plato-0.28.3.vsix --force"
   },
   "contributes": {
     "commands": [
