@@ -7962,3 +7962,33 @@ model had searched for a name instead of looking at what was connected.
   reaches the other hosts at their next releases.
 - A core test pins the rule and its key sentence.
 
+**D49di — A shared-state merge must be able to represent deletion (2026-11-11).**
+
+Visual Studio's History list is shared by every window through one file. The
+merge that combined a window's list with the file could only add and keep:
+`incoming` was merged with `existing`, so an id a window had removed came back
+from disk on the next update. Deleting a saved chat, or using Delete all, was a
+**silent no-op in every Visual Studio window** — the window showed it gone and
+the next read restored it. **The first 0.2.2 build carried that defect and was
+never published.**
+
+- **A merge has two operations, not one.** If the only operation is "union",
+  the state cannot express removal, and every delete is undone by the next
+  writer. The shared file now records deletions as **tombstones** —
+  `{id: ISO timestamp}` in the same file, under their own key.
+- **A tombstone is a deletion by THIS window, not a claim about the world.** An
+  id is tombstoned only when this window had listed it and no longer does. A
+  chat another window added while this one was open was never in its seen set,
+  so **Delete all does not remove a peer's chat that this window never saw**.
+- **The merge drops tombstoned ids from `incoming` and `existing` alike**, so a
+  deletion sticks against a stale list on either side.
+- **Tombstones are pruned after a week.** A deletion only has to outlive the
+  lists that could still carry the id.
+- **The verification is a regression test over two windows and one shared
+  file**, which failed before the fix and passes after. The field run proves one
+  window's deletes; the two-window acceptance is the test's job until a
+  completed two-window field run exists.
+- **The lesson:** any state that two processes share and merge must be able to
+  say "this is gone". A union-only merge is correct only for a set that never
+  shrinks, and a History list is not one.
+
