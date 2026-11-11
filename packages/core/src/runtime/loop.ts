@@ -1214,6 +1214,11 @@ async function runLoop(
     }
 
     const results: ToolResultBlock[] = [];
+    // D49cd: images a tool asked the model to SEE. They ride the SAME user turn
+    // as the tool result they belong to, because that is the only turn either
+    // wire accepts an image in. They are never emitted on the bus — base64 in
+    // an event would put megabytes into the JSONL for every run.
+    const toolImages: CanonicalContent[] = [];
     for (const call of toolUses) {
       // Safe point between tool calls (D24b).
       if (!(await ctrl.gate())) {
@@ -1696,6 +1701,9 @@ async function runLoop(
         content,
         isError: !outcome.ok,
       });
+      if (outcome.image !== undefined) {
+        toolImages.push({ type: 'image', mime: outcome.image.mime, data: outcome.image.data });
+      }
       judge(name, args, content, outcome.ok ? 'ok' : 'failed');
     }
 
@@ -1736,7 +1744,7 @@ async function runLoop(
 
     // Flush queued observer guidance into the next user turn (D24b);
     // tool_result and text blocks may share one user message.
-    const userContent: (CanonicalContent | ToolResultBlock)[] = [...results];
+    const userContent: (CanonicalContent | ToolResultBlock)[] = [...results, ...toolImages];
     for (const g of pendingGuidance.splice(0)) {
       userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
     }

@@ -31,6 +31,7 @@ export type Mode = 'plan' | 'edit' | 'auto';
 /** Tool names as exposed to the model. */
 export type ToolName =
   | 'read_file'
+  | 'read_image'
   | 'write_file'
   | 'apply_diff'
   | 'apply_patch'
@@ -49,6 +50,8 @@ type Kind = 'read' | 'write' | 'shell' | 'net' | 'relay';
 
 const TOOL_KIND: Record<ToolName, Kind> = {
   read_file: 'read',
+  // D49cd: looking at an image touches nothing, so it is a read like any other.
+  read_image: 'read',
   list_dir: 'read',
   grep: 'read',
   glob: 'read',

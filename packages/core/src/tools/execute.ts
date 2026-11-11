@@ -24,6 +24,8 @@ import {
   unmaskableRefusal,
   unknownPlaceholderRefusal,
 } from '../runtime/secretCopy.js';
+import { DEFAULT_MAX_IMAGE_BYTES, sniffImageMime } from '../runtime/attachments.js';
+import type { ImageMime } from '../providers/types.js';
 import { isGitignored, listWorkspace, type WorkspaceListing } from './files.js';
 import { shellInvocation } from './shellPlatform.js';
 import { applyBlocks, parseDiffBlocks } from './diff.js';
@@ -46,6 +48,12 @@ export interface ToolOutcome {
    * the model reads and raises it once per run for the user.
    */
   note?: string;
+  /**
+   * D49cd: bytes the model must SEE, not read as text. A tool result carries a
+   * string only, so an image travels beside the result and the loop places it
+   * in the same user turn. It never goes on the bus — see providers/types.ts.
+   */
+  image?: { mime: ImageMime; data: string };
 }
 
 export type ToolArgs = Record<string, unknown>;
@@ -230,6 +238,8 @@ async function dispatch(
   switch (name) {
     case 'read_file':
       return annotateIgnoredFile(root, args, ctx, await readFileTool(root, args, ctx));
+    case 'read_image':
+      return readImageTool(root, args);
     case 'write_file':
       return writeFileTool(root, args, ctx);
     case 'apply_diff':
@@ -274,6 +284,57 @@ const READ_MAX_LINES = 1_500;
 
 function readInt(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : null;
+}
+
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} bytes`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * D49cd: the model can look at an image file.
+ *
+ * The model is willing — a real run parsed a PNG's IHDR header by hand and then
+ * said it had no way to see the picture. The harness had no path: a tool result
+ * is a string, and images are legal only in a user turn. So this returns the
+ * bytes BESIDE the result text (never inside it, never on the bus), and the loop
+ * puts them in the same user turn as this tool's result.
+ *
+ * The bytes decide the type; the name does not. A text file or a corrupt image
+ * is refused by name, not sent as mojibake.
+ */
+async function readImageTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+  const raw = argPath(args);
+  if (raw.length === 0) return fail('missing path');
+  // No `allowSecret`: an image on the deny-list is refused like any other
+  // protected path, because it cannot be masked.
+  const target = resolveTarget(root, raw);
+  if ('err' in target) return fail(target.err);
+  const { abs, rel } = target;
+  let buf: Buffer;
+  try {
+    buf = await readFile(abs);
+  } catch {
+    return fail(`cannot read: ${rel}`);
+  }
+  const mime = sniffImageMime(buf);
+  if (mime === null) {
+    return fail(`refused: ${rel} is not an image (PNG, JPEG, GIF and WebP are supported)`);
+  }
+  if (buf.length > DEFAULT_MAX_IMAGE_BYTES) {
+    return fail(
+      `refused: ${rel} is ${humanBytes(buf.length)}; the image cap is ` +
+        `${humanBytes(DEFAULT_MAX_IMAGE_BYTES)}`,
+    );
+  }
+  return {
+    ok: true,
+    output:
+      `Showing ${rel} (${mime}, ${humanBytes(buf.length)}). ` +
+      'The image is included with this result.',
+    image: { mime, data: buf.toString('base64') },
+  };
 }
 
 async function readFileTool(
@@ -413,6 +474,14 @@ async function writeFileTool(
   return { ok: true, output: existing === null ? `created ${rel}` : `overwrote ${rel}` };
 }
 
+/**
+ * D49cd: what both write paths say when every block is a no-op of the
+ * identical-search-and-replace kind. Named once so apply_diff and apply_patch
+ * cannot drift apart on the one message that tells the model it did nothing.
+ */
+const IDENTICAL_BLOCKS_NOTE =
+  'no change: the SEARCH and REPLACE blocks are identical — nothing was written';
+
 async function applyDiffTool(
   root: string,
   args: ToolArgs,
@@ -456,14 +525,29 @@ async function applyDiffTool(
     const applied = applyBlocks(base, blocks);
     let content = applied.content;
     if (applied.applied > 0 && !shown && ctx.vault !== undefined) content = ctx.vault.unmask(content);
-    const { applied: count, noop } = applied;
-    if (count > 0) {
-      await writeFile(abs, content, 'utf8');
-      ctx.recordWrites?.([{ rel, kind: 'write', before, after: content }]);
+    const { applied: count, noop, unchanged } = applied;
+    const tail = unchanged > 0 ? `, ${unchanged} unchanged` : '';
+    if (count === 0) {
+      // Nothing to write, and the two reasons a caller can be in this state are
+      // different facts: blocks identical to the text they would replace, or
+      // blocks whose change is already on disk.
+      return {
+        ok: true,
+        output: unchanged > 0 && noop === 0
+          ? IDENTICAL_BLOCKS_NOTE
+          : `applied 0 block(s), no-op ${noop}${tail}`,
+      };
     }
+    if (content === before) {
+      // The edits cancelled each other out. Writing would record an undo copy
+      // of a change that is not one.
+      return { ok: true, output: 'no change: the edits cancel each other out — nothing was written' };
+    }
+    await writeFile(abs, content, 'utf8');
+    ctx.recordWrites?.([{ rel, kind: 'write', before, after: content }]);
     return {
       ok: true,
-      output: `applied ${count} block(s), no-op ${noop}`,
+      output: `applied ${count} block(s), no-op ${noop}${tail}`,
     };
   } catch (e) {
     return fail(e instanceof Error ? e.message : 'apply_diff failed');
@@ -477,6 +561,8 @@ interface PlannedPatch {
   after: string;
   applied: number;
   noop: number;
+  /** D49cd: blocks whose SEARCH and REPLACE were identical. */
+  unchanged: number;
 }
 
 /**
@@ -556,6 +642,7 @@ async function applyPatchTool(
         after: content,
         applied: applied.applied,
         noop: applied.noop,
+        unchanged: applied.unchanged,
       });
     } catch (e) {
       // Name the file. With several in flight, a bare "SEARCH not found" does
@@ -564,8 +651,17 @@ async function applyPatchTool(
     }
   }
 
-  const changed = planned.filter((p) => p.applied > 0);
+  // A file whose final content equals what was there is not a change, even if
+  // the blocks cancelled each other out rather than being identical.
+  const changed = planned.filter((p) => p.applied > 0 && p.after !== p.before);
   if (changed.length === 0) {
+    // D49cd: identical blocks are not "already applied" — they never would be.
+    if (planned.every((p) => p.unchanged > 0 && p.noop === 0)) {
+      return { ok: true, output: IDENTICAL_BLOCKS_NOTE };
+    }
+    if (planned.some((p) => p.applied > 0)) {
+      return { ok: true, output: 'no change: the edits cancel each other out — nothing was written' };
+    }
     return {
       ok: true,
       output: `no changes (${planned.length} file(s) already applied)`,
@@ -605,7 +701,11 @@ async function applyPatchTool(
     output:
       `patched ${changed.length} file(s)\n` +
       changed
-        .map((c) => `${c.rel}: ${c.applied} block(s), no-op ${c.noop}`)
+        .map(
+          (c) =>
+            `${c.rel}: ${c.applied} block(s), no-op ${c.noop}` +
+            (c.unchanged > 0 ? `, ${c.unchanged} unchanged` : ''),
+        )
         .join('\n'),
   };
 }
@@ -960,7 +1060,26 @@ async function grepTool(
     Math.max(1, readInt(args['limit']) ?? GREP_DEFAULT_LIMIT),
   );
 
-  const listing = listWorkspace(root, '', { respectGitignore: ctx.respectGitignore });
+  // D49cd: a folder scopes the search, through the same choke point every
+  // other path argument uses — so containment and the secret deny-list behave
+  // exactly as they do for read_file and list_dir. Results stay rooted at the
+  // workspace, so a glob written against the full path keeps its meaning.
+  const rawScope = typeof args['path'] === 'string' ? args['path'].trim() : '';
+  let scope = '';
+  if (rawScope.length > 0) {
+    const target = resolveTarget(root, rawScope);
+    if ('err' in target) return fail(target.err);
+    try {
+      if (!statSync(target.abs).isDirectory()) {
+        return fail(`not a directory: ${target.rel}`);
+      }
+    } catch {
+      return fail(`no such directory: ${target.rel}`);
+    }
+    scope = target.rel;
+  }
+
+  const listing = listWorkspace(root, scope, { respectGitignore: ctx.respectGitignore });
   const files = listing.files.filter(
     (p) => filter === null || matchGlob(filter, p),
   );

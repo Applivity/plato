@@ -134,6 +134,84 @@ describe('buildWorkerRole', () => {
     expect(r.system).not.toContain('CLAUDE LOST');
   });
 
+  /**
+   * D49cd: a real run's workspace root was the parent of the project, so the
+   * root-only lookup found nothing while the project kept its instructions in
+   * `kbe\.claude\CLAUDE.md` and `kbe\.github\AGENTS.md`. Projects keep these
+   * where their own tooling expects them; the reader must look there.
+   */
+  it('reads .github/AGENTS.md when the root has neither file', async () => {
+    write('.github/AGENTS.md', 'GITHUB AGENTS BODY');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('GITHUB AGENTS BODY');
+    const agents = r.layers.find((l) => l.layer === 'agents');
+    expect(agents?.source).toBe('disk');
+    if (agents && agents.source === 'disk') {
+      expect(agents.filename).toBe('AGENTS.md');
+      expect(agents.path).toBe('.github/AGENTS.md');
+    }
+  });
+
+  it('reads .claude/CLAUDE.md when nothing earlier exists', async () => {
+    write('.claude/CLAUDE.md', 'CLAUDE TOOL BODY');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('CLAUDE TOOL BODY');
+    const agents = r.layers.find((l) => l.layer === 'agents');
+    expect(agents?.source).toBe('disk');
+    if (agents && agents.source === 'disk') {
+      expect(agents.path).toBe('.claude/CLAUDE.md');
+    }
+  });
+
+  it('keeps the documented precedence across all four locations', async () => {
+    write('.claude/CLAUDE.md', 'FOURTH');
+    write('.github/AGENTS.md', 'THIRD');
+    write('CLAUDE.md', 'SECOND');
+    write('AGENTS.md', 'FIRST');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('FIRST');
+    expect(r.system).not.toContain('SECOND');
+    expect(r.system).not.toContain('THIRD');
+    expect(r.system).not.toContain('FOURTH');
+    expect(r.layers.find((l) => l.layer === 'agents')?.path).toBe('AGENTS.md');
+  });
+
+  it('prefers root CLAUDE.md over both nested locations', async () => {
+    write('CLAUDE.md', 'ROOT CLAUDE');
+    write('.github/AGENTS.md', 'NESTED GITHUB');
+    write('.claude/CLAUDE.md', 'NESTED CLAUDE');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('ROOT CLAUDE');
+    expect(r.system).not.toContain('NESTED');
+  });
+
+  it('prefers .github/AGENTS.md over .claude/CLAUDE.md', async () => {
+    write('.github/AGENTS.md', 'GITHUB WINS');
+    write('.claude/CLAUDE.md', 'CLAUDE LOSES');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('GITHUB WINS');
+    expect(r.system).not.toContain('CLAUDE LOSES');
+  });
+
+  it('still reports missing, with no filename or path, when no location exists', async () => {
+    const r = await buildWorkerRole({ root: dir });
+    const agents = r.layers.find((l) => l.layer === 'agents');
+    expect(agents?.present).toBe(false);
+    expect(agents?.source).toBe('missing');
+    if (agents && agents.source === 'missing') {
+      expect(agents.filename).toBeNull();
+      expect(agents.path).toBeNull();
+    }
+  });
+
+  it('treats a nested entry that is a DIRECTORY as absent, without throwing', async () => {
+    mkdirSync(join(dir, '.claude', 'CLAUDE.md'), { recursive: true });
+    const r = await buildWorkerRole({ root: dir });
+    const agents = r.layers.find((l) => l.layer === 'agents');
+    expect(agents?.source).toBe('missing');
+    expect(r.system).toContain(DEFAULT_PLATO_BODY);
+  });
+
   it('joins layers in the spec order: override >> PLATO >> AGENTS', async () => {
     write('PLATO.md', 'PLATO-MID');
     write('AGENTS.md', 'AGENTS-END');

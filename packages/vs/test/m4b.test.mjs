@@ -520,6 +520,77 @@ try {
     'transcript records the diagnostics: not checked notice',
   );
 
+  /* ================================================================== */
+  /* 5. Diagnostics without the noise (D49cd)                            */
+  /* ================================================================== */
+  //
+  // A real run wrote 75 throwaway .py files and got 75 "not checked" notices,
+  // each after showing the file for ~2 s. Nothing was learned after the first.
+  // The rules under test: one notice per language per run, the file is not
+  // shown again once its language is known to have no reporter, and a language
+  // that DOES answer still reaches the model.
+  process.env['PLATO_SHIM_DIAGNOSTIC_SUFFIX'] = '.broken.ts';
+  mark = posts.length;
+  const opensBefore = requests.length;
+  await setScript([
+    {
+      calls: [
+        { tool: 'write_file', args: { path: 'probe1.py', content: 'print(1)\n' } },
+        { tool: 'write_file', args: { path: 'probe2.py', content: 'print(2)\n' } },
+        { tool: 'write_file', args: { path: 'probe3.py', content: 'print(3)\n' } },
+        { tool: 'write_file', args: { path: 'probe.broken.ts', content: 'const x = ;\n' } },
+      ],
+    },
+    { text: 'Wrote four probe files.' },
+  ]);
+  const quietDone = await runToEnd(host, 'Write four probe files', mark);
+  assert.equal(quietDone.type, 'done');
+
+  const quietNotices = posts
+    .slice(mark)
+    .filter((m) => m.type === 'notice')
+    .map((m) => String(m.text ?? ''));
+
+  const pythonNotices = quietNotices.filter((t) =>
+    /^diagnostics: not checked in 3 python files/.test(t),
+  );
+  assert.equal(
+    pythonNotices.length,
+    1,
+    `exactly one Python notice for three writes (got: ${quietNotices.join(' | ')})`,
+  );
+  assert.ok(
+    pythonNotices[0].includes('no language server reported on any of them'),
+    'the one notice says the files were never checked, not that they are clean',
+  );
+
+  const noticeFor = (name) =>
+    quietNotices.filter((t) => t.includes(`not checked in ${name}`));
+  assert.equal(noticeFor('probe2.py').length, 0, 'no per-file notice for the second Python file');
+  assert.equal(noticeFor('probe3.py').length, 0, 'no per-file notice for the third Python file');
+
+  const opens = requests
+    .slice(opensBefore)
+    .filter((r) => r.method === 'editor.open' && typeof r.params?.path === 'string');
+  const shown = (name) => opens.filter((r) => String(r.params.path).endsWith(name)).length;
+  assert.equal(shown('probe1.py'), 1, 'the first Python file was shown once');
+  assert.equal(shown('probe2.py'), 0, 'the second Python file was NOT shown');
+  assert.equal(shown('probe3.py'), 0, 'the third Python file was NOT shown');
+
+  // A language that does answer: found diagnostics reach the model, and the
+  // notice is about what was found — never "not checked".
+  assert.equal(noticeFor('probe.broken.ts').length, 0, 'no "not checked" notice for a file that was checked');
+  assert.ok(
+    quietNotices.some((t) => /^diagnostics: 1 new error in probe\.broken\.ts/.test(t)),
+    `the checked file's notice names what was found (got: ${quietNotices.join(' | ')})`,
+  );
+  const stubLogRes = await fetch(`http://127.0.0.1:${port}/__log`);
+  const stubLog = await stubLogRes.json();
+  const reachedModel = stubLog.log.some((r) =>
+    (r.toolResults ?? []).some((t) => String(t.head ?? '').includes('deliberate shim error')),
+  );
+  assert.ok(reachedModel, 'the editor-reported error reached the model in the tool result');
+
   console.log('PASS M4b editor/interaction: slash commands, todos, open-file actions, diagnostics gap');
   console.log(`  posts: ${posts.length}`);
   console.log(`  editor.open requests: ${requests.length}`);

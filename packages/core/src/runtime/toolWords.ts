@@ -48,6 +48,7 @@ const GENERIC: ToolWords = {
 
 const WORDS: Record<string, ToolWords> = {
   read_file: { noun: 'the read', doing: 'reading a file', counted: 'files read', countedOne: 'file read' },
+  read_image: { noun: 'the image', doing: 'looking at an image', counted: 'images read', countedOne: 'image read' },
   write_file: { noun: 'the write', doing: 'writing a file', counted: 'files written', countedOne: 'file written' },
   apply_diff: { noun: 'the edit', doing: 'editing a file', counted: 'files edited', countedOne: 'file edited' },
   apply_patch: { noun: 'the edit', doing: 'editing files', counted: 'files edited', countedOne: 'file edited' },

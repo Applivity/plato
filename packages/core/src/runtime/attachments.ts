@@ -89,6 +89,12 @@ export function looksLikeImage(rel: string): boolean {
   return IMAGE_EXTENSIONS.includes(rel.slice(dot + 1).toLowerCase());
 }
 
+/**
+ * The raw-byte cap for one image, shared by the attach picker and `read_image`
+ * so the tool cannot admit what the picker refuses (or the reverse).
+ */
+export const DEFAULT_MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
 /** What a supported image looks like once loaded. */
 export interface ImageAttachment {
   /** Workspace-relative path, for display and the transcript's metadata. */

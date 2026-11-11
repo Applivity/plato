@@ -39,6 +39,30 @@ describe('applyBlocks', () => {
     );
   });
 
+  /**
+   * A real run hit this: SEARCH and REPLACE were identical, the engine counted
+   * the block as applied, and the caller reported success for a file that never
+   * changed. An identical block is not an edit; it must not be counted as one.
+   */
+  it('counts an identical SEARCH and REPLACE as unchanged, never applied', () => {
+    const out = applyBlocks('const x = 1;', [
+      { search: 'const x = 1;', replace: 'const x = 1;' },
+    ]);
+    expect(out.applied).toBe(0);
+    expect(out.unchanged).toBe(1);
+    expect(out.content).toBe('const x = 1;');
+  });
+
+  it('keeps a genuine block alongside an identical one', () => {
+    const out = applyBlocks('a b', [
+      { search: 'a', replace: 'a' },
+      { search: 'b', replace: 'c' },
+    ]);
+    expect(out.applied).toBe(1);
+    expect(out.unchanged).toBe(1);
+    expect(out.content).toBe('a c');
+  });
+
   it('applies multiple blocks in order', () => {
     const out = applyBlocks('one two three', [
       { search: 'two', replace: 'TWO' },

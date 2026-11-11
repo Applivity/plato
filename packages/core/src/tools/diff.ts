@@ -18,6 +18,12 @@ export interface ApplyOutcome {
   content: string;
   applied: number;
   noop: number;
+  /**
+   * D49cd: blocks whose SEARCH and REPLACE are identical. They are not edits —
+   * nothing changes — and counting them as applied is how a model was told
+   * "success" three times for a file it never touched.
+   */
+  unchanged: number;
 }
 
 /**
@@ -61,9 +67,16 @@ export function applyBlocks(
   let next = content;
   let applied = 0;
   let noop = 0;
+  let unchanged = 0;
   for (const b of blocks) {
     if (b.search.length === 0) {
       throw new Error('empty SEARCH block');
+    }
+    // D49cd: an identical block is a change that changes nothing. Reporting it
+    // as applied is a false success, which is what kept a real run looping.
+    if (b.search === b.replace) {
+      unchanged += 1;
+      continue;
     }
     const first = next.indexOf(b.search);
     if (first === -1) {
@@ -90,7 +103,7 @@ export function applyBlocks(
     next = next.slice(0, first) + b.replace + next.slice(first + b.search.length);
     applied += 1;
   }
-  return { content: next, applied, noop };
+  return { content: next, applied, noop, unchanged };
 }
 
 /** Builds a unified-style diff preview (used by the approval UI). */

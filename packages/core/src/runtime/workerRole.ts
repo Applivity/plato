@@ -30,11 +30,32 @@ export const DEFAULT_MAX_LAYER_CHARS = 16_000;
 /** Truncation marker appended when a layer is too long. */
 const TRUNCATED_MARKER = '\n\n[…truncated…]';
 
+/**
+ * D49cd: where project instructions may live, in precedence order — first found
+ * wins. All are relative to the workspace root, so containment is by
+ * construction; a user-level `~/.claude/CLAUDE.md` is NOT among them.
+ */
+const AGENT_FILE_CANDIDATES = [
+  'AGENTS.md',
+  'CLAUDE.md',
+  '.github/AGENTS.md',
+  '.claude/CLAUDE.md',
+] as const;
+
 /** Trace of where each layer's body came from, for `/system-prompt` later. */
 export type LayerSource =
   | { layer: 'override'; chars: number; present: boolean }
   | { layer: 'plato'; chars: number; source: 'disk' | 'global' | 'fallback'; present: boolean }
-  | { layer: 'agents'; chars: number; source: 'disk' | 'fallback' | 'missing'; present: boolean; filename: 'AGENTS.md' | 'CLAUDE.md' | null };
+  | {
+      layer: 'agents';
+      chars: number;
+      source: 'disk' | 'fallback' | 'missing';
+      present: boolean;
+      /** The file name alone, for a settings row that has little room. */
+      filename: string | null;
+      /** Workspace-relative path, so the row can say WHERE it was read from. */
+      path: string | null;
+    };
 
 export interface BuildWorkerRoleOpts {
   /** Mode-specific override (Solo/Duo: undefined; Academy: workerMember.role). */
@@ -369,22 +390,37 @@ export async function buildWorkerRole(
     layers.push({ layer: 'plato', chars: c.body.length, source: 'fallback', present: true });
   }
 
-  // AGENTS.md first; CLAUDE.md as the documented alias.
-  const agents = await loadProjectFile('AGENTS.md', opts.root, DEFAULT_READ_BYTES);
-  let agentsMeta: LayerSource;
-  if (agents.found) {
-    const c = clip(agents.body, cap);
+  // D49cd: read the agents layer where projects actually keep it. The run
+  // whose root was the PARENT of the project found nothing while the project
+  // held `kbe\.claude\CLAUDE.md`; root-only was too narrow a rule.
+  //
+  // Precedence, first found wins: root AGENTS.md, root CLAUDE.md,
+  // .github/AGENTS.md, .claude/CLAUDE.md. The user-level ~/.claude/CLAUDE.md is
+  // deliberately NOT read: it belongs to a different tool and is outside the
+  // workspace. A path that is a directory, unreadable or over the cap is simply
+  // not the layer, and the next candidate gets its turn.
+  let agentsMeta: LayerSource = {
+    layer: 'agents',
+    chars: 0,
+    source: 'missing',
+    present: false,
+    filename: null,
+    path: null,
+  };
+  for (const rel of AGENT_FILE_CANDIDATES) {
+    const found = await loadProjectFile(rel, opts.root, DEFAULT_READ_BYTES);
+    if (!found.found) continue;
+    const c = clip(found.body, cap);
     agentsBody = c.body;
-    agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'AGENTS.md' };
-  } else {
-    const claude = await loadProjectFile('CLAUDE.md', opts.root, DEFAULT_READ_BYTES);
-    if (claude.found) {
-      const c = clip(claude.body, cap);
-      agentsBody = c.body;
-      agentsMeta = { layer: 'agents', chars: c.body.length, source: 'disk', present: true, filename: 'CLAUDE.md' };
-    } else {
-      agentsMeta = { layer: 'agents', chars: 0, source: 'missing', present: false, filename: null };
-    }
+    agentsMeta = {
+      layer: 'agents',
+      chars: c.body.length,
+      source: 'disk',
+      present: true,
+      filename: rel.slice(rel.lastIndexOf('/') + 1),
+      path: rel,
+    };
+    break;
   }
   layers.push(agentsMeta);
 

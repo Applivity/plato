@@ -66,9 +66,24 @@ export interface DiagSnapshot {
   targets: DiagTarget[];
 }
 
+/** D49cd: one file whose language never answered, as the caller needs to report it. */
+export interface DiagMiss {
+  /** Workspace-relative, as the tool named it. */
+  rel: string;
+  /** The editor's language id for the file. */
+  language: string;
+  /** Whether THIS file had to be shown in this call. */
+  shown: boolean;
+}
+
 export type DiagResult =
-  /** `shown` records whether the editor had to be disturbed to get an answer. */
-  | { kind: 'not-analysed'; shown?: boolean }
+  /**
+   * `misses` names the files that could not be checked and the language each
+   * belongs to. The host counts them per language, because a per-file line for
+   * a language with no reporter is noise: it says the same thing N times and
+   * teaches nothing after the first.
+   */
+  | { kind: 'not-analysed'; shown?: boolean; misses?: DiagMiss[] }
   | { kind: 'clean'; shown?: boolean }
   | { kind: 'found'; diagnostics: EditorDiagnostic[]; shown?: boolean };
 
@@ -83,6 +98,17 @@ export class EditorDiagnostics {
    * header.
    */
   private readonly published = new Set<string>();
+
+  /**
+   * D49cd: languages that came back "not analysed". A language, once it has
+   * failed to answer, is not asked again this session: showing the file and
+   * waiting 2.2 s learns nothing the first attempt did not. The set is per
+   * editor session, so a language server that starts later in the same window
+   * is not noticed until the next session — the honest trade, because the
+   * alternative is the 75-notice run this exists to prevent.
+   */
+  private readonly blind = new Set<string>();
+
   private readonly sub: vscode.Disposable;
 
   /**
@@ -156,27 +182,75 @@ export class EditorDiagnostics {
     // reported on it": a server only knows about files in a project it has
     // loaded or files the editor has OPENED, and a file Plato writes behind VS
     // Code's back is neither.
+    //
+    // D49cd: the language is learned here too, because it is what decides
+    // whether asking is worth anything. A file whose language has already
+    // failed to answer is not shown and not waited for.
+    const language = new Map<string, string>();
+    const unknown: DiagTarget[] = [];
     for (const t of targets) {
       if (this.published.has(t.uri.toString())) continue;
+      let id = 'unknown';
       try {
-        await vscode.workspace.openTextDocument(t.uri);
+        const doc = await vscode.workspace.openTextDocument(t.uri);
+        id = doc.languageId;
       } catch {
-        // Unreadable or no language for it. The wait below reports "not
+        // Unreadable or no language for it. The result below says "not
         // checked", which is the honest answer — never "clean".
       }
+      language.set(t.uri.toString(), id);
+      unknown.push(t);
     }
+    const pending = unknown.filter(
+      (t) => !this.blind.has(language.get(t.uri.toString()) ?? 'unknown'),
+    );
 
     // First, quietly. Wait once for the whole call, not once per file: a
     // multi-file patch pays this delay a single time.
-    await this.waitForPublish(targets.map((t) => t.uri), QUIET_CAP_MS, signal);
+    if (pending.length > 0) {
+      await this.waitForPublish(pending.map((t) => t.uri), QUIET_CAP_MS, signal);
+    }
     if (this.anyObserved(targets)) return this.readTargets(targets);
 
     // The quiet route got nothing. Show the files — the one thing measured to
     // wake a server that will not answer otherwise — then hand the editor back.
-    const shown = await this.showAndRestore(targets, signal);
-    return shown === null
-      ? { kind: 'not-analysed' }
-      : this.readTargets(targets, true);
+    let shown = false;
+    if (pending.length > 0) {
+      shown = (await this.showAndRestore(pending, signal)) !== null;
+    }
+    const out = this.readTargets(targets, shown);
+    return out.kind === 'not-analysed'
+      ? this.notAnalysed(
+          targets,
+          language,
+          new Set(pending.map((t) => t.uri.toString())),
+          shown,
+        )
+      : out;
+  }
+
+  /**
+   * The "never checked" result, and the point at which its languages are
+   * remembered so the expensive path is not repeated.
+   */
+  private notAnalysed(
+    targets: DiagTarget[],
+    language: Map<string, string>,
+    candidates: ReadonlySet<string>,
+    shown: boolean,
+  ): DiagResult {
+    for (const id of language.values()) this.blind.add(id);
+    return {
+      kind: 'not-analysed',
+      ...(shown ? { shown: true } : {}),
+      misses: targets.map((t) => ({
+        rel: t.rel,
+        language: language.get(t.uri.toString()) ?? 'unknown',
+        // Only a candidate could have been shown; a file skipped because its
+        // language is known-blind was not.
+        shown: shown && candidates.has(t.uri.toString()),
+      })),
+    };
   }
 
   /** Whether a server has ever reported for any of these, by event or by content. */
@@ -342,6 +416,41 @@ export class EditorDiagnostics {
       else signal.addEventListener('abort', finish);
     });
   }
+}
+
+/**
+ * D49cd: the run's "never checked" record, one line per language.
+ *
+ * A per-file line repeated 75 times is the noise this replaces. One line per
+ * language still distinguishes "checked, clean" from "never checked" — the
+ * rule the whole module exists for — and it counts, so the reader learns the
+ * size of the blind spot instead of being told about it one file at a time.
+ * The wording names what happened; the parenthetical explains the editor only
+ * when the editor had to be disturbed.
+ */
+export function describeDiagMisses(
+  misses: ReadonlyMap<string, { files: ReadonlySet<string>; shown: boolean }>,
+): string[] {
+  const lines: string[] = [];
+  for (const [language, entry] of misses) {
+    const names = [...entry.files];
+    if (names.length === 1) {
+      const name = names[0]!.split('/').pop() ?? names[0]!;
+      const how = entry.shown
+        ? ' (this editor only reports on a file it is showing, so it was shown)'
+        : '';
+      lines.push(`diagnostics: not checked in ${name} — no language server reported on it${how}`);
+      continue;
+    }
+    const how = entry.shown
+      ? ' (this editor only reports on a file it is showing, so one was shown)'
+      : '';
+    lines.push(
+      `diagnostics: not checked in ${names.length} ${language} files — no language ` +
+        `server reported on any of them${how}`,
+    );
+  }
+  return lines;
 }
 
 /**

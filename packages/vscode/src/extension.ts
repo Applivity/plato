@@ -67,6 +67,7 @@ import {
   writePathsOf,
   loadProjectFile,
   loadImageAttachment,
+  DEFAULT_MAX_IMAGE_BYTES,
   looksLikeImage,
   DEFAULT_PLATO_BODY,
   slashCommand,
@@ -119,6 +120,7 @@ import type { ApprovalRequest, Mode, ImageMime } from '@applivity/plato-core';
 import {
   EditorDiagnostics,
   describeDiagLook,
+  describeDiagMisses,
   type DiagSnapshot,
 } from './diagnostics.js';
 import { chatHtml, type ChatCaps } from './webview.js';
@@ -138,7 +140,7 @@ const MAX_ATTACH_BYTES = 200 * 1024;
  * in chars and meaningless here — and measuring base64 instead would refuse
  * files comfortably inside the limit, since encoding inflates by ~33%.
  */
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGE_BYTES = DEFAULT_MAX_IMAGE_BYTES;
 
 // D44d: cross-message memory fold cadence. A run's context is the running
 // conversation summary + the raw recent tail; when the tail grows past
@@ -5063,6 +5065,10 @@ class ChatHost {
         ctx.images && ctx.images.length > 0
           ? await this.loadRunImages(ctx.images, root)
           : [];
+      // D49cd: files whose language never answered, counted per language for
+      // this run. Emitted once at the end so the line can carry the count — the
+      // per-file version fired on every write and said nothing new.
+      const diagMisses = new Map<string, { files: Set<string>; shown: boolean }>();
       const result = await runAgentLoop({
         root,
         task: modelTask,
@@ -5245,17 +5251,35 @@ class ChatHost {
           this.pendingDiag = null;
           if (snap === null) return undefined;
           const result = await this.editorDiag.collect(snap, e.signal);
-          // The notice is the RECORD: it says whether the editor was asked and
-          // what it said. Without it, "the server found nothing" and "the server
-          // was never reached" look identical in a transcript — and silence that
-          // cannot be told from success is this codebase's oldest lesson.
-          bus.emit({ type: 'notice', runId, text: describeDiagLook(result, snap) });
+          if (result.kind === 'not-analysed') {
+            // D49cd: counted, not posted one file at a time. The run's record
+            // line is emitted after the loop, where the count is known.
+            for (const m of result.misses ?? []) {
+              const entry =
+                diagMisses.get(m.language) ?? { files: new Set<string>(), shown: false };
+              entry.files.add(m.rel);
+              entry.shown = entry.shown || m.shown;
+              diagMisses.set(m.language, entry);
+            }
+          } else {
+            // The notice is the RECORD: it says whether the editor was asked and
+            // what it said. Without it, "the server found nothing" and "the server
+            // was never reached" look identical in a transcript — and silence that
+            // cannot be told from success is this codebase's oldest lesson.
+            bus.emit({ type: 'notice', runId, text: describeDiagLook(result, snap) });
+          }
           if (result.kind !== 'found') return undefined;
           const block = formatDiagnostics(result.diagnostics, { root });
           return block.length > 0 ? block : undefined;
         },
       });
       ended = result.reason;
+      // D49cd: one line per language that was never checked, now that the count
+      // is known. Emitted before the writer closes, so the run record holds it —
+      // and still before `done`, so the UI shows it with the run it belongs to.
+      for (const line of describeDiagMisses(diagMisses)) {
+        bus.emit({ type: 'notice', runId, text: line });
+      }
       // D49bo: kept on the host, because the queue's advance runs after this
       // method has returned and cannot see a local.
       this.lastRunEnd = ended;

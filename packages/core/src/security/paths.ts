@@ -57,6 +57,7 @@ export function pathArgsOf(tool: string, args: Record<string, unknown>): string[
   };
   switch (tool) {
     case 'read_file':
+    case 'read_image':
     case 'write_file':
     case 'apply_diff':
     case 'list_dir':

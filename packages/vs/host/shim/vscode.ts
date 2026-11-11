@@ -744,6 +744,8 @@ export interface WorkspaceApi {
   ): FileSystemWatcher;
   openTextDocument(uri: Uri | string): Promise<{
     uri: Uri;
+    /** What VS Code reports for the document's language. */
+    languageId: string;
     getText(): Promise<string>;
     lineCount: number;
   }>;
@@ -809,11 +811,52 @@ export const workspace: WorkspaceApi = {
     const file = pathOf(uri);
     return {
       uri: typeof uri === 'string' ? Uri.file(uri) : uri,
+      languageId: languageOf(file),
       getText: async () => readFileSync(file, 'utf8'),
       lineCount: 0,
     };
   },
 };
+
+/**
+ * The language id VS Code would assign, for the extensions these tests use.
+ * Not a general mapping — the host code only needs a stable id per kind of
+ * file, and `plaintext` is what VS Code says for anything it has no language
+ * for.
+ */
+const LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  '.ts': 'typescript',
+  '.tsx': 'typescriptreact',
+  '.js': 'javascript',
+  '.mjs': 'javascript',
+  '.py': 'python',
+  '.md': 'markdown',
+  '.json': 'json',
+  '.txt': 'plaintext',
+};
+
+function languageOf(file: string): string {
+  const dot = file.lastIndexOf('.');
+  return dot < 0 ? 'plaintext' : (LANGUAGE_BY_EXTENSION[file.slice(dot).toLowerCase()] ?? 'plaintext');
+}
+
+/**
+ * Test hook for "a language server answered": with
+ * PLATO_SHIM_DIAGNOSTIC_SUFFIX set, a file whose path ends with that suffix
+ * publishes one error when the editor is SHOWN it. That is the measured
+ * behaviour a language server has, and it is the only way a test can tell
+ * "checked and found" from "nobody looked".
+ */
+const publishedDiagnostics = new Set<string>();
+const diagListeners = new Set<(e: { uris: Uri[] }) => void>();
+
+function publishOnShow(file: string): void {
+  const suffix = process.env['PLATO_SHIM_DIAGNOSTIC_SUFFIX'] ?? '';
+  if (suffix.length === 0 || !file.endsWith(suffix)) return;
+  publishedDiagnostics.add(file);
+  const uris = [Uri.file(file)];
+  for (const cb of diagListeners) cb({ uris });
+}
 
 /* ------------------------------------------------------------------- window */
 
@@ -1042,6 +1085,7 @@ export const window: WindowApi = {
       (typeof documentOrUri === 'string' ? documentOrUri : '');
     if (file.length > 0) {
       await uiRequest('editor.open', { path: file });
+      publishOnShow(file);
     }
     return { document: documentOrUri };
   },
@@ -1078,11 +1122,25 @@ export const commands: any = {
 /* ---------------------------------------------------------------- languages */
 
 export const languages: LanguagesApi = {
-  getDiagnostics(): Diagnostic[] {
-    return [];
+  getDiagnostics(uri?: Uri): Diagnostic[] {
+    if (uri === undefined) return [];
+    const file = pathOf(uri);
+    if (!publishedDiagnostics.has(file)) return [];
+    return [
+      {
+        message: 'deliberate shim error',
+        severity: 0,
+        source: 'shim',
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 1 },
+        },
+      },
+    ];
   },
-  onDidChangeDiagnostics(): Disposable {
-    return new Disposable();
+  onDidChangeDiagnostics(cb: (e: { uris: Uri[] }) => void): Disposable {
+    diagListeners.add(cb);
+    return new Disposable(() => diagListeners.delete(cb));
   },
   createDiagnosticCollection(): unknown {
     return {

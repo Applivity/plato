@@ -3153,3 +3153,76 @@ describe('live sessions in the loop (D49cq)', () => {
     expect(names.has('send_to_session')).toBe(false);
   });
 });
+
+/**
+ * D49cd. A real run parsed a PNG's header by hand and then said it had no way
+ * to see the picture: a tool result is a string, and images are legal only in
+ * a user turn. `read_image` returns the bytes beside the result, and the loop
+ * must put them in the SAME user turn as that result. The bytes must never
+ * reach the bus, because the bus is what writes the JSONL transcript.
+ */
+describe('read_image reaches the model, never the record (D49cd)', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const B64 = PNG.toString('base64');
+
+  const callTurn = (tool: string, input: Record<string, unknown>): TurnResponse => ({
+    content: [{ type: 'tool_use', id: 'img1', name: tool, input }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'tool_use',
+  });
+  const done: TurnResponse = {
+    content: [{ type: 'text', text: 'done' }],
+    usage: { inputTokens: 1, outputTokens: 1 },
+    stopReason: 'stop',
+  };
+
+  function capturing(turns: TurnResponse[]): { p: ChatProvider; requests: TurnRequest[] } {
+    const requests: TurnRequest[] = [];
+    let i = 0;
+    return {
+      requests,
+      p: {
+        id: 'anthropic',
+        async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+          requests.push(req);
+          i += 1;
+          const t = turns[i - 1];
+          if (t === undefined) throw new Error('unexpected extra turn');
+          return t;
+        },
+      },
+    };
+  }
+
+  it('hands the image to the provider in the tool result\'s own user turn', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'plato-image-'));
+    writeFileSync(join(root, 'pic.png'), PNG);
+    const { p, requests } = capturing([callTurn('read_image', { path: 'pic.png' }), done]);
+    const bus = new AgentBus();
+    const events: unknown[] = [];
+    bus.on((e) => events.push(e));
+
+    const r = await runAgentLoop({ ...BASE, root, provider: p, bus });
+    expect(r.reason).toBe('complete');
+
+    const userTurn = requests[1]!.messages.find(
+      (m) => m.role === 'user' && m.content.some((b) => b.type === 'tool_result'),
+    );
+    expect(userTurn).toBeDefined();
+    const kinds = userTurn!.content.map((b) => b.type);
+    expect(kinds).toContain('tool_result');
+    expect(kinds).toContain('image');
+    const image = userTurn!.content.find((b) => b.type === 'image');
+    expect(image).toMatchObject({ type: 'image', mime: 'image/png', data: B64 });
+
+    // The hard rule: nothing written to the record may carry the bytes. Asserted
+    // on the captured event stream, not by reading the code.
+    const record = JSON.stringify(events);
+    expect(record).not.toContain(B64.slice(0, 24));
+    expect(record).not.toContain('image/png');
+    expect(record).not.toContain('iVBOR');
+  });
+});

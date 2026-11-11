@@ -291,6 +291,7 @@ function clip(s: string, max = MAX_ARG): string {
 /** The tools a person would describe as an action on a file. */
 const FILE_VERB: Record<string, string> = {
   read_file: 'reading',
+  read_image: 'looking at',
   write_file: 'writing',
   apply_diff: 'editing',
   apply_patch: 'editing',

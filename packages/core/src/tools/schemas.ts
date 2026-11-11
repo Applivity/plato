@@ -168,6 +168,21 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
       },
     },
     {
+      name: 'read_image',
+      description:
+        'Open an image file and see it. Works for PNG, JPEG, GIF and WebP; the image is included with the result, so you can describe what it shows. A text file is refused — use read_file for those.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Image path relative to the workspace root.',
+          },
+        },
+        required: ['path'],
+      },
+    },
+    {
       name: 'write_file',
       description:
         'Create a file, or replace one whose whole contents you already know. An existing EMPTY file is always writable. An existing non-empty file is refused unless you pass overwrite: true — use apply_diff for a targeted edit instead.',
@@ -321,6 +336,11 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
           regex: {
             type: 'boolean',
             description: 'Treat pattern as a JavaScript regular expression.',
+          },
+          path: {
+            type: 'string',
+            description:
+              'Optional folder to search, relative to the workspace root. Omit to search the whole workspace.',
           },
           glob: {
             type: 'string',

@@ -148,6 +148,52 @@ describe('read_file paging (D49c)', () => {
   });
 });
 
+/** A real 1×1 PNG. The bytes decide the type; the name is never trusted. */
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+describe('read_image (D49cd)', () => {
+  it('returns the image beside the text, with no base64 in the text', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'pic.png'), PNG_1PX);
+    const r = await executeTool(root, 'read_image', { path: 'pic.png' });
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('Showing pic.png');
+    expect(r.output).toContain('image/png');
+    expect(r.image?.mime).toBe('image/png');
+    expect(r.image?.data).toBe(PNG_1PX.toString('base64'));
+    // The bytes travel as a block, never inside the model's text.
+    expect(r.output).not.toContain('iVBOR');
+    expect(r.output.length).toBeLessThan(200);
+  });
+
+  it('refuses a text file by name, and sends no image', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'notes.txt'), 'just words\n');
+    const r = await executeTool(root, 'read_image', { path: 'notes.txt' });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('not an image');
+    expect(r.image).toBeUndefined();
+  });
+
+  it('refuses a path outside the workspace', async () => {
+    const r = await executeTool(tempRoot(), 'read_image', { path: '../escape.png' });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('outside the workspace');
+    expect(r.image).toBeUndefined();
+  });
+
+  it('refuses a protected path', async () => {
+    const root = tempRoot();
+    const r = await executeTool(root, 'read_image', { path: '.env' });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('protected file');
+    expect(r.image).toBeUndefined();
+  });
+});
+
 describe('apply_diff and the empty-file dead end (D49b)', () => {
   it('cannot seed an empty file — which is why write_file must handle it', async () => {
     const root = tempRoot();
@@ -158,6 +204,54 @@ describe('apply_diff and the empty-file dead end (D49b)', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.output).toContain('empty SEARCH block');
+  });
+});
+
+/**
+ * A real run looped three times on an apply_diff whose SEARCH and REPLACE
+ * blocks were identical: the engine counted the block as applied, wrote the
+ * same bytes back, and reported success, so the model had no way to learn that
+ * nothing had happened. A call that changed nothing must say so.
+ */
+describe('apply_diff with identical blocks', () => {
+  it('says no change and writes nothing', async () => {
+    const root = tempRoot();
+    const original = 'const x = 1;\n';
+    writeFileSync(join(root, 'same.ts'), original);
+    const caps: Array<{ rel: string; before: string | null }> = [];
+    const r = await executeTool(
+      root,
+      'apply_diff',
+      {
+        path: 'same.ts',
+        diffs: [{ search: 'const x = 1;', replace: 'const x = 1;' }],
+      },
+      { recordWrites: (c) => caps.push(...c.map((x) => ({ rel: x.rel, before: x.before }))) },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('no change');
+    expect(r.output).toContain('identical');
+    expect(readFileSync(join(root, 'same.ts'), 'utf8')).toBe(original);
+    expect(caps).toEqual([]);
+  });
+
+  it('still applies a genuine edit and records it for undo', async () => {
+    const root = tempRoot();
+    writeFileSync(join(root, 'edit.ts'), 'const x = 1;\n');
+    const caps: Array<{ rel: string; before: string | null }> = [];
+    const r = await executeTool(
+      root,
+      'apply_diff',
+      {
+        path: 'edit.ts',
+        diffs: [{ search: 'const x = 1;', replace: 'const x = 2;' }],
+      },
+      { recordWrites: (c) => caps.push(...c.map((x) => ({ rel: x.rel, before: x.before }))) },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain('applied 1 block(s)');
+    expect(readFileSync(join(root, 'edit.ts'), 'utf8')).toBe('const x = 2;\n');
+    expect(caps.map((c) => c.rel)).toEqual(['edit.ts']);
   });
 });
 
@@ -353,6 +447,68 @@ describe('grep (D49l)', () => {
   it('says no matches rather than returning nothing', async () => {
     const r = await executeTool(seedTree(), 'grep', { pattern: 'zzz-not-there' });
     expect(r.output).toBe('no matches');
+  });
+});
+
+/**
+ * The model asked for a folder to search and got the whole workspace instead:
+ * grep had no `path`, so a `path` argument was silently dropped. The folder
+ * belongs beside `glob`, and results stay rooted at the workspace so a glob
+ * written against the full path keeps meaning what it says.
+ */
+describe('grep scoped to a folder', () => {
+  function seedScopes(): string {
+    const root = tempRoot();
+    mkdirSync(join(root, 'inside'), { recursive: true });
+    writeFileSync(join(root, 'inside', 'hit.ts'), 'needle here\n');
+    writeFileSync(join(root, 'outside.ts'), 'needle here\n');
+    writeFileSync(join(root, 'note.md'), 'needle here\n');
+    return root;
+  }
+
+  it('searches only the folder it is given', async () => {
+    const r = await executeTool(seedScopes(), 'grep', {
+      pattern: 'needle',
+      path: 'inside',
+    });
+    expect(r.ok).toBe(true);
+    expect(r.output.split('\n')).toEqual(['inside/hit.ts:1:needle here']);
+    expect(r.output).not.toContain('outside.ts');
+  });
+
+  // Results are still workspace-relative, so a glob written against the full
+  // path keeps its meaning; a folder does not silently re-base the filter.
+  it('combines the folder with a glob', async () => {
+    const r = await executeTool(seedScopes(), 'grep', {
+      pattern: 'needle',
+      path: 'inside',
+      glob: 'inside/*.ts',
+    });
+    expect(r.output).toContain('inside/hit.ts');
+    const miss = await executeTool(seedScopes(), 'grep', {
+      pattern: 'needle',
+      path: 'inside',
+      glob: '*.md',
+    });
+    expect(miss.output).toBe('no matches');
+  });
+
+  it('refuses a folder outside the workspace', async () => {
+    const r = await executeTool(seedScopes(), 'grep', {
+      pattern: 'needle',
+      path: '../',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('outside the workspace');
+  });
+
+  it('says when the folder does not exist', async () => {
+    const r = await executeTool(seedScopes(), 'grep', {
+      pattern: 'needle',
+      path: 'nope',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain('no such directory');
   });
 });
 
