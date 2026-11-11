@@ -31,16 +31,29 @@ export const DEFAULT_MAX_LAYER_CHARS = 16_000;
 const TRUNCATED_MARKER = '\n\n[…truncated…]';
 
 /**
- * D49cd: where project instructions may live, in precedence order — first found
- * wins. All are relative to the workspace root, so containment is by
- * construction; a user-level `~/.claude/CLAUDE.md` is NOT among them.
+ * D49cd (merge): where project instructions may live, in prompt order.
+ *
+ * EVERY file that exists is read, not the first. The order is fixed and runs
+ * base-to-specific — the project root's AGENTS.md, GitHub's copy, then the root
+ * CLAUDE.md, then the tool-specific `.claude` one — so a later section is the
+ * more specific and "nearest wins" holds without a directory walk. All paths
+ * are relative to the workspace root, so containment is by construction; a
+ * user-level `~/.claude/CLAUDE.md` is NOT among them.
  */
 const AGENT_FILE_CANDIDATES = [
   'AGENTS.md',
-  'CLAUDE.md',
   '.github/AGENTS.md',
+  'CLAUDE.md',
   '.claude/CLAUDE.md',
 ] as const;
+
+/**
+ * The one line above each section that names where it came from — a conflict is
+ * then traceable in the prompt itself, and a test can assert provenance.
+ */
+function agentFileLabel(path: string): string {
+  return path.includes('/') ? `From ${path}:` : `From ${path} (project root):`;
+}
 
 /** Trace of where each layer's body came from, for `/system-prompt` later. */
 export type LayerSource =
@@ -51,10 +64,18 @@ export type LayerSource =
       chars: number;
       source: 'disk' | 'fallback' | 'missing';
       present: boolean;
-      /** The file name alone, for a settings row that has little room. */
+      /** The FIRST file used: a settings row with little room shows one name. */
       filename: string | null;
-      /** Workspace-relative path, so the row can say WHERE it was read from. */
+      /** The first file's workspace-relative path. */
       path: string | null;
+      /**
+       * Every file used, in prompt order, with the bytes each supplied (before
+       * the merged layer was clipped). This is the trace a settings/status view
+       * needs when more than one file was read.
+       */
+      files: Array<{ path: string; chars: number }>;
+      /** Candidates skipped because their bytes duplicated an earlier file. */
+      duplicates: string[];
     };
 
 export interface BuildWorkerRoleOpts {
@@ -390,15 +411,30 @@ export async function buildWorkerRole(
     layers.push({ layer: 'plato', chars: c.body.length, source: 'fallback', present: true });
   }
 
-  // D49cd: read the agents layer where projects actually keep it. The run
-  // whose root was the PARENT of the project found nothing while the project
-  // held `kbe\.claude\CLAUDE.md`; root-only was too narrow a rule.
-  //
-  // Precedence, first found wins: root AGENTS.md, root CLAUDE.md,
-  // .github/AGENTS.md, .claude/CLAUDE.md. The user-level ~/.claude/CLAUDE.md is
-  // deliberately NOT read: it belongs to a different tool and is outside the
-  // workspace. A path that is a directory, unreadable or over the cap is simply
-  // not the layer, and the next candidate gets its turn.
+  // D49cd (merge): read EVERY agents file that exists, in the fixed
+  // base-to-specific order, and join them with a label line each. The run whose
+  // root was the PARENT of the project found nothing while the project held
+  // `kbe\.claude\CLAUDE.md`; the founder's project also keeps rules in
+  // `.github/AGENTS.md`, and reading only one of them silently dropped the
+  // other. The user-level ~/.claude/CLAUDE.md is deliberately NOT read: it
+  // belongs to a different tool and is outside the workspace. A candidate that
+  // is a directory, unreadable or over the read cap is skipped, never thrown.
+  const usedFiles: Array<{ path: string; chars: number; body: string }> = [];
+  const seenBodies = new Set<string>();
+  const duplicates: string[] = [];
+  for (const rel of AGENT_FILE_CANDIDATES) {
+    const found = await loadProjectFile(rel, opts.root, DEFAULT_READ_BYTES);
+    if (!found.found) continue;
+    // Byte-identical copies are boilerplate duplicated across tools; include
+    // one and record the other in the trace.
+    if (seenBodies.has(found.body)) {
+      duplicates.push(rel);
+      continue;
+    }
+    seenBodies.add(found.body);
+    usedFiles.push({ path: rel, chars: found.body.length, body: found.body });
+  }
+
   let agentsMeta: LayerSource = {
     layer: 'agents',
     chars: 0,
@@ -406,21 +442,27 @@ export async function buildWorkerRole(
     present: false,
     filename: null,
     path: null,
+    files: [],
+    duplicates: [],
   };
-  for (const rel of AGENT_FILE_CANDIDATES) {
-    const found = await loadProjectFile(rel, opts.root, DEFAULT_READ_BYTES);
-    if (!found.found) continue;
-    const c = clip(found.body, cap);
+  if (usedFiles.length > 0) {
+    // The cap applies to the merged layer as a whole, so one long file cannot
+    // push the rest out unnoticed: the truncation marker still appears.
+    const merged = usedFiles
+      .map((f) => `${agentFileLabel(f.path)}\n${f.body}`)
+      .join('\n\n');
+    const c = clip(merged, cap);
     agentsBody = c.body;
     agentsMeta = {
       layer: 'agents',
       chars: c.body.length,
       source: 'disk',
       present: true,
-      filename: rel.slice(rel.lastIndexOf('/') + 1),
-      path: rel,
+      filename: usedFiles[0]!.path.slice(usedFiles[0]!.path.lastIndexOf('/') + 1),
+      path: usedFiles[0]!.path,
+      files: usedFiles.map((f) => ({ path: f.path, chars: f.chars })),
+      duplicates,
     };
-    break;
   }
   layers.push(agentsMeta);
 

@@ -126,12 +126,13 @@ describe('buildWorkerRole', () => {
     }
   });
 
-  it('prefers AGENTS.md over CLAUDE.md when both exist', async () => {
-    write('AGENTS.md', 'AGENTS WINS');
-    write('CLAUDE.md', 'CLAUDE LOST');
+  it('includes both AGENTS.md and CLAUDE.md, the root AGENTS first', async () => {
+    write('AGENTS.md', 'AGENTS FIRST');
+    write('CLAUDE.md', 'CLAUDE SECOND');
     const r = await buildWorkerRole({ root: dir });
-    expect(r.system).toContain('AGENTS WINS');
-    expect(r.system).not.toContain('CLAUDE LOST');
+    expect(r.system).toContain('AGENTS FIRST');
+    expect(r.system).toContain('CLAUDE SECOND');
+    expect(r.system.indexOf('AGENTS FIRST')).toBeLessThan(r.system.indexOf('CLAUDE SECOND'));
   });
 
   /**
@@ -163,34 +164,36 @@ describe('buildWorkerRole', () => {
     }
   });
 
-  it('keeps the documented precedence across all four locations', async () => {
-    write('.claude/CLAUDE.md', 'FOURTH');
-    write('.github/AGENTS.md', 'THIRD');
-    write('CLAUDE.md', 'SECOND');
-    write('AGENTS.md', 'FIRST');
+  it('includes all four locations in the documented merge order', async () => {
+    write('.claude/CLAUDE.md', 'FOURTH-TOOL');
+    write('CLAUDE.md', 'THIRD-ROOT');
+    write('.github/AGENTS.md', 'SECOND-GITHUB');
+    write('AGENTS.md', 'FIRST-AGENTS');
     const r = await buildWorkerRole({ root: dir });
-    expect(r.system).toContain('FIRST');
-    expect(r.system).not.toContain('SECOND');
-    expect(r.system).not.toContain('THIRD');
-    expect(r.system).not.toContain('FOURTH');
-    expect(r.layers.find((l) => l.layer === 'agents')?.path).toBe('AGENTS.md');
+    const at = (s: string) => r.system.indexOf(s);
+    expect(at('FIRST-AGENTS')).toBeGreaterThan(-1);
+    expect(at('FIRST-AGENTS')).toBeLessThan(at('SECOND-GITHUB'));
+    expect(at('SECOND-GITHUB')).toBeLessThan(at('THIRD-ROOT'));
+    expect(at('THIRD-ROOT')).toBeLessThan(at('FOURTH-TOOL'));
+    const agents = r.layers.find((l) => l.layer === 'agents');
+    expect(agents?.path).toBe('AGENTS.md');
+    if (agents && agents.source === 'disk') {
+      expect(agents.files.map((f) => f.path)).toEqual([
+        'AGENTS.md',
+        '.github/AGENTS.md',
+        'CLAUDE.md',
+        '.claude/CLAUDE.md',
+      ]);
+    }
   });
 
-  it('prefers root CLAUDE.md over both nested locations', async () => {
+  it('keeps the root CLAUDE.md section before the .claude one', async () => {
     write('CLAUDE.md', 'ROOT CLAUDE');
-    write('.github/AGENTS.md', 'NESTED GITHUB');
     write('.claude/CLAUDE.md', 'NESTED CLAUDE');
     const r = await buildWorkerRole({ root: dir });
     expect(r.system).toContain('ROOT CLAUDE');
-    expect(r.system).not.toContain('NESTED');
-  });
-
-  it('prefers .github/AGENTS.md over .claude/CLAUDE.md', async () => {
-    write('.github/AGENTS.md', 'GITHUB WINS');
-    write('.claude/CLAUDE.md', 'CLAUDE LOSES');
-    const r = await buildWorkerRole({ root: dir });
-    expect(r.system).toContain('GITHUB WINS');
-    expect(r.system).not.toContain('CLAUDE LOSES');
+    expect(r.system).toContain('NESTED CLAUDE');
+    expect(r.system.indexOf('ROOT CLAUDE')).toBeLessThan(r.system.indexOf('NESTED CLAUDE'));
   });
 
   it('still reports missing, with no filename or path, when no location exists', async () => {
@@ -262,6 +265,114 @@ describe('buildWorkerRole', () => {
   it('returns a layer trace with stable shape (override/plato/agents)', async () => {
     const r = await buildWorkerRole({ root: dir });
     expect(r.layers.map((l) => l.layer)).toEqual(['override', 'plato', 'agents']);
+  });
+});
+
+/**
+ * D49cd (merge). The founder's own project keeps rules in BOTH
+ * `.github/AGENTS.md` and `.claude/CLAUDE.md`. The first-found rule read one
+ * and silently dropped the other, so a rule existed in his repository and
+ * never reached the model. Every file that exists now joins the prompt, in a
+ * fixed base-to-specific order, each under a line naming where it came from.
+ */
+describe('the agents layer is a merge, not a choice (D49cd)', () => {
+  const agentsOf = (r: Awaited<ReturnType<typeof buildWorkerRole>>) =>
+    r.layers.find((l) => l.layer === 'agents');
+
+  it('reads the .claude file alone and labels it', async () => {
+    write('.claude/CLAUDE.md', 'ONLY-TOOL-RULE');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('ONLY-TOOL-RULE');
+    expect(r.system).toContain('From .claude/CLAUDE.md:');
+  });
+
+  it('reads all four files, in the fixed order, each labelled', async () => {
+    write('AGENTS.md', 'MARK-ROOT-AGENTS');
+    write('.github/AGENTS.md', 'MARK-GITHUB-AGENTS');
+    write('CLAUDE.md', 'MARK-ROOT-CLAUDE');
+    write('.claude/CLAUDE.md', 'MARK-CLAUDE-TOOL');
+    const r = await buildWorkerRole({ root: dir });
+    const order = [
+      'From AGENTS.md (project root):',
+      'From .github/AGENTS.md:',
+      'From CLAUDE.md (project root):',
+      'From .claude/CLAUDE.md:',
+    ];
+    const positions = order.map((label) => r.system.indexOf(label));
+    for (const p of positions) expect(p).toBeGreaterThan(-1);
+    for (let i = 1; i < positions.length; i += 1) {
+      expect(positions[i - 1]!).toBeLessThan(positions[i]!);
+    }
+    for (const marker of ['MARK-ROOT-AGENTS', 'MARK-GITHUB-AGENTS', 'MARK-ROOT-CLAUDE', 'MARK-CLAUDE-TOOL']) {
+      expect(r.system).toContain(marker);
+    }
+  });
+
+  it('includes byte-identical files once and records the duplicate', async () => {
+    const same = 'IDENTICAL-RULE\nSecond line.\n';
+    write('CLAUDE.md', same);
+    write('.claude/CLAUDE.md', same);
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system.split('IDENTICAL-RULE').length - 1).toBe(1);
+    const agents = agentsOf(r);
+    expect(agents?.source).toBe('disk');
+    if (agents && agents.source === 'disk') {
+      expect(agents.files.map((f) => f.path)).toEqual(['CLAUDE.md']);
+      expect(agents.duplicates).toEqual(['.claude/CLAUDE.md']);
+    }
+  });
+
+  it('truncates the MERGED body with the marker, the first file intact', async () => {
+    const first = `FIRST-${'a'.repeat(280)}`;
+    const second = `SECOND-${'b'.repeat(280)}`;
+    write('AGENTS.md', first);
+    write('.claude/CLAUDE.md', second);
+    const r = await buildWorkerRole({ root: dir, maxLayerChars: 400 });
+    expect(r.system).toContain('[…truncated…]');
+    expect(r.system).toContain(first);
+    const agents = agentsOf(r);
+    if (agents && agents.source === 'disk') {
+      expect(agents.chars).toBeLessThanOrEqual(400 + 30);
+      expect(agents.files).toHaveLength(2);
+    }
+  });
+
+  it('skips a directory, uses the next file, and does not throw', async () => {
+    mkdirSync(join(dir, 'AGENTS.md'), { recursive: true });
+    write('.github/AGENTS.md', 'NEXT-CANDIDATE');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).toContain('NEXT-CANDIDATE');
+    expect(r.system).toContain('From .github/AGENTS.md:');
+  });
+
+  it('reports nothing present, with an empty trace', async () => {
+    const r = await buildWorkerRole({ root: dir });
+    const agents = agentsOf(r);
+    expect(agents?.present).toBe(false);
+    expect(agents?.source).toBe('missing');
+    if (agents && agents.source === 'missing') {
+      expect(agents.files).toEqual([]);
+      expect(agents.duplicates).toEqual([]);
+    }
+  });
+
+  it('never reads a user-level ~/.claude/CLAUDE.md', async () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'plato-fake-home-'));
+    try {
+      mkdirSync(join(fakeHome, '.claude'), { recursive: true });
+      writeFileSync(join(fakeHome, '.claude', 'CLAUDE.md'), 'USER-LEVEL-RULE');
+      const r = await buildWorkerRole({ root: dir, globalConfigDir: fakeHome });
+      expect(r.system).not.toContain('USER-LEVEL-RULE');
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps PLATO.md ahead of the agents body', async () => {
+    write('PLATO.md', 'PLATO-RULE');
+    write('.claude/CLAUDE.md', 'AGENTS-RULE');
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system.indexOf('PLATO-RULE')).toBeLessThan(r.system.indexOf('AGENTS-RULE'));
   });
 });
 

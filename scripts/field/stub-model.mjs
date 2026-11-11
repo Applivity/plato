@@ -251,6 +251,10 @@ const server = createServer(async (req, res) => {
   log.push({
     at: new Date().toISOString(),
     model: body.model,
+    // D49cd: the assembled system prompt, only when a test asks for it. It can
+    // carry a project's own instruction files, so it is off by default and the
+    // same switch is what keeps it out of every other suite's log.
+    ...(process.env['PLATO_STUB_LOG_SYSTEM'] === '1' ? { systemText } : {}),
     toolsOffered: offered,
     toolNames: offered > 0 ? body.tools.map((t) => t?.function?.name) : [],
     messages: messages.length,
