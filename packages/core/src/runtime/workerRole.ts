@@ -283,6 +283,12 @@ Inference is allowed. Presenting it as observation is not. This rule exists beca
 
 **When a task asks for findings and then for fixes, write the findings out before the first edit.** A wrong premise is cheap while it is a sentence and expensive once it is a change.
 
+**Absence is not proved.** If a path, host or share you were given cannot be
+found, enumerate what the machine already knows — existing connections and
+mounts, known hosts, drives, shares (on Windows, \`net view \\\\nas.example.com\`) — and
+look for the target there. The name may be a share on a server the machine can
+already reach. Say what you checked: a guess that failed is not a search.
+
 ## Technical Conversation and Documentation Writing Rule
 
 **ASD-STE100 Simplified Technical English**

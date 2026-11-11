@@ -453,6 +453,32 @@ describe('the worker prompt requires per-claim evidence (D49ae)', () => {
 });
 
 /**
+ * A named thing that cannot be found is not proved absent. Three real runs on a
+ * Windows machine were asked for the folders in a share they were told as
+ * `ukhan-win-share`: the model tried the workgroup, then name resolution, then
+ * concluded the share did not exist. With the server named, one enumeration
+ * found it at once. The rule belongs beside the other evidence claims: a guess
+ * that failed is not a search.
+ */
+describe('the worker prompt forbids reading absence from a failed guess', () => {
+  it('states the rule', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('Absence is not proved.');
+  });
+
+  it('says to enumerate what the machine already knows', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('enumerate what the machine already knows');
+  });
+
+  it('keeps the key sentence', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('a guess that failed is not a search');
+  });
+
+  it('asks for the checks to be reported', () => {
+    expect(DEFAULT_PLATO_BODY).toContain('Say what you checked');
+  });
+});
+
+/**
  * D49av. The diagnostics block in a tool result is only worth appending if the
  * model treats it as evidence rather than background noise — and only if it does
  * NOT treat it as a licence to go and fix pre-existing problems nobody asked
