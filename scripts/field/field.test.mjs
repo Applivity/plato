@@ -2390,7 +2390,7 @@ describe('Plato field tests — real VS Code', function () {
    *     is hidden and not disposed.
    */
   if (only.length === 0 || only.includes(41)) {
-    it('case 41 — the activity bar is a chat that keeps its conversation, can be addressed, and opens a new chat from its header', async () => {
+    it('case 41 — the activity bar is a chat that keeps its conversation, can be addressed, and its header mark clears to History', async () => {
       await field.newChat();
       field.cardsSeen = [];
       field.decisions = [];
@@ -2573,9 +2573,12 @@ describe('Plato field tests — real VS Code', function () {
         );
       }
 
-      // The mark in the header opens a NEW CHAT TAB — the same action as the
-      // mark in an editor's title bar, not a wipe of this conversation. Done
-      // last, because it changes the active editor the checks above use.
+      // The same mark means two things, by surface (the founder's rule):
+      //  - on a chat TAB it opens another tab, exactly like the title-bar mark;
+      //  - on the activity-bar chat it CLEARS this view, archiving the
+      //    conversation to History and showing the empty state.
+      // Both are exercised here, tab first, because the tab click changes the
+      // active editor the later checks read.
       await field.webview.switchBack();
       const countTabs = () =>
         field.driver.executeScript(
@@ -2586,8 +2589,10 @@ describe('Plato field tests — real VS Code', function () {
           `const t = document.querySelector('.tab.active, .tabs-container .tab.active');
            return t ? (t.getAttribute('aria-label') || t.textContent || '') : '';`,
         );
+
+      // (a) A chat tab's mark opens a new tab.
       const beforeTabs = await countTabs();
-      await field.switchToSidebarFrame();
+      await field.switchToChatFrame();
       await field.driver.executeScript(
         `const b = document.getElementById('new'); if (b) b.click();`,
       );
@@ -2603,21 +2608,101 @@ describe('Plato field tests — real VS Code', function () {
       }
       if (afterTabs <= beforeTabs || !/Plato/i.test(openedLabel)) {
         throw new Error(
-          `SIDEBAR: the new-chat mark did not open a chat tab (tabs ${beforeTabs} -> ${afterTabs}, active "${openedLabel}")`,
+          `TAB: the header mark did not open a chat tab (tabs ${beforeTabs} -> ${afterTabs}, active "${openedLabel}")`,
         );
       }
+      // Back to one surface before the side checks.
+      await field.closeTabByLabel(openedLabel);
+      const closeDeadline = Date.now() + 10000;
+      while (Date.now() < closeDeadline && (await countTabs()) > beforeTabs) {
+        await field.driver.sleep(250);
+      }
+      if ((await countTabs()) > beforeTabs) {
+        throw new Error('TAB: the tab opened by the mark could not be closed again');
+      }
+
+      // (b) The activity-bar mark clears this view: confirmation, archived to
+      // History, empty state, and NO new tab.
+      const sideTabsBefore = await countTabs();
+      await field.switchToSidebarFrame();
+      const sideLogBefore = await field.logText();
+      if (!sideLogBefore.includes('TAB SIDE: from A')) {
+        throw new Error('SIDEBAR: the conversation was gone before the clear was tested');
+      }
+      await field.driver.executeScript(
+        `const b = document.getElementById('new'); if (b) b.click();`,
+      );
+      // The host asks before clearing. That dialog is VS Code's own modal, in
+      // the workbench DOM — not inside the webview frame.
+      await field.webview.switchBack();
+      const confirm = await field.driver.findElements(
+        By.xpath("//div[contains(@class,'monaco-dialog-box')]//a[normalize-space(text())='New Chat']"),
+      );
+      if (confirm.length === 0) {
+        throw new Error('SIDEBAR: the clear asked for no confirmation, so the click did nothing');
+      }
+      await field.clickElement(confirm[0]);
+      await field.driver.sleep(800);
+      await field.switchToSidebarFrame();
+      let cleared = { log: 'x', title: 'x', composer: false };
+      const clearDeadline = Date.now() + 10000;
+      while (Date.now() < clearDeadline) {
+        cleared = await field.driver.executeScript(`
+          const log = document.getElementById('log');
+          const title = document.getElementById('chatTitleText');
+          const q = document.getElementById('q');
+          return {
+            log: ((log && log.textContent) || '').trim(),
+            title: ((title && title.textContent) || '').trim(),
+            composer: !!q,
+          };
+        `);
+        if (cleared.log === '') break;
+        await field.driver.sleep(250);
+      }
+      // Ready for a new chat: nothing in the log, no title, composer present.
+      if (cleared.log !== '' || cleared.title !== '' || !cleared.composer) {
+        throw new Error(
+          `SIDEBAR: the mark did not clear the view (log "${String(cleared.log).replace(/\s+/g, ' ').slice(0, 120)}", title "${cleared.title}", composer=${cleared.composer})`,
+        );
+      }
+      await field.webview.switchBack();
+      if ((await countTabs()) !== sideTabsBefore) {
+        throw new Error('SIDEBAR: clearing opened a tab; the side mark must not');
+      }
+
+      // The cleared conversation is in History, under the title it had.
+      await field.switchToSidebarFrame();
+      await field.driver.executeScript(
+        `const h = document.getElementById('hist'); if (h) h.click();`,
+      );
+      let historyText = '';
+      const historyDeadline = Date.now() + 10000;
+      while (Date.now() < historyDeadline) {
+        historyText = await field.driver.executeScript(
+          `const b = document.getElementById('hibody'); return (b && b.textContent) || '';`,
+        );
+        if (historyText.includes('TAB SIDE: hello')) break;
+        await field.driver.sleep(250);
+      }
+      if (!historyText.includes('TAB SIDE: hello')) {
+        throw new Error(
+          `SIDEBAR: the cleared conversation is not in History (saw "${String(historyText).replace(/\s+/g, ' ').slice(0, 160)}")`,
+        );
+      }
+      await field.webview.switchBack();
 
       MANIFEST.push({
         case: 41,
         run: 1,
         mode: 'auto',
         orchestration: 'solo',
-        title: 'The activity bar is a chat that keeps its conversation, can be addressed, and opens a new chat from its header',
+        title: 'The activity bar is a chat that keeps its conversation, can be addressed, and its header mark clears to History while a tab mark opens a tab',
         transcript: inboundRun,
         transcriptOk: true,
         screenFailures: [],
       });
-      console.log('  case 41: the sidebar is a chat, survives hide/show, a tab messaged it by name, and its mark opens a tab');
+      console.log('  case 41: the sidebar is a chat, survives hide/show, a tab messaged it by name, its mark clears to History, and a tab mark opens a tab');
     });
   }
 

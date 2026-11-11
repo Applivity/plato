@@ -731,10 +731,11 @@ export function activate(ctx: vscode.ExtensionContext): void {
             view.webview.options = { enableScripts: true };
             void attach(sideSurface(view), SIDE_ID, {
               indexed: false,
-              // No header chip: a new conversation is made from the Plato mark
-              // in an editor's title bar, and this view has no tab bar to hold
-              // another conversation.
-              caps: { ...caps, tabs: false },
+              // This surface has no tab strip of its own, so its header mark
+              // CLEARS: the conversation is archived to History and the view is
+              // ready for a new one. A chat tab's mark opens another tab
+              // instead; that is the whole difference `newChatTab` carries.
+              caps: { ...caps, tabs: false, newChatTab: false },
             });
           },
         },
