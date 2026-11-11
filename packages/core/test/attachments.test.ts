@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   loadImageAttachment,
+  loadImageFile,
   looksLikeImage,
   sniffImageMime,
 } from '../src/runtime/attachments.js';
@@ -129,6 +130,7 @@ describe('loadImageAttachment (D49n)', () => {
   });
 
   it('refuses a path outside the workspace (D49k rule)', async () => {
+
     const r = root();
     const outside = join(r, '..', 'plato-img-outside.png');
     writeFileSync(outside, PNG);
@@ -170,5 +172,58 @@ describe('looksLikeImage (D49o)', () => {
     writeFileSync(join(r, 'lies.png'), NOT_AN_IMAGE);
     const out = await loadImageAttachment('lies.png', r, 1_000_000);
     expect(out.ok).toBe(false);
+  });
+});
+
+/**
+ * D49cd: the USER's image, named by an absolute path.
+ *
+ * The workspace rule belongs to tool calls the model makes. A person attaching
+ * a screenshot from the Desktop is not one, and telling them to move the file
+ * into the project is not an answer. Containment is dropped here and everything
+ * else is kept: the deny-list on the absolute path, the raw-byte cap, and the
+ * bytes deciding the type.
+ */
+describe('loadImageFile for a user-picked image outside the workspace (D49cd)', () => {
+  it('reads an absolute path anywhere on disk and names it by its base name', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-desktop-'));
+    const abs = join(dir, 'shot.png');
+    writeFileSync(abs, PNG);
+    try {
+      const out = await loadImageFile(abs, 1_000_000);
+      expect(out.ok).toBe(true);
+      if (!out.ok) return;
+      expect(out.image.name).toBe('shot.png');
+      expect(out.image.mime).toBe('image/png');
+      expect(out.image.data).toBe(PNG.toString('base64'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still refuses a deny-listed name outside the workspace', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-desktop-'));
+    const abs = join(dir, '.env');
+    writeFileSync(abs, PNG);
+    try {
+      const out = await loadImageFile(abs, 1_000_000);
+      expect(out.ok).toBe(false);
+      if (out.ok) return;
+      expect(out.reason).toContain('deny-list');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still applies the size cap to an outside file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-desktop-'));
+    const abs = join(dir, 'big.png');
+    writeFileSync(abs, PNG);
+    try {
+      const out = await loadImageFile(abs, 10);
+      expect(out.ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

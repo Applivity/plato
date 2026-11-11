@@ -502,7 +502,11 @@ try {
   const textRow = attach.accepted.find((a) => a.image !== true);
   assert.ok(imageRow, 'the PNG is offered as an image');
   assert.equal(imageRow.size, PNG.length, 'the image size is its RAW byte count');
-  assert.equal(textRow.path, 'notes.txt', 'the text file is attached by its root-relative path');
+  // D49cd: the picker returns absolute paths, so an inside file is stored as
+  // the absolute path it was picked by; the chip and the task label use the
+  // base name.
+  assert.equal(textRow.path, join(ROOT, 'notes.txt'), 'the picked path is stored as itself');
+  assert.equal(textRow.name, 'notes.txt', 'the chip shows the base name');
   assert.deepEqual(attach.rejected, [], 'nothing was refused');
 
   // A file offered as an image must BE one.
@@ -517,13 +521,33 @@ try {
     'the refusal says the bytes were checked, not the name',
   );
 
-  // A file outside the workspace is refused at attach time.
+  // D49cd: a file the USER picked outside the workspace is ACCEPTED. The
+  // workspace rule is for tool calls the model makes, not for the picker — a
+  // screenshot on the Desktop is the normal case. The absolute path is stored
+  // and the chip shows the base name.
   mark = posts.length;
   dialogAnswers.push({ paths: [outside] });
   host.receive({ type: 'attach' });
   const away = await waitPost((m) => m.type === 'attach-result', 'the outside-file result', mark);
-  assert.deepEqual(away.accepted, [], 'a file outside the workspace is not attached');
-  assert.equal(away.rejected[0].error, 'outside the workspace', 'the refusal names containment');
+  assert.equal(away.accepted.length, 1, 'a picked file outside the workspace is attached');
+  assert.equal(away.accepted[0].path, outside, 'its absolute path is what is stored');
+  assert.equal(away.accepted[0].name, 'outside.txt', 'the chip shows the base name');
+  assert.deepEqual(away.rejected, [], 'nothing was refused');
+
+  // A deny-listed name outside the workspace is refused by the LIST, not by
+  // containment — the guard that matters still applies.
+  const outsideSecret = join(HOME, '.env');
+  writeFileSync(outsideSecret, 'API_KEY=sk-live-outside-0001\n', 'utf8');
+  mark = posts.length;
+  dialogAnswers.push({ paths: [outsideSecret] });
+  host.receive({ type: 'attach' });
+  const secretAway = await waitPost((m) => m.type === 'attach-result', 'the outside-secret result', mark);
+  assert.deepEqual(secretAway.accepted, [], 'a deny-listed outside file is not attached');
+  assert.equal(
+    secretAway.rejected[0].error,
+    'on the secret deny-list',
+    'the refusal is the deny-list, not containment',
+  );
 
   // Send, and prove the MODEL received both — not merely that the picker did.
   await setScript([{ text: 'I have looked at both.' }]);
@@ -542,6 +566,40 @@ try {
     userText.includes('attached note body'),
     'the attached file body reached the model',
   );
+  // The outside text file was attached in the same batch; its content and the
+  // base-name label reached the model too.
+  assert.ok(
+    userText.includes('[attachment: outside.txt]'),
+    'an outside text file is labelled by its base name',
+  );
+  assert.ok(
+    userText.includes('outside the workspace'),
+    'an outside text file body reached the model',
+  );
+
+  // D49cd: an IMAGE outside the workspace is accepted and its BYTES reach the
+  // provider — the founder's case, a screenshot on the Desktop.
+  const outsidePng = join(HOME, 'desktop-shot.png');
+  writeFileSync(outsidePng, PNG);
+  mark = posts.length;
+  dialogAnswers.push({ paths: [outsidePng] });
+  host.receive({ type: 'attach' });
+  const awayImage = await waitPost(
+    (m) => m.type === 'attach-result',
+    'the outside-image result',
+    mark,
+  );
+  assert.equal(awayImage.accepted.length, 1, 'an outside image is attached');
+  assert.equal(awayImage.accepted[0].image, true, 'and is treated as an image');
+  assert.equal(awayImage.accepted[0].name, 'desktop-shot.png', 'the chip shows its base name');
+
+  await setScript([{ text: 'Seen.' }]);
+  mark = posts.length;
+  const shotDone = await runToEnd(host, 'Look at the desktop screenshot.', mark);
+  assert.equal(shotDone.type, 'done', JSON.stringify(shotDone));
+  const shotTurn = await agentTurn();
+  assert.equal(shotTurn.imageParts, 1, 'the outside image reached the provider');
+  assert.deepEqual(shotTurn.imageMimes, ['image/png'], 'as its sniffed MIME');
   // Pending attachments are consumed by the send, so the next run is clean.
   await settle();
 

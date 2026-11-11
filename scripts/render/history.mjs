@@ -1,5 +1,11 @@
 import { check, page, checkPageClean, finish } from './plib.mjs';
 
+/** D49cd: History opens on Chats; the run-record checks switch to their tab. */
+async function openRunRecords(p) {
+  await p.evaluate(() => document.getElementById('htab-runs').click());
+  await p.waitForTimeout(120);
+}
+
 // The History page's empty Runs state answers the only question a user has when
 // they find no runs: where did they go? It used to answer with ".plato/runs/" —
 // the pre-D46 repo-relative path. That was wrong twice over: the transcripts had
@@ -8,9 +14,13 @@ import { check, page, checkPageClean, finish } from './plib.mjs';
 // decided Plato must never write.
 {
   const p = await page(720, { type: 'history', runs: [], chats: [] });
+  await openRunRecords(p);
   checkPageClean(p, 'history');
   const r = await p.evaluate(() => {
-    const note = document.querySelector('#hibody .note');
+    // D49cd: the Run Records tab now carries a description first, so the
+    // empty-state sentence is the note that mentions the runs directory.
+    const notes = [...document.querySelectorAll('#hibody .note')];
+    const note = notes.find((n) => n.textContent.includes('No runs recorded'));
     return {
       shown: document.body.classList.contains('show-history'),
       note: note ? note.textContent : null,
@@ -49,6 +59,7 @@ import { check, page, checkPageClean, finish } from './plib.mjs';
     },
   ];
   const p = await page(720, { type: 'history', runs, chats: [] });
+  await openRunRecords(p);
   checkPageClean(p, 'history with runs');
 
   const shape = await p.evaluate(() => {
@@ -120,6 +131,7 @@ import { check, page, checkPageClean, finish } from './plib.mjs';
 // destructive control at all.
 {
   const p = await page(720, { type: 'history', runs: [], chats: [] });
+  await openRunRecords(p);
   checkPageClean(p, 'history empty controls');
   const r = await p.evaluate(() => ({
     danger: document.querySelectorAll('#hibody .btn-danger').length,
@@ -164,8 +176,8 @@ import { check, page, checkPageClean, finish } from './plib.mjs';
       current: [...items].filter((i) => i.classList.contains('current')).length,
     };
   });
-  check('the Chats (resume) section renders',
-    shape.headings.includes('Chats (resume)'), shape);
+  check('the Chats section renders, with its one-line description',
+    shape.headings.includes('Chats'), shape);
   check('every saved chat is listed',
     shape.titles.join(',') === 'Release run,Older conversation', shape);
   check('the live chat says it is the current one',
@@ -296,6 +308,128 @@ import { check, page, checkPageClean, finish } from './plib.mjs';
   check('the fold notice says nothing was removed',
     notice.includes('Summary added for 18 earlier messages. Nothing was removed.'), notice);
   await p2.close();
+  await p.close();
+}
+
+// D49cd: History's two tabs and its search.
+//
+// The founder's shape: "Chats" and "Run Records" as tabs, with one search over
+// both. The page must open on Chats, remember the tab while open, show a
+// result's kind, highlight the match, and return to the list when the query is
+// cleared. The file work is the host's; here the host is simulated by
+// dispatching the messages it would post.
+{
+  const chats = [
+    { id: 'c1', title: 'Current chat', ts: '2026-11-11T10:00:00.000Z', count: 3, current: true },
+    { id: 'c2', title: 'Saved chat', ts: '2026-11-10T10:00:00.000Z', count: 5 },
+  ];
+  const runs = [{ file: 'r1.jsonl', task: 'a finished run', startedAt: '2026-11-11T09:00:00.000Z', turns: 2 }];
+  const p = await page(760, { type: 'history', chats, runs });
+  checkPageClean(p, 'history tabs');
+
+  const tabsAtOpen = await p.evaluate(() => ({
+    tabChats: !!document.getElementById('htab-chats'),
+    tabRuns: !!document.getElementById('htab-runs'),
+    active: (document.querySelector('.htab.on') || {}).textContent || '',
+    search: (document.getElementById('hq') || {}).placeholder || '',
+    heading: (document.querySelector('#hibody h4') || {}).textContent || '',
+    desc: (document.querySelector('#hibody .note') || {}).textContent || '',
+    deletes: [...document.querySelectorAll('#hibody .runitem')].map((i) => ({
+      title: (i.querySelector('.rt') || {}).textContent,
+      del: !!i.querySelector('.rdel'),
+    })),
+  }));
+  check('History draws Chats and Run Records tabs',
+    tabsAtOpen.tabChats && tabsAtOpen.tabRuns, tabsAtOpen);
+  check('it opens on Chats', tabsAtOpen.active === 'Chats', tabsAtOpen.active);
+  check('the search field is above them, with its placeholder',
+    tabsAtOpen.search === 'Search chats and run records', tabsAtOpen.search);
+  check('the Chats tab says what it is',
+    tabsAtOpen.heading === 'Chats' && tabsAtOpen.desc === 'Conversations you can reopen.',
+    tabsAtOpen);
+  check('the current chat has no delete; a saved chat does',
+    tabsAtOpen.deletes.find((d) => d.title === 'Current chat')?.del === false
+      && tabsAtOpen.deletes.find((d) => d.title === 'Saved chat')?.del === true,
+    tabsAtOpen.deletes);
+
+  // Switching to Run Records shows the runs and their description.
+  await p.evaluate(() => document.getElementById('htab-runs').click());
+  await p.waitForTimeout(120);
+  const runTab = await p.evaluate(() => ({
+    active: (document.querySelector('.htab.on') || {}).textContent || '',
+    heading: (document.querySelector('#hibody h4') || {}).textContent || '',
+    desc: (document.querySelector('#hibody .note') || {}).textContent || '',
+    items: document.querySelectorAll('#hibody .runitem').length,
+    deleteAll: !!document.querySelector('#hibody .runhead .btn-danger'),
+  }));
+  check('the tab switch shows Run Records', runTab.active === 'Run Records' && runTab.items === 1, runTab);
+  check('the Run Records tab says what it is',
+    runTab.heading === 'Run Records'
+      && runTab.desc === 'Records of finished runs — kept for reference, not resumable.',
+    runTab);
+  check('and keeps Delete all', runTab.deleteAll, runTab);
+
+  // Typing and pressing Enter asks the host; the query is what it sends.
+  await p.evaluate(() => {
+    const q = document.getElementById('hq');
+    q.value = 'saved';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  await p.waitForTimeout(80);
+  const asked = await p.evaluate(() =>
+    window.__posted.filter((m) => m.type === 'historySearch').map((m) => m.query));
+  check('Enter asks the host to search', asked.includes('saved'), asked);
+
+  // Results for both kinds, with the match highlighted.
+  const results = [
+    { kind: 'chat', id: 'c2', title: 'Saved chat', ts: '2026-11-10T10:00:00.000Z',
+      snippet: 'the saved answer is here', start: 4, end: 9 },
+    { kind: 'run', file: 'r1.jsonl', title: 'a finished run', ts: '2026-11-11T09:00:00.000Z',
+      snippet: 'the run said saved too', start: 13, end: 18 },
+  ];
+  await p.evaluate((r) => window.dispatchEvent(new MessageEvent('message', {
+    data: { type: 'historySearchResults', query: 'saved', results: r, truncated: true, scanCapped: false },
+  })), results);
+  await p.waitForTimeout(150);
+  const shown = await p.evaluate(() => ({
+    kinds: [...document.querySelectorAll('#hibody .hkind')].map((e) => e.textContent),
+    titles: [...document.querySelectorAll('#hibody .hcase')].map((e) => e.textContent),
+    marks: [...document.querySelectorAll('#hibody .hsnip mark')].map((e) => e.textContent),
+    notes: [...document.querySelectorAll('#hibody .note')].map((e) => e.textContent),
+  }));
+  check('a chat hit and a run hit are both shown, each saying which it is',
+    shown.kinds.join(',') === 'Chat,Run' && shown.titles.includes('Saved chat')
+      && shown.titles.includes('a finished run'), shown);
+  check('the match is highlighted in the snippet',
+    shown.marks.join(',') === 'saved,saved', shown.marks);
+  check('a capped search says so', shown.notes.includes('Showing the first 40 matches.'), shown.notes);
+
+  // No matches: the line names the query.
+  await p.evaluate(() => window.dispatchEvent(new MessageEvent('message', {
+    data: { type: 'historySearchResults', query: 'saved', results: [], truncated: false, scanCapped: false },
+  })));
+  await p.waitForTimeout(120);
+  const none = await p.evaluate(() => ({
+    body: (document.getElementById('hibody') || {}).textContent || '',
+  }));
+  check('no matches says so, naming the query',
+    none.body.includes('No matches for') && none.body.includes('saved'), none.body);
+
+  // Clearing the field returns to the active tab's list.
+  await p.evaluate(() => {
+    const q = document.getElementById('hq');
+    q.value = '';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(120);
+  const cleared = await p.evaluate(() => ({
+    heading: (document.querySelector('#hibody h4') || {}).textContent || '',
+    items: document.querySelectorAll('#hibody .runitem').length,
+  }));
+  check('clearing the field returns to the list',
+    cleared.heading === 'Run Records' && cleared.items === 1, cleared);
+  checkPageClean(p, 'history search');
   await p.close();
 }
 

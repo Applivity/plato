@@ -67,6 +67,7 @@ import {
   writePathsOf,
   loadProjectFile,
   loadImageAttachment,
+  loadImageFile,
   DEFAULT_MAX_IMAGE_BYTES,
   looksLikeImage,
   DEFAULT_PLATO_BODY,
@@ -125,7 +126,9 @@ import {
 } from './diagnostics.js';
 import { chatHtml, type ChatCaps } from './webview.js';
 import { resolvePlatoHome } from './home.js';
-import { isAbsolute, join, relative } from 'node:path';
+import { attachmentTarget, isAbsoluteAttachmentPath } from './attachments.js';
+import { basename, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
@@ -799,6 +802,42 @@ const STREAM_THROTTLE_MS = 50;
 const CANCELLED_ANSWER = '(the run was cancelled before this was answered)';
 const TITLE_KEY = 'plato.chatTitle';
 const SESSIONS_KEY = 'plato.chatSessions';
+
+/** D49cd: one row of History's search. */
+interface HistorySearchHit {
+  kind: 'chat' | 'run';
+  /** Chat id, or run file name — exactly what the row's click sends. */
+  id?: string;
+  file?: string;
+  /** The live conversation: clicking it returns to the chat. */
+  current?: boolean;
+  title: string;
+  ts: string;
+  snippet: string;
+  /** Match position inside `snippet`, for the page's highlight. */
+  start: number;
+  end: number;
+}
+
+/**
+ * About 80 characters of context around a match. Newlines and carriage
+ * returns become spaces one-for-one, so the match indexes stay valid.
+ */
+function searchSnippet(
+  text: string,
+  at: number,
+  len: number,
+): { snippet: string; start: number; end: number } {
+  const width = 80;
+  let from = Math.max(0, at - 30);
+  let to = Math.min(text.length, from + width);
+  if (to < at + len) {
+    to = Math.min(text.length, at + len);
+    from = Math.max(0, to - width);
+  }
+  const snippet = text.slice(from, to).replace(/[\r\n]/g, ' ');
+  return { snippet, start: at - from, end: at - from + len };
+}
 const SESSIONS_MAX = 30;
 /** D49bj: the mode outlives the panel, like the title and the log. */
 const MODE_KEY = 'plato.chatMode';
@@ -1538,6 +1577,14 @@ class ChatHost {
         }
         if (m.type === 'openHistory') {
           this.sendHistory();
+          return;
+        }
+        if (m.type === 'historySearch' && typeof m.query === 'string') {
+          this.searchHistory(m.query);
+          return;
+        }
+        if (m.type === 'deleteChat' && typeof m.id === 'string') {
+          this.deleteChat(m.id);
           return;
         }
         if (m.type === 'openRun' && typeof m.file === 'string') {
@@ -2603,21 +2650,6 @@ class ChatHost {
     void vscode.window.showTextDocument(file);
   }
 
-  /** True when `raw` resolves to a root-relative path inside `root`. */
-  private relWithinRoot(root: string, raw: string): string | null {
-    const absolute = raw.startsWith('/') || /^[A-Za-z]:[\\/]/.test(raw);
-    let rel: string;
-    if (absolute) {
-      rel = relative(root, raw);
-      // relative() yields '../…' or an absolute path when outside the root.
-      if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return null;
-    } else {
-      rel = raw;
-      if (rel.startsWith('/') || rel.split(/[\\/]/).includes('..')) return null;
-    }
-    return rel;
-  }
-
   /**
    * Validate + collect attached files. The deny-list and caps are checked at
    * attach time so refusals surface immediately; content is re-read at send.
@@ -2626,71 +2658,113 @@ class ChatHost {
     root: string,
     paths: string[],
   ): Promise<{
-    accepted: { path: string; image?: boolean; size?: number }[];
+    accepted: { path: string; name: string; image?: boolean; size?: number }[];
     rejected: { path: string; error: string }[];
   }> {
-    const accepted: { path: string; image?: boolean; size?: number }[] = [];
+    const accepted: { path: string; name: string; image?: boolean; size?: number }[] = [];
     const rejected: { path: string; error: string }[] = [];
     for (const raw of paths) {
-      const rel = this.relWithinRoot(root, raw);
-      if (rel === null) {
-        rejected.push({ path: raw, error: 'outside the workspace' });
+      // D49cd: a file the user PICKED may live anywhere on disk. The workspace
+      // rule is for tool calls the model makes, not for a screenshot on the
+      // Desktop; telling the user to move it into the project is not an answer.
+      // A relative path that escapes with `..` is still refused: that form is
+      // ambiguous, and an absolute path is the honest way to name an outside
+      // file. Every other guard below applies to both forms.
+      const target = attachmentTarget(raw);
+      if ('error' in target) {
+        rejected.push({ path: raw, error: target.error });
         continue;
       }
-      if (isSecretPath(rel)) {
-        rejected.push({ path: rel, error: 'on the secret deny-list' });
+      const { stored, name } = target;
+      const absolute = isAbsoluteAttachmentPath(stored);
+      if (isSecretPath(stored)) {
+        rejected.push({ path: stored, error: 'on the secret deny-list' });
         continue;
       }
-      if (this.pendingAttachments.includes(rel)) continue; // already attached
-      if (this.pendingImages.includes(rel)) continue;
+      if (this.pendingAttachments.includes(stored)) continue; // already attached
+      if (this.pendingImages.includes(stored)) continue;
 
       // D49o: validated HERE, not at send time, so a bad image is refused while
       // the user is still looking at the picker. The bytes are re-read at send,
       // which is what the text attachments already do.
-      if (looksLikeImage(rel)) {
+      if (looksLikeImage(stored)) {
         if (
           this.pendingAttachments.length + this.pendingImages.length >=
           MAX_ATTACH_FILES
         ) {
           rejected.push({
-            path: rel,
+            path: stored,
             error: `over the ${MAX_ATTACH_FILES}-file cap`,
           });
           continue;
         }
-        const img = await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
+        const img = absolute
+          ? await loadImageFile(stored, MAX_IMAGE_BYTES)
+          : await loadImageAttachment(stored, root, MAX_IMAGE_BYTES);
         if (!img.ok) {
           // Offered as an image, so it must BE one. No silent fall back to the
           // text path — that would attach a corrupt PNG as mojibake.
-          rejected.push({ path: rel, error: img.reason });
+          rejected.push({ path: stored, error: img.reason });
           continue;
         }
-        this.pendingImages.push(rel);
-        accepted.push({ path: rel, image: true, size: img.image.bytes });
+        this.pendingImages.push(stored);
+        accepted.push({ path: stored, name, image: true, size: img.image.bytes });
         continue;
       }
 
-      const r = await loadProjectFile(rel, root, MAX_ATTACH_BYTES);
-      if (!r.found) {
-        const why =
-          r.source === 'too-big'
-            ? 'larger than 200 KB'
-            : r.source === 'missing'
-              ? 'file not found'
-              : r.source === 'io'
-                ? r.error
-                : 'unreadable';
-        rejected.push({ path: rel, error: why });
+      let body: string | null = null;
+      let why = 'unreadable';
+      if (absolute) {
+        const r = await this.readOutsideText(stored);
+        if (r.ok) body = r.body;
+        else why = r.reason;
+      } else {
+        const r = await loadProjectFile(stored, root, MAX_ATTACH_BYTES);
+        if (r.found) body = r.body;
+        else {
+          why =
+            r.source === 'too-big'
+              ? 'larger than 200 KB'
+              : r.source === 'missing'
+                ? 'file not found'
+                : r.source === 'io'
+                  ? r.error
+                  : 'unreadable';
+        }
+      }
+      if (body === null) {
+        rejected.push({ path: stored, error: why });
         continue;
       }
       if (this.pendingAttachments.length >= MAX_ATTACH_FILES) {
-        rejected.push({ path: rel, error: `over the ${MAX_ATTACH_FILES}-file cap` });
+        rejected.push({ path: stored, error: `over the ${MAX_ATTACH_FILES}-file cap` });
         continue;
       }
-      this.pendingAttachments.push(rel);
-      accepted.push({ path: rel });
+      this.pendingAttachments.push(stored);
+      accepted.push({ path: stored, name });
     }
     return { accepted, rejected };
+  }
+
+  /**
+   * A text attachment outside the workspace, read fresh at attach/send time.
+   * The deny-list is applied by the caller (and again at send); the cap is the
+   * same 200 KB the in-project path uses.
+   */
+  private async readOutsideText(
+    abs: string,
+  ): Promise<{ ok: true; body: string } | { ok: false; reason: string }> {
+    let text: string;
+    try {
+      text = await readFile(abs, 'utf8');
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException)?.code;
+      return { ok: false, reason: code === 'ENOENT' ? 'file not found' : 'unreadable' };
+    }
+    if (text.length > MAX_ATTACH_BYTES) {
+      return { ok: false, reason: 'larger than 200 KB' };
+    }
+    return { ok: true, body: text };
   }
 
   /**
@@ -2705,7 +2779,11 @@ class ChatHost {
   ): Promise<{ mime: ImageMime; data: string }[]> {
     const out: { mime: ImageMime; data: string }[] = [];
     for (const rel of paths) {
-      const r = await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
+      // D49cd: an absolute entry is a file the user picked by hand, anywhere on
+      // disk; a relative one is still the workspace-scoped form.
+      const r = isAbsoluteAttachmentPath(rel)
+        ? await loadImageFile(rel, MAX_IMAGE_BYTES)
+        : await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
       if (r.ok) out.push({ mime: r.image.mime, data: r.image.data });
     }
     return out;
@@ -3145,10 +3223,23 @@ class ChatHost {
   /** The model-visible task: user text + attached files, read fresh. */
   private async buildModelTask(task: string, ctx: RunCtx, root: string): Promise<string> {
     let out = task;
-    for (const rel of ctx.attach ?? []) {
-      const r = await loadProjectFile(rel, root, MAX_ATTACH_BYTES);
+    for (const entry of ctx.attach ?? []) {
+      // D49cd: an absolute entry is a user-picked file outside the root. Its
+      // base name labels it; the deny-list is applied again here, because the
+      // file may have changed between attach and send.
+      const outside = isAbsoluteAttachmentPath(entry);
+      const label = outside ? basename(entry) : entry;
+      if (outside) {
+        if (isSecretPath(entry)) continue;
+        const r = await this.readOutsideText(entry);
+        if (r.ok) {
+          out += '\n\n[attachment: ' + label + ']\n```\n' + r.body + '\n```';
+        }
+        continue;
+      }
+      const r = await loadProjectFile(entry, root, MAX_ATTACH_BYTES);
       if (r.found) {
-        out += '\n\n[attachment: ' + rel + ']\n```\n' + r.body + '\n```';
+        out += '\n\n[attachment: ' + label + ']\n```\n' + r.body + '\n```';
       }
     }
     return out;
@@ -3942,6 +4033,159 @@ class ChatHost {
       );
     }
     this.sendHistory();
+  }
+
+  /**
+   * D49cd: remove one SAVED conversation. The current chat's entry is
+   * synthesised at send time and is never stored, so its id cannot arrive
+   * here; the guard is kept anyway.
+   */
+  private deleteChat(id: string): void {
+    if (id.length === 0 || id === '__current__') return;
+    void queueSessionsWrite(async () => {
+      const list = this.sessions();
+      const next = list.filter((s) => s.id !== id);
+      if (next.length === list.length) return;
+      await this.ctx.workspaceState.update(SESSIONS_KEY, next);
+    }).then(() => this.sendHistory());
+  }
+
+  /**
+   * D49cd: History's search. The host does the file work so the page never
+   * blocks: chats are in memory, run records are read once each, newest first.
+   *
+   * Scope, by the founder's rule: chat title and every message text (both
+   * roles); run task, every assistant text event, and every notice. Never tool
+   * arguments or output — those are absent from the record by design.
+   */
+  private searchHistory(rawQuery: string): void {
+    const query = rawQuery;
+    const needle = query.trim().toLowerCase();
+    const results: HistorySearchHit[] = [];
+    let truncated = false;
+    let scanCapped = false;
+    const MAX_RESULTS = 40;
+    const MAX_PER_RUN = 3;
+    const MAX_RUN_FILES = 200;
+    const push = (hit: HistorySearchHit): boolean => {
+      if (results.length >= MAX_RESULTS) {
+        truncated = true;
+        return false;
+      }
+      results.push(hit);
+      return true;
+    };
+
+    if (needle.length > 0) {
+      // The live conversation is a chat too — History lists it first, so search
+      // must find it. Its row is marked current, and clicking it returns to the
+      // chat instead of resuming something.
+      const liveMsgs = this.log.filter((e) => e.k === 'msg');
+      if (liveMsgs.length > 0) {
+        const first = this.log.find((e) => e.k === 'msg' && e.cls === 'you');
+        const title =
+          this.chatTitle ||
+          String((first && first.k === 'msg' ? first.text : '') || 'Chat').slice(0, 80);
+        const sources = [title, ...liveMsgs.map((e) => String(e.text ?? ''))];
+        for (const text of sources) {
+          const at = text.toLowerCase().indexOf(needle);
+          if (at < 0) continue;
+          push({
+            kind: 'chat',
+            current: true,
+            title,
+            ts: new Date().toISOString(),
+            ...searchSnippet(text, at, needle.length),
+          });
+          break;
+        }
+      }
+      // Saved chats: the title and every message, one row at the first hit.
+      for (const s of this.sessions()) {
+        const sources = [
+          String(s.title ?? ''),
+          ...s.log.filter((e) => e.k === 'msg').map((e) => String(e.text ?? '')),
+        ];
+        for (const text of sources) {
+          const at = text.toLowerCase().indexOf(needle);
+          if (at < 0) continue;
+          push({
+            kind: 'chat',
+            id: s.id,
+            title: s.title || 'Chat',
+            ts: s.ts,
+            ...searchSnippet(text, at, needle.length),
+          });
+          break;
+        }
+        if (truncated) break;
+      }
+    }
+
+    const dir = this.runsDir();
+    if (dir && !truncated && needle.length > 0) {
+      const files = runFilesIn(dir);
+      if (files.length > MAX_RUN_FILES) scanCapped = true;
+      for (const f of files.slice(0, MAX_RUN_FILES)) {
+        let lines: string[];
+        let header: Record<string, unknown>;
+        try {
+          lines = readRunText(dir, f)
+            .split('\n')
+            .filter((l) => l.trim().length > 0);
+          header = JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        const task = String(header['task'] ?? '');
+        const startedAt = String(header['startedAt'] ?? '');
+        const sources: string[] = [task];
+        for (const l of lines.slice(1)) {
+          try {
+            const e = JSON.parse(l) as Record<string, unknown>;
+            if (
+              (e['type'] === 'text' || e['type'] === 'notice') &&
+              typeof e['text'] === 'string'
+            ) {
+              sources.push(e['text']);
+            }
+          } catch {
+            /* a corrupt line is not the search's to fail on */
+          }
+        }
+        let perRun = 0;
+        for (const text of sources) {
+          let from = 0;
+          while (perRun < MAX_PER_RUN) {
+            const at = text.toLowerCase().indexOf(needle, from);
+            if (at < 0) break;
+            if (
+              !push({
+                kind: 'run',
+                file: f,
+                title: task || '(no task)',
+                ts: startedAt,
+                ...searchSnippet(text, at, needle.length),
+              })
+            ) {
+              break;
+            }
+            perRun += 1;
+            from = at + needle.length;
+          }
+          if (perRun >= MAX_PER_RUN || truncated) break;
+        }
+        if (truncated) break;
+      }
+    }
+
+    void this.panel.webview.postMessage({
+      type: 'historySearchResults',
+      query,
+      results,
+      truncated,
+      scanCapped,
+    });
   }
 
   private deleteAllRuns(): void {

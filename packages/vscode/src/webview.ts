@@ -405,6 +405,31 @@ export function chatHtml(
   #historyPage { display:none; }
   body.show-history #historyPage { display:flex; flex-direction:column;
                                    height:100vh; }
+  /* D49cd: search sits above the tabs, and the tabs above the list. */
+  #hsearch { padding:10px 14px 0; }
+  #hq { width:100%; box-sizing:border-box; font-family:inherit; font-size:12px;
+        padding:6px 9px; border-radius:6px; color:var(--vscode-input-foreground,#ddd);
+        background:var(--vscode-input-background,rgba(128,128,128,.12));
+        border:1px solid var(--pl-border); outline:none; }
+  #hq:focus { border-color:var(--vscode-focusBorder,#6a6a6a); }
+  #htabs { display:flex; gap:6px; padding:10px 14px 0; }
+  .htab { font-family:inherit; font-size:12px; padding:4px 12px; cursor:pointer;
+          border:1px solid var(--pl-border); border-radius:999px;
+          background:transparent; color:var(--pl-muted); }
+  .htab:hover { color:var(--vscode-editor-foreground);
+                background:rgba(128,128,128,.08); }
+  .htab.on { color:var(--vscode-editor-foreground);
+             background:rgba(128,128,128,.14); border-color:var(--vscode-focusBorder,#6a6a6a); }
+  .hresult { border:1px solid var(--pl-border); border-radius:6px;
+             padding:8px 10px; margin-bottom:8px; cursor:pointer; }
+  .hresult:hover { border-color:var(--pl-accent); }
+  .hresult .hkind { font-size:10px; text-transform:uppercase; letter-spacing:.08em;
+                    color:var(--pl-muted); }
+  .hresult .hcase { font-weight:600; font-size:12px; word-break:break-word; }
+  .hresult .hdate { font-size:11px; color:var(--pl-muted); margin-top:1px; }
+  .hresult .hsnip { font-size:11.5px; margin-top:3px; word-break:break-word; }
+  .hresult mark { background:var(--vscode-editor-findMatchHighlightBackground,#6b5413);
+                  color:inherit; border-radius:2px; }
   #hibody { flex:1; overflow-y:auto; padding:12px 14px; }
   .runitem { border:1px solid var(--pl-border); border-radius:6px;
              padding:8px 10px; margin-bottom:8px; cursor:pointer;
@@ -1480,6 +1505,14 @@ export function chatHtml(
     <span class="stitle" id="htitle">History</span>
     <button id="hback" class="sback" type="button">Back to chat</button>
   </header>
+  <div id="hsearch">
+    <input id="hq" type="search" placeholder="Search chats and run records"
+           aria-label="Search chats and run records" />
+  </div>
+  <div id="htabs" role="tablist">
+    <button id="htab-chats" class="htab" role="tab" type="button">Chats</button>
+    <button id="htab-runs" class="htab" role="tab" type="button">Run Records</button>
+  </div>
   <div id="hibody"></div>
 </div>
 <script nonce="${nonce}">
@@ -2192,8 +2225,20 @@ export function chatHtml(
   // History / transcript replay (M3).
   const hbody = document.getElementById('hibody');
   const htitle = document.getElementById('htitle');
+  const hq = document.getElementById('hq');
+  const htabChats = document.getElementById('htab-chats');
+  const htabRuns = document.getElementById('htab-runs');
   let hRuns = [];
   let hChats = [];
+  /* D49cd: History's own state. The tab is remembered while the screen is
+     open, not across sessions; the query lives only in the field. */
+  let hTab = 'chats';
+  let hQuery = '';
+  let hResults = null;
+  let hCapped = false;
+  let hScanCapped = false;
+  let hTimer = null;
+  let hCurrent = { chats: [], runs: [] };
   /** D49cq: the words a person reads for a sender's host. */
   function hostWord(h) {
     return h === 'vs' ? 'Visual Studio' : h === 'cli' ? 'Terminal' : 'VS Code';
@@ -2204,11 +2249,36 @@ export function chatHtml(
   });
   document.getElementById('hback').addEventListener('click', () => {
     if (htitle.textContent === 'Run detail') {
-      showHistory({ runs: hRuns, chats: hChats }); // detail -> list
+      // detail -> the list the user came from, query and tab intact
+      htitle.textContent = 'History';
+      renderHistory();
       return;
     }
     document.body.classList.remove('show-history');
   });
+
+  // D49cd: search runs on Enter or on a 400 ms pause. The host does the file
+  // work; the page only asks and draws.
+  if (hq) {
+    hq.addEventListener('input', () => {
+      if (hTimer) { clearTimeout(hTimer); hTimer = null; }
+      if (hq.value.trim().length === 0) {
+        hQuery = '';
+        hResults = null;
+        renderHistory();
+        return;
+      }
+      hTimer = setTimeout(() => { hTimer = null; searchNow(); }, 400);
+    });
+    hq.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (hTimer) { clearTimeout(hTimer); hTimer = null; }
+      searchNow();
+    });
+  }
+  htabChats.addEventListener('click', () => { hTab = 'chats'; renderHistory(); });
+  htabRuns.addEventListener('click', () => { hTab = 'runs'; renderHistory(); });
 
   function kfmt(n) {
     if (n >= 1000000) return (+(n / 1000000).toFixed(1)) + 'M';
@@ -2216,67 +2286,115 @@ export function chatHtml(
   }
 
   function showHistory(m) {
+    const wasOpen = document.body.classList.contains('show-history');
     hRuns = m.runs || [];
     hChats = m.chats || [];
-    const chats = m.chats || [];
+    hCurrent = { chats: hChats, runs: hRuns };
     document.body.classList.remove('show-settings');
     document.body.classList.add('show-history');
     htitle.textContent = 'History';
-    hbody.textContent = '';
-    if (chats.length > 0) {
-      const sec = el('div', 'sec');
-      sec.appendChild(el('h4', null, 'Chats (resume)'));
-      for (const c of chats) {
-        const item = el('div', 'runitem');
-        item.appendChild(el('div', 'rt', String(c.title || 'Chat')));
-        // D42: the first entry is the live conversation - clicking it
-        // just returns to the chat, same as the Back button. Everything else
-        // is a SAVED chat: open conversations are editor tabs now, and the
-        // founder asked for this list to go back to being the conversation
-        // plus what is stored.
-        const isCurrent = !!c.current;
-        item.appendChild(el('div', 'rm',
-          String(c.ts || '').replace('T', ' ').slice(0, 19)
-          + ' \u00b7 ' + c.count + ' messages \u00b7 '
-          + (isCurrent ? 'current chat \u00b7 click to open' : 'click to resume')));
-        if (isCurrent) {
-          item.classList.add('current');
-          item.addEventListener('click', () => {
-            document.body.classList.remove('show-history');
-          });
-        } else {
-          item.addEventListener('click', () => {
-            vsapi.postMessage({ type: 'resumeChat', id: c.id });
-          });
-        }
-        sec.appendChild(item);
-      }
-      hbody.appendChild(sec);
+    // D49cd: a fresh open starts on Chats with no query. A refresh (a delete
+    // re-sends the same payload) keeps where the user was.
+    if (!wasOpen) {
+      hTab = 'chats';
+      hQuery = '';
+      if (hq) hq.value = '';
     }
+    hResults = null;
+    hCapped = false;
+    hScanCapped = false;
+    renderHistory();
+  }
+
+  function setTabs() {
+    htabChats.classList.toggle('on', hTab === 'chats');
+    htabRuns.classList.toggle('on', hTab === 'runs');
+    htabChats.setAttribute('aria-selected', hTab === 'chats' ? 'true' : 'false');
+    htabRuns.setAttribute('aria-selected', hTab === 'runs' ? 'true' : 'false');
+  }
+
+  function renderHistory() {
+    setTabs();
+    hbody.textContent = '';
+    if (hQuery.trim().length > 0) renderSearch();
+    else if (hTab === 'chats') renderChats();
+    else renderRuns();
+    scroll();
+  }
+
+  function renderChats() {
+    const chats = hCurrent.chats;
+    const sec = el('div', 'sec');
+    sec.appendChild(el('h4', null, 'Chats'));
+    sec.appendChild(el('div', 'note', 'Conversations you can reopen.'));
+    if (chats.length === 0) {
+      sec.appendChild(el('div', 'note', 'No saved conversations yet.'));
+      hbody.appendChild(sec);
+      return;
+    }
+    for (const c of chats) {
+      const item = el('div', 'runitem');
+      item.appendChild(el('div', 'rt', String(c.title || 'Chat')));
+      // D42: the first entry is the live conversation - clicking it just
+      // returns to the chat. Everything else is a SAVED chat.
+      const isCurrent = !!c.current;
+      item.appendChild(el('div', 'rm',
+        String(c.ts || '').replace('T', ' ').slice(0, 19)
+        + ' \u00b7 ' + c.count + ' messages \u00b7 '
+        + (isCurrent ? 'current chat \u00b7 click to open' : 'click to resume')));
+      if (isCurrent) {
+        item.classList.add('current');
+        item.addEventListener('click', () => {
+          document.body.classList.remove('show-history');
+        });
+      } else {
+        item.addEventListener('click', () => {
+          vsapi.postMessage({ type: 'resumeChat', id: c.id });
+        });
+        // D49cd: a saved chat can be deleted, with the same two-step confirm
+        // every destructive control here uses. The CURRENT chat gets none.
+        const del = armDanger('\u00d7', null, () =>
+          vsapi.postMessage({ type: 'deleteChat', id: c.id }));
+        del.classList.add('rdel');
+        del.setAttribute('aria-label', 'Delete this chat (asks once to confirm)');
+        item.appendChild(del);
+      }
+      sec.appendChild(item);
+    }
+    hbody.appendChild(sec);
+  }
+
+  function renderRuns() {
+    const runs = hCurrent.runs;
     const sec2 = el('div', 'sec');
     const rhead = el('div', 'runhead');
-    rhead.appendChild(el('h4', null, 'Runs'));
-    if (hRuns.length > 0) {
+    rhead.appendChild(el('h4', null, 'Run Records'));
+    if (runs.length > 0) {
       // D49ay: the user's own call, and the only way a transcript is ever
       // removed automatically or otherwise. It asks once before doing it.
       const delAll = armDanger(
         'Delete all',
-        'Delete all ' + hRuns.length + '?',
+        'Delete all ' + runs.length + '?',
         () => vsapi.postMessage({ type: 'deleteAllRuns' }),
       );
       delAll.setAttribute('aria-label',
-        'Delete all ' + hRuns.length + ' saved runs (asks once to confirm)');
+        'Delete all ' + runs.length + ' saved runs (asks once to confirm)');
       rhead.appendChild(delAll);
     }
     sec2.appendChild(rhead);
-    if (hRuns.length === 0) {
+    sec2.appendChild(el(
+      'div',
+      'note',
+      'Records of finished runs \u2014 kept for reference, not resumable.',
+    ));
+    if (runs.length === 0) {
       sec2.appendChild(el(
         'div',
         'note',
         'No runs recorded yet. Plato saves the record of every run in ~/.plato/runs/.',
       ));
     } else {
-      for (const r of hRuns) {
+      for (const r of runs) {
         const item = el('div', 'runitem');
         item.appendChild(el('div', 'rt', String(r.task || '(no task)')));
         const meta = [
@@ -2289,8 +2407,6 @@ export function chatHtml(
           r.costUsd > 0 ? '\u2248$' + Number(r.costUsd).toFixed(4) : '',
         ].filter(Boolean).join(' \u00b7 ');
         item.appendChild(el('div', 'rm', meta));
-        // D49ay: one run, one click, one confirmation. The glyph keeps its size
-        // when armed \u2014 the filled red state is the signal, not new text.
         const del = armDanger('\u00d7', null, () =>
           vsapi.postMessage({ type: 'deleteRun', file: r.file }));
         del.classList.add('rdel');
@@ -2303,7 +2419,69 @@ export function chatHtml(
       }
     }
     hbody.appendChild(sec2);
-    scroll();
+  }
+
+  function renderSearch() {
+    const results = hResults || [];
+    if (results.length === 0) {
+      hbody.appendChild(el(
+        'div',
+        'note',
+        'No matches for \u201c' + hQuery.trim() + '\u201d.',
+      ));
+      return;
+    }
+    for (const r of results) {
+      const item = el('div', 'hresult');
+      item.appendChild(el('div', 'hkind', r.kind === 'chat' ? 'Chat' : 'Run'));
+      item.appendChild(el('div', 'hcase',
+        String(r.title || (r.kind === 'chat' ? 'Chat' : '(no task)'))));
+      item.appendChild(el('div', 'hdate',
+        String(r.ts || '').replace('T', ' ').slice(0, 19)));
+      item.appendChild(snippetRow(r));
+      item.addEventListener('click', () => {
+        if (r.kind === 'chat' && r.current === true) {
+          document.body.classList.remove('show-history');
+        } else if (r.kind === 'chat' && typeof r.id === 'string') {
+          vsapi.postMessage({ type: 'resumeChat', id: r.id });
+        } else if (r.kind === 'run' && typeof r.file === 'string') {
+          vsapi.postMessage({ type: 'openRun', file: r.file });
+        }
+      });
+      hbody.appendChild(item);
+    }
+    if (hCapped) hbody.appendChild(el('div', 'note', 'Showing the first 40 matches.'));
+    if (hScanCapped) {
+      hbody.appendChild(el('div', 'note', 'Searched the newest 200 run records.'));
+    }
+  }
+
+  // The match is highlighted by building text nodes around it, never by
+  // putting the stored text into HTML.
+  function snippetRow(r) {
+    const row = el('div', 'hsnip');
+    const text = String(r.snippet || '');
+    const a = Math.max(0, Math.min(Number(r.start) || 0, text.length));
+    const b = Math.max(a, Math.min(Number(r.end) || a, text.length));
+    row.appendChild(document.createTextNode(text.slice(0, a)));
+    if (b > a) {
+      const m = document.createElement('mark');
+      m.textContent = text.slice(a, b);
+      row.appendChild(m);
+    }
+    row.appendChild(document.createTextNode(text.slice(b)));
+    return row;
+  }
+
+  function searchNow() {
+    const q = hq ? hq.value : '';
+    if (q.trim().length === 0) {
+      hQuery = '';
+      hResults = null;
+      renderHistory();
+      return;
+    }
+    vsapi.postMessage({ type: 'historySearch', query: q });
   }
 
   function showRun(m) {
@@ -4211,8 +4389,11 @@ export function chatHtml(
       glyph.title = 'image';
       chip.appendChild(glyph);
     }
+    // D49cd: a file picked from outside the workspace is shown by its base
+    // name — the full path is stored, but it is not the chip's label.
+    const shown = String(a.name || path);
     const name = el('span', 'ac-name',
-      a.image && a.size ? path + '  ' + fmtBytes(Number(a.size)) : path);
+      a.image && a.size ? shown + '  ' + fmtBytes(Number(a.size)) : shown);
     const x = document.createElement('button');
     x.className = 'ac-x';
     x.type = 'button';
@@ -4490,6 +4671,19 @@ export function chatHtml(
         }
         break;
       case 'history': showHistory(m); break; // D42b: pass the full payload (m.runs dropped m.chats)
+      case 'historySearchResults': {
+        // Ignore a reply for a query the field no longer holds.
+        const asked = String(m.query || '').trim().toLowerCase();
+        const now = String(hq ? hq.value : '').trim().toLowerCase();
+        if (asked.length > 0 && asked === now) {
+          hQuery = String(m.query || '');
+          hResults = Array.isArray(m.results) ? m.results : [];
+          hCapped = m.truncated === true;
+          hScanCapped = m.scanCapped === true;
+          renderHistory();
+        }
+        break;
+      }
       case 'run': showRun(m); break;
       case 'title': setTitle(String(m.text || '')); break;
       case 'tool-words': toolWords = m.words || {}; break;

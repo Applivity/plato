@@ -121,16 +121,32 @@ export async function loadImageAttachment(
   maxBytes: number,
 ): Promise<ImageLoad> {
   // Defense in depth: the host checks containment before reading anything, and
-  // this is the same rule where the bytes are actually touched (D49k).
+  // this is the same rule where the bytes are actually touched (D49k). This is
+  // the MODEL-facing path; a file the user picked by hand is `loadImageFile`.
   if (resolveInRoot(root, rel) === null) {
     return { ok: false, reason: 'outside the workspace' };
   }
-  if (isSecretPath(rel)) {
+  const r = await loadImageFile(join(root, rel), maxBytes);
+  return r.ok ? { ok: true, image: { ...r.image, name: rel } } : r;
+}
+
+/**
+ * D49cd: an image the USER picked, named by its absolute path.
+ *
+ * The workspace rule belongs to tool calls the model makes; a person attaching
+ * a screenshot from their Desktop is not a tool call, and telling them to move
+ * the file into the project is not a useful answer. Containment is therefore
+ * not applied here — but every other guard is: the secret deny-list is checked
+ * on the absolute path, the raw-byte cap holds, and the bytes (not the name)
+ * decide the type.
+ */
+export async function loadImageFile(abs: string, maxBytes: number): Promise<ImageLoad> {
+  if (isSecretPath(abs)) {
     return { ok: false, reason: 'on the secret deny-list' };
   }
   let buf: Buffer;
   try {
-    buf = await readFile(join(root, rel));
+    buf = await readFile(abs);
   } catch (e) {
     const code = (e as NodeJS.ErrnoException)?.code;
     return { ok: false, reason: code === 'ENOENT' ? 'file not found' : 'unreadable' };
@@ -148,8 +164,10 @@ export async function loadImageAttachment(
       reason: 'not a PNG, JPEG, WebP or GIF — checked the bytes, not the name',
     };
   }
+  const cut = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'));
+  const name = cut >= 0 ? abs.slice(cut + 1) : abs;
   return {
     ok: true,
-    image: { name: rel, mime, data: buf.toString('base64'), bytes: buf.length },
+    image: { name, mime, data: buf.toString('base64'), bytes: buf.length },
   };
 }

@@ -24,6 +24,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { chatValue } from './chat-state.mjs';
 
@@ -342,6 +343,148 @@ try {
   assert.equal(typeof firstRun.turns, 'number', 'a run reports its turns');
 
   /* ================================================================== */
+  /* 4b. Search across chats and run records (D49cd)                    */
+  /* ================================================================== */
+  // A fixture transcript, so the per-run cap and the notice scope are provable
+  // without depending on what earlier sections happened to run.
+  const key = createHash('sha1').update(ROOT).digest('hex').slice(0, 8);
+  const runsDir = join(HOME, '.plato', 'runs', key);
+  mkdirSync(runsDir, { recursive: true });
+  const fixture = [
+    {
+      kind: 'header',
+      schemaVersion: 1,
+      runId: 'fixture',
+      startedAt: '2026-11-11T09:00:00.000Z',
+      task: 'Fixture task about needles',
+      root: ROOT,
+      mode: 'auto',
+    },
+    ...[1, 2, 3, 4, 5].map((i) => ({
+      type: 'text',
+      runId: 'fixture',
+      text: `needle line ${i} with context around it`,
+    })),
+    { type: 'notice', runId: 'fixture', text: 'a notice mentioning needle once' },
+  ];
+  const fixtureFile = '2099-01-01T00-00-00-000Z-fixture.jsonl';
+  writeFileSync(
+    join(runsDir, fixtureFile),
+    fixture.map((e) => JSON.stringify(e)).join('\n') + '\n',
+    'utf8',
+  );
+
+  const search = async (query) => {
+    const at = posts.length;
+    host.receive({ type: 'historySearch', query });
+    return await waitPost(
+      (m) => m.type === 'historySearchResults' && m.query === query,
+      `search results for "${query}"`,
+      at,
+    );
+  };
+
+  // A run hit: at most three matches for one file, each snippet carries the
+  // term and the indexes point at it.
+  const runHits = await search('needle');
+  const fixtureHits = runHits.results.filter((r) => r.file === fixtureFile);
+  assert.equal(fixtureHits.length, 3, 'at most three matches per run file');
+  for (const hit of fixtureHits) {
+    assert.equal(hit.kind, 'run', 'the hit says it is a run record');
+    assert.equal(hit.title, 'Fixture task about needles', 'the row names the task');
+    assert.ok(
+      hit.snippet.slice(hit.start, hit.end).toLowerCase() === 'needle',
+      'the snippet carries the matched term and the indexes point at it',
+    );
+  }
+
+  // The notice text is in scope: with the task and five text lines capped at
+  // three, a query that only a notice contains must still find it.
+  const noticeHit = await search('notice mentioning');
+  assert.equal(noticeHit.results.length, 1, 'a notice is searched and returned');
+  assert.equal(noticeHit.results[0].kind, 'run');
+  assert.ok(
+    noticeHit.results[0].snippet.includes('a notice mentioning needle once'),
+    'the snippet is the notice text',
+  );
+
+  // A chat hit: the live conversation is searchable and marked current.
+  const liveHit = await search('Question 3');
+  const current = liveHit.results.find((r) => r.kind === 'chat' && r.current === true);
+  assert.ok(current, 'the live chat is a searchable chat');
+  assert.ok(
+    current.snippet.slice(current.start, current.end) === 'Question 3',
+    'the live chat snippet carries the term',
+  );
+
+  // A saved chat hit names its id, so the row can resume it.
+  const savedHit = await search('Old answer');
+  const savedRow = savedHit.results.find((r) => r.id === 'saved-1');
+  assert.ok(savedRow, 'a saved chat is a search hit by message text');
+  assert.equal(savedRow.title, 'Older conversation');
+  assert.ok(
+    savedRow.snippet.slice(savedRow.start, savedRow.end) === 'Old answer',
+    'the saved chat snippet carries the term',
+  );
+
+  // Case-insensitive substring, and no match says empty rather than guessing.
+  const upper = await search('NEEDLE');
+  assert.ok(upper.results.length > 0, 'matching is case-insensitive');
+  const none = await search('zzz-no-such-thing');
+  assert.deepEqual(none.results, [], 'no match returns no rows');
+  assert.equal(none.truncated, false, 'and does not claim a cap was hit');
+
+  // The 40-result cap, and the line that admits it. Fourteen extra files at
+  // three matches each would be 42 rows.
+  for (let i = 0; i < 14; i += 1) {
+    const rows = [
+      {
+        kind: 'header',
+        schemaVersion: 1,
+        runId: `cap-${i}`,
+        startedAt: `2099-02-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`,
+        task: `cap needle ${i}`,
+        root: ROOT,
+        mode: 'auto',
+      },
+      { type: 'text', runId: `cap-${i}`, text: `cap needle one ${i}` },
+      { type: 'text', runId: `cap-${i}`, text: `cap needle two ${i}` },
+    ];
+    writeFileSync(
+      join(runsDir, `2099-02-${String(i + 1).padStart(2, '0')}T00-00-00-000Z-cap-${i}.jsonl`),
+      rows.map((e) => JSON.stringify(e)).join('\n') + '\n',
+      'utf8',
+    );
+  }
+  const capped = await search('cap needle');
+  assert.equal(capped.results.length, 40, 'at most 40 results come back');
+  assert.equal(capped.truncated, true, 'and the reply admits the cap was hit');
+
+  // The newest-200 scan limit: the only hit is in file 201, so it is not seen,
+  // and the reply says the scan was capped rather than pretending it is empty.
+  for (let i = 0; i < 201; i += 1) {
+    const rows = [
+      {
+        kind: 'header',
+        schemaVersion: 1,
+        runId: `scan-${i}`,
+        startedAt: '2098-01-01T00:00:00.000Z',
+        task: i === 200 ? 'deepneedle is here' : `scan filler ${i}`,
+        root: ROOT,
+        mode: 'auto',
+      },
+    ];
+    writeFileSync(
+      join(runsDir, `2098-01-${String(201 - i).padStart(3, '0')}T00-00-00-000Z-scan-${i}.jsonl`),
+      rows.map((e) => JSON.stringify(e)).join('\n') + '\n',
+      'utf8',
+    );
+  }
+  const scanCapped = await search('deepneedle');
+  assert.deepEqual(scanCapped.results, [], 'the 201st file is outside the scan');
+  assert.equal(scanCapped.scanCapped, true, 'and the reply says the scan was capped');
+
+  /* ================================================================== */
   /* 5. Resuming a saved chat restores its log and its title            */
   /* ================================================================== */
   mark = posts.length;
@@ -419,6 +562,33 @@ try {
   );
   await settle();
   assert.equal(disposed, true, 'the panel reported disposal');
+
+  /* ================================================================== */
+  /* 8. Deleting a saved chat removes it, and History is re-sent        */
+  /* ================================================================== */
+  mark = posts.length;
+  host.receive({ type: 'deleteChat', id: 'saved-1' });
+  const historyAfterDelete = await waitPost(
+    (m) => m.type === 'history' && !m.chats.some((c) => c.id === 'saved-1'),
+    'History without the deleted chat',
+    mark,
+  );
+  assert.ok(historyAfterDelete, 'the History payload no longer lists the chat');
+  const afterDelete = await waitState(
+    (s) => !(s['plato.chatSessions'] || []).some((x) => x.id === 'saved-1'),
+    'the deleted chat is gone from storage',
+  );
+  assert.ok(
+    (afterDelete['plato.chatSessions'] || []).length >= 1,
+    'the other conversations are untouched',
+  );
+  // The synthetic current entry is not deletable.
+  host.receive({ type: 'deleteChat', id: '__current__' });
+  await settle();
+  assert.ok(
+    (stateFile()['plato.chatSessions'] || []).length >= 1,
+    'a delete aimed at the current chat changes nothing',
+  );
 
   console.log('PASS M3b checkpoint 2b history, resume, title and folding');
   console.log(`  posts: ${posts.length}`);
