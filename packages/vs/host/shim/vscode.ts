@@ -57,7 +57,17 @@ export interface ShimConfig {
  * `host` is not a rendering switch — it names this process in the live-session
  * registry, so a VS Code window can tell a Visual Studio window from a tab.
  */
-export const __capabilities = { tabs: false, relay: true, noun: 'window', host: 'vs' } as const;
+export const __capabilities = {
+  tabs: false,
+  relay: true,
+  noun: 'window',
+  host: 'vs',
+  // One surface per window: the header mark clears this conversation at once
+  // (`newChat` with `fromHeader`), which the host archives to History. It must
+  // never post `new-tab` — the Visual Studio window has no tab strip and no
+  // `newTab` handler, so that message would do nothing at all.
+  newChatTab: false,
+} as const;
 
 let config: ShimConfig | null = null;
 
