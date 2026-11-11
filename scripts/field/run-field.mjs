@@ -68,6 +68,15 @@ const STORAGE = resolve(ROOT, 'tmp', 'field', 'storage');
 // paths are all derived from import.meta.dirname, so this is the only place the
 // cwd matters — and it is now pinned.
 process.chdir(ROOT);
+// D49cd: the run gets its OWN Plato home, so nothing a case seeds can land in
+// the founder's `~/.plato`. The extension honours this (the same variable the
+// CLI already reads); the test file seeds and cleans the same directory. A
+// crash now leaves debris in `tmp/`, never in the user's settings.
+if (process.env['PLATO_HOME'] === undefined || process.env['PLATO_HOME'].length === 0) {
+  const fieldHome = resolve(ROOT, 'tmp', 'field', 'home', '.plato');
+  mkdirSync(fieldHome, { recursive: true });
+  process.env['PLATO_HOME'] = fieldHome;
+}
 const VSCODE_VERSION = '1.136.0';
 const PORT = process.env['PLATO_STUB_PORT'] ?? '4599';
 
@@ -195,6 +204,7 @@ if (REAL) {
   }
 }
 
+say(`plato home for this run: ${process.env['PLATO_HOME']}`);
 say(`runs dir: ${runsDirFor(DEMO_REPO)}`);
 
 let code = 1;

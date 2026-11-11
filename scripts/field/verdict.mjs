@@ -34,7 +34,10 @@ const DEFAULT_ROOT = '/Users/ai/Desktop/HcadPublicAndroid-demo';
 /** D46/D24c: the host keys runs by an 8-char sha1 of the workspace root. */
 export function runsDirFor(root) {
   const key = createHash('sha1').update(root).digest('hex').slice(0, 8);
-  return join(homedir(), '.plato', 'runs', key);
+  // D49cd: the same PLATO_HOME the extension honours, so the harness reads the
+  // records from the home the run actually wrote to.
+  const home = process.env['PLATO_HOME'] || join(homedir(), '.plato');
+  return join(home, 'runs', key);
 }
 
 export function listTranscripts(root) {

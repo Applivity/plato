@@ -21,7 +21,17 @@ export interface ChatCaps {
    * its own to put that button in, so it keeps the one in the header — which is
    * why this is a capability and not a fact about the shell.
    */
+  /**
+   * Draw the new-chat control. On by default; a host that truly cannot start
+   * another conversation says false.
+   */
   newChat?: boolean;
+  /**
+   * What that control does: open a new chat TAB (true) or clear this
+   * conversation (false). Separate from `tabs`, because the activity-bar chat
+   * has no tabs of its own but still starts new conversations as tabs.
+   */
+  newChatTab?: boolean;
   /**
    * D49cq: which host this window is, for the live-session registry. The
    * extension defaults to `vscode`; the Visual Studio shim says `vs` on the
@@ -88,13 +98,15 @@ export function chatHtml(
      for whichever nav page is open (history / settings).
      D42c: wider hit areas + bigger gap - the two icons sat ~26px apart
      center-to-center, close enough to mis-click. */
-  #hist, #gear { display:inline-flex; align-items:center; justify-content:center;
+  #hist, #gear, #new { display:inline-flex; align-items:center; justify-content:center;
                  width:28px; height:22px; padding:0; border:none;
                  border-radius:999px; background:transparent; cursor:pointer;
                  color:var(--pl-muted);
                  transition:color .1s, background .1s; }
-  #hist:hover, #gear:hover { color:var(--vscode-editor-foreground);
+  #hist:hover, #gear:hover, #new:hover { color:var(--vscode-editor-foreground);
                              background:rgba(128,128,128,.1); }
+  /* The Plato mark, filled rather than stroked like the two line icons. */
+  #new .mark { width:16px; height:16px; fill:currentColor; stroke:none; }
   body.show-history #hist, body.show-settings #gear {
                  color:var(--vscode-editor-foreground);
                  background:rgba(128,128,128,.14); }
@@ -103,17 +115,16 @@ export function chatHtml(
      a button; the right-side nav is now history+settings paired. */
   .hstatus { font-size:11px; color:var(--pl-muted); gap:10px; align-items:center; }
   .hstatus .hstatus-spacer { flex:1; }
-  /* D39g: one shared chip style for the status-row buttons (#new and
-     #orchChip). Same muted/bordered color language as .bar-btn, but
-     pill-shaped so the status row reads as chips instead of form
-     controls. Identical metrics keep the two controls level. */
-  #new, .orch-chip {
+  /* D39g: the status row's chip. Same muted/bordered color language as
+     .bar-btn, but pill-shaped so the status row reads as a chip instead of a
+     form control. */
+  .orch-chip {
              font-family:inherit; display:inline-flex; align-items:center;
              background:transparent; border:1px solid var(--pl-border);
              border-radius:999px; padding:2px 10px; font-size:11px;
              line-height:1.4; cursor:pointer; color:var(--pl-muted);
              transition:color .1s, border-color .1s, background .1s; }
-  #new:hover, .orch-chip:hover {
+  .orch-chip:hover {
              color:var(--vscode-editor-foreground);
              border-color:var(--vscode-focusBorder, #6a6a6a);
              background:rgba(128,128,128,.08); }
@@ -131,9 +142,6 @@ export function chatHtml(
           cursor:pointer; outline:none; }
   #rsel:hover { background:rgba(128,128,128,.08); }
   #rsel[hidden] { display:none; }
-  /* D39g: the duplicate #new rule that overrode the one above (pill
-     radius vs 4px) is gone - #new is defined once, in the .hstatus
-     chip block. */
   /* D39b: chat log grows to fill available space; the footer (now
      two rows) takes its own intrinsic height. The textbox grows
      vertically up to 220px (was 160px) and the textbox itself is
@@ -962,9 +970,8 @@ export function chatHtml(
                  color:var(--vscode-errorForeground, #f66); }
   .pdesc { font-size:11px; color:var(--pl-muted); font-style:italic;
            margin:4px 0 8px; padding:6px 8px; border-left:2px solid var(--pl-border); }
-  /* D39g: #orchChip now shares the status-row chip style with #new
-     (see the .hstatus block) - the old 10.5px one-off chip rule is
-     gone. */
+  /* D39g: #orchChip uses the shared status-row chip style (see the .hstatus
+     block) - the old 10.5px one-off chip rule is gone. */
   /* Pinned run-status bar (Claude-code style): sits between the scrollable
      #log and the footer, so it is ALWAYS visible during a run — content
      scrolling below never buries it. Hidden otherwise & on settings/history. */
@@ -1305,7 +1312,7 @@ export function chatHtml(
   .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
 </style>
 </head>
-<body data-plato-tabs="${caps.tabs}" data-plato-relay="${caps.relay}" data-plato-noun="${caps.noun}" data-plato-new="${caps.newChat !== false}">
+<body data-plato-tabs="${caps.tabs}" data-plato-relay="${caps.relay}" data-plato-noun="${caps.noun}" data-plato-new="${caps.newChat !== false}" data-plato-newtab="${caps.newChatTab === true}">
 <header>
   <div class="hrow htop">
     <span class="brand">Plato</span>
@@ -1315,6 +1322,14 @@ export function chatHtml(
     </button>
     <select id="rsel" title="Reasoning effort (supported models only)" hidden></select>
     <div class="headnav">
+      <button id="new" title="New chat" aria-label="New chat">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.4 6.6 L3.6 0.6 L9.2 3.4 Z"/>
+          <path d="M19.6 6.6 L20.4 0.6 L14.8 3.4 Z"/>
+          <path fill-rule="evenodd" d="M12 2.6 C6.4 2.6 3.6 6.6 3.6 11.2 L3.6 15.8 C3.6 19.4 7.0 21.6 12 21.6 C17.0 21.6 20.4 19.4 20.4 15.8 L20.4 11.2 C20.4 6.6 17.6 2.6 12 2.6 Z M8.4 7.2 a3.4 3.4 0 1 0 0 6.8 a3.4 3.4 0 1 0 0 -6.8 z M8.4 9.1 a1.5 1.5 0 1 0 0 3 a1.5 1.5 0 1 0 0 -3 z M15.6 7.2 a3.4 3.4 0 1 0 0 6.8 a3.4 3.4 0 1 0 0 -6.8 z M15.6 9.1 a1.5 1.5 0 1 0 0 3 a1.5 1.5 0 1 0 0 -3 z"/>
+          <path d="M12 13.2 L14.0 16.6 L10.0 16.6 Z"/>
+        </svg>
+      </button>
       <button id="hist" title="History">
         <svg class="icn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       </button>
@@ -1331,7 +1346,6 @@ export function chatHtml(
     <input id="chatTitleInput" hidden spellcheck="false" />
     <span class="hstatus-spacer"></span>
     <button id="orchChip" class="orch-chip" title="Who works on this task — click to change">&#9679; solo</button>
-    <button id="new" title="Start a new chat (clears this conversation)">＋ new</button>
   </div>
 </header>
 <div id="log"></div>
@@ -1482,6 +1496,7 @@ export function chatHtml(
     relay: capAttr('data-plato-relay', 'true') === 'true',
     noun: capAttr('data-plato-noun', 'tab') === 'window' ? 'window' : 'tab',
     newChat: capAttr('data-plato-new', 'true') === 'true',
+    newChatTab: capAttr('data-plato-newtab', 'false') === 'true',
   };
   window.__platoCaps = CAPS;
   const log = document.getElementById('log');
@@ -2046,25 +2061,24 @@ export function chatHtml(
 
 
   document.getElementById('go').addEventListener('click', ask);
-  // With tabs, "+ new" opens another conversation and this one stays open.
-  // A window without them (Visual Studio) keeps the clearing behaviour, which
-  // is the only sensible meaning of "new" when there is one surface.
+  // The Plato mark beside history and settings starts a conversation. On a
+  // host with tabs (including the activity-bar chat, whose own surface has
+  // none) it opens a new tab, exactly like the title-bar mark. A window with
+  // one surface (Visual Studio) keeps the clearing behaviour, which is the
+  // only sensible meaning of "new" there.
   const newBtn = document.getElementById('new');
   if (CAPS.newChat) {
-    newBtn.title = CAPS.tabs
-      ? 'Open a new chat tab'
-      : 'Start a new chat (clears this conversation)';
+    newBtn.title = 'New chat';
     newBtn.addEventListener('click', () => {
       // D44a: a fresh chat drops any chips. The host's newChat resets
       // pendingAttachments and pendingHistory, so no attach-clear is needed.
       clearChips();
-      vsapi.postMessage({ type: CAPS.tabs ? 'new-tab' : 'newChat' });
+      vsapi.postMessage({ type: CAPS.newChatTab ? 'new-tab' : 'newChat' });
     });
   } else {
-    // VS Code: a new conversation is opened from the Plato button in an
-    // editor's title bar. A second one beside the composer is the control the
-    // founder called confusing, so this surface does not draw it — removed
-    // rather than hidden, so the status row keeps its width.
+    // A host that cannot start another conversation does not draw a control
+    // it cannot honour — removed rather than hidden, so the nav keeps its
+    // width.
     newBtn.remove();
   }
   // D43: the empty state's CTA opens Settings → Providers (which

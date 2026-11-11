@@ -21,6 +21,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import assert from 'node:assert/strict';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -94,23 +95,67 @@ function clearUndoProbes() {
 }
 
 /**
- * D49bt: MCP config lives in the founder's REAL home (`~/.plato`), because the
- * harness runs against a real VS Code and `homePlatoDir()` is `os.homedir()`.
- * A case that seeds it would otherwise overwrite the founder's own servers —
- * and, worse, leave them in place, turning every LATER case in the suite into a
- * run with MCP servers attached. So it is backed up once for the whole suite and
- * restored in `after`, which mocha runs even when a case fails.
+ * D49cd: where this run's Plato home is.
+ *
+ * It used to be the founder's REAL `~/.plato`, because the extension hard-coded
+ * `os.homedir()`. A case seeded `mcp.json` there and cleaned it up on the happy
+ * path only, so a crash left a fake MCP server inside the founder's own Plato
+ * settings. The extension now honours `PLATO_HOME` (set by run-field.mjs to a
+ * temp directory), so the harness writes only to its own home; the real one is
+ * checked before and after, and any file named by a case's `seedHome` is swept
+ * at the start and at the end — on the real home only when its bytes are the
+ * harness's own.
  */
-const HOME_MCP = join(homedir(), '.plato', 'mcp.json');
+const PLATO_HOME = process.env['PLATO_HOME'] ?? join(homedir(), '.plato');
+const REAL_HOME_MCP = join(homedir(), '.plato', 'mcp.json');
+const HOME_MCP = join(PLATO_HOME, 'mcp.json');
 const HOME_MCP_BAK = HOME_MCP + '.plato-field-backup';
 /** D49bt: the schema Plato writes beside the config. */
-const HOME_MP = join(homedir(), '.plato', 'mcp.schema.json');
+const HOME_MP = join(PLATO_HOME, 'mcp.schema.json');
+
+/** Every home file the CASES declare they seed — the sweep's allow-list. */
+const SEED_HOME_FILES = new Set(
+  CASES.flatMap((c) => (c.runs ?? []).flatMap((r) => Object.keys(r.seedHome ?? {}))),
+);
+/** A marker that only the harness's own seeded config carries. */
+const SEED_MCP_MARK = 'fake-mcp.mjs';
+/** Seeded files that exist right now; removed in `after` however the case ended. */
+const SEEDED_HOME_FILES = new Set();
+
+/**
+ * Removes seeded home files. The temp home is the harness's own, so a seeded
+ * name there is always debris. The REAL home is different: a file with the same
+ * name may be the founder's, so it goes only when its bytes prove the harness
+ * wrote it.
+ */
+function sweepSeededHome(dir, { realHome = false } = {}) {
+  for (const name of SEED_HOME_FILES) {
+    const file = join(dir, name);
+    try {
+      if (realHome) {
+        const text = readFileSync(file, 'utf8');
+        if (!text.includes(SEED_MCP_MARK) || !text.includes('"fake"')) continue;
+      }
+      rmSync(file, { force: true });
+      console.log(`  swept a seeded home file: ${file}`);
+    } catch {
+      /* not there, which is the normal case */
+    }
+  }
+}
+
+/**
+ * The real home, as the suite found it AFTER the start sweep, so `after` can
+ * prove this run left it alone. (Taking it before the sweep would compare
+ * against a leftover the sweep is meant to remove.)
+ */
+let REAL_HOME_MCP_BEFORE = null;
 
 function backupHomeMcp() {
   try {
     if (existsSync(HOME_MCP)) {
       renameSync(HOME_MCP, HOME_MCP_BAK);
-      console.log('  ~/.plato/mcp.json backed up for the suite');
+      console.log(`  ${HOME_MCP} backed up for the suite`);
     }
   } catch (e) {
     throw new Error(`could not back up ${HOME_MCP}: ${e.message}`);
@@ -121,8 +166,8 @@ function restoreHomeMcp() {
   try {
     rmSync(HOME_MCP, { force: true });
     // D49bt: the probe has the product create this one, so it is the harness's
-    // to clear as well — the founder's home must hold what it held before.
-    rmSync(join(homedir(), '.plato', 'mcp.schema.json'), { force: true });
+    // to clear as well. D49cd: in the run's own home, never the real one.
+    rmSync(HOME_MP, { force: true });
     if (existsSync(HOME_MCP_BAK)) {
       renameSync(HOME_MCP_BAK, HOME_MCP);
     }
@@ -198,7 +243,7 @@ async function stubLog() {
  * `cwd` filter keeps a founder's own open window out of the answer.
  */
 async function waitForLiveEntry(name, timeoutMs = 20000) {
-  const dir = join(homedir(), '.plato', 'live');
+  const dir = join(PLATO_HOME, 'live');
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -308,6 +353,12 @@ describe('Plato field tests — real VS Code', function () {
   let field;
 
   before(async () => {
+    // D49cd: clear debris from a previous run that was killed before its
+    // cleanup, in both homes; then remember the real one so `after` can prove
+    // this run never wrote there.
+    sweepSeededHome(PLATO_HOME);
+    sweepSeededHome(join(homedir(), '.plato'), { realHome: true });
+    REAL_HOME_MCP_BEFORE = existsSync(REAL_HOME_MCP) ? readFileSync(REAL_HOME_MCP) : null;
     // D49bt: taken before anything runs, so the founder's own mcp.json survives
     // a case that seeds one — including a case that fails half way through.
     backupHomeMcp();
@@ -444,9 +495,11 @@ describe('Plato field tests — real VS Code', function () {
         // every case that follows, so a later case would be measuring a run the
         // case before it configured.
         for (const [file, content] of Object.entries(run.seedHome ?? {})) {
-          mkdirSync(join(homedir(), '.plato'), { recursive: true });
-          writeFileSync(join(homedir(), '.plato', file), content);
-          notes.push(`seeded ~/.plato/${file}`);
+          mkdirSync(PLATO_HOME, { recursive: true });
+          const seeded = join(PLATO_HOME, file);
+          writeFileSync(seeded, content);
+          SEEDED_HOME_FILES.add(seeded);
+          notes.push(`seeded ${seeded}`);
         }
 
         // D49bt: the chat log persists across the runs of a case, so the plan
@@ -1488,7 +1541,9 @@ describe('Plato field tests — real VS Code', function () {
         // D49bt: the seeded home config goes as soon as this run is over, so the
         // next case starts from the same empty state this one did.
         for (const file of Object.keys(run.seedHome ?? {})) {
-          rmSync(join(homedir(), '.plato', file), { force: true });
+          const seeded = join(PLATO_HOME, file);
+          rmSync(seeded, { force: true });
+          SEEDED_HOME_FILES.delete(seeded);
         }
         console.log(`  case ${c.n} run ${i + 1} (${run.mode}): ${chk(v)} transcript, ${actualCards} card(s)`);
         for (const n of notes.slice(mark)) console.log(`    ${n}`);
@@ -2335,7 +2390,7 @@ describe('Plato field tests — real VS Code', function () {
    *     is hidden and not disposed.
    */
   if (only.length === 0 || only.includes(41)) {
-    it('case 41 — the activity bar is a chat that keeps its conversation and can be addressed', async () => {
+    it('case 41 — the activity bar is a chat that keeps its conversation, can be addressed, and opens a new chat from its header', async () => {
       await field.newChat();
       field.cardsSeen = [];
       field.decisions = [];
@@ -2348,14 +2403,21 @@ describe('Plato field tests — real VS Code', function () {
           q: !!document.getElementById('q'),
           go: !!document.getElementById('go'),
           neu: !!document.getElementById('new'),
+          inNav: !!document.querySelector('.headnav #new'),
+          label: (document.getElementById('new') || {}).title || '',
           tabs: document.body.getAttribute('data-plato-tabs'),
         };
       `);
       if (!shape.q || !shape.go) {
         throw new Error(`SIDEBAR: the view is not a chat (saw ${JSON.stringify(shape)})`);
       }
-      if (shape.neu) {
-        throw new Error('SIDEBAR: the chat still draws a "+" in its header');
+      // The founder asked for Plato's own mark beside history and settings —
+      // not a bare "+" and not a missing control.
+      if (!shape.neu || !shape.inNav) {
+        throw new Error(`SIDEBAR: the new-chat mark is not in the header nav (saw ${JSON.stringify(shape)})`);
+      }
+      if (shape.label !== 'New chat') {
+        throw new Error(`SIDEBAR: the new-chat control is titled "${shape.label}", not "New chat"`);
       }
       if (shape.tabs !== 'false') {
         throw new Error(`SIDEBAR: the view thinks it has tabs (data-plato-tabs=${shape.tabs})`);
@@ -2511,17 +2573,51 @@ describe('Plato field tests — real VS Code', function () {
         );
       }
 
+      // The mark in the header opens a NEW CHAT TAB — the same action as the
+      // mark in an editor's title bar, not a wipe of this conversation. Done
+      // last, because it changes the active editor the checks above use.
+      await field.webview.switchBack();
+      const countTabs = () =>
+        field.driver.executeScript(
+          `return (document.querySelectorAll('.tab, .tabs-container .tab') || []).length;`,
+        );
+      const activeLabel = () =>
+        field.driver.executeScript(
+          `const t = document.querySelector('.tab.active, .tabs-container .tab.active');
+           return t ? (t.getAttribute('aria-label') || t.textContent || '') : '';`,
+        );
+      const beforeTabs = await countTabs();
+      await field.switchToSidebarFrame();
+      await field.driver.executeScript(
+        `const b = document.getElementById('new'); if (b) b.click();`,
+      );
+      await field.webview.switchBack();
+      let afterTabs = beforeTabs;
+      let openedLabel = '';
+      const openDeadline = Date.now() + 10000;
+      while (Date.now() < openDeadline) {
+        afterTabs = await countTabs();
+        openedLabel = await activeLabel();
+        if (afterTabs > beforeTabs && /Plato/i.test(openedLabel)) break;
+        await field.driver.sleep(250);
+      }
+      if (afterTabs <= beforeTabs || !/Plato/i.test(openedLabel)) {
+        throw new Error(
+          `SIDEBAR: the new-chat mark did not open a chat tab (tabs ${beforeTabs} -> ${afterTabs}, active "${openedLabel}")`,
+        );
+      }
+
       MANIFEST.push({
         case: 41,
         run: 1,
         mode: 'auto',
         orchestration: 'solo',
-        title: 'The activity bar is a chat that keeps its conversation and can be addressed',
+        title: 'The activity bar is a chat that keeps its conversation, can be addressed, and opens a new chat from its header',
         transcript: inboundRun,
         transcriptOk: true,
         screenFailures: [],
       });
-      console.log('  case 41: the sidebar is a chat, survives hide/show, and a tab messaged it by name');
+      console.log('  case 41: the sidebar is a chat, survives hide/show, a tab messaged it by name, and its mark opens a tab');
     });
   }
 
@@ -2535,13 +2631,34 @@ describe('Plato field tests — real VS Code', function () {
     // than at the end of the case, so a case that fails half way through still
     // leaves the workspace as it found it.
     clearUndoProbes();
+    // D49cd: whatever a case seeded goes now, even if that case threw or its
+    // assertions failed — `after` runs however the case ended.
+    for (const seeded of SEEDED_HOME_FILES) {
+      try {
+        rmSync(seeded, { force: true });
+      } catch {
+        /* already gone */
+      }
+    }
+    SEEDED_HOME_FILES.clear();
     restoreHomeMcp();
+    sweepSeededHome(PLATO_HOME);
+    sweepSeededHome(join(homedir(), '.plato'), { realHome: true });
     mkdirSync(join(import.meta.dirname, '..', '..', 'tmp', 'field'), { recursive: true });
     writeFileSync(
       MANIFEST_PATH,
       JSON.stringify({ at: new Date().toISOString(), runs: MANIFEST }, null, 2),
     );
     console.log(`\nmanifest: ${MANIFEST.length} run(s) → ${MANIFEST_PATH}`);
+    // The proof the founder's settings were not touched: the real home's MCP
+    // config is byte-identical to how this suite found it.
+    const after = existsSync(REAL_HOME_MCP) ? readFileSync(REAL_HOME_MCP) : null;
+    assert.deepEqual(
+      after,
+      REAL_HOME_MCP_BEFORE,
+      'the real ~/.plato/mcp.json must be untouched by a field run',
+    );
+    console.log('  real ~/.plato/mcp.json: untouched');
   });
 });
 

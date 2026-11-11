@@ -124,9 +124,9 @@ import {
   type DiagSnapshot,
 } from './diagnostics.js';
 import { chatHtml, type ChatCaps } from './webview.js';
+import { resolvePlatoHome } from './home.js';
 import { isAbsolute, join, relative } from 'node:path';
 import { rmSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
 const LEGACY_KEY = 'plato.anthropicApiKey'; // pre-0.3.0 anthropic slot
@@ -247,9 +247,12 @@ function fmtTokens(n: number): string {
  * D46: Plato's own home folder, the same on every platform because `homedir()`
  * and `join` are. On Windows that is `C:\Users\<name>\.plato` — no `~` is ever
  * expanded by hand, and no path is built from a string with a separator in it.
+ *
+ * D49cd: `PLATO_HOME` overrides it, for tests and containers — the variable the
+ * CLI already honours. Unset means exactly what it always meant.
  */
 function homePlatoDir(): string {
-  return join(homedir(), '.plato');
+  return resolvePlatoHome();
 }
 
 /**
@@ -839,13 +842,15 @@ function hostCapabilities(ctx?: unknown): ChatCaps {
     fromContext ??
     (globalThis as { __platoCaps?: Partial<ChatCaps> }).__platoCaps;
   if (raw === undefined) {
-    // VS Code opens a new conversation from the Plato mark in an
-    // editor's title bar, so its chat header does not draw a second one.
+    // VS Code draws the Plato mark in the chat header beside history and
+    // settings, and in every editor's title bar. Both do the same thing: open
+    // a new chat tab.
     return {
       tabs: true,
       relay: true,
       noun: 'tab',
-      newChat: false,
+      newChat: true,
+      newChatTab: true,
       host: 'vscode',
     };
   }
@@ -854,8 +859,10 @@ function hostCapabilities(ctx?: unknown): ChatCaps {
     relay: raw.relay === true,
     noun: raw.noun === 'window' ? 'window' : 'tab',
     // The Visual Studio shim sets no such field, and its tool window has no
-    // title bar of its own to put the mark in — so it keeps the header chip.
+    // title bar of its own to put the mark in — so it keeps the header
+    // control, which there clears the one conversation it has.
     newChat: raw.newChat === false ? false : true,
+    newChatTab: raw.newChatTab === true,
     // D49cq: which host this process is, for the live-session registry. Not a
     // rendering switch — the shell never reads it.
     host: raw.host === 'vs' ? 'vs' : raw.host === 'cli' ? 'cli' : 'vscode',

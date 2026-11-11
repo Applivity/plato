@@ -165,11 +165,17 @@ try {
   // a WebView2; no test below claims to witness the drawn header.
   assert.ok(
     transport.html.includes('data-plato-new="true"'),
-    'the Visual Studio window keeps the header new-chat chip',
+    'the Visual Studio window keeps the header new-chat control',
   );
   assert.ok(
-    transport.html.includes('id="new"'),
-    'the new-chat chip is still in the chat markup',
+    transport.html.includes('id="new" title="New chat"'),
+    'the new-chat control is the Plato mark, titled "New chat"',
+  );
+  // No tabs in this host: the control clears the one conversation, so the page
+  // must ask for `newChat`, not `new-tab`.
+  assert.ok(
+    transport.html.includes('data-plato-newtab="false"'),
+    'the Visual Studio window does not claim to open tabs',
   );
   host.receive({ type: 'ready' });
   await waitPost((m) => m.type === 'restore', 'restore');
