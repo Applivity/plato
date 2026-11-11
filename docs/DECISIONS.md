@@ -7736,3 +7736,122 @@ a brief goes stale between writing and use, and the builder cannot know it did.
 The brief names the query — the npm registry or the Marketplace — and the live
 page, not the builder's message, is the witness that the change landed.
 
+**D49cw — A write that writes nothing is not a success (2026-11-11).**
+
+`apply_diff` and `apply_patch` counted a SEARCH/REPLACE block whose replacement
+is byte-identical to its search as applied. The tool wrote the same bytes and
+reported success. In the founder's real client project this raised the "stuck on
+the same call" alarm three times: the model was told its edit had landed, the
+file had not changed, and a later identical attempt looked like a loop.
+
+- An identical block now reports **"no change"**, writes nothing, and records no
+  undo copy. There is nothing to undo.
+- A genuine edit is unchanged, in both tools; `apply_patch` shares the same rule
+  across a multi-file patch.
+- The reason is the model's next action: a success it cannot observe teaches it
+  to retry, and a retry of an honest no-op is harmless, while a retry of a false
+  success is the loop the alarm exists to stop.
+
+**D49cx — A search given a folder searches only that folder (2026-11-11).**
+
+`grep` had no folder argument. A `path` the model passed was silently dropped
+and the whole workspace was searched — the answer looked scoped and was not, so
+a file outside the intended folder could be found and reported.
+
+- `grep` takes an optional `path` folder, resolved through the **same
+  containment and secret deny-list choke point** as `read_file` and `list_dir`.
+  A path outside the workspace or onto a protected file is refused there.
+- Results stay workspace-relative, so `glob` and a later `read_file` keep their
+  meaning.
+- The folder is also listed among the path-bearing arguments, so the pre-run
+  checks and the tool digest see it.
+- **Limit:** that the model chooses the folder was proven in one real-model run
+  in a real window, not by a permanent test. The tool's own scoping is covered.
+
+**D49cy — A diagnostics line says what was checked, once per language per run (2026-11-11).**
+
+Diagnostics ran after every write. In the founder's real run that was 75 notices
+at about 2.2 seconds each, and 75 of the run's 79 notices were this one line.
+The cost was paid per write and the message repeated what the run already knew.
+
+- A language is asked **once per session**. A language that never answered is
+  not asked again, not shown, and not waited for.
+- The run posts **one line per language per run** that counts the files it
+  could not check, instead of one notice per write.
+- The record still separates **"checked and clean"** from **"never checked"**.
+  D49av's rule stands: the absence of diagnostics is not evidence of
+  correctness, so an unanswered language is reported as not checked, never as
+  clean.
+- **Recorded limit:** in Visual Studio the bridge never reports language-server
+  diagnostics. Every language there goes blind after its one line. This
+  pre-dates the change and is now quieter, not fixed.
+
+**D49cz — Project instructions are merged, base to specific (2026-11-11).**
+
+Project instructions were read only from the three root files, and the rule for
+a file inside the project was first-found-wins. The founder's project keeps
+rules in both `.github/AGENTS.md` and `.claude/CLAUDE.md`; one file was read and
+the other was silently dropped, so a rule could exist in his repository and
+never reach the model. Claude Code, Codex, Copilot and Cursor all merge;
+first-found-wins was our error.
+
+- Every candidate that exists is read, base to specific: root `AGENTS.md`,
+  `.github/AGENTS.md`, root `CLAUDE.md`, `.claude/CLAUDE.md`. Later files
+  override earlier ones by position, not by being the only file read.
+- Each section is preceded by one line naming the file it came from, so the
+  model and the reader know which rule came from where.
+- Byte-identical copies are included once and named in the trace.
+- The per-layer cap applies to the **merged** body, so the truncation marker
+  still appears when one long file would otherwise crowd out the rest. The cap
+  is 16,000 characters; the founder's project measures about 7,400 with two
+  files, so it is not reachable for him today.
+
+**D49da — An image rides the tool result's user turn (2026-11-11).**
+
+`read_image` lets the model see a PNG, JPEG, GIF or WebP. The protocol's tool
+results are text-only, so the image cannot travel as a tool result.
+
+- The bytes ride the **same user turn** as the tool result. The model sees the
+  picture in the turn that reports the read.
+- The image **never reaches the event bus or the transcript**. A run record
+  names the file; it does not carry the picture.
+- The CLI's tool row names the image file for the same reason.
+- Proven on a real screenshot by the founder. A file that is not one of those
+  four types is refused, naming the four; an image over the size cap is refused
+  with the cap given; and a protected image is refused like any other protected
+  path, because an image cannot be masked.
+
+**D49db — The field harness runs in a temporary home (2026-11-11).**
+
+The field suite wrote a fake MCP server into the real `~/.plato/mcp.json`, and a
+crashed run left it in the founder's installation. A test that changes the
+user's own configuration is not a test the user can trust to run.
+
+- The extension honours `PLATO_HOME`, the variable the CLI already reads. The
+  harness sets it to a temporary home for the whole run.
+- Seeded files are removed whatever a case does — pass, fail or crash — and
+  stale seeds are swept at suite start and end.
+- The suite **asserts the real `~/.plato/mcp.json` is byte-identical** after the
+  run. The assertion is the point: cleanup that is not checked is cleanup that
+  can regress silently.
+
+**D49dc — The new-chat control means what the surface allows (2026-11-11).**
+
+One control, three surfaces, and the founder's rule is that the visible control
+does the obvious thing where it sits.
+
+- **The activity-bar chat:** one click on the header mark clears the view. The
+  conversation is archived to History and the view is ready for a fresh one. No
+  tab opens and no confirmation dialog appears.
+- **A chat tab, and the title-bar mark:** the mark opens a new chat tab. A view
+  with no control of its own reads as a view with no way to start a conversation
+  — that was the founder's report on 0.28.1.
+- **The command palette and the menu:** they still ask before clearing. Those
+  paths can be reached without the visible control and without warning.
+- **Visual Studio** has one surface, so its header mark keeps the clearing
+  behaviour.
+- A `newChatTab` capability tells the page which action to post. The page marks
+  a click on the header control, and the host skips the confirmation question
+  for that path only; the command and menu paths carry no such mark and still
+  ask.
+

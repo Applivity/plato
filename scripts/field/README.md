@@ -21,7 +21,8 @@ labelled by default, and the search comes back empty once the setting is on),
 idle click starts nothing; a switch made mid-run applies at the next tool call),
 **and 36 with the model's mode request** (the model asks on a card the user answers,
 and the same run continues in the approved mode), **and 37–41 with tabs, session
-messaging, the title-bar mark and the activity-bar chat** — see the table below.
+messaging, the title-bar mark, the chat header's mark and the activity-bar
+chat** — see the table below.
 **The scripted suite is 39 cases in 50 runs:** the 34 table cases in `cases.mjs`
 (whose runs add to 45) plus the five single-run tests 37–41. **Two further cases (30, 31)
 cover the queue
@@ -50,6 +51,16 @@ FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
 ```
+
+## The run uses a temporary home (D49db, 2026-11-11)
+
+Case 29 seeds an MCP server. That seed used to go into the real
+`~/.plato/mcp.json`, and a crashed run left it in the founder's installation.
+The extension now honours **`PLATO_HOME`**, the variable the CLI already reads,
+and `run-field.mjs` points it at a temporary home for the whole run. Every
+seeded file is removed however a case ends, and stale seeds are swept at suite
+start and end. **The suite asserts the real `~/.plato/mcp.json` is
+byte-identical afterwards** — an uncleaned seed is a failure, not a note.
 
 ## Why there are three pieces
 
@@ -131,7 +142,7 @@ Two rules keep the driver honest:
 | 38 one chat messages another | tab A sends to tab B: B starts a run and shows who asked; a second send while B is live is queued, not injected; an over-long message is refused with the reason; closing A removes it from the registry | A's transcript records the target and the size of each send, never the text; B's run is `session`-origin, carries the provenance header, and keeps B's own mode; the queued message runs after the live one, displacing nothing; the registry lists B and not A afterwards |
 | 39 title-bar mark | the Plato mark is in the title bar of every Plato tab and of a plain file editor; clicking it on the file opens a new chat | the new chat is a Plato tab and carries the mark too, and the activity bar has a Plato container. **Falsified by reverting the `when` clause:** the mark disappears from the plain file editor |
 | 40 one reply round | B receives A's message and replies once; the window labels the answer as coming from B | B was offered `send_to_session` **as a reply**; A's reply run was **not** offered it, and its forced send was refused with `exchange is over`; A's own message to B reported `delivered to` |
-| 41 activity-bar chat | the activity bar is a chat — a composer and no "+" — and it keeps its conversation across hide/show | the view reports no tabs; it registers as a live session under its generated title; a tab's `list_sessions` names it and `send_to_session` reaches it; the inbound run says `Message from another Plato session`, and the window shows the sender. **Falsified by giving the sidebar `newChat: true`:** case 41 fails |
+| 41 activity-bar chat and the header mark | the activity bar is a chat — a composer and no "+" — and it keeps its conversation across hide/show; the header draws the Plato mark titled "New chat" | the view reports no tabs; it registers as a live session under its generated title; a tab's `list_sessions` names it and `send_to_session` reaches it; the inbound run says `Message from another Plato session`, and the window shows the sender. **The mark (2026-11-11, D49dc):** on a chat tab it opens a new tab; on the activity-bar chat one click clears the view with **no dialog**, opens no tab, and the cleared conversation is found in History under its title. **Falsified by giving the sidebar the tab action:** case 41 fails |
 | 33 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, **32 on 2026-10-15** when the MCP case took 29, and **33 on 2026-10-21** when the .gitignore case took 32 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. **Cases 32, 34, 35 and 36 are placed AHEAD of it in the array, so it keeps the last slot; the numbers are labels and the ARRAY order is the rule.**) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
