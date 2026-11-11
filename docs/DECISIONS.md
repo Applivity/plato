@@ -7863,3 +7863,57 @@ does the obvious thing where it sits.
   for that path only; the command and menu paths carry no such mark and still
   ask.
 
+**D49dd — A file the user picks may be outside the workspace (2026-11-11).**
+
+The workspace containment rule (D49k) was applied to every attachment, so a
+screenshot the founder picked from his Desktop was refused. That rule exists to
+bound **what the model can reach on its own**. A person attaching a file by hand
+is not a tool call, and telling them to move the file into the project is not a
+useful answer.
+
+- **The split is by who chose the file.** `loadImageAttachment` is the
+  model-facing path and keeps containment. `loadImageFile` is the user-picked
+  path and takes an absolute path.
+- The picker stores the **absolute path**, re-reads it at send, and shows only
+  the **base name** — in the chip and to the model. The path itself is not part
+  of what the model sees.
+- **Every other guard stays:** the secret deny-list is checked on the absolute
+  path, the raw-byte cap holds, the type is decided by the bytes and never the
+  name, and a relative path that escapes with `..` is still refused.
+- **Tool-side containment is untouched.** The existing core test that tools
+  cannot read outside the workspace still passes, and it is the witness that
+  this change did not widen the model's reach.
+
+**D49de — History separates conversations from run records (2026-11-11).**
+
+History showed one list in which saved chats and run transcripts were adjacent,
+so "open" meant two different things on two adjacent rows. It now has two tabs,
+and each says what it is in one line.
+
+- **Chats** opens first. Its rows are resumable conversations; the current chat
+  is marked, and a per-row delete is offered only on **non-current** chats,
+  behind the same two-step confirmation.
+- **Run Records** is the existing run list: open a run to read it, delete one
+  row, or delete all.
+- **A run is a record of what happened, not a conversation.** It cannot be
+  resumed, so it does not belong in the list of things you can continue. This
+  is the reason for the split, not the count of features on each side.
+
+**D49df — Search reads the conversation and the record, never the tool payload (2026-11-11).**
+
+One search field sits above the tabs and searches both kinds. What it can look
+at is fixed by what is stored, and that is stated rather than implied.
+
+- **Chats** match their title and every message; **runs** match the task, the
+  assistant text and the notices.
+- Matching is a **case-insensitive substring**, run on **Enter or a 400 ms
+  pause**. A result shows its kind, title, date and an **80-character snippet
+  with the match marked**; a click resumes the chat or opens the run.
+- **The caps are stated in the page when one is hit:** 40 results, 3 matches per
+  run file, and the newest 200 runs. A silent truncation would read as "nothing
+  else matched".
+- **Recorded limit:** search cannot see tool arguments or tool output, because
+  the run record does not store them. The index is not widened by making the
+  record hold what it deliberately never held; the limit is shown to the user
+  instead.
+
