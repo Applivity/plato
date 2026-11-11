@@ -7892,7 +7892,8 @@ and each says what it is in one line.
 
 - **Chats** opens first. Its rows are resumable conversations; the current chat
   is marked, and a per-row delete is offered only on **non-current** chats,
-  behind the same two-step confirmation.
+  behind the same two-step confirmation. **(Superseded the same day by D49dg:
+  every chat can be deleted, the current one included.)**
 - **Run Records** is the existing run list: open a run to read it, delete one
   row, or delete all.
 - **A run is a record of what happened, not a conversation.** It cannot be
@@ -7916,4 +7917,48 @@ at is fixed by what is stored, and that is stated rather than implied.
   the run record does not store them. The index is not widened by making the
   record hold what it deliberately never held; the limit is shown to the user
   instead.
+
+**D49dg — Delete means delete, not archive (2026-11-11).**
+
+History offered a delete only on chats that were not open, and the open chat
+could not be deleted at all. The founder asked for every row to be deletable,
+and the answer fixes what delete means.
+
+- Every chat row has a delete, **including the current one**, and the Chats tab
+  has **Delete all**. Both ask once, with the same two-step confirmation.
+- Deleting the current chat **discards it without writing an archive**. It does
+  not return in History, and the view ends on a **fresh empty chat**; Delete all
+  ends the same way.
+- **The run record survives.** A transcript records what a run did and is not
+  part of the conversation, so deleting the chat does not delete the record and
+  Run Records still lists it.
+- **The distinction is the reason:** History lists things you can resume, so a
+  deleted chat must not come back; Run Records is the record of what happened,
+  so it is deleted only on purpose, from its own tab.
+- A bug found while wiring the deletes is fixed: re-sending the History list
+  after a delete re-opened the History page over the fresh chat. Neither delete
+  sends it; the next open refreshes.
+- **The same change fixes the layout that made the list jump:** the header —
+  title, search, tabs, description — is fixed, and only the list scrolls, at
+  every window height. A render suite fails if the page itself can scroll.
+
+**D49dh — Absence is not proved (2026-11-11).**
+
+Three real runs asked for the folders in a share named only as
+`ukhan-win-share`. The model tried the workgroup, then name resolution, and
+concluded that the share did not exist. Given the server name, one enumeration
+found it at once. The share was on a server the machine could already reach: the
+model had searched for a name instead of looking at what was connected.
+
+- The worker prompt now says **absence is not proved**. When a path, host or
+  share cannot be found, enumerate what the machine already knows — existing
+  connections and mounts, known hosts, drives and shares — and look for the
+  target there.
+- It must **say what it checked**. "Not found" with no list of what was tried is
+  a guess presented as a search; the closing sentence is **"a guess that failed
+  is not a search."**
+- **This is prompt guidance, not a new tool.** No command, row or message
+  changes. It ships in the core and in CLI 0.2.4 as a behaviour change, and
+  reaches the other hosts at their next releases.
+- A core test pins the rule and its key sentence.
 
