@@ -10,8 +10,12 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
-**Pre-release.** This is `0.2.3`. The core of the agent is the same code the
+**Pre-release.** This is `0.2.4`. The core of the agent is the same code the
 extension has shipped, but the terminal host is new.
+
+**0.2.4** tells Plato that a path, host or share it cannot find is not proof
+that it is absent: it checks the connections, mounts, known hosts, drives and
+shares the machine already has, and says what it checked.
 
 **0.2.3** adds a `read_image` tool, so Plato can look at a screenshot or a
 diagram you point it at. A search can be limited to one folder. An edit that
