@@ -1587,6 +1587,10 @@ class ChatHost {
           this.deleteChat(m.id);
           return;
         }
+        if (m.type === 'deleteAllChats') {
+          this.deleteAllChats();
+          return;
+        }
         if (m.type === 'openRun' && typeof m.file === 'string') {
           this.openRun(m.file);
           return;
@@ -4036,18 +4040,50 @@ class ChatHost {
   }
 
   /**
-   * D49cd: remove one SAVED conversation. The current chat's entry is
-   * synthesised at send time and is never stored, so its id cannot arrive
-   * here; the guard is kept anyway.
+   * D49cd: remove one conversation. A saved chat leaves storage; the CURRENT
+   * chat (the synthetic `__current__` row) is discarded instead of archived,
+   * so it does not come back in History. Both ask the page first — the host
+   * never opens its own box for a delete.
    */
   private deleteChat(id: string): void {
-    if (id.length === 0 || id === '__current__') return;
+    if (id.length === 0) return;
+    if (id === '__current__') {
+      if (this.running) {
+        this.send(
+          'notice',
+          'A run is active — wait for it to finish before deleting this chat.',
+        );
+        return;
+      }
+      // No sendHistory here: a `history` payload opens the History page in the
+      // shell, and the user must end on the fresh chat, not on an empty list.
+      // The next open re-sends it anyway.
+      void this.discardCurrentChat();
+      return;
+    }
     void queueSessionsWrite(async () => {
       const list = this.sessions();
       const next = list.filter((s) => s.id !== id);
       if (next.length === list.length) return;
       await this.ctx.workspaceState.update(SESSIONS_KEY, next);
     }).then(() => this.sendHistory());
+  }
+
+  /** Delete every chat: the saved ones and the live one. Ends on a fresh chat. */
+  private deleteAllChats(): void {
+    if (this.running) {
+      this.send(
+        'notice',
+        'A run is active — wait for it to finish before deleting the chats.',
+      );
+      return;
+    }
+    // The live chat is cleared last, after storage, so a failed write cannot
+    // leave History empty while the conversation still sits in the panel. As
+    // above, no history payload: the view ends on the fresh chat.
+    void queueSessionsWrite(async () => {
+      await this.ctx.workspaceState.update(SESSIONS_KEY, []);
+    }).then(() => this.discardCurrentChat());
   }
 
   /**
@@ -4401,9 +4437,19 @@ class ChatHost {
       }
     }
     await this.archiveCurrentChat();
+    await this.discardCurrentChat();
+  }
+
+  /**
+   * D49cd: end this conversation and leave a fresh one, WITHOUT archiving it.
+   * New Chat archives first and then calls this; deleting the current chat from
+   * History calls it alone, which is the whole difference between the two. The
+   * state left behind is identical, and shared here so it cannot drift.
+   */
+  private async discardCurrentChat(): Promise<void> {
     this.log.length = 0;
     await this.ctx.workspaceState.update(tabLogKey(this.tabId), this.log);
-    // D40: a new chat gets a fresh title.
+    // D40: a fresh chat gets a fresh title.
     this.chatTitle = '';
     this.titleManuallySet = false;
     this.archivedUpTo = 0;
@@ -4412,7 +4458,7 @@ class ChatHost {
     this.stateChanged();
     this.sessionWrites.clear();
     this.sessionApprovals.clear();
-    // D49bc: a new chat is a new session, so the reveals go with the other two.
+    // D49bc: a fresh chat is a new session, so the reveals go with the other two.
     // A file the user agreed to show once is not agreed to for the next chat.
     this.revealedPaths.clear();
     this.pendingAttachments = [];

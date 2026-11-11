@@ -320,7 +320,7 @@ async function openRunRecords(p) {
 // dispatching the messages it would post.
 {
   const chats = [
-    { id: 'c1', title: 'Current chat', ts: '2026-11-11T10:00:00.000Z', count: 3, current: true },
+    { id: '__current__', title: 'Current chat', ts: '2026-11-11T10:00:00.000Z', count: 3, current: true },
     { id: 'c2', title: 'Saved chat', ts: '2026-11-10T10:00:00.000Z', count: 5 },
   ];
   const runs = [{ file: 'r1.jsonl', task: 'a finished run', startedAt: '2026-11-11T09:00:00.000Z', turns: 2 }];
@@ -338,6 +338,10 @@ async function openRunRecords(p) {
       title: (i.querySelector('.rt') || {}).textContent,
       del: !!i.querySelector('.rdel'),
     })),
+    deleteAll: (() => {
+      const b = document.querySelector('#hibody .runhead .btn-danger');
+      return b ? b.textContent : null;
+    })(),
   }));
   check('History draws Chats and Run Records tabs',
     tabsAtOpen.tabChats && tabsAtOpen.tabRuns, tabsAtOpen);
@@ -347,10 +351,50 @@ async function openRunRecords(p) {
   check('the Chats tab says what it is',
     tabsAtOpen.heading === 'Chats' && tabsAtOpen.desc === 'Conversations you can reopen.',
     tabsAtOpen);
-  check('the current chat has no delete; a saved chat does',
-    tabsAtOpen.deletes.find((d) => d.title === 'Current chat')?.del === false
-      && tabsAtOpen.deletes.find((d) => d.title === 'Saved chat')?.del === true,
+  check('every chat has a delete, including the current one',
+    tabsAtOpen.deletes.length === 2 && tabsAtOpen.deletes.every((d) => d.del === true),
     tabsAtOpen.deletes);
+  check('the Chats heading offers Delete all', tabsAtOpen.deleteAll === 'Delete all',
+    tabsAtOpen.deleteAll);
+
+  // The confirmations: one per row, one for Delete all, and none fires first.
+  const delCurrent = await p.evaluate(() => {
+    window.__posted.length = 0;
+    const items = document.querySelectorAll('#hibody .sec')[0].querySelectorAll('.runitem');
+    const b = items[0].querySelector('.rdel');
+    b.click();
+    return {
+      posted: window.__posted.slice(),
+      armed: b.classList.contains('is-armed'),
+      historyOpen: document.body.classList.contains('show-history'),
+    };
+  });
+  check('the current chat\'s delete arms on the first click and asks nothing',
+    delCurrent.posted.length === 0 && delCurrent.armed === true, delCurrent);
+  check('and arming it does not leave History', delCurrent.historyOpen === true, delCurrent);
+  const delCurrent2 = await p.evaluate(() => {
+    const items = document.querySelectorAll('#hibody .sec')[0].querySelectorAll('.runitem');
+    items[0].querySelector('.rdel').click();
+    return window.__posted.slice();
+  });
+  check('the second click asks the host to delete the current chat',
+    delCurrent2.length === 1 && delCurrent2[0].type === 'deleteChat'
+      && delCurrent2[0].id === '__current__', delCurrent2);
+
+  const delAll = await p.evaluate(() => {
+    window.__posted.length = 0;
+    const b = document.querySelector('#hibody .runhead .btn-danger');
+    b.click();
+    const armed = { posted: window.__posted.slice(), label: b.textContent };
+    b.click();
+    return { armed, after: window.__posted.slice() };
+  });
+  check('Delete all on Chats arms before it fires', delAll.armed.posted.length === 0,
+    delAll.armed);
+  check('and says how many it is about to delete', delAll.armed.label === 'Delete all 2?',
+    delAll.armed);
+  check('the second click deletes all chats',
+    delAll.after.length === 1 && delAll.after[0].type === 'deleteAllChats', delAll.after);
 
   // Switching to Run Records shows the runs and their description.
   await p.evaluate(() => document.getElementById('htab-runs').click());
@@ -433,4 +477,133 @@ async function openRunRecords(p) {
   await p.close();
 }
 
-await finish('history: empty state, per-run delete and delete-all, saved chats, title, fold banner');
+// The History page is a fixed header (title, search, tabs, description) with
+// one scrollable list under it. The founder's screenshot showed the list
+// scrolling UNDER the search field and the tabs: the page itself was scrolling,
+// because the list was free to grow past the window instead of scrolling inside
+// it. Both the Chats list and the search results use this same region.
+{
+  const chats = [];
+  for (let i = 1; i <= 30; i += 1) {
+    chats.push({
+      id: 'c' + i,
+      title: 'Conversation ' + i,
+      ts: '2026-11-10T10:00:00.000Z',
+      count: 2,
+    });
+  }
+  const p = await page(720, { type: 'history', chats, runs: [] });
+  await p.setViewportSize({ width: 720, height: 420 });
+  await p.waitForTimeout(150);
+  checkPageClean(p, 'history scroll');
+
+  const measure = () => p.evaluate(() => {
+    const rect = (n) => {
+      const b = n.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom };
+    };
+    const head = document.querySelector('#historyPage header.shead');
+    const search = document.getElementById('hsearch');
+    const tabs = document.getElementById('htabs');
+    const body = document.getElementById('hibody');
+    const first = document.querySelector('#hibody .runitem, #hibody .hresult');
+    return {
+      head: rect(head),
+      search: rect(search),
+      tabs: rect(tabs),
+      body: rect(body),
+      first: first ? rect(first) : null,
+      overflow: getComputedStyle(body).overflowY,
+      scrolls: body.scrollHeight > body.clientHeight + 1,
+      scrollTop: body.scrollTop,
+      vh: window.innerHeight,
+    };
+  });
+
+  const before = await measure();
+  check('the list region scrolls',
+    before.overflow === 'auto' && before.scrolls === true, before);
+  check('its bottom stays inside the window', before.body.bottom <= before.vh + 1, before);
+  check('its top sits under the tabs', before.body.top >= before.tabs.bottom - 1, before);
+
+  const pageScrolls = await p.evaluate(() => {
+    window.scrollTo(0, 200);
+    return window.scrollY;
+  });
+  check('the page itself does not scroll', pageScrolls === 0, pageScrolls);
+
+  const after = await p.evaluate(() => {
+    const body = document.getElementById('hibody');
+    body.scrollTop = 120;
+    const rect = (n) => {
+      const b = n.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom };
+    };
+    const first = document.querySelector('#hibody .runitem');
+    return {
+      head: rect(document.querySelector('#historyPage header.shead')),
+      search: rect(document.getElementById('hsearch')),
+      tabs: rect(document.getElementById('htabs')),
+      body: rect(body),
+      first: rect(first),
+      scrollTop: body.scrollTop,
+    };
+  });
+  check('scrolling the list moves its rows',
+    after.scrollTop > 0 && after.first.top < before.first.top, { before, after });
+  check('and leaves the title, the search and the tabs where they were',
+    after.head.top === before.head.top
+      && after.search.top === before.search.top
+      && after.tabs.top === before.tabs.top
+      && after.body.top === before.body.top, { before, after });
+
+  // The results view is the same region: one fixed header, one scrolling list.
+  const results = [];
+  for (let i = 1; i <= 30; i += 1) {
+    results.push({
+      kind: 'chat',
+      id: 'c' + i,
+      title: 'Conversation ' + i,
+      ts: '2026-11-10T10:00:00.000Z',
+      snippet: 'a conversation about the term',
+      start: 20,
+      end: 24,
+    });
+  }
+  await p.evaluate((r) => {
+    const q = document.getElementById('hq');
+    q.value = 'term';
+    window.dispatchEvent(new MessageEvent('message', {
+      data: { type: 'historySearchResults', query: 'term', results: r, truncated: false, scanCapped: false },
+    }));
+  }, results);
+  await p.waitForTimeout(150);
+  const searchGeo = await measure();
+  check('the search results scroll inside the same region',
+    searchGeo.overflow === 'auto' && searchGeo.scrolls === true
+      && searchGeo.body.bottom <= searchGeo.vh + 1
+      && searchGeo.body.top >= searchGeo.tabs.bottom - 1, searchGeo);
+  const searchScrolled = await p.evaluate(() => {
+    const body = document.getElementById('hibody');
+    const tabs = document.getElementById('htabs').getBoundingClientRect().top;
+    body.scrollTop = 120;
+    return { top: body.scrollTop, tabs };
+  });
+  check('and scrolling them does not move the tabs',
+    searchScrolled.top > 0
+      && searchScrolled.tabs === searchGeo.tabs.top, searchScrolled);
+
+  // A window shorter than the fixed block (title, search, tabs) has no room
+  // for a full list region, but the page still must not scroll: the controls
+  // stay where they are instead of sliding up under the wheel.
+  await p.setViewportSize({ width: 720, height: 140 });
+  await p.waitForTimeout(80);
+  const shortPage = await p.evaluate(() => {
+    window.scrollTo(0, 200);
+    return window.scrollY;
+  });
+  check('a very short window still does not scroll the page', shortPage === 0, shortPage);
+  await p.close();
+}
+
+await finish('history: empty state, per-row and delete-all, saved chats, title, fold banner');

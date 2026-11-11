@@ -403,8 +403,14 @@ export function chatHtml(
   body.show-history #obs, body.show-history footer,
   body.show-history #statusbar, body.show-history #emptyState { display:none !important; }
   #historyPage { display:none; }
+  /* D49cd: the page is a fixed header and one scrolling list below it. The
+     list is the only flexible item; the title, search and tabs keep their
+     height, so a long list scrolls inside its region instead of the whole page
+     sliding under the controls (the founder's screenshot). */
   body.show-history #historyPage { display:flex; flex-direction:column;
-                                   height:100vh; }
+                                   height:100vh; overflow:hidden; }
+  #historyPage header.shead, #historyPage #hsearch,
+  #historyPage #htabs { flex:0 0 auto; }
   /* D49cd: search sits above the tabs, and the tabs above the list. */
   #hsearch { padding:10px 14px 0; }
   #hq { width:100%; box-sizing:border-box; font-family:inherit; font-size:12px;
@@ -430,7 +436,9 @@ export function chatHtml(
   .hresult .hsnip { font-size:11.5px; margin-top:3px; word-break:break-word; }
   .hresult mark { background:var(--vscode-editor-findMatchHighlightBackground,#6b5413);
                   color:inherit; border-radius:2px; }
-  #hibody { flex:1; overflow-y:auto; padding:12px 14px; }
+  /* min-height:0 is what lets a flex item actually be shorter than its
+     content; without it the list grows and the page scrolls instead. */
+  #hibody { flex:1 1 auto; min-height:0; overflow-y:auto; padding:12px 14px; }
   .runitem { border:1px solid var(--pl-border); border-radius:6px;
              padding:8px 10px; margin-bottom:8px; cursor:pointer;
              position:relative; }
@@ -2325,7 +2333,21 @@ export function chatHtml(
   function renderChats() {
     const chats = hCurrent.chats;
     const sec = el('div', 'sec');
-    sec.appendChild(el('h4', null, 'Chats'));
+    const chead = el('div', 'runhead');
+    chead.appendChild(el('h4', null, 'Chats'));
+    if (chats.length > 0) {
+      // D49cd: the same two-step action Run Records has. It deletes the saved
+      // chats AND the current one, so the page owns the count it shows.
+      const delAll = armDanger(
+        'Delete all',
+        'Delete all ' + chats.length + '?',
+        () => vsapi.postMessage({ type: 'deleteAllChats' }),
+      );
+      delAll.setAttribute('aria-label',
+        'Delete all ' + chats.length + ' chats (asks once to confirm)');
+      chead.appendChild(delAll);
+    }
+    sec.appendChild(chead);
     sec.appendChild(el('div', 'note', 'Conversations you can reopen.'));
     if (chats.length === 0) {
       sec.appendChild(el('div', 'note', 'No saved conversations yet.'));
@@ -2351,14 +2373,15 @@ export function chatHtml(
         item.addEventListener('click', () => {
           vsapi.postMessage({ type: 'resumeChat', id: c.id });
         });
-        // D49cd: a saved chat can be deleted, with the same two-step confirm
-        // every destructive control here uses. The CURRENT chat gets none.
-        const del = armDanger('\u00d7', null, () =>
-          vsapi.postMessage({ type: 'deleteChat', id: c.id }));
-        del.classList.add('rdel');
-        del.setAttribute('aria-label', 'Delete this chat (asks once to confirm)');
-        item.appendChild(del);
       }
+      // D49cd: every chat can be deleted, the current one too \u2014 deleting it
+      // discards it and leaves a fresh chat, which is not the same as archiving
+      // it. The two-step confirm is the one every destructive control uses.
+      const del = armDanger('\u00d7', null, () =>
+        vsapi.postMessage({ type: 'deleteChat', id: c.id }));
+      del.classList.add('rdel');
+      del.setAttribute('aria-label', 'Delete this chat (asks once to confirm)');
+      item.appendChild(del);
       sec.appendChild(item);
     }
     hbody.appendChild(sec);

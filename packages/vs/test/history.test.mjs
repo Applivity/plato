@@ -582,13 +582,9 @@ try {
     (afterDelete['plato.chatSessions'] || []).length >= 1,
     'the other conversations are untouched',
   );
-  // The synthetic current entry is not deletable.
-  host.receive({ type: 'deleteChat', id: '__current__' });
-  await settle();
-  assert.ok(
-    (stateFile()['plato.chatSessions'] || []).length >= 1,
-    'a delete aimed at the current chat changes nothing',
-  );
+  // Deleting the CURRENT chat is covered by chatdelete.test.mjs: it discards
+  // the live conversation rather than archiving it, so it does not belong in
+  // this suite's archive-on-close story.
 
   console.log('PASS M3b checkpoint 2b history, resume, title and folding');
   console.log(`  posts: ${posts.length}`);
