@@ -128,7 +128,7 @@ namespace Plato.Vs.Bridge
                     stateDir = PlatoPaths.RoamingRoot,
                     workspaceStateFile = PlatoPaths.WorkspaceStateFile(root, _windowId),
                     sharedStateFile = PlatoPaths.SharedChatsFile(root),
-                    version = "0.2.1",
+                    version = "0.2.2",
                 },
                 TimeSpan.FromSeconds(20)).ConfigureAwait(false);
 
