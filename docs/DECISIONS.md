@@ -881,6 +881,8 @@ The founder asked why Plato's `/compact` only works mid-run when other agents co
 
 > **Status (2026-09-03):** shipped in 0.20.0. Command menu is Compact · History. Fold cadence is the tunable cost lever (`AUTO_FOLD_AT`/`KEEP_AFTER_FOLD`, default folds roughly every ~7 exchanges).
 
+> **Update (2026-11-12): the fold now measures the window, not a count.** The design above says PAIRS; the shipped implementation counted **rows** — 26 rows, keep 12 — so a client run on a **1,000,000-token** window (prompt peak 203,228 tokens, 20%) was folded and told so, and the cadence silently halved. The fold now measures the history it would send — **summary plus tail** — against **`shouldAutoCompact`**, the same function, threshold and window the run itself uses, so nothing else can disagree with it. How much is kept verbatim is **`FOLD_KEEP_FRACTION` (0.25) of the window** minus the summary, and the **newest exchange is always kept**. **No message or row count appears anywhere in the fold.** The request cap is derived as threshold × window in tokens, and when it bites, the request and the user are both told. See PROGRESS's 2026-11-12 row and D49dl for idle compaction.
+
 **D45a — Project files: PLATO.md + AGENTS.md + academy worker.role, holistic three-layer join (M4.1, 0.17.0, shipped 2026-09-03).**
 
 > **Status (2026-09-03):** the three-layer join is shipped. `buildWorkerRole` lives at `packages/core/src/runtime/workerRole.ts`; the loop calls it at run start (`loop.ts:256-264`); the host passes `plato.worker.includeProjectRules`. Philosophers still see only their persona/academy role (D45a invariant: observer.ts never calls `buildWorkerRole`). **Deferred to a follow-up row in PROGRESS** (UI-first per D45c): the Settings → Workers section, the `/system-prompt` command, the secondary empty-composer card, and the Academy per-member `includeProjectRules` flag. The 3-layer join is the contract; the UI is the affordance layer.
@@ -2623,6 +2625,13 @@ ENTRIES — not 400 messages; every completed tool call is one row, so a tool-he
 spends ~70) became the only thing that could still drop rows, and it did so silently. It
 now leaves a `trim` row saying how many went, and says separately when the cap took the
 summary — because that is the model's memory going, not just the view.
+
+**Update (2026-11-12): the cap now drops the right rows first.** A client chat spent
+**265 of its rows on tool records**, and the cap dropped the opening message and the first
+reply while keeping the tool noise. `planTrim` now drops **tool rows first, then other
+notes, and only then message rows**, and the trim note says **which kind** went. **Warnings
+are never hidden by the view setting** (D49dm): trim notes, guard lines, notices and cards
+stay visible even when the rows above a summary are hidden.
 
 **Verified by testing the code, not the shell.** The rules moved to core
 (`runtime/chatlog.ts`) — `planFold`, `applyFold`, `requestFromLog` — because the shell has
@@ -7991,4 +8000,115 @@ never published.**
 - **The lesson:** any state that two processes share and merge must be able to
   say "this is gone". A union-only merge is correct only for a set that never
   shrinks, and a History list is not one.
+
+**Numbering note (2026-11-12).** The source comments for this round carry **D49cd,
+D49ck, D49cm, D49cn, D49co and D49cp**. Those numbers already belong to earlier
+decisions — the composer's `/` menu, unsigned Visual Studio, the Marketplace
+identity, Visual Studio 2022 support, the screenshot rule, and the public
+repository. The entries below take the next free numbers and **name the source
+tag each one answers**. Until a code pass retags the comments, read a comment's
+tag through this mapping: **D49cd → D49dj, D49ck → D49dk, D49cm → D49dl,
+D49cp → D49dm, D49cn → D49dn, D49co → D49do.**
+
+**D49dj — A local path in a reply is a control, a screenshot is a picture, and files arrive by paste or drop (2026-11-12; source tag D49cd).**
+
+The client run wrote its screenshots as `.scratch/shots/*.png` and the founder
+could not open one: only `http(s)` links rendered, and the chat had no way to ask
+the host to open a file. Paste and drag-and-drop did not exist at all, and the
+paperclip was the only route in, with every refusal saying "unreadable".
+
+- A local path — **Windows, UNC, POSIX, or a workspace-relative path with an
+  extension** — renders as a **`<span>` with `data-path`, never an `<a href>`**.
+  A webview that follows a link to a local file navigates away from the chat,
+  which is the fault the CSP exists to prevent. A click posts `open-path`; the
+  host stats the file and opens it, and a missing file is said in the chat.
+- An image **inside the workspace** is drawn as a **thumbnail** (160 px tall, at
+  most 280 px wide, scaled with the panel) and opens full size on a click. It is
+  served as a **webview resource URI**, so no bytes cross the message channel and
+  none enter the log. Outside the workspace it stays a link.
+- **Paste and drop attach files.** Paths go to `attach-paths`; an image with no
+  path arrives as bytes, is sniffed, capped at **3 MB**, written once under
+  **`~/.plato/pasted`**, and attached like any other file. Copies are swept after
+  **seven days**. A text-only paste is untouched.
+- **Every route goes through `attachFiles`**, so the caps, the secret deny-list
+  and the refusals are the paperclip's. Refusals name the cause and the platform
+  code: wrong type, size with both numbers, secret list, or
+  `ENOENT`/`EACCES`/`EISDIR`.
+- **Limit:** the Visual Studio shim has no `vscode.open` command, so a clicked
+  path there does nothing yet (see HANDOFF).
+
+**D49dk — A read outside the project is the user's call, for one call at a time (2026-11-12; source tag D49ck).**
+
+A UNC address of a file that sits inside the workspace through its drive path was
+refused as "outside the workspace", though Windows reads it without trouble. The
+containment rule is right; what was missing was a way for the person to say yes.
+
+- The loop may ask the host about the paths of a **read** tool that escape
+  (`read_file`, `read_image`, `grep`, `list_dir`). **Yes approves those resolved
+  absolute paths for THAT call only**; no becomes a normal tool result the model
+  can read ("the user declined"), and the run continues.
+- **Writes keep the old refusal and are never offered.** An approval to read is
+  not an approval to write.
+- The **secret deny-list still applies** to an approved outside path.
+- The executor checks the approved absolute path exactly (**case-folded on
+  Windows**), per call. The allowance is never stored on the loop, the run or the
+  host, so it cannot reach a later call.
+- The card says the path, that it is outside the project, and why; **Allow once /
+  Allow this folder for this session / Deny**. Remembered folders live in the
+  chat, in memory, and a new chat asks again.
+- **A host with no hook (the CLI, Visual Studio) behaves exactly as before.**
+  This is a VS Code-window capability until those hosts add the hook.
+
+**D49dl — Idle compaction exists, and it is off unless asked for (2026-11-12; source tag D49cm).**
+
+- New setting **`plato.compaction.idle`, default OFF.** It folds after **60
+  minutes** with no activity and at least **200,000 estimated tokens** of
+  history — Claude Code's two numbers, mirrored.
+- Both must hold, the setting must be on, and **nothing may be running or
+  waiting** (a run, an approval, a question, a stuck prompt).
+- **Every condition is re-checked when the timer fires**, and the timer is
+  cancelled by a new message, a new chat, or switching the setting off.
+- **Why off by default:** it summarises BELOW the user's threshold by design —
+  exactly the surprise the memory fold was fixed to stop (D44d). A user who turns
+  it on has asked for it.
+
+**D49dm — The view hides old rows; the record never does (2026-11-12; source tag D49cp).**
+
+- New setting **`plato.chat.hideBeforeSummary`, default ON.** It hides the rows
+  **above the newest summary in the view only**; every row stays in the log and
+  in the transcript, and the request is unchanged.
+- The divider says the messages were **summarised, not deleted**, that they are
+  still in the transcript, and offers **"Show earlier messages"** for that page.
+  A reload applies the preference again.
+- **A view preference must never hide a warning.** Trim notes, guard lines,
+  notices, cards and the summary itself stay visible; only the rows that exist to
+  converse are hidden.
+- **Why:** the user asked for Claude Code's view, which hides earlier turns after
+  a compact. The record is the part that must not change.
+
+**D49dn — After a summary, the request restates the work (2026-11-12; source tag D49cn).**
+
+A summary is a lossy record written when the fold ran; by the next message the
+files it names may have changed, and the model would reason from a stale note.
+Claude Code puts the recent files and the repository state back into the prompt;
+the founder's decision is that this is **correctness, not a preference**, so it is
+a rule with named constants and **no setting**.
+
+- The block is built **fresh at run start, and only when a summary is in
+  effect**. Before a fold there is nothing to restate, so the same content is
+  never carried twice.
+- Up to **five files** this chat read or edited, newest first, by their **current
+  content**, within a **5,000-token** budget, by the same estimator the context
+  ring uses.
+- A **protected file is named, never quoted**; a file outside the workspace, one
+  deleted since, and one too large to fit are each **named with the reason**,
+  never invented.
+- The current **branch and a capped `git status --short`** are included when the
+  workspace is a git repository.
+
+**D49do — `/compact` takes what to keep (2026-11-12; source tag D49co).**
+
+`/compact <text>` passes the text to the summariser as a **focus instruction**;
+without text the prompt is unchanged. The command's menu line names the optional
+note, so the capability is visible where the command is chosen.
 
