@@ -61,7 +61,9 @@ import {
   protectNameError,
   allowPathError,
   revealCard,
+  outsideReadCard,
   type RevealCard,
+  type OutsideReadCard,
   formatDiagnostics,
   stuckCard,
   type StuckCard,
@@ -134,7 +136,7 @@ import {
 import { chatHtml, type ChatCaps } from './webview.js';
 import { resolvePlatoHome } from './home.js';
 import { attachmentTarget, isAbsoluteAttachmentPath } from './attachments.js';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -1106,6 +1108,13 @@ type Entry =
   | ({ k: 'reveal-open' } & RevealCard)
   | { k: 'reveal-done' }
   /**
+   * D49ck: the card that asks whether a READ may leave the project. Written to
+   * the log BEFORE the host waits, so a reload rebuilds it exactly as the
+   * reveal card does.
+   */
+  | ({ k: 'outside-open' } & OutsideReadCard)
+  | { k: 'outside-done' }
+  /**
    * D49bg: the question card, recorded for exactly the reason the four cards
    * above are — the host is parked on the answer with nothing else able to
    * interrupt it, so a reload that lost the card would leave a run waiting for a
@@ -1215,6 +1224,18 @@ class ChatHost {
     null;
   /** D49bc: the run is parked on a reveal card until this is answered. */
   private pendingReveal: PendingResolve | null = null;
+  /**
+   * D49ck: is Plato waiting on the outside-read card? A fix for the live run.
+   */
+  private pendingOutsideRead:
+    | ((v: 'once' | 'folder' | 'deny') => void)
+    | null = null;
+  /**
+   * D49ck: folders the user allowed for THIS chat only. "Allow this folder for
+   * this session" is remembered here and nowhere else — no setting is written,
+   * and a new chat starts with an empty set.
+   */
+  private outsideFolders = new Set<string>();
   private pendingQuestion: ((answers: string[]) => void) | null = null;
   /**
    * D49aq: how many questions the open card is asking, so cancelling it can
@@ -2216,6 +2237,18 @@ class ChatHost {
           const resolve = this.pendingReveal;
           this.pendingReveal = null;
           resolve?.(m.allow === true);
+          return;
+        }
+        // D49ck: the three answers to the outside-read card. Only these exact
+        // words are consent; anything else reads as a denial.
+        if (m.type === 'outside-answer') {
+          const resolve = this.pendingOutsideRead;
+          this.pendingOutsideRead = null;
+          const value =
+            m.value === 'once' || m.value === 'folder' ? m.value : 'deny';
+          resolve?.(value);
+          this.push({ k: 'outside-done' });
+          this.send('outside-read-done');
           return;
         }
         if (m.type === 'ask' && typeof m.text === 'string') {
@@ -3642,6 +3675,12 @@ class ChatHost {
     this.pendingReveal = null;
     rv?.(false);
     this.send('reveal-done');
+    // D49ck: and the outside-read card. The loop is parked on it; a cancel
+    // means "no", so nothing is read.
+    const or = this.pendingOutsideRead;
+    this.pendingOutsideRead = null;
+    or?.('deny');
+    this.send('outside-read-done');
     // D49cb: and the mode card. The loop is parked on it through `requestMode`,
     // and "no" is the safe answer — the permission table does not change.
     const mr = this.pendingModeRequest;
@@ -4808,6 +4847,10 @@ class ChatHost {
     this.pendingApprovalCard = null;
     this.pendingStuck = null;
     this.pendingReveal = null;
+    // D49ck: a fresh chat is a new session, so a folder allowed in the old one
+    // is not allowed in this one.
+    this.pendingOutsideRead = null;
+    this.outsideFolders.clear();
     this.replyBuffer = '';
     // D49j: the webview is about to be blanked; a pending repaint would post
     // the old conversation's text into the new one.
@@ -5755,6 +5798,9 @@ class ChatHost {
           : {}),
         ...(ctx.originFrom === undefined ? {} : { originFrom: ctx.originFrom }),
         approve: (req) => this.approve(req),
+        // D49ck: a read outside the project asks here, at the moment the model
+        // tries. The host decides whether to ask; core only offers.
+        outsideRead: (paths, tool) => this.outsideRead(paths, tool),
         getMode: () => this.mode,
         // D49cb: the model can ask; the user's card is what changes anything.
         requestMode: (req) => this.requestMode(req),
@@ -6208,6 +6254,71 @@ class ChatHost {
     const ok = await this.promptReveal(rel);
     if (ok) this.revealedPaths.add(rel);
     return ok;
+  }
+
+  /**
+   * D49ck: may Plato read these paths, which are outside the project?
+   *
+   * The question is asked with the path, the reason (the tool's own words) and
+   * the folder a wider answer would cover. Three answers, and only one is
+   * remembered: "Allow this folder for this session" goes into
+   * `outsideFolders`, which lives as long as this chat. "Allow once" approves
+   * this call and is forgotten — the next call asks again.
+   */
+  private async outsideRead(
+    paths: readonly string[],
+    tool: string,
+  ): Promise<boolean> {
+    const raw = String(paths[0] ?? '');
+    const abs = this.resolveLocalPath(raw);
+    if (abs === null) return false;
+    if (this.outsideCovered(abs)) {
+      // The same passive note the write approval uses: the user should know why
+      // a card they allowed the folder for is not appearing again.
+      this.send(
+        'notice',
+        'Plato did not ask — you allowed this folder for this session.',
+      );
+      return true;
+    }
+    const answer = await this.promptOutsideRead(tool, raw, abs);
+    if (answer === 'deny') return false;
+    if (answer === 'folder') this.outsideFolders.add(dirname(abs));
+    return true;
+  }
+
+  /** True when a folder allowed in this chat covers the absolute path. */
+  private outsideCovered(abs: string): boolean {
+    const norm = (p: string): string => {
+      const one = p.replace(/[\\/]+$/, '');
+      return process.platform === 'win32' ? one.toLowerCase() : one;
+    };
+    const target = norm(abs);
+    for (const folder of this.outsideFolders) {
+      const f = norm(folder);
+      if (
+        target === f ||
+        target.startsWith(f + '/') ||
+        target.startsWith(f + '\\')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private promptOutsideRead(
+    tool: string,
+    raw: string,
+    abs: string,
+  ): Promise<'once' | 'folder' | 'deny'> {
+    const card = outsideReadCard(tool, raw, abs, dirname(abs));
+    // In the log before the wait, so a reload rebuilds the card.
+    this.push({ k: 'outside-open', ...card });
+    return new Promise((resolve) => {
+      this.pendingOutsideRead = resolve;
+      void this.panel.webview.postMessage({ type: 'outside-read', ...card });
+    });
   }
 
   private promptReveal(rel: string): Promise<boolean> {

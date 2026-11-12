@@ -7,7 +7,7 @@
 import { execFile } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { resolveInRoot } from '../security/paths.js';
 import { isSecretPath, mentionsSecretPath } from '../security/secrets.js';
 import {
@@ -108,6 +108,15 @@ export interface ToolContext {
    * default — the tools see everything and say what the repository ignores.
    */
   respectGitignore?: boolean;
+  /**
+   * D49ck: absolute paths the user approved for THIS call and no other.
+   *
+   * The loop fills it from the answer it has just received, so an approval is
+   * consumed by the call that asked for it. It is checked against the RESOLVED
+   * absolute path of each read argument — never a prefix and never a string a
+   * later call could be made to match — and it is never passed to a write.
+   */
+  outsideRead?: readonly string[];
 
 }
 
@@ -129,19 +138,37 @@ function argId(args: ToolArgs): string | null {
  * neither check can be skipped by a tool that forgets one. Before this, every
  * tool went straight to `join(root, raw)` — see security/paths.ts.
  */
+function samePath(a: string, b: string): boolean {
+  const na = resolve(a);
+  const nb = resolve(b);
+  return process.platform === 'win32'
+    ? na.toLowerCase() === nb.toLowerCase()
+    : na === nb;
+}
+
 function resolveTarget(
   root: string,
   raw: string,
-  opts: { allowSecret?: boolean } = {},
-): { abs: string; rel: string; secret: boolean } | { err: string } {
+  opts: { allowSecret?: boolean; outside?: readonly string[] } = {},
+): { abs: string; rel: string; secret: boolean; outside: boolean } | { err: string } {
   const rel = resolveInRoot(root, raw);
-  if (rel === null) return { err: `path is outside the workspace: ${raw}` };
+  if (rel === null) {
+    // D49ck: an outside path is allowed only when the loop says the user
+    // approved THIS absolute path for THIS call. The comparison is exact, so an
+    // approval for one file cannot admit another. Writes never pass `outside`.
+    const abs = resolve(root, raw);
+    const approved = (opts.outside ?? []).some((p) => samePath(p, abs));
+    if (!approved) return { err: `path is outside the workspace: ${raw}` };
+    const secretOutside = isSecretPath(abs);
+    if (secretOutside && opts.allowSecret !== true) return { err: 'protected file' };
+    return { abs, rel: abs, secret: secretOutside, outside: true };
+  }
   const secret = isSecretPath(rel);
   // D49bb: `allowSecret` is set by the tools that can MASK what they return. A
   // tool that cannot mask a protected file (anything that writes it straight
   // through) keeps the refusal, so the allow is per tool and not global.
   if (secret && opts.allowSecret !== true) return { err: 'protected file' };
-  return { abs: join(root, rel), rel, secret };
+  return { abs: join(root, rel), rel, secret, outside: false };
 }
 
 /**
@@ -239,7 +266,7 @@ async function dispatch(
     case 'read_file':
       return annotateIgnoredFile(root, args, ctx, await readFileTool(root, args, ctx));
     case 'read_image':
-      return readImageTool(root, args);
+      return readImageTool(root, args, ctx);
     case 'write_file':
       return writeFileTool(root, args, ctx);
     case 'apply_diff':
@@ -304,12 +331,16 @@ function humanBytes(n: number): string {
  * The bytes decide the type; the name does not. A text file or a corrupt image
  * is refused by name, not sent as mojibake.
  */
-async function readImageTool(root: string, args: ToolArgs): Promise<ToolOutcome> {
+async function readImageTool(
+  root: string,
+  args: ToolArgs,
+  ctx: ToolContext,
+): Promise<ToolOutcome> {
   const raw = argPath(args);
   if (raw.length === 0) return fail('missing path');
   // No `allowSecret`: an image on the deny-list is refused like any other
   // protected path, because it cannot be masked.
-  const target = resolveTarget(root, raw);
+  const target = resolveTarget(root, raw, { outside: ctx.outsideRead });
   if ('err' in target) return fail(target.err);
   const { abs, rel } = target;
   let buf: Buffer;
@@ -344,7 +375,10 @@ async function readFileTool(
 ): Promise<ToolOutcome> {
   const raw = argPath(args);
   if (raw.length === 0) return fail('missing path');
-  const target = resolveTarget(root, raw, { allowSecret: ctx.vault !== undefined });
+  const target = resolveTarget(root, raw, {
+    allowSecret: ctx.vault !== undefined,
+    outside: ctx.outsideRead,
+  });
   if ('err' in target) return fail(target.err);
   const { abs, rel, secret } = target;
 
@@ -944,7 +978,7 @@ async function listDirTool(
     const note = ignoredNote(listing, listing.files);
     return note === undefined ? { ok: true, output } : { ok: true, output, note };
   }
-  const target = resolveTarget(root, raw);
+  const target = resolveTarget(root, raw, { outside: ctx.outsideRead });
   if ('err' in target) return fail(target.err);
   const { abs, rel } = target;
   // Say so when the directory is missing rather than returning an empty list:
@@ -957,6 +991,19 @@ async function listDirTool(
     return fail(`no such directory: ${rel}`);
   }
   if (!isDir) return fail(`not a directory: ${rel}`);
+  if (target.outside) {
+    // D49ck: an approved folder outside the workspace is listed WHOLE, and each
+    // entry is named by its absolute path — a path relative to a folder the
+    // model did not start in would name nothing it could re-read.
+    const outside = listWorkspace(abs, '', {
+      respectGitignore: ctx.respectGitignore,
+    });
+    const files = outside.files.map((f) => join(abs, f));
+    return {
+      ok: true,
+      output: files.length > 0 ? files.join('\n') : `(no files under ${rel})`,
+    };
+  }
   const listing = listWorkspace(root, rel, { respectGitignore: ctx.respectGitignore });
   const output =
     listing.files.length > 0 ? listing.files.join('\n') : `(no files under ${rel})`;
@@ -1066,8 +1113,14 @@ async function grepTool(
   // workspace, so a glob written against the full path keeps its meaning.
   const rawScope = typeof args['path'] === 'string' ? args['path'].trim() : '';
   let scope = '';
+  // D49ck: an approved folder outside the workspace is searched from ITSELF,
+  // and each hit is named by its absolute path. `base` is the folder the walk
+  // and the reads start at; `label` is how a hit is written for the model.
+  let base = root;
+  let outsideScope = false;
+  let label = (rel: string): string => rel;
   if (rawScope.length > 0) {
-    const target = resolveTarget(root, rawScope);
+    const target = resolveTarget(root, rawScope, { outside: ctx.outsideRead });
     if ('err' in target) return fail(target.err);
     try {
       if (!statSync(target.abs).isDirectory()) {
@@ -1076,10 +1129,16 @@ async function grepTool(
     } catch {
       return fail(`no such directory: ${target.rel}`);
     }
-    scope = target.rel;
+    if (target.outside) {
+      base = target.abs;
+      outsideScope = true;
+      label = (rel: string): string => join(target.abs, rel);
+    } else {
+      scope = target.rel;
+    }
   }
 
-  const listing = listWorkspace(root, scope, { respectGitignore: ctx.respectGitignore });
+  const listing = listWorkspace(base, scope, { respectGitignore: ctx.respectGitignore });
   const files = listing.files.filter(
     (p) => filter === null || matchGlob(filter, p),
   );
@@ -1093,7 +1152,7 @@ async function grepTool(
   for (const rel of files) {
     let buf: Buffer;
     try {
-      buf = await readFile(join(root, rel));
+      buf = await readFile(join(base, rel));
     } catch {
       continue; // unreadable
     }
@@ -1112,7 +1171,7 @@ async function grepTool(
       total += 1;
       if (mode === 'content') {
         if (content.length < limit) {
-          content.push(`${rel}:${i + 1}:${line.trim().slice(0, 200)}`);
+          content.push(`${label(rel)}:${i + 1}:${line.trim().slice(0, 200)}`);
         } else {
           truncated = true;
         }
@@ -1121,8 +1180,8 @@ async function grepTool(
       if (mode === 'files_with_matches') break;
     }
     if (fileHits > 0) {
-      matchedFiles.push(rel);
-      counts.push(`${rel}:${fileHits}`);
+      matchedFiles.push(label(rel));
+      counts.push(`${label(rel)}:${fileHits}`);
     }
   }
 
@@ -1133,7 +1192,10 @@ async function grepTool(
       matchedFiles.length > shown.length
         ? `\n[${matchedFiles.length} files matched; showing ${shown.length} — raise limit or narrow with glob]`
         : '';
-    return withNote({ ok: true, output: shown.join('\n') + note }, ignoredNote(listing, shown));
+    return withNote(
+      { ok: true, output: shown.join('\n') + note },
+      outsideScope ? undefined : ignoredNote(listing, shown),
+    );
   }
 
   if (mode === 'count') {
@@ -1149,7 +1211,7 @@ async function grepTool(
         ok: true,
         output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}`,
       },
-      ignoredNote(listing, counted),
+      outsideScope ? undefined : ignoredNote(listing, counted),
     );
   }
 
@@ -1160,7 +1222,7 @@ async function grepTool(
   const hitFiles = content.map((line) => line.slice(0, line.indexOf(':')));
   return withNote(
     { ok: true, output: content.join('\n') + note },
-    ignoredNote(listing, hitFiles),
+    outsideScope ? undefined : ignoredNote(listing, hitFiles),
   );
 }
 
@@ -1185,7 +1247,13 @@ function annotateIgnoredFile(
     return outcome;
   }
   const rel = argPath(args).replace(/^\.\//, '');
-  if (rel.length === 0 || rel.startsWith('/') || rel.split('/').includes('..')) {
+  if (
+    rel.length === 0 ||
+    rel.startsWith('/') ||
+    /^[A-Za-z]:[\\/]/.test(rel) ||
+    rel.startsWith('\\\\') ||
+    rel.split('/').includes('..')
+  ) {
     return outcome;
   }
   return isGitignored(root, rel)

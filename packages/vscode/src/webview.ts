@@ -290,6 +290,9 @@ export function chatHtml(
      confirm an action they asked for. */
   .card.reveal-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
   .card.reveal-card.answered { opacity:.75; border-left-color:var(--pl-border); }
+  /* D49ck: three answers, so a narrow panel wraps them instead of clipping the
+     last one. */
+  .card.outside-card .actions { flex-wrap:wrap; }
   .card .reveal-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
                        color:var(--vscode-editor-foreground); }
   .card .reveal-line:first-of-type { padding-top:8px; }
@@ -1586,6 +1589,7 @@ export function chatHtml(
   let openUndoCard = null;
   /** D49bc: the reveal card — the file Plato cannot mask, offered in full. */
   let openRevealCard = null;
+  let openOutsideCard = null;
   /** D49cb: the model's mode request — the only card that can change a mode. */
   let openModeRequestCard = null;
   /**
@@ -5026,6 +5030,14 @@ export function chatHtml(
       case 'reveal-done':
         dismissReveal();
         break;
+      // D49ck: a read outside the project asks with three answers.
+      case 'outside-read':
+        showOutsideRead(m);
+        refreshChip();
+        break;
+      case 'outside-read-done':
+        dismissOutsideRead();
+        break;
       // D49cb: the model asked for a different mode. The card is the only path
       // from that request to a switch; it names the cost of the target mode.
       case 'mode-request':
@@ -5171,6 +5183,8 @@ export function chatHtml(
       // answer leaves the user a card they can still answer.
       case 'reveal-open': showReveal(t); break;
       case 'reveal-done': dismissReveal(); break;
+      case 'outside-open': showOutsideRead(t); break;
+      case 'outside-done': dismissOutsideRead(); break;
       // D49bg: rebuilt from the log, so a reload while the host waits for the
       // answer leaves the user a card they can still answer — the same rule the
       // four cards around it follow.
@@ -6090,6 +6104,73 @@ export function chatHtml(
       const actions = openRevealCard.querySelector('.actions');
       if (actions) actions.remove();
       openRevealCard = null;
+    }
+    clearStatus();
+  }
+
+  /**
+   * D49ck: may Plato read outside the project? The card names the path, says it
+   * is outside, and says why Plato wants it. Three answers: once, this folder
+   * for the session, or no.
+   */
+  function showOutsideRead(m) {
+    flushToolBuffer();
+    const card = document.createElement('div');
+    card.className = 'card reveal-card outside-card';
+
+    const h = document.createElement('h3');
+    h.textContent = String(m.title || 'Read a file outside the project?');
+    card.appendChild(h);
+
+    for (const line of Array.isArray(m.lines) ? m.lines : []) {
+      const d = document.createElement('div');
+      d.className = 'reveal-line';
+      d.textContent = String(line);
+      card.appendChild(d);
+    }
+    const why = document.createElement('div');
+    why.className = 'reveal-line reveal-cost';
+    why.textContent = String(m.why || '');
+    card.appendChild(why);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const answer = (label, value, secondary) => {
+      const b = document.createElement('button');
+      if (secondary) b.className = 'no';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        vsapi.postMessage({ type: 'outside-answer', value });
+        card.classList.add('answered');
+        actions.remove();
+        if (openOutsideCard === card) openOutsideCard = null;
+        clearStatus();
+      });
+      return b;
+    };
+    actions.appendChild(answer(String(m.once || 'Allow once'), 'once', false));
+    actions.appendChild(
+      answer(String(m.folderLabel || 'Allow this folder for this session'), 'folder', true),
+    );
+    actions.appendChild(answer(String(m.deny || 'Deny'), 'deny', true));
+    card.appendChild(actions);
+
+    if (openOutsideCard) {
+      openOutsideCard.classList.add('answered');
+      openOutsideCard = null;
+    }
+    openOutsideCard = card;
+    log.appendChild(card);
+    setStatus('waiting for you — read outside the project?');
+    scroll();
+  }
+
+  function dismissOutsideRead() {
+    if (openOutsideCard) {
+      openOutsideCard.classList.add('answered');
+      const actions = openOutsideCard.querySelector('.actions');
+      if (actions) actions.remove();
+      openOutsideCard = null;
     }
     clearStatus();
   }

@@ -31,7 +31,7 @@ import { dirname, join } from 'node:path';
 import { prepareHtml } from './harness.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SUITES = ['providers', 'modelsync', 'core', 'panels', 'narrow', 'history', 'stream', 'attach', 'approval', 'modellist', 'runstatus', 'question', 'transcript', 'summary', 'todo', 'modes', 'modecard', 'cmdbutton', 'refusal', 'stuck', 'undo', 'reveal', 'secrets', 'queue', 'runlifecycle', 'teams', 'mcp', 'relay', 'newchat', 'paths'];
+const SUITES = ['providers', 'modelsync', 'core', 'panels', 'narrow', 'history', 'stream', 'attach', 'approval', 'modellist', 'runstatus', 'question', 'transcript', 'summary', 'todo', 'modes', 'modecard', 'cmdbutton', 'refusal', 'stuck', 'undo', 'reveal', 'secrets', 'queue', 'runlifecycle', 'teams', 'mcp', 'relay', 'newchat', 'paths', 'outside'];
 
 // Build once here rather than once per suite. PLATO_RENDER_PREPARED tells each
 // child that wv.html is already current, so plib skips its own prepareHtml().

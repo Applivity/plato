@@ -25,7 +25,13 @@ import type { Mode } from './modes.js';
 /** D49cq: per-run cap on cross-session messages, the same number as the team cap. */
 const MAX_SESSION_SENDS = 5;
 import { secretRefusal } from './modes.js';
-import { containmentRefusal } from '../security/paths.js';
+import {
+  containmentRefusal,
+  outsideAbsolute,
+  outsidePathArgs,
+  OUTSIDE_READ_TOOLS,
+} from '../security/paths.js';
+import { outsideReadDeclined } from './outsideReadCopy.js';
 import { maskText, type SecretVault } from '../security/mask.js';
 import { isSecretPath } from '../security/secrets.js';
 import { seedVault } from './seedVault.js';
@@ -417,6 +423,18 @@ export interface LoopOptions {
   platform?: NodeJS.Platform;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
+  /**
+   * D49ck: may Plato READ these paths, which leave the workspace?
+   *
+   * Asked once per call, at the moment the model tries, with the raw paths that
+   * escape and the tool's name. `true` approves THESE absolute paths for THIS
+   * call only — the loop hands them to the executor and forgets them. Absent, a
+   * read outside is refused exactly as before, so a host that has not opted in
+   * (the CLI, Visual Studio) behaves as it always did.
+   *
+   * Writes are never offered: an approval to read is not an approval to write.
+   */
+  outsideRead?: (paths: readonly string[], tool: string) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
   onText?: (text: string) => void;
   /**
@@ -1239,7 +1257,34 @@ async function runLoop(
       // approve an action that could never run. The executor enforces the same
       // rule again — this one is for the user's benefit, that one is the
       // guarantee.
-      const contained = containmentRefusal(opts.root, name, args);
+      //
+      // D49ck: a READ may go outside with the user's say-so, asked here at the
+      // moment the model tries. The answer approves the resolved absolute paths
+      // for THIS call only; they reach the executor and are not remembered.
+      // Writes never ask — their containment refusal is the one it always was.
+      const escaped = outsidePathArgs(opts.root, name, args);
+      let approvedOutside: string[] | undefined;
+      let contained: string | null = null;
+      if (escaped.length > 0) {
+        if (OUTSIDE_READ_TOOLS.includes(name) && opts.outsideRead !== undefined) {
+          const allowed = await opts.outsideRead(escaped, name);
+          if (!allowed) {
+            const declined = outsideReadDeclined(name, escaped[0]!);
+            results.push({
+              type: 'tool_result',
+              toolUseId: call.id,
+              content: declined,
+              isError: true,
+            });
+            bus.emit({ type: 'tool-event', runId, tool: name, phase: 'declined', args });
+            judge(name, args, declined, 'declined');
+            continue;
+          }
+          approvedOutside = escaped.map((p) => outsideAbsolute(opts.root, p));
+        } else {
+          contained = containmentRefusal(opts.root, name, args);
+        }
+      }
       // D49bb: with a secret map in play, a protected file is READABLE — the
       // values are masked at the executor — so the pre-flight name refusal must
       // stand aside for the file tools, or the mask never runs. `shell` keeps it:
@@ -1652,6 +1697,9 @@ async function runLoop(
           shells,
           signal: ctrl.signal,
           vault: opts.secretVault,
+          // D49ck: this call's approval and nothing else. Built per call, so it
+          // cannot survive into a later one.
+          ...(approvedOutside === undefined ? {} : { outsideRead: approvedOutside }),
           respectGitignore: opts.respectGitignore === true,
           revealProtected: opts.revealProtected,
           recordWrites: undoStore

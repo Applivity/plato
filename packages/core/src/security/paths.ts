@@ -98,3 +98,38 @@ export function containmentRefusal(
   }
   return null;
 }
+
+/**
+ * D49ck (2026-11-12): the READ tools whose paths may leave the workspace, with
+ * the user's approval asked at the moment of the call.
+ *
+ * Writes are deliberately absent. An approval to READ a file is not an approval
+ * to write one, and the loop never asks for a write: `write_file`, `apply_diff`
+ * and `apply_patch` keep `containmentRefusal` exactly as it was.
+ */
+export const OUTSIDE_READ_TOOLS: readonly string[] = [
+  'read_file',
+  'read_image',
+  'grep',
+  'list_dir',
+];
+
+/**
+ * The path arguments of a call that LEAVE the workspace, in call order. Empty
+ * when every path is contained, which is the case the pre-flight does not even
+ * ask about.
+ */
+export function outsidePathArgs(
+  root: string,
+  tool: string,
+  args: Record<string, unknown>,
+): string[] {
+  return pathArgsOf(tool, args).filter(
+    (raw) => resolveInRoot(root, raw) === null,
+  );
+}
+
+/** The absolute path an outside argument resolves to, for the per-call allowance. */
+export function outsideAbsolute(root: string, raw: string): string {
+  return resolve(root, raw);
+}
