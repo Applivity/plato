@@ -31,6 +31,7 @@ Keys
   reasoning             off | low | medium | high
   compactionThreshold   0.5 to 0.95
   respectGitignore      true | false — skip what .gitignore excludes
+  compactionIdle        true | false — summarise after an hour idle, off by default
 
   true/false also accept on/off and yes/no.
 `;
@@ -41,7 +42,8 @@ type Key =
   | 'team'
   | 'reasoning'
   | 'compactionThreshold'
-  | 'respectGitignore';
+  | 'respectGitignore'
+  | 'compactionIdle';
 
 const KEYS: readonly Key[] = [
   'model',
@@ -50,6 +52,7 @@ const KEYS: readonly Key[] = [
   'reasoning',
   'compactionThreshold',
   'respectGitignore',
+  'compactionIdle',
 ];
 
 function isKey(value: string): value is Key {
@@ -117,6 +120,13 @@ function withValue(
         return { error: 'respectGitignore must be true or false' };
       }
       return { next: { ...config, respectGitignore: parsed } };
+    }
+    case 'compactionIdle': {
+      const parsed = parseBoolean(value);
+      if (parsed === null) {
+        return { error: 'compactionIdle must be true or false' };
+      }
+      return { next: { ...config, compactionIdle: parsed } };
     }
   }
 }

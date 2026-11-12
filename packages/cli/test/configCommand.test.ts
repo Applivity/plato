@@ -50,6 +50,7 @@ describe('plato config', () => {
     expect(runConfig([], { env, streams: all.streams })).toBe(0);
     expect(all.out()).toContain('model: stub:test-model');
     expect(all.out()).toContain('respectGitignore: false');
+    expect(all.out()).toContain('compactionIdle: false');
 
     const one = capture();
     expect(runConfig(['get', 'mode'], { env, streams: one.streams })).toBe(0);
@@ -73,8 +74,20 @@ describe('plato config', () => {
     }
   });
 
-  it('refuses a value it cannot use, and changes nothing', () => {
+  it('turns idle compaction on and off, and refuses a word that is neither', () => {
     const env = seeded();
+    const on = capture();
+    expect(runConfig(['set', 'compactionIdle', 'on'], { env, streams: on.streams })).toBe(0);
+    expect(loadConfig(env).compactionIdle).toBe(true);
+    expect(on.out()).toContain('compactionIdle: true');
+
+    const bad = capture();
+    expect(runConfig(['set', 'compactionIdle', 'sometimes'], { env, streams: bad.streams })).toBe(2);
+    expect(bad.err()).toContain('compactionIdle must be true or false');
+    expect(loadConfig(env).compactionIdle).toBe(true);
+  });
+
+  it('refuses a value it cannot use, and changes nothing', () => {    const env = seeded();
     const io = capture();
     expect(runConfig(['set', 'respectGitignore', 'maybe'], { env, streams: io.streams })).toBe(2);
     expect(io.err()).toContain('must be true or false');

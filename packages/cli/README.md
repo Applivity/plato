@@ -127,6 +127,49 @@ When the mode blocks the task, the model can ask to switch. The request arrives
 as a card with its reason and what the other mode means. Nothing changes unless
 you agree, and the same run continues.
 
+### Long conversations
+
+The conversation is kept as a transcript, and what the model reads is derived
+from it. When the history reaches the `compactionThreshold` share of the
+model's context window, the older messages are folded into a summary. `/compact`
+does the same when you ask, and takes an instruction about what to keep:
+`/compact keep the failing test names`. The notice names the cause and says that
+nothing was removed from the transcript, because nothing is: a fold changes what
+is sent, not what you can scroll.
+
+Every later run sends the summary and the recent tail. After a summary exists,
+Plato also receives the current content of up to five files the conversation
+read or edited, and the current git state, so it does not reason from a stale
+note. Before a fold there is no summary and no such block.
+
+To summarise while the terminal is idle, turn the setting on:
+
+```sh
+plato config set compactionIdle true
+```
+
+After an hour with no activity and at least 200,000 estimated tokens of
+history, Plato folds the older messages. Your next input cancels the wait. The
+setting is off by default because it summarises below your threshold.
+
+### Files from anywhere
+
+Type `@` before a path to attach it. A path inside the project works as before.
+An absolute or UNC path also works, which is how you point at a screenshot on
+the Desktop or a file on a share: an image is sent as bytes, and a text file is
+sent as text. The limits are the same as the desktop chat — 3 MB for one image,
+200 KB for one text file — and a protected file is refused by name.
+
+A read that a TOOL asks for, outside the project, asks you first: allow once,
+allow this folder for this session, or deny. A denial is a result the model
+reads, and the run continues. The folder answer lasts until this session ends
+and is never written to your settings. Writes never ask; they stay inside the
+project.
+
+A terminal shows no image thumbnails, and an image pasted into a terminal does
+not arrive as bytes. Plato does not pretend otherwise. A pasted PATH is text,
+and works as an `@` mention.
+
 ### Teams
 
 Plato is always the one doing the work. The team decides who is watching.

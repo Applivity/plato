@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { INBOUND_MARKER, REPLY_MARKER, type Mode } from '@applivity/plato-core';
+import type { ChatRow } from './compaction.js';
 import type { Team } from './config.js';
 import { platoHome, projectKey, type Env } from './paths.js';
 
@@ -22,6 +23,12 @@ export interface StoredSession {
   mode: Mode;
   team: Team;
   history: { role: 'user' | 'assistant'; text: string }[];
+  /**
+   * The conversation as rows, including tool digests and any summary. Older
+   * files have only `history`; that is read as message rows, so a session saved
+   * before the log existed resumes unchanged.
+   */
+  log?: ChatRow[];
 }
 
 export function sessionsDir(root: string, env: Env = process.env): string {
@@ -90,8 +97,38 @@ export function saveSession(
   renameSync(temporary, path);
 }
 
-function parseSession(text: string): StoredSession | null {
-  try {
+/**
+ * The row log a newer session file carries. Unknown keys are dropped rather
+ * than trusted: this file is on disk and a hand edit must not become a shape the
+ * rest of the CLI did not expect.
+ */
+function parseLog(value: unknown): ChatRow[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const rows: ChatRow[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const r = entry as Record<string, unknown>;
+    const k = r['k'];
+    if (k !== 'msg' && k !== 'tool' && k !== 'compact') continue;
+    rows.push({
+      k,
+      ...(typeof r['text'] === 'string' ? { text: r['text'] } : {}),
+      ...(r['cls'] === 'you' || r['cls'] === 'bot' || r['cls'] === 'in'
+        ? { cls: r['cls'] }
+        : {}),
+      ...(typeof r['digest'] === 'string' ? { digest: r['digest'] } : {}),
+      ...(typeof r['tool'] === 'string' ? { tool: r['tool'] } : {}),
+      ...(typeof r['phase'] === 'string' ? { phase: r['phase'] } : {}),
+      ...(typeof r['ok'] === 'boolean' ? { ok: r['ok'] } : {}),
+      ...(typeof r['who'] === 'string' ? { who: r['who'] } : {}),
+      ...(typeof r['from'] === 'string' ? { from: r['from'] } : {}),
+      ...(r['reply'] === true ? { reply: true } : {}),
+    } as ChatRow);
+  }
+  return rows;
+}
+
+function parseSession(text: string): StoredSession | null {  try {
     const raw = JSON.parse(text) as unknown;
     if (typeof raw !== 'object' || raw === null) {
       return null;
@@ -112,6 +149,7 @@ function parseSession(text: string): StoredSession | null {
         history.push({ role, text: textValue });
       }
     }
+    const log = parseLog(record['log']);
     return {
       id: record['id'],
       title: typeof record['title'] === 'string' ? record['title'] : '',
@@ -125,6 +163,7 @@ function parseSession(text: string): StoredSession | null {
       team:
         record['team'] === 'duo' || record['team'] === 'academy' ? record['team'] : 'solo',
       history,
+      ...(log === undefined ? {} : { log }),
     };
   } catch {
     return null;

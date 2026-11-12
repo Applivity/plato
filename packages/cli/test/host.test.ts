@@ -116,12 +116,13 @@ async function run(
     format?: OutputFormat;
     provider: ChatProvider;
     model?: string;
+    task?: string;
   },
 ) {
   const io = capture();
   const code = await runTask({
     root: options.root,
-    task: 'do the work',
+    task: options.task ?? 'do the work',
     mode: options.mode,
     outputFormat: options.format ?? 'text',
     config: config(),
@@ -777,5 +778,106 @@ describe('the worker is told about its team', () => {
     );
     expect(workerSystem).toContain('1 philosopher (Aristotle) is watching this run');
     expect(workerSystem).toContain('same Plato process');
+  });
+});
+
+/**
+ * D49cd, in the terminal: an `@` mention of an ABSOLUTE path names a file the
+ * user chose. The desktop chat's guards apply unchanged — bytes for images, a
+ * 200 KB text cap, and the secret deny-list before anything is read.
+ */
+describe('attachments from anywhere', () => {
+  it('attaches an absolute text file and refuses a secret path', async () => {
+    const root = tempDir('plato-cli-attach-root-');
+    const outside = tempDir('plato-cli-attach-outside-');
+    const note = join(outside, 'note.txt');
+    const secret = join(outside, '.env');
+    writeFileSync(note, 'outside-file-body');
+    writeFileSync(secret, 'DB_PASSWORD=hunter2');
+    const requests: TurnRequest[] = [];
+    const result = await run({
+      root,
+      env: environment(),
+      mode: 'auto',
+      task: `look at @${note} and @${secret}`,
+      provider: scripted([{ text: 'done' }], (request) => requests.push(request)),
+    });
+
+    expect(result.code).toBe(0);
+    expect(result.err).toContain(
+      `File @${secret} not attached — on the secret deny-list`,
+    );
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('[attachment: note.txt]');
+    expect(sent).toContain('outside-file-body');
+    expect(sent).not.toContain('hunter2');
+  });
+
+  it('attaches an absolute image as bytes, never as text', async () => {
+    const root = tempDir('plato-cli-attach-root-');
+    const outside = tempDir('plato-cli-attach-outside-');
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const shot = join(outside, 'shot.png');
+    writeFileSync(shot, png);
+    const requests: TurnRequest[] = [];
+    const result = await run({
+      root,
+      env: environment(),
+      mode: 'auto',
+      task: `look at @${shot}`,
+      provider: scripted([{ text: 'done' }], (request) => requests.push(request)),
+    });
+
+    expect(result.code).toBe(0);
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('"type":"image"');
+    expect(sent).toContain(png.toString('base64'));
+    expect(result.out).not.toContain(png.toString('base64'));
+  });
+
+  it('asks before an outside read in the one-shot host, and denies by default', async () => {
+    const root = tempDir('plato-cli-attach-root-');
+    const outside = tempDir('plato-cli-attach-outside-');
+    const note = join(outside, 'note.txt');
+    writeFileSync(note, 'outside-body');
+    const requests: TurnRequest[] = [];
+    const io = capture();
+    // A terminal that always presses Enter: the default answer is Deny.
+    const prompter: Prompter = {
+      ask: async () => '',
+      secret: async () => '',
+    };
+    const code = await runTask({
+      root,
+      task: 'read the file with the tool',
+      mode: 'auto',
+      outputFormat: 'text',
+      config: config(),
+      env: environment(),
+      io: {
+        out: io.io.out,
+        err: io.io.err,
+        input: io.io.input,
+        prompter,
+      },
+      provider: scripted(
+        [
+          { tool: { name: 'read_file', input: { path: note } } },
+          { text: 'I could not read it.' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+    });
+
+    expect(code).toBe(0);
+    expect(io.err()).toContain('Read a file outside the project?');
+    expect(io.err()).toContain('1. Allow once');
+    expect(io.err()).toContain('3. Deny');
+    expect(JSON.stringify(requests)).toContain('the user declined to read');
+    expect(JSON.stringify(requests)).not.toContain('outside-body');
   });
 });

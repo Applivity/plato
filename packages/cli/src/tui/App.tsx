@@ -542,7 +542,11 @@ function CardView({ card }: { card: Card }): ReactElement {
       flexDirection="column"
       borderStyle="round"
       borderColor={
-        card.kind === 'approval' ? 'yellow' : card.kind === 'mode' ? 'magenta' : 'cyan'
+        card.kind === 'approval'
+          ? 'yellow'
+          : card.kind === 'mode' || card.kind === 'outside'
+            ? 'magenta'
+            : 'cyan'
       }
       paddingX={1}
       marginTop={1}
@@ -613,6 +617,18 @@ function CardView({ card }: { card: Card }): ReactElement {
           <Text dimColor>Plato is in {card.current} mode now.</Text>
           <OptionList options={card.options} selected={card.selected} />
           <Text dimColor>↑↓ move · Enter picks · Esc stays in {card.current}</Text>
+        </>
+      ) : null}
+
+      {card.kind === 'outside' ? (
+        <>
+          <Text bold>{card.title}</Text>
+          {card.lines.map((line, index) => (
+            <Text key={`${index}-${line}`}>{line}</Text>
+          ))}
+          <Text dimColor>{card.why}</Text>
+          <OptionList options={card.options} selected={card.selected} />
+          <Text dimColor>↑↓ move · Enter picks · Esc denies</Text>
         </>
       ) : null}
     </Box>

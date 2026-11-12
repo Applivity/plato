@@ -19,7 +19,7 @@ export const COMMANDS: readonly SlashCommand[] = [
   { name: 'model', args: 'connection:model', summary: 'Use another model' },
   { name: 'team', args: 'solo|duo|academy', summary: 'Choose the team for the next run' },
   { name: 'gitignore', args: 'on|off', summary: 'Skip what .gitignore excludes in search' },
-  { name: 'compact', summary: 'Ask the current run to compact now' },
+  { name: 'compact', summary: 'Summarise the conversation; mid-run, ask it to compact' },
   { name: 'new', summary: 'Start a new conversation' },
   { name: 'undo', summary: 'Put back the files the last run wrote' },
   { name: 'sessions', summary: 'List saved sessions' },

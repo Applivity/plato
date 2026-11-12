@@ -33,6 +33,13 @@ export interface PlatoConfig {
    * default — a run sees everything and is told what the repository ignores.
    */
   respectGitignore: boolean;
+  /**
+   * D49cm: compact while the chat is idle. Off by default, because it
+   * summarises BELOW the user's threshold — an hour of silence and at least
+   * 200,000 estimated tokens of history. Optional so a config built by an older
+   * caller (or a test) reads as off.
+   */
+  compactionIdle?: boolean;
 }
 
 export const DEFAULT_CONFIG: PlatoConfig = {
@@ -43,6 +50,7 @@ export const DEFAULT_CONFIG: PlatoConfig = {
   reasoning: 'off',
   compactionThreshold: 0.8,
   respectGitignore: false,
+  compactionIdle: false,
 };
 
 export class ConfigError extends Error {
@@ -162,6 +170,11 @@ export function validateConfig(value: unknown, where = 'config'): PlatoConfig {
     throw new ConfigError(`${where}.respectGitignore must be true or false`);
   }
 
+  const compactionIdle = raw['compactionIdle'] ?? DEFAULT_CONFIG.compactionIdle;
+  if (typeof compactionIdle !== 'boolean') {
+    throw new ConfigError(`${where}.compactionIdle must be true or false`);
+  }
+
   return {
     connections,
     model,
@@ -170,6 +183,7 @@ export function validateConfig(value: unknown, where = 'config'): PlatoConfig {
     reasoning,
     compactionThreshold: threshold,
     respectGitignore,
+    compactionIdle,
   };
 }
 

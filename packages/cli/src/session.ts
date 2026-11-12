@@ -1,14 +1,33 @@
 import {
+  IdleFold,
   RunController,
+  createProvider,
+  digestToolCall,
+  historyTokens,
   inboundTask,
   parseModelRef,
+  planFold,
+  recentWorkBlock,
+  toolLine as logToolLine,
   type ApprovalRequest,
+  type ChatProvider,
   type Mode,
+  type OutsideReadCard,
   type StuckRequest,
 } from '@applivity/plato-core';
+import {
+  chatRowsFromHistory,
+  foldConversation,
+  historyFromRows,
+  requestHistory,
+  resolveContextWindow,
+  type ChatRow,
+  type FoldCause,
+} from './compaction.js';
 import { COMMANDS, slashText } from './completion.js';
 import { saveConfig, type ConnectionConfig, type PlatoConfig, type Team } from './config.js';
 import { HostError } from './errors.js';
+import { connectionNeedsKey, resolveKey } from './keys.js';
 import { applyUndo, planUndo } from '@applivity/plato-core';
 import {
   createSession,
@@ -38,7 +57,6 @@ import {
 } from './host.js';
 import type { ObserverEvent, ObserverSpec } from './team.js';
 import type { Env } from './paths.js';
-import type { ChatProvider } from '@applivity/plato-core';
 
 /**
  * The interactive session: the pure view state the terminal renders, plus the
@@ -57,6 +75,19 @@ export interface SessionOptions {
   observerProvider?: (spec: ObserverSpec) => ChatProvider | null;
   /** A saved conversation to resume. */
   stored?: StoredSession;
+  /**
+   * The context window to plan a fold against. Absent, the connection's
+   * advertised value is used, and 128k when it advertises nothing. Injected by
+   * the fold tests so a small conversation can cross a real threshold.
+   */
+  maxContext?: number;
+  /** Injected by the idle-fold tests; production uses an hour and 200k tokens. */
+  idle?: {
+    afterMs?: number;
+    minTokens?: number;
+    setTimer?: (fn: () => void, ms: number) => unknown;
+    clearTimer?: (handle: unknown) => void;
+  };
 }
 
 export type RowKind = 'user' | 'assistant' | 'tool' | 'notice' | 'error' | 'inbound';
@@ -126,7 +157,29 @@ export interface ModeCard {
   selected: number;
 }
 
-export type Card = ApprovalCard | QuestionCard | StuckCard | RevealCard | ModeCard;
+/**
+ * D49ck: a read outside the project. Three answers, and only the folder one is
+ * remembered — for this session, in memory, never in the settings.
+ */
+export interface OutsideCard {
+  kind: 'outside';
+  title: string;
+  lines: string[];
+  why: string;
+  /** The absolute path the answer covers, used by the folder memory. */
+  abs: string;
+  folder: string;
+  options: string[];
+  selected: number;
+}
+
+export type Card =
+  | ApprovalCard
+  | QuestionCard
+  | StuckCard
+  | RevealCard
+  | ModeCard
+  | OutsideCard;
 
 export interface ObserverView {
   name: string;
@@ -179,9 +232,26 @@ export class Session {
 
   mode: Mode;
   model: string;
-  history: { role: 'user' | 'assistant'; text: string }[] = [];
+  /**
+   * The conversation as ROWS: messages, tool digests, and the summary a fold
+   * wrote. The model's request and the saved session are both derived from it —
+   * a fold changes what is sent, never what the user can read (D49aa).
+   */
+  log: ChatRow[];
   sessionId: string;
   private createdAt: string;
+  /** One fold at a time; an idle clock and a run end must not race. */
+  private folding = false;
+  /** Resolved once per model; a fold and a request must agree on the window. */
+  private window: Promise<number> | null = null;
+  /** D49ck: folders allowed for THIS session only. */
+  private readonly outsideFolders = new Set<string>();
+  private readonly idleFold: IdleFold;
+
+  /** The flat pairs the session store and the title read. */
+  get history(): { role: 'user' | 'assistant'; text: string }[] {
+    return historyFromRows(this.log);
+  }
 
   constructor(options: SessionOptions) {
     this.base = options;
@@ -195,15 +265,22 @@ export class Session {
       model: this.model,
       team,
     };
-    this.history = stored?.history ?? [];
+    this.log = stored?.log ?? chatRowsFromHistory(stored?.history ?? []);
     const fresh = createSession(this.model, this.mode, team);
     this.sessionId = stored?.id ?? fresh.id;
     this.createdAt = stored?.createdAt ?? fresh.createdAt;
-    const rows: Row[] = this.history.map((entry, index) => ({
-      id: index + 1,
-      kind: entry.role,
-      text: entry.text,
-    }));
+    const rows: Row[] = [];
+    for (const entry of this.log) {
+      if (entry.k === 'msg' && entry.cls === 'you') {
+        rows.push({ id: rows.length + 1, kind: 'user', text: entry.text ?? '' });
+      } else if (entry.k === 'msg' && entry.cls === 'bot') {
+        rows.push({ id: rows.length + 1, kind: 'assistant', text: entry.text ?? '' });
+      } else if (entry.k === 'msg' && entry.cls === 'in') {
+        rows.push({ id: rows.length + 1, kind: 'inbound', text: entry.text ?? '' });
+      } else if (entry.k === 'tool') {
+        rows.push({ id: rows.length + 1, kind: 'tool', text: logToolLine(entry) });
+      }
+    }
     this.nextRow = rows.length + 1;
     this.state = {
       rows,
@@ -221,6 +298,23 @@ export class Session {
       observers: [],
       running: false,
     };
+    this.idleFold = new IdleFold({
+      enabled: () => this.config.compactionIdle === true,
+      tokens: () => historyTokens(this.log),
+      busy: () => this.state.running || this.state.card !== null || this.folding,
+      fold: async () => {
+        await this.foldNow('idle');
+      },
+      ...(options.idle?.afterMs === undefined ? {} : { afterMs: options.idle.afterMs }),
+      ...(options.idle?.minTokens === undefined
+        ? {}
+        : { minTokens: options.idle.minTokens }),
+      ...(options.idle?.setTimer === undefined ? {} : { setTimer: options.idle.setTimer }),
+      ...(options.idle?.clearTimer === undefined
+        ? {}
+        : { clearTimer: options.idle.clearTimer }),
+    });
+    this.scheduleIdleFold();
   }
 
   /** Stable identities, because `useSyncExternalStore` compares them. */
@@ -340,11 +434,18 @@ export class Session {
     if (this.state.running) {
       return;
     }
+    // D49cm: a new message cancels a pending idle fold. The clock starts again
+    // when this run ends.
+    this.idleFold.cancel();
+    // The log BEFORE this task: the request carries what was said and done up
+    // to now, and the loop adds this task as its opening user turn.
+    const before = this.log;
     // D49cq: an inbound run already has its `↳ from …` row. The provenance
     // wrapper is what the MODEL reads; printing it again as a user turn would
     // show the receiving user words they never typed.
     if (origin === 'user') {
       this.append('user', task);
+      this.log.push({ k: 'msg', cls: 'you', text: task });
     }
     this.lastTask = task;
     this.update({ running: true, streaming: '', observers: [] });
@@ -352,6 +453,26 @@ export class Session {
     this.modeRequestsThisRun = 0;
     const controller = new RunController();
     this.controller = controller;
+
+    const maxContext = await this.contextWindow();
+    const contextPlan = requestHistory(
+      before,
+      maxContext,
+      this.config.compactionThreshold,
+    );
+    if (contextPlan.omitted > 0) {
+      this.append(
+        'notice',
+        `${contextPlan.omitted} older messages were left out of this request to fit ` +
+          "the model's context. The full conversation is still in the transcript.",
+      );
+    }
+    // D49cn: after a summary, show the model the CURRENT state of the work the
+    // summary can no longer show. Built fresh here; absent before a fold.
+    const block = await recentWorkBlock(before, { root: this.base.root });
+    if (block !== null) {
+      contextPlan.turns.push({ role: 'user', text: block });
+    }
 
     const options: ExecuteOptions = {
       root: this.base.root,
@@ -378,15 +499,12 @@ export class Session {
           }),
       ...(origin === 'user' ? {} : { origin }),
       ...(originFrom === undefined ? {} : { originFrom }),
-      ...(this.history.length === 0 ? {} : { history: this.history }),
+      ...(contextPlan.turns.length === 0 ? {} : { history: contextPlan.turns }),
     };
 
     try {
       const result = await executeTask(options, this.sink(), controller);
-      this.history.push(
-        { role: 'user', text: task },
-        { role: 'assistant', text: result.finalText },
-      );
+      this.log.push({ k: 'msg', cls: 'bot', text: result.finalText });
       this.update({
         status: {
           ...this.state.status,
@@ -411,6 +529,10 @@ export class Session {
       this.controller = null;
       this.update({ running: false, streaming: '' });
       this.live?.refresh();
+      // D44d amended: the size fold runs after the run, then the idle clock
+      // starts. Both read the user's settings at fire time, so neither can run
+      // against a conversation the user has changed.
+      await this.afterRun();
       // After the run has fully settled: deliver anything that queued behind it.
       queueMicrotask(() => this.drainInbound());
     }
@@ -423,7 +545,9 @@ export class Session {
     // safe answer is the default one: No for the approval, Stay for the mode.
     const card = this.state.card;
     if (card !== null) {
-      this.settle(card.kind === 'question' ? '' : 0);
+      this.settle(
+        card.kind === 'question' ? '' : card.kind === 'outside' ? 2 : 0,
+      );
     }
     this.controller?.cancel();
   }
@@ -449,6 +573,9 @@ export class Session {
     }
     this.model = ref;
     this.config = { ...this.config, model: ref };
+    // A different model may hold a different window, so the next fold re-reads
+    // the connection's advertised value.
+    this.window = null;
     this.update({ status: { ...this.state.status, model: ref } });
     this.persist();
     return true;
@@ -473,10 +600,177 @@ export class Session {
         mode: this.mode,
         team: this.config.team,
         history: this.history,
+        log: this.log,
       });
     } catch (error) {
       this.append('error', `Could not save the session: ${(error as Error).message}`);
     }
+  }
+
+  /** The window a fold and a request plan against; resolved once per model. */
+  private contextWindow(): Promise<number> {
+    if (this.base.maxContext !== undefined) {
+      return Promise.resolve(this.base.maxContext);
+    }
+    if (this.window === null) {
+      this.window = this.resolveWindow();
+    }
+    return this.window;
+  }
+
+  private async resolveWindow(): Promise<number> {
+    return await resolveContextWindow({
+      config: this.config,
+      model: this.model,
+      env: this.base.env,
+      ...(this.base.fetchImpl === undefined ? {} : { fetchImpl: this.base.fetchImpl }),
+      ...(this.base.now === undefined ? {} : { now: this.base.now }),
+    });
+  }
+
+  /** The provider a fold calls, through the same connection the run uses. */
+  private async foldProvider(): Promise<ChatProvider | null> {
+    if (this.base.provider !== undefined) {
+      return this.base.provider;
+    }
+    const parts = parseModelRef(
+      this.model,
+      this.config.connections.map((connection) => connection.id),
+    );
+    if (parts === null) return null;
+    const connection = this.config.connections.find(
+      (entry) => entry.id === parts.connectionId,
+    );
+    if (connection === undefined) return null;
+    const resolved = await resolveKey(connection, { env: this.base.env });
+    if (resolved === null && connectionNeedsKey(connection)) {
+      this.append(
+        'notice',
+        `No key for ${connection.id}; the conversation cannot be compacted.`,
+      );
+      return null;
+    }
+    return createProvider(connection.kind, {
+      apiKey: resolved?.key ?? '',
+      ...(connection.baseUrl === undefined ? {} : { baseUrl: connection.baseUrl }),
+      ...(this.base.fetchImpl === undefined ? {} : { fetchImpl: this.base.fetchImpl }),
+    });
+  }
+
+  /** After every run: fold at the user's threshold, then start the idle clock. */
+  private async afterRun(): Promise<void> {
+    try {
+      await this.foldNow('auto');
+    } catch {
+      // A fold is never a reason for a completed run to look failed. The next
+      // run end tries again.
+    }
+    this.scheduleIdleFold();
+  }
+
+  private scheduleIdleFold(): void {
+    if (!this.config.compactionIdle) {
+      this.idleFold.cancel();
+      return;
+    }
+    this.idleFold.schedule();
+  }
+
+  /**
+   * One fold. `manual` is `/compact` while idle, `idle` is the setting, `auto`
+   * is the size threshold. The rows stay; the notice names the cause.
+   */
+  private async foldNow(cause: FoldCause, focus = ''): Promise<void> {
+    if (this.folding || this.state.running) return;
+    const maxContext = await this.contextWindow();
+    const threshold = this.config.compactionThreshold;
+    // The automatic trigger is the only one gated by size; checking it here
+    // avoids building a provider for a conversation nowhere near the line.
+    if (
+      cause === 'auto' &&
+      planFold(this.log, { maxContext, threshold, manual: false }) === null
+    ) {
+      return;
+    }
+    const provider = await this.foldProvider();
+    if (provider === null) return;
+    this.folding = true;
+    try {
+      const outcome = await foldConversation({
+        rows: this.log,
+        provider,
+        model: this.model,
+        maxContext,
+        threshold,
+        cause,
+        ...(focus.length === 0 ? {} : { focus }),
+      });
+      this.log = outcome.rows;
+      if (outcome.folded) {
+        if (outcome.notice !== null) this.append('notice', outcome.notice);
+        this.save();
+        return;
+      }
+      if (outcome.notice !== null) {
+        this.append('notice', outcome.notice);
+      } else if (cause === 'manual') {
+        this.append(
+          'notice',
+          `Conversation is at ${outcome.share}% of this model's context — ` +
+            'nothing to compact yet.',
+        );
+      }
+    } catch {
+      // A failed fold leaves the log untouched. The user asked for one only
+      // when they typed `/compact`, so only then is there something to say.
+      if (cause === 'manual') {
+        this.append('notice', 'Compaction failed — try again in a moment.');
+      }
+    } finally {
+      this.folding = false;
+    }
+  }
+
+  /** True when an outside folder was allowed in this session. */
+  private outsideCovered(abs: string): boolean {
+    const normalise = (path: string): string => {
+      const one = path.replace(/[\\/]+$/, '');
+      return process.platform === 'win32' ? one.toLowerCase() : one;
+    };
+    const target = normalise(abs);
+    for (const folder of this.outsideFolders) {
+      const f = normalise(folder);
+      if (target === f || target.startsWith(`${f}/`) || target.startsWith(`${f}\\`)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async askOutsideRead(
+    card: OutsideReadCard,
+  ): Promise<'once' | 'folder' | 'deny'> {
+    if (this.outsideCovered(card.abs)) {
+      this.append('notice', 'Plato did not ask — you allowed this folder for this session.');
+      return 'once';
+    }
+    const choice = await this.present<number>({
+      kind: 'outside',
+      title: card.title,
+      lines: card.lines,
+      why: card.why,
+      abs: card.abs,
+      folder: card.folder,
+      options: [card.once, card.folderLabel, card.deny],
+      // Deny is the default: an unanswered card must not widen what can be read.
+      selected: 2,
+    });
+    if (choice === 0) return 'once';
+    if (choice === 1) {
+      this.outsideFolders.add(card.folder);
+      return 'folder';
+    }
+    return 'deny';
   }
 
   async handleCommand(line: string): Promise<'exit' | 'handled'> {
@@ -542,14 +836,17 @@ export class Session {
       }
       case '/compact':
         if (this.controller === null) {
-          this.append('notice', 'Nothing is running.');
+          // Idle: a real cross-run fold, the same one the desktop chat makes.
+          await this.foldNow('manual', argument);
         } else {
+          // Mid-run: the run's own compaction at its next safe point.
           this.controller.requestCompact();
           this.append('notice', 'Compaction requested.');
         }
         return 'handled';
       case '/new': {
-        this.history = [];
+        this.log = [];
+        this.idleFold.cancel();
         const fresh = createSession(this.model, this.mode, this.config.team);
         this.sessionId = fresh.id;
         this.createdAt = fresh.createdAt;
@@ -617,6 +914,22 @@ export class Session {
         if (event.phase === 'requested') {
           return;
         }
+        // D49ag: the log records what the call was FOR, never its result. The
+        // digest is the argument; a later fold and the re-injection block both
+        // read it, and neither can see a tool row this run did not write.
+        if (
+          event.phase === 'done' ||
+          event.phase === 'refused' ||
+          event.phase === 'declined'
+        ) {
+          this.log.push({
+            k: 'tool',
+            tool: event.tool,
+            phase: event.phase,
+            ...(event.ok === undefined ? {} : { ok: event.ok }),
+            digest: digestToolCall(event.tool, event.args ?? {}),
+          });
+        }
         const line = toolLine(event);
         if (line !== null) {
           this.append(event.phase === 'done' && event.ok === false ? 'error' : 'tool', line);
@@ -626,6 +939,7 @@ export class Session {
       askUser: (request) => this.askQuestions(request),
       stuck: (request) => this.askStuck(request),
       reveal: (rel) => this.askReveal(rel),
+      outsideRead: (card) => this.askOutsideRead(card),
       notice: (text) => this.append('notice', text),
       observer: (event) => this.observeEvent(event),
       requestMode: (request) => this.askModeChange(request),
@@ -855,7 +1169,9 @@ export class Session {
       this.update({ card: { ...card, freeText: false } });
       return;
     }
-    this.settle(card.kind === 'question' ? '' : 0);
+    this.settle(
+      card.kind === 'question' ? '' : card.kind === 'outside' ? 2 : 0,
+    );
   }
 
   cardType(text: string): void {

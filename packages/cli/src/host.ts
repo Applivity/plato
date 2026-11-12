@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   AgentBus,
   RunController,
@@ -6,6 +6,7 @@ import {
   createProvider,
   createVault,
   modelSupportsReasoning,
+  outsideReadCard,
   parseModelRef,
   runAgentLoop,
   seedVault,
@@ -13,6 +14,7 @@ import {
   type ChatProvider,
   type LoopResult,
   type Mode,
+  type OutsideReadCard,
   type ReasoningConfig,
   type RunEndReason,
   type RunOrigin,
@@ -20,10 +22,9 @@ import {
   type SessionPeer,
   type SendOutcome,
   type StuckRequest,
-  loadImageAttachment,
-  looksLikeImage,
   toolWords,
 } from '@applivity/plato-core';
+import { MAX_IMAGE_BYTES, taskAttachments } from './attachments.js';
 import { type PlatoConfig } from './config.js';
 import {
   createObservers,
@@ -101,6 +102,15 @@ export interface RunSink {
     reason: string;
     current: Mode;
   }): Promise<{ ok: boolean; note: string }>;
+  /**
+   * D49ck, in the terminal: a read outside the workspace asks here, at the
+   * moment the model tries. The card carries the resolved absolute path and the
+   * folder a wider answer would cover.
+   *
+   * A sink without this keeps the old rule: the read is refused as contained.
+   * Writes never ask.
+   */
+  outsideRead?(card: OutsideReadCard): Promise<'once' | 'folder' | 'deny'>;
 }
 
 export interface ExecuteOptions {
@@ -147,7 +157,7 @@ export function undoDir(root: string, env: Env = process.env): string {
 }
 
 /** D49n: the extension's cap, applied to attached images. */
-export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+export { MAX_IMAGE_BYTES };
 
 export interface ImageMentions {
   images: { mime: import('@applivity/plato-core').ImageMime; data: string }[];
@@ -155,29 +165,16 @@ export interface ImageMentions {
 }
 
 /**
- * `@path` mentions that name an image. The type is sniffed from the bytes, so
- * a text file renamed to `.png` is rejected rather than silently attached as
- * mojibake. A mention that is not image-shaped is left as text.
+ * `@path` mentions that name an image. Kept as the narrow view of the richer
+ * `taskAttachments` so an existing caller sees the same two lists; a mention
+ * that is not image-shaped is left as text.
  */
 export async function imageMentions(task: string, root: string): Promise<ImageMentions> {
-  const images: ImageMentions['images'] = [];
-  const rejected: ImageMentions['rejected'] = [];
-  const seen = new Set<string>();
-
-  for (const match of task.matchAll(/@([^\s@]+)/g)) {
-    const rel = match[1] ?? '';
-    if (rel.length === 0 || seen.has(rel) || !looksLikeImage(rel)) {
-      continue;
-    }
-    seen.add(rel);
-    const loaded = await loadImageAttachment(rel, root, MAX_IMAGE_BYTES);
-    if (loaded.ok) {
-      images.push({ mime: loaded.image.mime, data: loaded.image.data });
-    } else {
-      rejected.push({ path: rel, reason: loaded.reason });
-    }
-  }
-  return { images, rejected };
+  const attached = await taskAttachments(task, root);
+  return {
+    images: attached.images,
+    rejected: attached.rejected.map(({ path, reason }) => ({ path, reason })),
+  };
 }
 
 export function formatCount(value: number): string {
@@ -407,9 +404,11 @@ export async function executeTask(
     },
   );
 
-  const attached = await imageMentions(options.task, options.root);
+  const attached = await taskAttachments(options.task, options.root);
   for (const skip of attached.rejected) {
-    sink.notice(`Image @${skip.path} not attached — ${skip.reason}`);
+    sink.notice(
+      `${skip.kind === 'image' ? 'Image' : 'File'} @${skip.path} not attached — ${skip.reason}`,
+    );
   }
   const mcp = await startMcpServers(env, options.mode, (text) => sink.notice(text));
 
@@ -417,13 +416,30 @@ export async function executeTask(
   try {
     result = await runAgentLoop({
       root: options.root,
-      task: options.task,
+      // A text attachment outside the project rides the task, exactly as the
+      // desktop chat sends it. The typed line is what the session stores.
+      task: attached.task,
       // The worker is told which watchers actually started, so its account of
       // the team matches the one the user sees.
       team: { mode: config.team, watchers: handles.map((handle) => handle.name) },
       ...(attached.images.length === 0 ? {} : { images: attached.images }),
       getMode,
       approve: (request) => sink.approve(request),
+      // D49ck: the host asks; core only offers. The answer approves this call's
+      // resolved paths, and a folder answer is remembered by the sink for the
+      // life of the session.
+      ...(sink.outsideRead === undefined
+        ? {}
+        : {
+            outsideRead: async (paths: readonly string[], tool: string) => {
+              const raw = String(paths[0] ?? '');
+              const abs = resolve(options.root, raw);
+              const answer = await sink.outsideRead!(
+                outsideReadCard(tool, raw, abs, dirname(abs)),
+              );
+              return answer !== 'deny';
+            },
+          }),
       provider:
         options.provider ??
         createProvider(connection.kind, {
@@ -545,6 +561,24 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
       }
       return null;
     }
+  };
+
+  // D49ck: folders the user allowed for THIS session. Nothing is written to the
+  // settings, and a new process starts with an empty set.
+  const outsideFolders = new Set<string>();
+  const normalise = (path: string): string => {
+    const one = path.replace(/[\\/]+$/, '');
+    return process.platform === 'win32' ? one.toLowerCase() : one;
+  };
+  const outsideCovered = (abs: string): boolean => {
+    const target = normalise(abs);
+    for (const folder of outsideFolders) {
+      const f = normalise(folder);
+      if (target === f || target.startsWith(`${f}/`) || target.startsWith(`${f}\\`)) {
+        return true;
+      }
+    }
+    return false;
   };
 
   return {
@@ -693,6 +727,30 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
       );
       return answer !== null && /^(y|yes)$/i.test(answer.trim());
     },
+    async outsideRead(card) {
+      if (outsideCovered(card.abs)) {
+        io.err('Plato did not ask — you allowed this folder for this session.\n');
+        return 'once';
+      }
+      io.err(`\n${card.title}\n`);
+      for (const line of card.lines) {
+        io.err(`${line}\n`);
+      }
+      io.err(`${card.why}\n`);
+      io.err(`  1. ${card.once}\n  2. ${card.folderLabel}\n  3. ${card.deny}\n`);
+      if (io.prompter === undefined) {
+        io.err('No terminal to ask; the read was refused.\n');
+        return 'deny';
+      }
+      const answer = await ask('Choose 1, 2 or 3 [3]: ');
+      const pick = answer?.trim();
+      if (pick === '1') return 'once';
+      if (pick === '2') {
+        outsideFolders.add(card.folder);
+        return 'folder';
+      }
+      return 'deny';
+    },
     notice(text) {
       io.err(`${text}\n`);
     },
@@ -747,6 +805,13 @@ export async function runTask(options: TaskOptions): Promise<number> {
     options.session.history.push(
       { role: 'user', text: options.task },
       { role: 'assistant', text: result.finalText },
+    );
+    // A saved conversation that carries a row log is updated in the same way,
+    // so a one-shot continuation leaves the next session the same summary the
+    // interactive host would.
+    options.session.log?.push(
+      { k: 'msg', cls: 'you', text: options.task },
+      { k: 'msg', cls: 'bot', text: result.finalText },
     );
     options.session.model = options.model ?? options.config.model;
     options.session.mode = options.mode;

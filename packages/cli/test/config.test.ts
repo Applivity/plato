@@ -46,6 +46,7 @@ describe('config', () => {
         reasoning: 'high',
         compactionThreshold: 0.7,
         respectGitignore: false,
+        compactionIdle: true,
       },
       env,
     );
@@ -57,6 +58,7 @@ describe('config', () => {
       reasoning: 'high',
       compactionThreshold: 0.7,
       respectGitignore: false,
+      compactionIdle: true,
     });
   });
 

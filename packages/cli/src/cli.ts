@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { runAuth, type AuthContext } from './auth.js';
+import { requestHistory, resolveContextWindow } from './compaction.js';
 import { ConfigError, loadConfig } from './config.js';
 import { runConfig } from './configCommand.js';
 import { runDoctor } from './doctor.js';
@@ -156,6 +157,26 @@ async function runPrint(
   }
   const model = parsed.values.model ?? stored?.model;
   const session = stored ?? createSession(model ?? config.model, mode, team);
+  // A session that carries a row log may hold a summary: the next request is
+  // the summary plus the recent tail, not the flat history the log replaced.
+  const planned =
+    session.log === undefined
+      ? null
+      : requestHistory(
+          session.log,
+          await resolveContextWindow({
+            config,
+            model: model ?? config.model,
+            env,
+          }),
+          config.compactionThreshold,
+        );
+  if (planned !== null && planned.omitted > 0) {
+    io.err(
+      `${planned.omitted} older messages were left out of this request to fit the ` +
+        "model's context. The full conversation is still in the transcript.\n",
+    );
+  }
 
   return await runTask({
     root,
@@ -166,7 +187,13 @@ async function runPrint(
     env,
     io: { out: io.out, err: io.err, input, prompter },
     ...(model === undefined ? {} : { model }),
-    ...(session.history.length === 0 ? {} : { history: session.history }),
+    ...(planned === null
+      ? session.history.length === 0
+        ? {}
+        : { history: session.history }
+      : planned.turns.length === 0
+        ? {}
+        : { history: planned.turns }),
     session,
   });
 }

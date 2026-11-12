@@ -10,7 +10,7 @@ import type {
 } from '@applivity/plato-core';
 import { loadConfig, type PlatoConfig } from '../src/config.js';
 import { Session } from '../src/session.js';
-import { latestSession } from '../src/sessions.js';
+import { latestSession, type StoredSession } from '../src/sessions.js';
 
 const dirs: string[] = [];
 
@@ -997,5 +997,338 @@ describe('live sessions in the CLI (D49cq)', () => {
     expect(s.describe().summary).toContain('fix the auth test');
     expect(s.describe().summary).toContain('edit');
     expect(s.describe().busy).toBe(false);
+  });
+});
+
+/**
+ * D44d amended, D49cn, D49ck, D49cm: the parity round. The terminal session
+ * keeps the same conversation rows the desktop chat does, so a fold, the
+ * re-injection block, an outside read and the idle clock behave the same way.
+ */
+describe('conversation parity in the terminal', () => {
+  async function waitUntil(predicate: () => boolean, label: string): Promise<void> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error(`timed out waiting for ${label}`);
+  }
+
+  it('folds on /compact and sends the summary with the next request', async () => {
+    const root = tempDir('plato-cli-parity-root-');
+    const env = environment();
+    const requests: TurnRequest[] = [];
+    const firstUser = `first ${'u'.repeat(2000)}`;
+    const secondUser = `second ${'v'.repeat(2000)}`;
+    const secondAnswer = `second answer ${'b'.repeat(2000)}`;
+    const active = new Session({
+      root,
+      // A high threshold keeps the AUTOMATIC fold out of the way; `/compact`
+      // may fold below it, because the user asked.
+      config: { ...config('auto'), compactionThreshold: 0.95 },
+      env,
+      provider: scripted(
+        [
+          { text: `first answer ${'a'.repeat(2000)}` },
+          { text: secondAnswer },
+          { text: 'The summary of the earlier work.' },
+          { text: 'continued' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+      maxContext: 4000,
+    });
+
+    await active.submit(firstUser);
+    await active.submit(secondUser);
+    expect(active.log.some((row) => row.k === 'compact')).toBe(false);
+
+    await active.handleCommand('/compact');
+
+    const summary = active.log.find((row) => row.k === 'compact');
+    expect(summary?.text).toBe('The summary of the earlier work.');
+    // Nothing was removed from the transcript.
+    expect(active.log.filter((row) => row.k === 'msg')).toHaveLength(4);
+    expect(
+      active.getSnapshot().rows.some(
+        (row) =>
+          row.text ===
+          'Summary added for 2 earlier messages, as you asked. ' +
+            'Nothing was removed from the transcript.',
+      ),
+    ).toBe(true);
+
+    await active.submit('continue');
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('[Summary of the earlier conversation]');
+    expect(sent).toContain('The summary of the earlier work.');
+    // The folded exchange is not in the request; the kept one is.
+    expect(sent).not.toContain(firstUser);
+    expect(sent).toContain(secondUser);
+    expect(sent).toContain(secondAnswer);
+  });
+
+  it('re-injects recent work only after a summary exists', async () => {
+    const root = tempDir('plato-cli-reinject-root-');
+    const env = environment();
+    writeFileSync(join(root, 'note.txt'), 'current-note');
+    const rows = [
+      { k: 'msg' as const, cls: 'you' as const, text: 'read the note' },
+      {
+        k: 'tool' as const,
+        tool: 'read_file',
+        phase: 'done',
+        ok: true,
+        digest: 'note.txt',
+      },
+      { k: 'msg' as const, cls: 'bot' as const, text: 'read it' },
+    ];
+    const withoutRequests: TurnRequest[] = [];
+    const without = new Session({
+      root,
+      config: config('auto'),
+      env,
+      provider: scripted([{ text: 'done' }], (request) =>
+        withoutRequests.push(request),
+      ),
+      fetchImpl: offline,
+      maxContext: 200_000,
+      stored: {
+        id: 'stored-1',
+        title: '',
+        createdAt: '',
+        updatedAt: '',
+        model: 'stub:test-model',
+        mode: 'auto',
+        team: 'solo',
+        history: [],
+        log: rows,
+      },
+    });
+    await without.submit('next');
+    expect(JSON.stringify(withoutRequests.at(-1))).not.toContain('[recent work');
+
+    const captured: TurnRequest[] = [];
+    const withSummary = new Session({
+      root,
+      config: config('auto'),
+      env,
+      provider: scripted([{ text: 'done' }], (request) => captured.push(request)),
+      fetchImpl: offline,
+      maxContext: 200_000,
+      stored: {
+        id: 'stored-2',
+        title: '',
+        createdAt: '',
+        updatedAt: '',
+        model: 'stub:test-model',
+        mode: 'auto',
+        team: 'solo',
+        history: [],
+        log: [{ k: 'compact', text: 'Earlier work.' }, ...rows],
+      },
+    });
+    await withSummary.submit('next');
+    const sent = JSON.stringify(captured.at(-1));
+    expect(sent).toContain('[recent work');
+    expect(sent).toContain('current-note');
+  });
+
+  it('asks before an outside read and treats deny as a result the run survives', async () => {
+    const root = tempDir('plato-cli-outside-root-');
+    const outside = tempDir('plato-cli-outside-file-');
+    const abs = join(outside, 'note.txt');
+    writeFileSync(abs, 'outside-secret-text');
+    const requests: TurnRequest[] = [];
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted(
+        [
+          { tool: { name: 'read_file', input: { path: abs } } },
+          { text: 'I could not read it.' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+    });
+
+    const done = active.submit('read the outside file');
+    const card = await waitForCard(active, 'outside');
+    expect(card.options).toEqual([
+      'Allow once',
+      'Allow this folder for this session',
+      'Deny',
+    ]);
+    expect(card.selected).toBe(2);
+    active.cardConfirm();
+    await done;
+
+    const sent = JSON.stringify(requests);
+    expect(sent).toContain('the user declined to read');
+    expect(sent).not.toContain('outside-secret-text');
+    expect(
+      active.getSnapshot().rows.some((row) => row.text.includes('I could not read it.')),
+    ).toBe(true);
+  });
+
+  it('allows one outside read and asks again for the next one', async () => {
+    const root = tempDir('plato-cli-outside-root-');
+    const outside = tempDir('plato-cli-outside-file-');
+    const one = join(outside, 'one.txt');
+    const two = join(outside, 'two.txt');
+    writeFileSync(one, 'first-outside-body');
+    writeFileSync(two, 'second-outside-body');
+    const requests: TurnRequest[] = [];
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted(
+        [
+          { tool: { name: 'read_file', input: { path: one } } },
+          { tool: { name: 'read_file', input: { path: two } } },
+          { text: 'One read.' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+    });
+
+    const done = active.submit('read one, then the other');
+    await waitForCard(active, 'outside');
+    // The first answer: allow this call only.
+    active.cardMove(-2);
+    active.cardConfirm();
+    // The second call is a new question, because "once" is not remembered.
+    await waitForCard(active, 'outside');
+    active.cardConfirm();
+    await done;
+
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('first-outside-body');
+    expect(sent).not.toContain('second-outside-body');
+  });
+
+  it('allows one outside read, and remembers a folder for the session', async () => {
+    const root = tempDir('plato-cli-outside-root-');
+    const outside = tempDir('plato-cli-outside-file-');
+    const one = join(outside, 'one.txt');
+    const two = join(outside, 'two.txt');
+    writeFileSync(one, 'first-outside-body');
+    writeFileSync(two, 'second-outside-body');
+    const requests: TurnRequest[] = [];
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted(
+        [
+          { tool: { name: 'read_file', input: { path: one } } },
+          { tool: { name: 'read_file', input: { path: two } } },
+          { text: 'Both read.' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+    });
+
+    const done = active.submit('read both outside files');
+    await waitForCard(active, 'outside');
+    // The folder answer is the second; choosing it covers both files.
+    active.cardMove(-1);
+    active.cardConfirm();
+    await done;
+
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('first-outside-body');
+    expect(sent).toContain('second-outside-body');
+    expect(
+      active.getSnapshot().rows.some((row) =>
+        row.text.includes('Plato did not ask — you allowed this folder for this session.'),
+      ),
+    ).toBe(true);
+  });
+
+  it('runs the idle clock only when the setting is on, and cancels it on new input', async () => {
+    const root = tempDir('plato-cli-idle-root-');
+    const env = environment();
+    const rows = [0, 1, 2, 3].map((index) => ({
+      k: 'msg' as const,
+      cls: index % 2 === 0 ? ('you' as const) : ('bot' as const),
+      text: `message ${index} ${'x'.repeat(2000)}`,
+    }));
+    const stored: StoredSession = {
+      id: 'idle-1',
+      title: '',
+      createdAt: '',
+      updatedAt: '',
+      model: 'stub:test-model',
+      mode: 'auto',
+      team: 'solo',
+      history: [],
+      log: rows,
+    };
+
+    let offScheduled = false;
+    new Session({
+      root,
+      config: { ...config('auto'), compactionThreshold: 0.95 },
+      env,
+      provider: scripted([{ text: 'unused' }]),
+      fetchImpl: offline,
+      maxContext: 4000,
+      stored,
+      idle: {
+        minTokens: 0,
+        setTimer: () => {
+          offScheduled = true;
+          return 'off';
+        },
+      },
+    });
+    expect(offScheduled).toBe(false);
+
+    const clock: { fn: (() => void) | null } = { fn: null };
+    let cleared = 0;
+    const active = new Session({
+      root,
+      config: { ...config('auto'), compactionThreshold: 0.95, compactionIdle: true },
+      env,
+      provider: scripted([{ text: 'run answer' }, { text: 'The idle summary.' }]),
+      fetchImpl: offline,
+      maxContext: 4000,
+      stored,
+      idle: {
+        minTokens: 0,
+        setTimer: (fn) => {
+          clock.fn = fn;
+          return 'on';
+        },
+        clearTimer: () => {
+          cleared += 1;
+          clock.fn = null;
+        },
+      },
+    });
+    expect(clock.fn).not.toBeNull();
+    // A new message cancels the pending clock; the run end starts a new one.
+    const before = clock.fn;
+    await active.submit('hello');
+    expect(cleared).toBeGreaterThan(0);
+    expect(clock.fn).not.toBe(before);
+
+    // The new clock fires: the idle fold runs and writes its summary.
+    const fire = clock.fn;
+    fire?.();
+    await waitUntil(
+      () => active.log.some((row) => row.k === 'compact'),
+      'the idle fold',
+    );
+    expect(active.log.find((row) => row.k === 'compact')?.text).toBe(
+      'The idle summary.',
+    );
   });
 });
