@@ -950,19 +950,16 @@ export function chatHtml(
   .md-path:hover, .md-path:focus { text-decoration-style:solid;
                                    outline:none; }
   .msg.bot code .md-path { background:none; padding:0; }
-  /* The thumbnail is capped in BOTH directions and scaled down with the panel:
-     max-width:min(280px,100%) means a narrow composer shrinks it instead of
-     overflowing, and object-fit:contain keeps a tall screenshot whole. */
-  .md-thumb { margin:.5em 0; display:inline-flex; flex-direction:column;
-              gap:3px; max-width:100%; }
-  .md-thumb img { display:block; width:auto; height:auto;
-                  max-height:160px; max-width:min(280px,100%);
-                  object-fit:contain; border:1px solid var(--pl-border);
-                  border-radius:4px; cursor:pointer;
-                  background:var(--vscode-editorWidget-background,
-                                 rgba(128,128,128,.08)); }
-  .md-thumb figcaption { font-size:11px; color:var(--pl-muted);
-                         word-break:break-all; }
+  /* A thumbnail is a HINT, not a picture: a small square that sits inside the
+     running text without breaking the line. 64px in both directions, cover so
+     it is a tidy square, and the file name lives in the title attribute —
+     hovering names it, clicking opens the full image. */
+  .md-thumb { display:inline-block; vertical-align:middle;
+              margin:0 2px; width:64px; height:64px; max-width:100%;
+              object-fit:cover; border:1px solid var(--pl-border);
+              border-radius:3px; cursor:pointer;
+              background:var(--vscode-editorWidget-background,
+                             rgba(128,128,128,.08)); }
   .team-card { margin:.5em 0; padding:7px 10px; border:1px solid var(--pl-border);
                border-radius:5px; font-size:11.5px; }
   .team-card .team-name { font-weight:600; margin-bottom:4px; }
@@ -4893,7 +4890,7 @@ export function chatHtml(
           const p = String(e.path || '');
           if (!p) { continue; }
           pathInfo.set(p, e);
-          if (!e.thumb) { continue; }
+          if (!e.thumb || pathThumbFailed.has(p)) { continue; }
           const nodes = log.querySelectorAll('[data-path]');
           for (const n of nodes) {
             if (n.classList.contains('md-thumb')) { continue; }
@@ -5473,31 +5470,40 @@ export function chatHtml(
   // every fragment does not ask again.
   const pathInfo = new Map();
   const pathAsked = new Set();
+  // A preview that could not load is not retried: the path stays as text.
+  const pathThumbFailed = new Set();
 
   function decorateThumb(span, info) {
     const name = String(info.name || '');
-    const fig = document.createElement('figure');
-    fig.className = 'md-thumb';
-    fig.setAttribute('data-path', String(info.path || ''));
-    fig.setAttribute('role', 'link');
-    fig.setAttribute('tabindex', '0');
-    fig.title = 'Open ' + (name || 'the image');
+    const path = String(info.path || '');
+    // The hint REPLACES the path span inside the paragraph, so several in one
+    // sentence line up inline instead of forcing a line break each. The span is
+    // kept so a failed load can put the sentence back exactly as it read.
+    const keep = span.cloneNode(true);
     const img = document.createElement('img');
-    img.src = String(info.thumb || '');
+    img.className = 'md-thumb';
+    img.setAttribute('data-path', path);
+    img.setAttribute('role', 'link');
+    img.setAttribute('tabindex', '0');
+    img.title = name ? 'Open ' + name : 'Open the image';
     img.alt = name || 'image';
     img.loading = 'lazy';
-    fig.appendChild(img);
-    const cap = document.createElement('figcaption');
-    cap.textContent = name;
-    fig.appendChild(cap);
+    // A blocked img-src, a file the host probed and something removed, or a URI
+    // that is not an image: the hint is worthless, and a broken image with no
+    // path is worse than no preview. Put the clickable path back.
+    img.addEventListener('error', () => {
+      if (path) { pathThumbFailed.add(path); }
+      if (img.isConnected) { img.replaceWith(keep); }
+    });
+    img.src = String(info.thumb || '');
     const parent = span.parentElement;
     // A path written in backticks is rendered inside <code>; when it is the
     // whole span, the image replaces the code element rather than sitting in
     // monospace chrome.
     if (parent && parent.tagName === 'CODE' && parent.childNodes.length === 1) {
-      parent.replaceWith(fig);
+      parent.replaceWith(img);
     } else {
-      span.replaceWith(fig);
+      span.replaceWith(img);
     }
   }
 
@@ -5509,7 +5515,9 @@ export function chatHtml(
       const p = n.getAttribute('data-path');
       if (!p) { continue; }
       const known = pathInfo.get(p);
-      if (known !== undefined && known.thumb) { decorateThumb(n, known); continue; }
+      if (known !== undefined && known.thumb && !pathThumbFailed.has(p)) {
+        decorateThumb(n, known); continue;
+      }
       if (!pathAsked.has(p)) { pathAsked.add(p); ask.push(p); }
     }
     if (ask.length > 0) { vsapi.postMessage({ type: 'check-paths', paths: ask }); }
