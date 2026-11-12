@@ -1,5 +1,5 @@
 /**
- * Host test: reading outside the project with the user's say-so (D49ck).
+ * Host test: reading outside the project with the user's say-so (D49dk).
  *
  * What it proves, through the real host and card flow:
  *   - a read of a path outside the workspace raises the card, which names the

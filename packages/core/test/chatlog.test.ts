@@ -471,7 +471,7 @@ describe('buildFoldPrompt (D49ag)', () => {
     expect(p.indexOf('EARLIER:')).toBeLessThan(p.indexOf('USER'));
   });
 
-  // D49co: `/compact <what to keep>` steers the summary.
+  // D49do: `/compact <what to keep>` steers the summary.
   it('carries the user’s focus instruction when one was given', () => {
     const p = buildFoldPrompt(null, rows, 'keep the release date and the API shape');
     expect(p).toContain('keep the release date and the API shape');

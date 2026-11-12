@@ -325,7 +325,7 @@ try {
     'compaction threshold',
   );
 
-  // D49cm: idle compaction is a setting, off by default, and the page's
+  // D49dl: idle compaction is a setting, off by default, and the page's
   // checkbox is the way to turn it on.
   send(child, {
     id: 8.1,

@@ -262,7 +262,7 @@ async function openRunRecords(p) {
     { k: 'compact', text: 'A terse machine summary that must stay hidden.' },
     { k: 'msg', cls: 'you', who: 'You', text: 'Question 3' },
   ];
-  // D49cp: the all-visible layout is now a CHOICE (the setting defaults to
+  // D49dm: the all-visible layout is now a CHOICE (the setting defaults to
   // hiding the rows above). This block's subject is the banner and the rows
   // around it, so it asks for that layout explicitly.
   const p = await page(720);

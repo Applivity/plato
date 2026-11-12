@@ -117,7 +117,7 @@ describe('loadImageAttachment (D49n)', () => {
     const over = await loadImageAttachment('big.png', r, 2000);
     expect(over.ok).toBe(false);
     if (over.ok) return;
-    // D49cd: the refusal names the actual size and the actual cap.
+    // D49dj: the refusal names the actual size and the actual cap.
     expect(over.reason).toContain('is over the 2 KB limit');
     const under = await loadImageAttachment('big.png', r, 4000);
     expect(under.ok).toBe(true);
@@ -233,7 +233,7 @@ describe('loadImageFile for a user-picked image outside the workspace (D49cd)', 
 });
 
 /* ------------------------------------------------------------------ */
-/* D49cd (2026-11-12): a valid image with a space in its path was      */
+/* D49dj (2026-11-12): a valid image with a space in its path was      */
 /* refused; every refusal now names the cause, and a read failure     */
 /* carries the platform code.                                          */
 /* ------------------------------------------------------------------ */
@@ -255,7 +255,7 @@ afterEach(() => {
   }
 });
 
-describe('image refusals name the cause (D49cd)', () => {
+describe('image refusals name the cause (D49dj)', () => {
   it('accepts a PNG whose path contains spaces', async () => {
     const dir = extraTemp();
     const file = join(dir, 'My Folder', 'Screenshot 1.png');
@@ -297,7 +297,7 @@ describe('image refusals name the cause (D49cd)', () => {
   });
 });
 
-describe('probeImageFile (D49cd)', () => {
+describe('probeImageFile (D49dj)', () => {
   it('reports the type and size without reading the whole file', async () => {
     const dir = extraTemp();
     const file = join(dir, 'shot.png');
@@ -326,7 +326,7 @@ describe('probeImageFile (D49cd)', () => {
   });
 });
 
-describe('sweepPastedFiles (D49cd)', () => {
+describe('sweepPastedFiles (D49dj)', () => {
   it('removes what is older than a week and keeps what is not', async () => {
     const dir = extraTemp();
     const old = join(dir, 'old.png');

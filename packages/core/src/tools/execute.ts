@@ -109,7 +109,7 @@ export interface ToolContext {
    */
   respectGitignore?: boolean;
   /**
-   * D49ck: absolute paths the user approved for THIS call and no other.
+   * D49dk: absolute paths the user approved for THIS call and no other.
    *
    * The loop fills it from the answer it has just received, so an approval is
    * consumed by the call that asked for it. It is checked against the RESOLVED
@@ -153,7 +153,7 @@ function resolveTarget(
 ): { abs: string; rel: string; secret: boolean; outside: boolean } | { err: string } {
   const rel = resolveInRoot(root, raw);
   if (rel === null) {
-    // D49ck: an outside path is allowed only when the loop says the user
+    // D49dk: an outside path is allowed only when the loop says the user
     // approved THIS absolute path for THIS call. The comparison is exact, so an
     // approval for one file cannot admit another. Writes never pass `outside`.
     const abs = resolve(root, raw);
@@ -992,7 +992,7 @@ async function listDirTool(
   }
   if (!isDir) return fail(`not a directory: ${rel}`);
   if (target.outside) {
-    // D49ck: an approved folder outside the workspace is listed WHOLE, and each
+    // D49dk: an approved folder outside the workspace is listed WHOLE, and each
     // entry is named by its absolute path — a path relative to a folder the
     // model did not start in would name nothing it could re-read.
     const outside = listWorkspace(abs, '', {
@@ -1113,7 +1113,7 @@ async function grepTool(
   // workspace, so a glob written against the full path keeps its meaning.
   const rawScope = typeof args['path'] === 'string' ? args['path'].trim() : '';
   let scope = '';
-  // D49ck: an approved folder outside the workspace is searched from ITSELF,
+  // D49dk: an approved folder outside the workspace is searched from ITSELF,
   // and each hit is named by its absolute path. `base` is the folder the walk
   // and the reads start at; `label` is how a hit is written for the model.
   let base = root;

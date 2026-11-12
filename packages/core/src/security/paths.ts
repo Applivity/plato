@@ -100,7 +100,7 @@ export function containmentRefusal(
 }
 
 /**
- * D49ck (2026-11-12): the READ tools whose paths may leave the workspace, with
+ * D49dk (2026-11-12): the READ tools whose paths may leave the workspace, with
  * the user's approval asked at the moment of the call.
  *
  * Writes are deliberately absent. An approval to READ a file is not an approval

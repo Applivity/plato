@@ -6,7 +6,7 @@ import {
 } from '../src/runtime/idleFold.js';
 
 /**
- * D49cm (2026-11-12): compaction while the chat sits idle, behind a setting
+ * D49dl (2026-11-12): compaction while the chat sits idle, behind a setting
  * and OFF by default. Claude Code's two numbers are mirrored exactly; the rule
  * is tested with an injected timer so no hour passes in the suite.
  */
@@ -59,7 +59,7 @@ function harness(over: Partial<{
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-describe('IdleFold (D49cm)', () => {
+describe('IdleFold (D49dl)', () => {
   it('mirrors Claude Code: one hour and 200,000 tokens', () => {
     expect(IDLE_FOLD_AFTER_MS).toBe(60 * 60 * 1000);
     expect(IDLE_FOLD_MIN_TOKENS).toBe(200_000);

@@ -1,5 +1,5 @@
 /**
- * D49ck render suite: the "read outside the project?" card.
+ * D49dk render suite: the "read outside the project?" card.
  *
  * The copy comes from CORE (`outsideReadCard`), the same function the host
  * sends, so this suite cannot pass on wording the product no longer ships.

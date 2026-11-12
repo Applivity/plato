@@ -14,7 +14,7 @@ import type {
 } from '../src/providers/types.js';
 
 /**
- * D49ck (2026-11-12): a READ may leave the workspace with the user's say-so.
+ * D49dk (2026-11-12): a READ may leave the workspace with the user's say-so.
  *
  * The client's machine refused a UNC address of a file that is INSIDE the
  * workspace through its drive path. The address is a different string, and the
@@ -104,7 +104,7 @@ async function loopWith(
   return { text: resultsText(seen), events };
 }
 
-describe('outside reads need a decision (D49ck)', () => {
+describe('outside reads need a decision (D49dk)', () => {
   it('reads the file after approval and shows it to the model', async () => {
     const root = tempDir('plato-out-root-');
     const away = tempDir('plato-out-away-');

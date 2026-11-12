@@ -13,7 +13,7 @@ import {
 import type { LogRow } from '../src/runtime/chatlog.js';
 
 /**
- * D49cn (2026-11-12): after a summary, the model is shown the CURRENT state of
+ * D49dn (2026-11-12): after a summary, the model is shown the CURRENT state of
  * the work it can no longer see. Correctness, not a preference: no setting.
  */
 const dirs: string[] = [];
@@ -32,7 +32,7 @@ const summary = (text: string): LogRow => ({ k: 'compact', text });
 const read = (path: string): LogRow => ({ k: 'tool', tool: 'read_file', digest: path });
 const edited = (path: string): LogRow => ({ k: 'tool', tool: 'apply_diff', digest: path });
 
-describe('recentWorkBlock (D49cn)', () => {
+describe('recentWorkBlock (D49dn)', () => {
   it('is absent before a fold, so nothing is carried twice', async () => {
     const root = tempDir();
     writeFileSync(join(root, 'a.txt'), 'alpha');

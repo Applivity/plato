@@ -169,13 +169,13 @@ describe('thematic breaks (D49ad)', () => {
 });
 
 /**
- * D49cd: a local path in a reply is a control the user can click.
+ * D49dj: a local path in a reply is a control the user can click.
  *
  * The client's agent wrote screenshots as `.scratch/shots/homeowner-PANEL-FINAL.png`
  * and the user could not open one. The path is carried as `data-path`, never as
  * an href; the host decides what to open.
  */
-describe('local paths (D49cd)', () => {
+describe('local paths (D49dj)', () => {
   const span = (path: string) =>
     `<span class="md-path" data-path="${path}" role="link" tabindex="0">${path}</span>`;
 

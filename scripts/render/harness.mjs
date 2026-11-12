@@ -42,7 +42,7 @@ function prepareHtml() {
   const min = join(REPO, 'packages/vscode/dist/webview.min.js');
   const out = existsSync(min) ? min : join(REPO, 'packages/vscode/out/webview.js');
   const html = execFileSync('node', [
-    // D49cd: the suite stands in for the HOST, which passes its own
+    // D49dj: the suite stands in for the HOST, which passes its own
     // `webview.cspSource`. `data:` lets a test post a thumbnail URI without a
     // webview origin; the production path passes the real source.
     '-e', `import('${out}').then(m=>process.stdout.write(m.chatHtml(undefined,{imgSrc:'data:'})))`,

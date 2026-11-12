@@ -1,5 +1,5 @@
 /**
- * D49cp render suite: hiding the rows above the newest summary.
+ * D49dm render suite: hiding the rows above the newest summary.
  *
  * The setting defaults to ON. These checks are the page's half:
  *   - the rows above the summary are not drawn, and the divider says plainly

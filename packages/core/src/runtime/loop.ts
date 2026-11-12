@@ -424,7 +424,7 @@ export interface LoopOptions {
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /**
-   * D49ck: may Plato READ these paths, which leave the workspace?
+   * D49dk: may Plato READ these paths, which leave the workspace?
    *
    * Asked once per call, at the moment the model tries, with the raw paths that
    * escape and the tool's name. `true` approves THESE absolute paths for THIS
@@ -1258,7 +1258,7 @@ async function runLoop(
       // rule again — this one is for the user's benefit, that one is the
       // guarantee.
       //
-      // D49ck: a READ may go outside with the user's say-so, asked here at the
+      // D49dk: a READ may go outside with the user's say-so, asked here at the
       // moment the model tries. The answer approves the resolved absolute paths
       // for THIS call only; they reach the executor and are not remembered.
       // Writes never ask — their containment refusal is the one it always was.
@@ -1697,7 +1697,7 @@ async function runLoop(
           shells,
           signal: ctrl.signal,
           vault: opts.secretVault,
-          // D49ck: this call's approval and nothing else. Built per call, so it
+          // D49dk: this call's approval and nothing else. Built per call, so it
           // cannot survive into a later one.
           ...(approvedOutside === undefined ? {} : { outsideRead: approvedOutside }),
           respectGitignore: opts.respectGitignore === true,

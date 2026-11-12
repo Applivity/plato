@@ -572,7 +572,7 @@ export function buildFoldPrompt(
   if (prior !== null && prior.length > 0) {
     blocks.push('[existing summary of the earlier conversation]\n' + prior);
   }
-  // D49co: `/compact <text>` carries the user's own instruction about what the
+  // D49do: `/compact <text>` carries the user's own instruction about what the
   // summary must keep. It sits before the transcript, where an instruction
   // belongs, and is absent when the user gave none.
   const keep = (focus ?? '').trim();

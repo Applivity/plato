@@ -166,7 +166,7 @@ export async function loadImageFile(abs: string, maxBytes: number): Promise<Imag
 }
 
 /**
- * D49cd (2026-11-12): what a refusal SAYS.
+ * D49dj (2026-11-12): what a refusal SAYS.
  *
  * A client was given a perfectly good 9.8 KB PNG and remembers being refused
  * for "invalid data". None of the real causes was named, so the one useful
@@ -207,7 +207,7 @@ export type ImageProbe =
   | { ok: false; reason: string };
 
 /**
- * D49cd: check an image WITHOUT reading it whole.
+ * D49dj: check an image WITHOUT reading it whole.
  *
  * A thumbnail is shown by the webview from a resource URI, so the bytes never
  * need to cross the message channel. Reading a 3 MB screenshot just to sniff
@@ -249,7 +249,7 @@ export async function probeImageFile(
 }
 
 /**
- * D49cd: remove pasted images that have outlived their week.
+ * D49dj: remove pasted images that have outlived their week.
  *
  * A pasted image is copied into Plato's own storage because the platform gives
  * the chat bytes and no path. The copy is an attachment for as long as its

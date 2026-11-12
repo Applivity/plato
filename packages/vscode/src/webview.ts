@@ -45,7 +45,7 @@ export function chatHtml(
   opts: { imgSrc?: string } = {},
 ): string {
   const nonce = getNonce();
-  // D49cd: a thumbnail is a resource URI the host serves, and the CSP must
+  // D49dj: a thumbnail is a resource URI the host serves, and the CSP must
   // allow that source or the image is blocked with no visible error. The host
   // passes its own `webview.cspSource`; the VS shim has none and passes
   // `file:`. Nothing else is opened up — the page still cannot fetch, frame or
@@ -290,7 +290,7 @@ export function chatHtml(
      confirm an action they asked for. */
   .card.reveal-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
   .card.reveal-card.answered { opacity:.75; border-left-color:var(--pl-border); }
-  /* D49ck: three answers, so a narrow panel wraps them instead of clipping the
+  /* D49dk: three answers, so a narrow panel wraps them instead of clipping the
      last one. */
   .card.outside-card .actions { flex-wrap:wrap; }
   .card .reveal-line { padding:2px 10px 0; font-size:12.5px; line-height:1.5;
@@ -941,7 +941,7 @@ export function chatHtml(
              padding:4px 9px; vertical-align:top; }
   .md-table th { background:var(--vscode-editorWidget-background,
                                rgba(128,128,128,.12)); font-weight:600; }
-  /* D49cd: a local path is clickable, and an image path can show the image.
+  /* D49dj: a local path is clickable, and an image path can show the image.
      The path is a span with data-path, never an href: following a link to a
      local file would navigate the chat away from itself. */
   .md-path { color:var(--vscode-textLink-foreground); cursor:pointer;
@@ -1351,7 +1351,7 @@ export function chatHtml(
                           margin-bottom:4px; }
   .msg.compact .cc-body { font-size:12px; line-height:1.5;
                           white-space:pre-wrap; color:var(--vscode-foreground); }
-  /* D49cp: the divider's own control. It reveals the rows above for THIS chat;
+  /* D49dm: the divider's own control. It reveals the rows above for THIS chat;
      the setting is untouched, and a reload goes back to it. */
   .msg.compact .cc-show { display:inline-block; margin-top:6px; padding:2px 10px;
                           font:inherit; font-size:11px; cursor:pointer;
@@ -1594,7 +1594,7 @@ export function chatHtml(
   /** D49bc: the reveal card — the file Plato cannot mask, offered in full. */
   let openRevealCard = null;
   let openOutsideCard = null;
-  // D49cp: the chat view preference, applied on every render; the reveal is
+  // D49dm: the chat view preference, applied on every render; the reveal is
   // this page's alone.
   let hideBeforeSummary = true;
   let earlierRevealed = false;
@@ -3888,7 +3888,7 @@ export function chatHtml(
     thrRow.appendChild(thrInput);
     thrRow.appendChild(thrLive);
     ctxBlock.appendChild(thrRow);
-    // D49cm / D49cp: two boolean preferences beside the threshold. Each posts
+    // D49dl / D49dm: two boolean preferences beside the threshold. Each posts
     // its own setting; the page does not keep a copy.
     const prefRow = (labelText, checked, type, help) => {
       const row = el('div', 'row');
@@ -4572,7 +4572,7 @@ export function chatHtml(
     vsapi.postMessage({ type: 'attach' });
   });
 
-  // --- D49cd: paste and drag-and-drop -------------------------------------
+  // --- D49dj: paste and drag-and-drop -------------------------------------
   // What the platform gives us decides the route. Electron-style files carry a
   // path property; a sandboxed webview (VS Code) usually gives only BYTES for
   // an image, and no path at all for anything else. All three outcomes are
@@ -4883,7 +4883,7 @@ export function chatHtml(
         if (pc) { pc.hidden = !projMissing; }
         break;
       }
-      // D49cd: the host's answer about paths in a reply. A thumbnail is a
+      // D49dj: the host's answer about paths in a reply. A thumbnail is a
       // resource URI it serves; a path with no thumb stays a plain link.
       case 'path-info': {
         for (const e of m.entries || []) {
@@ -5065,7 +5065,7 @@ export function chatHtml(
       case 'reveal-done':
         dismissReveal();
         break;
-      // D49ck: a read outside the project asks with three answers.
+      // D49dk: a read outside the project asks with three answers.
       case 'outside-read':
         showOutsideRead(m);
         refreshChip();
@@ -5073,7 +5073,7 @@ export function chatHtml(
       case 'outside-read-done':
         dismissOutsideRead();
         break;
-      // D49cp: the view preference, from the setting or a toggle. The reveal
+      // D49dm: the view preference, from the setting or a toggle. The reveal
       // is reset, so a setting change shows the state the setting means.
       case 'chat-prefs':
         hideBeforeSummary = m.hideBeforeSummary !== false;
@@ -5264,7 +5264,7 @@ export function chatHtml(
   }
 
   /**
-   * D49cp: the view setting that hides the rows above the newest summary.
+   * D49dm: the view setting that hides the rows above the newest summary.
    *
    * A VIEW rule only. The log keeps every row, the request is unchanged, and
    * the divider NEVER says the messages were deleted — it says they were
@@ -5284,7 +5284,7 @@ export function chatHtml(
     }
     if (cut < 0) { return; } // no summary: nothing to hide
     const hiding = hideBeforeSummary && !earlierRevealed;
-    // D49cp correction: a VIEW preference must never hide a WARNING. A trim note
+    // D49dm correction: a VIEW preference must never hide a WARNING. A trim note
     // says rows left at the display cap (and, when it applies, that the summary
     // itself was lost); a guard line is a refusal; a sys row is a notice; a card
     // is a record or a question. All of those stay visible above the divider —
@@ -5464,7 +5464,7 @@ export function chatHtml(
     return div;
   }
 
-  // --- D49cd: local paths and thumbnails ---------------------------------
+  // --- D49dj: local paths and thumbnails ---------------------------------
   // A path span carries data-path; only the host resolves it. One question per
   // path per page: the answer is cached so a stream that re-renders its HTML on
   // every fragment does not ask again.
@@ -6229,7 +6229,7 @@ export function chatHtml(
   }
 
   /**
-   * D49ck: may Plato read outside the project? The card names the path, says it
+   * D49dk: may Plato read outside the project? The card names the path, says it
    * is outside, and says why Plato wants it. Three answers: once, this folder
    * for the session, or no.
    */

@@ -1,5 +1,5 @@
 /**
- * D49cn (2026-11-12): after a summary, the model is shown the CURRENT state of
+ * D49dn (2026-11-12): after a summary, the model is shown the CURRENT state of
  * the work it can no longer see.
  *
  * A summary is a lossy record written when the fold ran. By the next message

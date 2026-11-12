@@ -1,5 +1,5 @@
 /**
- * D49ck (2026-11-12): what Plato SAYS when a read reaches outside the project.
+ * D49dk (2026-11-12): what Plato SAYS when a read reaches outside the project.
  *
  * The founder's instruction: do what Claude Code does — do not make the user
  * enumerate rules, let the agent read what it needs, with the user's say-so,

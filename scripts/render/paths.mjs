@@ -1,5 +1,5 @@
 /**
- * D49cd render suite: local paths, thumbnails, paste and drop.
+ * D49dj render suite: local paths, thumbnails, paste and drop.
  *
  * The client's agent wrote screenshots as `.scratch/shots/homeowner-PANEL-FINAL.png`
  * in backticks and the user could not open one. These checks are the page's

@@ -21,7 +21,7 @@ export function escapeHtml(s: string): string {
 const FENCE = /```([A-Za-z0-9_+\-.]*)\r?\n([\s\S]*?)```/g;
 
 /**
- * D49cd (2026-11-12): a local path in a reply is a CONTROL, not prose.
+ * D49dj (2026-11-12): a local path in a reply is a CONTROL, not prose.
  *
  * The agent wrote screenshots as `.scratch/shots/homeowner-PANEL-FINAL.png` and
  * the user could not open one: only http(s) links were rendered, and the chat

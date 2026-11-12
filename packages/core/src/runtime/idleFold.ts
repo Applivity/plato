@@ -1,5 +1,5 @@
 /**
- * D49cm (2026-11-12): compaction while the chat sits idle.
+ * D49dl (2026-11-12): compaction while the chat sits idle.
  *
  * The founder's decision: add Claude Code's idle compaction, but behind a
  * setting and OFF by default — it summarises BELOW the user's threshold, which

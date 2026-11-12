@@ -127,7 +127,7 @@ const settings = {
 // than the keep budget and the fold is a real one.
 const padded = (s) => s + ' ' + 'x'.repeat(800 - s.length - 1);
 const seedLog = [
-  // D49cn: a file this chat read, so the post-fold request has something to
+  // D49dn: a file this chat read, so the post-fold request has something to
   // restate. The test writes the file just before starting the host.
   { k: 'tool', tool: 'read_file', phase: 'done', digest: 'note.txt', ok: true },
 ];
@@ -254,7 +254,7 @@ try {
   await host.execute('plato.openChat');
   assert.ok(transport.html.includes('<title>Plato</title>'), 'chat HTML');
   host.receive({ type: 'ready' });
-  // D49cp: the view preference travels with the page. The default hides the
+  // D49dm: the view preference travels with the page. The default hides the
   // rows above the newest summary.
   const prefs = await waitPost(
     (m) => m.type === 'chat-prefs',
@@ -272,7 +272,7 @@ try {
   // window and summarises everything older. The count is measured, so it is read
   // from the notice rather than assumed.
   let mark = posts.length;
-  // D49co: the text after /compact is the user's focus for the summary.
+  // D49do: the text after /compact is the user's focus for the summary.
   host.receive({
     type: 'slash-run',
     id: 'compact',
@@ -337,7 +337,7 @@ try {
   await setScript([{ text: 'Answer after the fold.' }]);
   mark = posts.length;
   await runToEnd(host, 'First task after the fold.', mark);
-  // D49cn: after a summary, the request restates the current state of the work
+  // D49dn: after a summary, the request restates the current state of the work
   // the summary cannot show — read fresh at run start.
   const afterFoldLog = await (await fetch(`http://127.0.0.1:${port}/__log`)).json();
   const reinjected = (afterFoldLog.log ?? []).find((t) =>
@@ -645,7 +645,7 @@ try {
   // this suite's archive-on-close story.
 
   /* ================================================================== */
-  /* 9. The view preference toggles without a reload (D49cp)            */
+  /* 9. The view preference toggles without a reload (D49dm)            */
   /* ================================================================== */
   mark = posts.length;
   host.receive({ type: 'set-hide-before-summary', value: false });

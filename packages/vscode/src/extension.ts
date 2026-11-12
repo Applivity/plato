@@ -30,6 +30,8 @@ import {
   planTrim,
   planRequest,
   historyTokens,
+  fmtTokens,
+  compactedTranscriptLine,
   digestToolCall,
   buildFoldPrompt,
   DEFAULT_CONTEXT_WINDOW,
@@ -251,9 +253,6 @@ function readConnections(): ConnectionConfig[] {
 }
 
 /** Exact token facts beat estimated dollars (D26c). */
-function fmtTokens(n: number): string {
-  return n >= 1000 ? `${(n / 1000).toFixed(1)}k tok` : `${n} tok`;
-}
 
 /**
  * D46: Plato's own home folder, the same on every platform because `homedir()`
@@ -467,7 +466,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
         await ctx.workspaceState.update(TAB_INDEX_KEY, index);
       }
     }
-    // D49cd: the chat may show a thumbnail for an image inside the workspace,
+    // D49dj: the chat may show a thumbnail for an image inside the workspace,
     // served by the webview's own resource mechanism. The CSP is told which
     // source that is; the VS shim reports none, and `file:` is what it can
     // serve.
@@ -596,7 +595,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
         // re-enter a webview whose document was replaced. The memory cost is
         // per tab and is the price of the conversation staying live.
         retainContextWhenHidden: true,
-        // D49cd: a reply may name an image in the workspace, and the chat draws
+        // D49dj: a reply may name an image in the workspace, and the chat draws
         // a thumbnail of it from a webview URI. Without this the URI is not
         // loadable and the thumbnail would fail silently.
         localResourceRoots: (vscode.workspace.workspaceFolders ?? []).map(
@@ -611,7 +610,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
   }
 
   setTimeout(reclaimDeadProjects, 0);
-  // D49cd: pasted images are kept in Plato's own storage for a week. Nothing
+  // D49dj: pasted images are kept in Plato's own storage for a week. Nothing
   // else would ever collect them; a week is long enough for the conversation
   // that received one to still need it.
   setTimeout(() => {
@@ -766,7 +765,7 @@ export function activate(ctx: vscode.ExtensionContext): void {
           resolveWebviewView: (view) => {
             view.webview.options = {
               enableScripts: true,
-              // D49cd: the same resource roots as a chat tab, so a thumbnail
+              // D49dj: the same resource roots as a chat tab, so a thumbnail
               // from this surface can load too.
               localResourceRoots: (
                 vscode.workspace.workspaceFolders ?? []
@@ -1110,7 +1109,7 @@ type Entry =
   | ({ k: 'reveal-open' } & RevealCard)
   | { k: 'reveal-done' }
   /**
-   * D49ck: the card that asks whether a READ may leave the project. Written to
+   * D49dk: the card that asks whether a READ may leave the project. Written to
    * the log BEFORE the host waits, so a reload rebuilds it exactly as the
    * reveal card does.
    */
@@ -1227,19 +1226,19 @@ class ChatHost {
   /** D49bc: the run is parked on a reveal card until this is answered. */
   private pendingReveal: PendingResolve | null = null;
   /**
-   * D49ck: is Plato waiting on the outside-read card? A fix for the live run.
+   * D49dk: is Plato waiting on the outside-read card? A fix for the live run.
    */
   private pendingOutsideRead:
     | ((v: 'once' | 'folder' | 'deny') => void)
     | null = null;
   /**
-   * D49ck: folders the user allowed for THIS chat only. "Allow this folder for
+   * D49dk: folders the user allowed for THIS chat only. "Allow this folder for
    * this session" is remembered here and nowhere else — no setting is written,
    * and a new chat starts with an empty set.
    */
   private outsideFolders = new Set<string>();
   /**
-   * D49cm: the idle clock. One per chat; every condition is re-read when it
+   * D49dl: the idle clock. One per chat; every condition is re-read when it
    * fires, so turning the setting off (or a newer message) means the pending
    * fold does nothing.
    */
@@ -2234,7 +2233,7 @@ class ChatHost {
           this.pendingImages = [];
           return;
         }
-        // D49cd: the ways a file arrives without the native picker — a paste,
+        // D49dj: the ways a file arrives without the native picker — a paste,
         // a drop, or a path the platform handed the page. All of them go
         // through attachFiles, so the caps, the secret deny-list and the
         // refusals are exactly the paperclip's.
@@ -2249,7 +2248,7 @@ class ChatHost {
           );
           return;
         }
-        // D49cd: a path in a reply, clicked. The host resolves it; the page
+        // D49dj: a path in a reply, clicked. The host resolves it; the page
         // never navigates to it.
         if (m.type === 'open-path' && typeof m.path === 'string') {
           await this.openLocalPath(m.path);
@@ -2303,7 +2302,7 @@ class ChatHost {
           resolve?.(m.allow === true);
           return;
         }
-        // D49ck: the three answers to the outside-read card. Only these exact
+        // D49dk: the three answers to the outside-read card. Only these exact
         // words are consent; anything else reads as a denial.
         if (m.type === 'outside-answer') {
           const resolve = this.pendingOutsideRead;
@@ -2335,7 +2334,7 @@ class ChatHost {
           );
           this.postModelState();
           this.postSlashMeta();
-          // D49cp: the view preference travels with the page, so a reload
+          // D49dm: the view preference travels with the page, so a reload
           // applies the setting the same way the first load did.
           void panel.webview.postMessage({
             type: 'chat-prefs',
@@ -2935,7 +2934,7 @@ class ChatHost {
     try {
       text = await readFile(abs, 'utf8');
     } catch (e) {
-      // D49cd: name the cause, with the platform's own code.
+      // D49dj: name the cause, with the platform's own code.
       return { ok: false, reason: readErrorReason(e) };
     }
     if (text.length > MAX_ATTACH_BYTES) {
@@ -2992,7 +2991,7 @@ class ChatHost {
     void this.panel.webview.postMessage({ type: 'attach-result', accepted, rejected });
   }
 
-  // ---- D49cd: local paths, pasted bytes and thumbnails -------------------
+  // ---- D49dj: local paths, pasted bytes and thumbnails -------------------
 
   /** The workspace roots a relative path may resolve against. */
   private workspaceRoots(): string[] {
@@ -3026,7 +3025,7 @@ class ChatHost {
   }
 
   /**
-   * D49cd: attach paths the page was handed — a paste or a drop with real
+   * D49dj: attach paths the page was handed — a paste or a drop with real
    * paths, and the paperclip's testable door. The rules are `attachFiles`, so
    * the caps, the deny-list and the refusals are the same as the picker's.
    */
@@ -3050,7 +3049,7 @@ class ChatHost {
   }
 
   /**
-   * D49cd: a pasted image that arrived as BYTES (a screenshot, or a sandboxed
+   * D49dj: a pasted image that arrived as BYTES (a screenshot, or a sandboxed
    * webview that gives no path). It is written to Plato's storage once, then
    * attached by path — so the conversation carries a normal attachment, and a
    * later run re-reads the file exactly as it does any other.
@@ -3116,7 +3115,7 @@ class ChatHost {
   }
 
   /**
-   * D49cd: open a path a reply named. `vscode.open` is what shows an IMAGE in
+   * D49dj: open a path a reply named. `vscode.open` is what shows an IMAGE in
    * the image viewer and text in an editor; a missing file is said in the chat
    * rather than opening an empty editor.
    */
@@ -3143,7 +3142,7 @@ class ChatHost {
   }
 
   /**
-   * D49cd: answer the page's question about paths it rendered. A thumbnail is
+   * D49dj: answer the page's question about paths it rendered. A thumbnail is
    * offered only for an image INSIDE the workspace — that is what a webview
    * resource root can serve, and it is what the 3 MB probe guards. Everywhere
    * else the path stays a link, and clicking it still opens the file.
@@ -3214,7 +3213,7 @@ class ChatHost {
       if (this.running) {
         this.requestCompactNow();
       } else {
-        // D49co: `/compact <what to keep>` carries the focus to the prompt.
+        // D49do: `/compact <what to keep>` carries the focus to the prompt.
         await this.foldNow(text);
       }
       return;
@@ -3482,11 +3481,11 @@ class ChatHost {
    * what the model is sent, never what the user can read. Returns true on a fold.
    *
    * The TRIGGER is named because the notice names it: `manual` is `/compact`
-   * (the user's request IS the trigger), `idle` is D49cm (an hour of silence at
+   * (the user's request IS the trigger), `idle` is D49dl (an hour of silence at
    * 200,000 tokens, behind a setting), and `auto` is the size threshold. All
    * three use the same keep budget.
    *
-   * D49co: `focus` is what the user asked the summary to keep, passed to the
+   * D49do: `focus` is what the user asked the summary to keep, passed to the
    * prompt. Empty for every trigger but `/compact`.
    */
   private async foldTail(
@@ -3592,7 +3591,7 @@ class ChatHost {
 
   /**
    * /compact while idle: fold the tail, or say there is nothing to fold.
-   * D49co: `focus` is the text after the command, passed to the summary prompt.
+   * D49do: `focus` is the text after the command, passed to the summary prompt.
    */
   private async foldNow(focus = ''): Promise<void> {
     if (this.folding) return;
@@ -3631,7 +3630,7 @@ class ChatHost {
   }
 
   /**
-   * D49cm: start the idle clock, or stop it when the setting is off. Called at
+   * D49dl: start the idle clock, or stop it when the setting is off. Called at
    * every run end and when the setting changes.
    */
   private scheduleIdleFold(): void {
@@ -3655,7 +3654,7 @@ class ChatHost {
     ref: string,
   ): void {
     setTimeout(() => {
-      // D49cm: the idle clock starts when a run ends, whether or not the size
+      // D49dl: the idle clock starts when a run ends, whether or not the size
       // fold ran just now.
       this.scheduleIdleFold();
       void (async () => {
@@ -3775,7 +3774,7 @@ class ChatHost {
     this.pendingReveal = null;
     rv?.(false);
     this.send('reveal-done');
-    // D49ck: and the outside-read card. The loop is parked on it; a cancel
+    // D49dk: and the outside-read card. The loop is parked on it; a cancel
     // means "no", so nothing is read.
     const or = this.pendingOutsideRead;
     this.pendingOutsideRead = null;
@@ -4189,10 +4188,10 @@ class ChatHost {
       threshold: typeof threshold === 'number' && Number.isFinite(threshold)
         ? threshold
         : 0.8,
-      // D49cm: off unless the user asked. It summarises BELOW the threshold by
+      // D49dl: off unless the user asked. It summarises BELOW the threshold by
       // design, which is exactly what the user must opt into.
       idle: cfg.get<boolean>('compaction.idle', false) === true,
-      // D49cp: a VIEW preference. The transcript keeps every row either way.
+      // D49dm: a VIEW preference. The transcript keeps every row either way.
       hideBeforeSummary:
         cfg.get<boolean>('chat.hideBeforeSummary', true) !== false,
     };
@@ -4437,7 +4436,7 @@ class ChatHost {
           + ' context. The full conversation is still in the transcript.',
       );
     }
-    // D49cn: after a summary, the model is shown the CURRENT state of the work
+    // D49dn: after a summary, the model is shown the CURRENT state of the work
     // the summary can no longer show. Built fresh here, at run start; absent
     // before a fold, so nothing is carried twice.
     const root = this.workspaceRoot();
@@ -4967,7 +4966,7 @@ class ChatHost {
     this.pendingApprovalCard = null;
     this.pendingStuck = null;
     this.pendingReveal = null;
-    // D49ck: a fresh chat is a new session, so a folder allowed in the old one
+    // D49dk: a fresh chat is a new session, so a folder allowed in the old one
     // is not allowed in this one.
     this.pendingOutsideRead = null;
     this.outsideFolders.clear();
@@ -5272,7 +5271,7 @@ class ChatHost {
    * just cancelled to finish unwinding before it archives the chat.
    */
   private startRun(task: string, ctx: RunCtx = {}): void {
-    // D49cm: a new message cancels a pending idle fold. It may never summarise
+    // D49dl: a new message cancels a pending idle fold. It may never summarise
     // a conversation the user has just continued.
     this.idleFold.cancel();
     // `runInFlight`, NOT `running` — see the field's note. `running` is false for
@@ -5818,11 +5817,7 @@ class ChatHost {
           k: 'msg',
           cls: 'sys',
           who: 'Plato',
-          text: `[plato] context compacted (${e.mode}) — ${fmtTokens(
-            e.beforeTokens,
-          )} \u2192 ${fmtTokens(e.afterTokens)} (summary used ${fmtTokens(
-            e.summaryTokens,
-          )} tokens)`,
+          text: compactedTranscriptLine(e),
         });
       } else if (e.type === 'notice') {
         // D49bz: a run's own notice — a stopped shell, a stuck nudge, a result in
@@ -5922,7 +5917,7 @@ class ChatHost {
           : {}),
         ...(ctx.originFrom === undefined ? {} : { originFrom: ctx.originFrom }),
         approve: (req) => this.approve(req),
-        // D49ck: a read outside the project asks here, at the moment the model
+        // D49dk: a read outside the project asks here, at the moment the model
         // tries. The host decides whether to ask; core only offers.
         outsideRead: (paths, tool) => this.outsideRead(paths, tool),
         getMode: () => this.mode,
@@ -6381,7 +6376,7 @@ class ChatHost {
   }
 
   /**
-   * D49ck: may Plato read these paths, which are outside the project?
+   * D49dk: may Plato read these paths, which are outside the project?
    *
    * The question is asked with the path, the reason (the tool's own words) and
    * the folder a wider answer would cover. Three answers, and only one is
