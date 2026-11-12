@@ -49,6 +49,15 @@ const MODELS = (process.env['PLATO_STUB_MODELS'] ?? 'stub-model')
   .map((id) => id.trim())
   .filter((id) => id.length > 0);
 
+/**
+ * The context window `/models` advertises, in tokens. Off by default: with no
+ * number Plato falls back to its own default, which is what every existing case
+ * was written against. A test that needs the fold to measure against a real
+ * window sets it — the window decides when the fold runs, so a fixture without
+ * one could only ever test the fallback.
+ */
+const CONTEXT = Number(process.env['PLATO_STUB_CONTEXT'] ?? '0');
+
 /** Cursor into the current script, plus the log of what we were asked. */
 let steps = [];
 let cursor = 0;
@@ -187,7 +196,11 @@ const server = createServer(async (req, res) => {
       if (res.writableEnded || res.destroyed) return;
     }
     return json(res, 200, {
-      data: MODELS.map((id) => ({ id, object: 'model' })),
+      data: MODELS.map((id) => ({
+        id,
+        object: 'model',
+        ...(CONTEXT > 0 ? { context_length: CONTEXT } : {}),
+      })),
     });
   }
 

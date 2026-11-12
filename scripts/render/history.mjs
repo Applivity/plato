@@ -299,14 +299,16 @@ async function openRunRecords(p) {
   await p2.evaluate(() => window.dispatchEvent(new MessageEvent('message', {
     data: {
       type: 'notice',
-      text: 'Summary added for 18 earlier messages. Nothing was removed.',
+      text: 'Summary added for 18 earlier messages, as you asked. '
+        + 'Nothing was removed from the transcript.',
     },
   })));
   await p2.waitForTimeout(150);
   const notice = await p2.evaluate(() =>
     [...document.querySelectorAll('#log .msg.sys')].map((e) => e.textContent).join('\n'));
-  check('the fold notice says nothing was removed',
-    notice.includes('Summary added for 18 earlier messages. Nothing was removed.'), notice);
+  check('the fold notice names the cause and says nothing was removed',
+    notice.includes('Summary added for 18 earlier messages, as you asked. '
+      + 'Nothing was removed from the transcript.'), notice);
   await p2.close();
   await p.close();
 }

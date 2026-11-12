@@ -3,13 +3,16 @@ import {
   applyFold,
   buildFoldPrompt,
   digestToolCall,
+  historyTokens,
   isMessageRow,
   lastSummaryIndex,
   planFold,
+  planRequest,
+  planTrim,
   requestFromLog,
-  tailPairs,
   toolLine,
   DIGEST_MAX,
+  FOLD_KEEP_FRACTION,
   type LogRow,
 } from '../src/runtime/chatlog.js';
 import { INBOUND_MARKER, REPLY_MARKER } from '../src/live.js';
@@ -57,6 +60,19 @@ const exchange = (n: number): LogRow[] => [
 const conversation = (n: number): LogRow[] =>
   Array.from({ length: n }, (_, i) => exchange(i + 1)).flat();
 
+/** A message of an exact size in characters; 4 chars is one estimated token. */
+const sized = (role: 'you' | 'bot', tag: string, chars: number): LogRow => ({
+  k: 'msg',
+  cls: role,
+  text: tag + ' ' + 'x'.repeat(Math.max(0, chars - tag.length - 1)),
+});
+/** `n` exchanges, each message exactly `chars` long. */
+const large = (n: number, chars = 400): LogRow[] =>
+  Array.from({ length: n }, (_, i) => [
+    sized('you', 'q' + i, chars),
+    sized('bot', 'a' + i, chars),
+  ]).flat();
+
 describe('message rows (D49aa)', () => {
   it('counts you/bot rows and nothing else', () => {
     expect(isMessageRow(you('a'))).toBe(true);
@@ -102,21 +118,67 @@ describe('replaying a message from another session (D49cq)', () => {
   });
 });
 
-describe('planFold (D49aa)', () => {
-  it('does nothing while the tail fits', () => {
-    expect(planFold(conversation(2), 12)).toBeNull();
+/**
+ * D44d amended (2026-11-12). The fold used to be a COUNT: run at 26 message rows
+ * (13 exchanges), keep 12 rows. A real client run on a 1,000,000-token window —
+ * prompt peak 203,228 tokens, 20% — was folded anyway and told the user so.
+ *
+ * These pin the rule that replaced it. The window is small so the fixtures can
+ * be small; the arithmetic is the same at any size.
+ */
+describe('planFold (D49aa, D44d amended)', () => {
+  const WINDOW = 1000;
+  const THRESHOLD = 0.8;
+  const plan = (rows: LogRow[], manual = false) =>
+    planFold(rows, { maxContext: WINDOW, threshold: THRESHOLD, manual });
+
+  it('does nothing while the history fits the window and threshold', () => {
+    expect(plan(conversation(2))).toBeNull();
   });
 
   /**
-   * The load-bearing assertion of this whole change. The old writer rebuilt the
-   * log as [summary, ...tail]; this one writes a single row and leaves the rest
-   * where it was, so the transcript only ever grows.
+   * The founder's point, as one pair: size decides, not how many messages there
+   * are. 200 messages of two words never fold; 12 messages of a paragraph each
+   * do.
+   */
+  it('folds a few large messages before many short ones', () => {
+    const manyShort = conversation(100); // 200 message rows, ~420 tokens
+    expect(historyTokens(manyShort)).toBeLessThan(WINDOW * THRESHOLD);
+    expect(plan(manyShort)).toBeNull();
+
+    const fewLarge = large(6); // 12 message rows, 1,200 tokens
+    expect(historyTokens(fewLarge)).toBeGreaterThanOrEqual(WINDOW * THRESHOLD);
+    expect(plan(fewLarge)).not.toBeNull();
+  });
+
+  it('does not fold below the threshold, however many messages it has', () => {
+    const rows = conversation(150); // 300 message rows
+    expect(rows.filter(isMessageRow)).toHaveLength(300);
+    expect(historyTokens(rows)).toBeLessThan(WINDOW * THRESHOLD);
+    expect(plan(rows)).toBeNull();
+  });
+
+  it('measures against the selected model window: a small one folds earlier', () => {
+    const rows = large(6); // 1,200 tokens
+    expect(
+      planFold(rows, { maxContext: WINDOW, threshold: THRESHOLD }),
+    ).not.toBeNull();
+    // The same conversation, same threshold, a window it comfortably fits.
+    expect(
+      planFold(rows, { maxContext: 100_000, threshold: THRESHOLD }),
+    ).toBeNull();
+  });
+
+  /**
+   * The load-bearing assertion of D49aa. The old writer rebuilt the log as
+   * [summary, ...tail]; this one writes a single row and leaves the rest where
+   * it was, so the transcript only ever grows.
    */
   it('writes a row without removing any row from the log', () => {
-    const rows = conversation(8); // 16 message rows
-    const plan = planFold(rows, 12);
-    expect(plan).not.toBeNull();
-    const after = applyFold(rows, plan!, summary('S') as never);
+    const rows = large(8); // 16 messages, 1,600 tokens
+    const p = plan(rows);
+    expect(p).not.toBeNull();
+    const after = applyFold(rows, p!, summary('S') as never);
     expect(after).toHaveLength(rows.length + 1);
     // Every original row is still present, in order — nothing was replaced.
     let j = 0;
@@ -129,85 +191,94 @@ describe('planFold (D49aa)', () => {
   });
 
   /**
-   * The exact shape that caused the founder's report, kept as a regression pin:
-   * `log.length = 0` then the summary and the kept tail. If anyone reintroduces
-   * this as "the fold", these are the two lines that say what it costs.
+   * The exact shape that caused the founder's first report, kept as a regression
+   * pin: `log.length = 0` then the summary and the kept tail. If anyone
+   * reintroduces this as "the fold", these are the two lines that say what it
+   * costs.
    */
   it('the discarded rewrite dropped everything it summarised', () => {
-    const rows = conversation(8);
-    const plan = planFold(rows, 12)!;
-    const destructive = [summary('S') as LogRow, ...rows.slice(plan.insertAt)];
+    const rows = large(8);
+    const p = plan(rows)!;
+    const destructive = [summary('S') as LogRow, ...rows.slice(p.insertAt)];
     expect(destructive.length).toBeLessThan(rows.length);
-    expect(destructive.some((r) => r.text === 'ask 1')).toBe(false);
-  });
-
-  it('keeps exactly the requested number of tail pairs', () => {
-    const rows = conversation(8);
-    const plan = planFold(rows, 12)!;
-    const after = [
-      ...rows.slice(0, plan.insertAt),
-      summary('S'),
-      ...rows.slice(plan.insertAt),
-    ];
-    expect(tailPairs(after)).toBe(12);
-  });
-
-  it('covers every message older than the kept tail', () => {
-    const rows = conversation(8); // 16 messages, keep 12 -> covers 4
-    const plan = planFold(rows, 12)!;
-    expect(plan.covered.filter(isMessageRow)).toHaveLength(4);
-    expect(plan.covered.filter(isMessageRow).map((r) => r.text)).toEqual([
-      'ask 1',
-      'answer 1',
-      'ask 2',
-      'answer 2',
-    ]);
+    expect(destructive.some((r) => r.text === rows[0]!.text)).toBe(false);
   });
 
   /**
-   * D49ag, and the assertion this whole change is for. A fold is handed the
-   * conversation's message rows for its summary; the exchange helper puts two
-   * tool rows in each exchange, so covering two exchanges must hand over four
-   * tool rows as well — in the position they happened, because the order is what
-   * makes a summary a record of the work instead of a list of it.
+   * Requirement, word for word: the newest messages the budget affords are kept
+   * as they were written. 400 characters is 100 tokens; the 250-token budget
+   * keeps the newest two and not the third.
+   */
+  it('keeps the newest messages that fit the budget, word for word', () => {
+    const rows = large(10); // 20 messages, 2,000 tokens
+    const p = plan(rows)!;
+    const kept = rows
+      .slice(p.insertAt)
+      .filter(isMessageRow)
+      .map((r) => r.text ?? '');
+    expect(kept).toEqual([rows[18]!.text, rows[19]!.text]);
+    expect(p.covered.filter(isMessageRow)).toHaveLength(18);
+    const keptTokens = kept.reduce((n, t) => n + Math.ceil(t.length / 4), 0);
+    expect(keptTokens).toBeLessThanOrEqual(
+      Math.floor(WINDOW * FOLD_KEEP_FRACTION),
+    );
+  });
+
+  it('counts the summary already in the log against the keep budget', () => {
+    const plain = large(10, 200); // 20 messages x 50 tokens = 1,000 tokens
+    const p = plan(plain)!;
+    // 250-token budget on 50-token messages keeps five.
+    expect(plain.slice(p.insertAt).filter(isMessageRow)).toHaveLength(5);
+    // A 100-token summary is SENT with the tail, so it spends 100 of the 250:
+    // three messages fit instead of five.
+    const withSummary = [summary('s'.repeat(400)), ...plain];
+    const p2 = plan(withSummary)!;
+    expect(withSummary.slice(p2.insertAt).filter(isMessageRow)).toHaveLength(3);
+  });
+
+  it('covers every message older than the kept tail', () => {
+    const rows = large(10);
+    const p = plan(rows)!;
+    expect(p.covered.filter(isMessageRow).map((r) => r.text)).toEqual(
+      rows.slice(0, 18).filter(isMessageRow).map((r) => r.text),
+    );
+  });
+
+  /**
+   * D49ag: the exchange helper puts two tool rows in each exchange, and a fold
+   * must account for the work, in the order it happened.
    */
   it('covers the tool rows in the same span, in log order (D49ag)', () => {
     const rows: LogRow[] = [
-      you('ask 1'),
+      sized('you', 'ask 1', 400),
       ran('read_file', 'src/A.java'),
       ran('shell', './gradlew test', false),
-      bot('answer 1'),
-      you('ask 2'),
-      tool(), // a row written before D49ag carries no name and is still covered
-      bot('answer 2'),
-      ...conversation(6),
+      sized('bot', 'answer 1', 400),
+      ...large(10),
     ];
-    const plan = planFold(rows, 12)!;
-    const kinds = plan.covered.map((r) =>
+    const p = plan(rows)!;
+    const kinds = p.covered.map((r) =>
       r.k === 'tool' ? 'tool' : (r.text ?? ''),
     );
-    expect(kinds).toEqual([
-      'ask 1',
-      'tool',
-      'tool',
-      'answer 1',
-      'ask 2',
-      'tool',
-      'answer 2',
-    ]);
+    expect(kinds[1]).toBe('tool');
+    expect(kinds[2]).toBe('tool');
+    expect(kinds[0]!.startsWith('ask 1')).toBe(true);
+    expect(kinds[3]!.startsWith('answer 1')).toBe(true);
+    // ...and the rest of the covered span is messages, in log order.
+    expect(p.covered.filter(isMessageRow)).toHaveLength(20);
   });
 
   it('the summary a fold is given can name what the run did (D49ag)', () => {
     const rows: LogRow[] = [
-      you('fix the formatter'),
+      sized('you', 'fix the formatter', 400),
       ran('read_file', 'src/FormatterUtility.java'),
       ran('apply_diff', 'src/FormatterUtility.java'),
-      bot('I fixed the truncation bug.'),
-      ...conversation(6),
+      sized('bot', 'I fixed the truncation bug.', 400),
+      ...large(10),
     ];
-    const plan = planFold(rows, 12)!;
+    const p = plan(rows)!;
     // This is the exact sentence the founder's real summary could not produce.
-    const rendered = plan.covered.map(toolLine).join('\n');
+    const rendered = p.covered.map(toolLine).join('\n');
     expect(rendered).toContain('read_file src/FormatterUtility.java');
     expect(rendered).toContain('apply_diff src/FormatterUtility.java');
   });
@@ -218,27 +289,32 @@ describe('planFold (D49aa)', () => {
    * them would send the same ground twice under two different summaries.
    */
   it('never reaches back past the last summary', () => {
-    const rows = [...conversation(8), summary('S1'), ...conversation(8)];
+    const rows = [...large(1), summary('S1'), ...large(8)];
     const marker = lastSummaryIndex(rows);
-    const plan = planFold(rows, 12)!;
-    for (const row of plan.covered) {
+    const p = plan(rows)!;
+    for (const row of p.covered) {
       expect(rows.indexOf(row)).toBeGreaterThan(marker);
     }
-    expect(plan.covered.filter(isMessageRow)).toHaveLength(4);
+    // The summary counts towards the budget, so the kept tail is the newest two
+    // of the 16 messages after it; the other 14 are covered.
+    expect(p.covered.filter(isMessageRow)).toHaveLength(14);
   });
 
-  it('folds again only after the tail grows past the keep count', () => {
-    const rows = conversation(8);
-    const plan = planFold(rows, 12)!;
-    const folded = [
-      ...rows.slice(0, plan.insertAt),
-      summary('S'),
-      ...rows.slice(plan.insertAt),
-    ];
-    expect(planFold(folded, 12)).toBeNull();
-    // Six more exchanges push it over again.
-    const more = [...folded, ...conversation(6)];
-    expect(planFold(more, 12)).not.toBeNull();
+  it('folds again only when the history reaches the threshold again', () => {
+    const rows = large(10);
+    const p = plan(rows)!;
+    const folded = applyFold(rows, p, summary('S') as never);
+    // Summary + the two kept messages: far under the 800-token line.
+    expect(plan(folded)).toBeNull();
+    // Six more 100-token messages push it over again.
+    const more = [...folded, ...large(3)];
+    expect(plan(more)).not.toBeNull();
+  });
+
+  it('a manual fold keeps the same budget but skips the size trigger', () => {
+    const rows = large(2); // 400 tokens: under the line, but older messages exist
+    expect(plan(rows)).toBeNull();
+    expect(plan(rows, true)).not.toBeNull();
   });
 });
 
@@ -422,56 +498,88 @@ describe('toolLine (D49ag)', () => {
   });
 });
 
-describe('requestFromLog (D49aa)', () => {
+describe('requestFromLog (D49aa, D44d amended)', () => {
   it('sends the summary first, then the tail', () => {
-    const rows = conversation(8);
-    const plan = planFold(rows, 12)!;
+    const rows = large(4);
+    const p = planFold(rows, {
+      maxContext: 1000,
+      threshold: 0.8,
+      manual: true,
+    })!;
     const after = [
-      ...rows.slice(0, plan.insertAt),
+      ...rows.slice(0, p.insertAt),
       summary('THE SUMMARY'),
-      ...rows.slice(plan.insertAt),
+      ...rows.slice(p.insertAt),
     ];
-    const req = requestFromLog(after, 60);
+    const req = requestFromLog(after);
     expect(req[0]).toEqual({
       role: 'user',
       text: '[Summary of the earlier conversation]\nTHE SUMMARY',
     });
-    expect(req[1]!.text).toBe('ask 3');
-    expect(req).toHaveLength(13); // summary + 12 kept messages
+    expect(req.slice(1).map((r) => r.text)).toEqual([
+      rows[6]!.text,
+      rows[7]!.text,
+    ]);
   });
 
   // The transcript growing must not quietly grow the request too.
   it('is unaffected by rows the fold left in front of the summary', () => {
-    const rows = conversation(8);
-    const plan = planFold(rows, 12)!;
+    const rows = large(4);
+    const p = planFold(rows, {
+      maxContext: 1000,
+      threshold: 0.8,
+      manual: true,
+    })!;
     const minimal = [
-      ...rows.slice(0, plan.insertAt),
+      ...rows.slice(0, p.insertAt),
       summary('S'),
-      ...rows.slice(plan.insertAt),
+      ...rows.slice(p.insertAt),
     ];
     // The same fold, but with a pile of older transcript in front of it.
     const historical = [you('ancient'), bot('reply'), ...minimal];
-    expect(requestFromLog(historical, 60)).toEqual(
-      requestFromLog(minimal, 60),
-    );
+    expect(requestFromLog(historical)).toEqual(requestFromLog(minimal));
   });
 
   it('uses the LAST summary as the memory boundary', () => {
-    const req = requestFromLog([summary('old'), you('a'), summary('new'), bot('b')], 60);
+    const req = requestFromLog([summary('old'), you('a'), summary('new'), bot('b')]);
     expect(req[0]!.text).toContain('new');
     expect(req.map((r) => r.text)).not.toContain('a');
   });
 
-  it('caps the tail when a fold was skipped', () => {
-    const req = requestFromLog(conversation(40), 60);
-    expect(req).toHaveLength(60);
-    // 40 exchanges are 80 message rows; keeping the last 60 starts at the 21st,
-    // which is the ask of exchange 11.
-    expect(req[0]!.text).toBe('ask 11');
+  /**
+   * D44d amended: the cap used to be 60 message ROWS, dropped in silence. It is
+   * a token budget now, and when it bites the request says so rather than letting
+   * the model believe the conversation began at the cut.
+   */
+  it('caps the tail by tokens and says what it left out', () => {
+    const rows = Array.from({ length: 10 }, (_, i) => sized('you', 'm' + i, 400));
+    const p = planRequest(rows, 250); // ten 100-token messages
+    expect(p.omitted).toBe(8);
+    expect(p.turns).toHaveLength(3); // the note, then the newest two messages
+    expect(p.turns[0]!.text).toContain('8 older messages are not in this request');
+    expect(p.turns[1]!.text.startsWith('m8')).toBe(true);
+    expect(p.turns[2]!.text.startsWith('m9')).toBe(true);
+  });
+
+  it('keeps the newest exchange even below the cap', () => {
+    const rows = Array.from({ length: 10 }, (_, i) => sized('you', 'm' + i, 400));
+    const p = planRequest(rows, 10);
+    expect(p.turns.slice(1).map((t) => t.text)).toEqual([
+      rows[8]!.text,
+      rows[9]!.text,
+    ]);
+  });
+
+  it('says nothing when the whole tail fits', () => {
+    const rows = conversation(4);
+    const p = planRequest(rows, 10_000);
+    expect(p.omitted).toBe(0);
+    expect(p.turns).toHaveLength(8);
   });
 
   it('sends nothing for an empty log', () => {
-    expect(requestFromLog([], 60)).toEqual([]);
+    expect(requestFromLog([])).toEqual([]);
+    expect(planRequest([], 10).omitted).toBe(0);
   });
 
   /**
@@ -489,7 +597,7 @@ describe('requestFromLog (D49aa)', () => {
       ran('shell', './gradlew test', false),
       bot('Fixed.'),
     ];
-    expect(requestFromLog(rows, 60)).toEqual([
+    expect(requestFromLog(rows)).toEqual([
       { role: 'user', text: 'fix the formatter' },
       {
         role: 'user',
@@ -509,15 +617,119 @@ describe('requestFromLog (D49aa)', () => {
    */
   it('skips a tool row that has no digest (D49ag)', () => {
     const rows: LogRow[] = [you('a'), tool(), bot('b')];
-    expect(requestFromLog(rows, 60).map((r) => r.text)).toEqual(['a', 'b']);
+    expect(requestFromLog(rows).map((r) => r.text)).toEqual(['a', 'b']);
   });
 
-  it('does not let tool rows push the exchange cap (D49ag)', () => {
-    // 40 exchanges, each with its tool rows, capped at 60 exchanges.
-    const rows = conversation(40);
-    const req = requestFromLog(rows, 60);
-    expect(req).toHaveLength(60); // unchanged: the cap counts messages
-    expect(req[0]!.text).toBe('ask 11');
+  it('carries a message’s tool rows with it when the cap cuts (D49ag)', () => {
+    const rows: LogRow[] = [
+      sized('you', 'ask 1', 400),
+      ran('read_file', 'src/A.java'),
+      sized('bot', 'answer 1', 400),
+      sized('you', 'ask 2', 400),
+      ran('shell', 'npm test'),
+      sized('bot', 'answer 2', 400),
+    ];
+    const p = planRequest(rows, 250);
+    // The newest two messages and the tool row between them fit. The first
+    // exchange is left out WITH its tool row, so no work note arrives without
+    // the message it belongs to.
+    expect(p.omitted).toBe(2);
+    expect(p.turns.some((t) => t.text.includes('read_file'))).toBe(false);
+    expect(p.turns.some((t) => t.text.includes('shell npm test'))).toBe(true);
+  });
+});
+
+/**
+ * D49aa amended (2026-11-12). The display cap counted every row the same way,
+ * so a client chat with 265 tool records lost its OPENING QUESTION and answer
+ * first: the transcript began with an answer to a question that was gone. The
+ * rule now: work goes before conversation, and the note says which.
+ */
+describe('planTrim (D49aa amended)', () => {
+  const tools = (n: number, tag = 'src/file'): LogRow[] =>
+    Array.from({ length: n }, (_, i) => ran('read_file', tag + i));
+
+  it('drops the work before the conversation, oldest first', () => {
+    const rows: LogRow[] = [
+      you('opening question'),
+      bot('opening answer'),
+      ...tools(300),
+      ...Array.from({ length: 98 }, (_, i) => you('later ' + i)),
+    ];
+    expect(rows).toHaveLength(400);
+    const { rows: kept, removed } = planTrim(rows, 399);
+    expect(removed).toEqual({
+      tools: 1,
+      messages: 0,
+      other: 0,
+      lostSummary: false,
+    });
+    // Every message row survives, including the opening pair.
+    expect(kept.filter(isMessageRow)).toHaveLength(100);
+    expect(kept[0]).toBe(rows[0]);
+    // ...and the tool row that went is the OLDEST one.
+    expect(kept.some((r) => r.digest === 'src/file0')).toBe(false);
+  });
+
+  it('keeps every message row while any tool row remains', () => {
+    const rows: LogRow[] = [you('q'), bot('a'), ...tools(10), you('last')];
+    const { rows: kept, removed } = planTrim(rows, 5);
+    expect(removed).toEqual({
+      tools: 8,
+      messages: 0,
+      other: 0,
+      lostSummary: false,
+    });
+    expect(kept.filter(isMessageRow).map((r) => r.text)).toEqual([
+      'q',
+      'a',
+      'last',
+    ]);
+  });
+
+  it('trims messages only when nothing else is left, and counts them', () => {
+    const rows = Array.from({ length: 400 }, (_, i) => you('m' + i));
+    const { rows: kept, removed } = planTrim(rows, 399);
+    expect(removed).toEqual({
+      tools: 0,
+      messages: 1,
+      other: 0,
+      lostSummary: false,
+    });
+    expect(kept).toHaveLength(399);
+    expect((kept[0] as LogRow).text).toBe('m1');
+  });
+
+  it('reports the summary as lost when the cap takes it', () => {
+    const rows: LogRow[] = [
+      summary('S'),
+      you('m0'),
+      you('m1'),
+      you('m2'),
+    ];
+    const { rows: kept, removed } = planTrim(rows, 3);
+    expect(removed.lostSummary).toBe(true);
+    expect(removed.messages).toBe(0);
+    expect(kept).toHaveLength(3);
+  });
+
+  it('never drops the note that records the cap', () => {
+    const rows: LogRow[] = [
+      { k: 'trim', dropped: 9, lostSummary: false } as LogRow,
+      you('m0'),
+      you('m1'),
+      you('m2'),
+    ];
+    const { rows: kept, removed } = planTrim(rows, 3);
+    expect(kept[0]!.k).toBe('trim');
+    expect(removed.messages).toBe(1);
+  });
+
+  it('does nothing when the log is within the cap', () => {
+    const rows = conversation(2);
+    const { rows: kept, removed } = planTrim(rows, 100);
+    expect(kept).toEqual(rows);
+    expect(removed.tools + removed.messages + removed.other).toBe(0);
   });
 });
 

@@ -5115,15 +5115,43 @@ export function chatHtml(
     scroll();
   }
 
+  /**
+   * D49aa amended: the note says what KIND of entry went. The cap drops work
+   * before conversation now, but "37 older entries" would still hide which it
+   * was — and losing the user's own words is a different fact from losing a
+   * tool record. A note written before the counts existed keeps the generic
+   * wording, because its kinds were never recorded.
+   */
   function addTrimNote(t) {
     const n = Number(t.dropped) || 0;
     const div = document.createElement('div');
     div.className = 'msg compact trim';
     const head = document.createElement('div');
     head.className = 'cc-head';
-    head.textContent = n === 1
-      ? '1 older entry is no longer shown'
-      : n + ' older entries are no longer shown';
+    const hasKinds = t.tools !== undefined || t.messages !== undefined;
+    const tools = Number(t.tools) || 0;
+    const messages = Number(t.messages) || 0;
+    const other = Math.max(0, n - tools - messages);
+    const part = (count, one, many) =>
+      (count === 1 ? one : count + ' ' + many);
+    const parts = [];
+    if (hasKinds) {
+      if (messages > 0) {
+        parts.push(part(messages, '1 earlier message', 'earlier messages'));
+      }
+      if (tools > 0) parts.push(part(tools, '1 tool call', 'tool calls'));
+      if (other > 0) parts.push(part(other, '1 older note', 'older notes'));
+    }
+    if (parts.length === 0) {
+      head.textContent = n === 1
+        ? '1 older entry is no longer shown'
+        : n + ' older entries are no longer shown';
+    } else {
+      const list = parts.length === 1
+        ? parts[0]
+        : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+      head.textContent = list + (n === 1 ? ' is' : ' are') + ' no longer shown';
+    }
     div.appendChild(head);
     if (t.lostSummary) {
       const body = document.createElement('div');

@@ -59,7 +59,13 @@ const stub = spawn(
   process.execPath,
   [join(REPO, 'scripts/field/stub-model.mjs')],
   {
-    env: { ...process.env, PLATO_STUB_PORT: String(port) },
+    // D44d amended: the fold and the run share one window. Without a number
+    // the fixture could only ever test the fallback, so the stub advertises one.
+    env: {
+      ...process.env,
+      PLATO_STUB_PORT: String(port),
+      PLATO_STUB_CONTEXT: '8192',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
 );
@@ -100,6 +106,9 @@ const settings = {
       kind: 'openai',
       baseUrl: `http://127.0.0.1:${port}/v1`,
       models: ['stub-model'],
+      // Set before the first run refreshes the pool from /models; the stub
+      // advertises the same number, so the two can never disagree.
+      pool: [{ id: 'stub-model', maxContext: 8192 }],
     },
   ],
   'plato.model': 'stub:stub-model',
@@ -216,14 +225,18 @@ try {
   // Auto for the filler runs, so they draw no cards; the last one is edit.
   host.receive({ type: 'mode', value: 'auto' });
   await settle();
-  // Fourteen short runs give the log more than KEEP_AFTER_FOLD (12) pairs, so
-  // `/compact` performs a real fold rather than saying there is nothing to do.
+  // D44d amended: the fold is measured, not counted — it runs once the history
+  // reaches the threshold (95% of 8,192 tokens here) and keeps a quarter of the
+  // window. Fourteen two-word runs make ~240 tokens, so the filler carries real
+  // text: the conversation must outgrow the keep budget (2,048 tokens) for
+  // `/compact` to have something older to summarise.
+  const filler = 'the quick brown fox jumps over the lazy dog '.repeat(10);
   await setScript(
-    Array.from({ length: 14 }, (_, i) => ({ text: `filler ${i + 1}` })),
+    Array.from({ length: 14 }, (_, i) => ({ text: `filler ${i + 1} ${filler}` })),
   );
   for (let i = 1; i <= 14; i += 1) {
     const mark = posts.length;
-    const end = await runToEnd(host, `filler task ${i}`, mark);
+    const end = await runToEnd(host, `filler task ${i} ${filler}`, mark);
     assert.equal(end.type, 'done', `filler run ${i}: ${JSON.stringify(end)}`);
   }
 

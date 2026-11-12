@@ -25,10 +25,20 @@
  * what it was. `digestToolCall` is what a row now records, and it is deliberately
  * the argument and not the result: enough to say *what was done*, so the model
  * can re-read for the content.
+ *
+ * D44d amended (2026-11-12): the cross-run fold was a COUNT — it ran at 26
+ * message rows and kept 12 — while the settings slider, the ring and the run's
+ * own compaction were all about a share of the model's window. A real client run
+ * on a 1,000,000-token window (prompt peak 203,228 tokens, 20%) was folded anyway
+ * and told the user so. The trigger is now the measured size of the history
+ * against the window and the SAME threshold the run uses
+ * (`shouldAutoCompact`), and how much is kept verbatim is a token budget —
+ * `FOLD_KEEP_FRACTION` of the window — never a row count.
  */
 import { INBOUND_MARKER, REPLY_MARKER } from '../live.js';
 import { pathArgsOf } from '../security/paths.js';
 import { parseTodos, todoSummary } from '../tools/todo.js';
+import { estimateTokens, shouldAutoCompact } from './context.js';
 
 /** The part of a chat-log row these rules read. */
 export interface LogRow {
@@ -238,72 +248,181 @@ export function lastSummaryIndex(rows: readonly LogRow[]): number {
   return -1;
 }
 
-/** Message rows sitting after the last summary — the model's raw recent tail. */
-export function tailPairs(rows: readonly LogRow[]): number {
-  const start = lastSummaryIndex(rows) + 1;
-  let n = 0;
-  for (let i = start; i < rows.length; i += 1) {
-    if (isMessageRow(rows[i]!)) n += 1;
-  }
-  return n;
-}
-
 /** D49ag: the heading a run of tool digests is carried under. */
 export const ACTIVITY_LABEL = '[tool activity — what Plato ran]';
 
 /**
+ * D44d amended (2026-11-12): the share of the model's window a fold keeps WORD
+ * FOR WORD.
+ *
+ * This replaces `KEEP_AFTER_FOLD = 12` message ROWS, which was a cadence rather
+ * than a size. A quarter of the window is chosen deliberately:
+ *
+ *   - it is enough recent conversation to continue a long one naturally — on a
+ *     200,000-token window it is ~50,000 tokens of verbatim context;
+ *   - it is below every threshold the slider allows (its floor is 0.5), so a
+ *     fold always brings the history back under the user's line with room to
+ *     grow: at the 0.8 default the kept tail can more than double before the
+ *     next fold, which is what stops folding from thrashing;
+ *   - it matches the rule already used for the summary's own output budget
+ *     (`compactMaxTokensFor`: a quarter of the model's output cap, D37a).
+ */
+export const FOLD_KEEP_FRACTION = 0.25;
+
+/**
+ * The newest exchange is kept whatever the budget says. A floor for coherence,
+ * not a cadence: a continuation whose last question was summarised instead of
+ * quoted is not a continuation. One exchange can exceed the budget only when it
+ * alone is a quarter of the window.
+ */
+const FOLD_KEEP_FLOOR_MESSAGES = 2;
+
+/** Estimated tokens one row costs in the request (0 for a row it does not send). */
+function sentTokens(row: LogRow): number {
+  if (isToolRow(row)) {
+    return (row.digest ?? '').length > 0 ? estimateTokens('- ' + toolLine(row)) : 0;
+  }
+  return isMessageRow(row) ? estimateTokens(row.text ?? '') : 0;
+}
+
+/** Indexes of the rows after `start` that a request actually carries. */
+function sentIndexes(rows: readonly LogRow[], start: number): number[] {
+  const out: number[] = [];
+  for (let i = start; i < rows.length; i += 1) {
+    const row = rows[i]!;
+    if (isMessageRow(row) || (isToolRow(row) && (row.digest ?? '').length > 0)) {
+      out.push(i);
+    }
+  }
+  return out;
+}
+
+/**
+ * Tokens in `sent[from..to)`, measured the way `planRequest` renders them: the
+ * tool activity label is emitted once per contiguous group of tool rows.
+ */
+function spanTokens(
+  rows: readonly LogRow[],
+  sent: readonly number[],
+  from: number,
+  to: number,
+): number {
+  let n = 0;
+  let tools = false;
+  for (let p = from; p < to; p += 1) {
+    const row = rows[sent[p]!]!;
+    const t = sentTokens(row);
+    if (t > 0) {
+      n += t;
+      if (isToolRow(row)) tools = true;
+    }
+  }
+  if (tools) n += estimateTokens(ACTIVITY_LABEL);
+  return n;
+}
+
+/**
+ * The first sent row a token budget keeps, and how many message rows fall
+ * before it. Walks backwards from the newest exchange; a tool row always
+ * belongs to the message before it, so a cut cannot strand one.
+ */
+function keepFrom(
+  rows: readonly LogRow[],
+  sent: readonly number[],
+  budget: number,
+): { from: number; omitted: number } {
+  if (sent.length === 0) return { from: rows.length, omitted: 0 };
+  const msgPos: number[] = [];
+  for (let p = 0; p < sent.length; p += 1) {
+    if (isMessageRow(rows[sent[p]!]!)) msgPos.push(p);
+  }
+  if (msgPos.length === 0) return { from: sent[0]!, omitted: 0 };
+  const floorP = Math.max(0, msgPos.length - FOLD_KEEP_FLOOR_MESSAGES);
+  let fromP = msgPos[floorP]!;
+  let used = spanTokens(rows, sent, fromP, sent.length);
+  for (let k = floorP - 1; k >= 0; k -= 1) {
+    const cost = spanTokens(rows, sent, msgPos[k]!, msgPos[k + 1]!);
+    if (used + cost > budget) break;
+    used += cost;
+    fromP = msgPos[k]!;
+  }
+  let omitted = 0;
+  for (const p of msgPos) {
+    if (p < fromP) omitted += 1;
+  }
+  return { from: sent[fromP]!, omitted };
+}
+
+/** What a request would carry: its turns, and message rows the cap left out. */
+export interface RequestPlan {
+  turns: RequestTurn[];
+  /**
+   * Message rows beyond the token cap that are NOT in this request. The log is
+   * untouched — this is what the model is not sent, never what the user loses.
+   */
+  omitted: number;
+}
+
+/**
  * What the model is sent: the running summary (if a fold has happened) followed
- * by the raw recent tail, capped so a skipped fold cannot send an unbounded
- * conversation.
+ * by the raw recent tail, capped by a TOKEN budget so a skipped fold cannot send
+ * an unbounded conversation.
  *
- * D49ag: the tail now carries its TOOL DIGESTS, grouped where they occurred.
- * Before that it carried the model's prose and nothing else — so a second message
- * in the same conversation arrived with no record of the files read or the
- * commands run, which is the same blindness the fold had. A tool row is folded
- * into the turn sequence as a bracketed note rather than a fake assistant
- * sentence, so nothing reads as words the model did not write.
+ * D44d amended (2026-11-12): the cap used to be `MAX_TAIL_PAIRS = 60` message
+ * rows and it dropped the older ones in silence. A cap is a safety net, not a
+ * rule, so it is measured now — and when it bites, the request says so rather
+ * than the model believing the conversation began at the cut. In normal
+ * operation the fold keeps the tail far below it; only a fold that keeps failing
+ * reaches this.
  *
- * `maxTailPairs` still counts EXCHANGES, not rows: the cap bounds conversation,
- * and a run of tool rows belongs to the exchange it happened in. **A tool row
- * with no digest is skipped entirely**, so a log written before this change
+ * D49ag: the tail carries its TOOL DIGESTS, grouped where they occurred. A tool
+ * row with no digest is skipped entirely, so a log written before that change
  * produces byte-identical requests.
  */
-export function requestFromLog(
+export function planRequest(
   rows: readonly LogRow[],
-  maxTailPairs: number,
-): RequestTurn[] {
+  maxTailTokens: number = Number.POSITIVE_INFINITY,
+): RequestPlan {
   const c = lastSummaryIndex(rows);
   const out: RequestTurn[] = [];
   if (c >= 0) {
-    const s = rows[c]!;
     out.push({
       role: 'user',
-      text: '[Summary of the earlier conversation]\n' + (s.text ?? ''),
+      text: '[Summary of the earlier conversation]\n' + (rows[c]!.text ?? ''),
     });
   }
-  const tail: LogRow[] = [];
-  for (let i = c + 1; i < rows.length; i += 1) {
-    const row = rows[i]!;
-    if (isMessageRow(row)) {
-      tail.push(row);
-    } else if (isToolRow(row) && (row.digest ?? '').length > 0) {
-      tail.push(row);
-    }
+  const sent = sentIndexes(rows, c + 1);
+  let from = sent.length > 0 ? sent[0]! : rows.length;
+  let omitted = 0;
+  if (Number.isFinite(maxTailTokens)) {
+    const keep = keepFrom(rows, sent, maxTailTokens);
+    from = keep.from;
+    omitted = keep.omitted;
   }
-  const messages = tail.filter(isMessageRow);
-  const kept = messages.slice(-maxTailPairs);
-  const from = kept.length > 0 ? tail.indexOf(kept[0]!) : tail.length;
+  if (omitted > 0) {
+    out.push({
+      role: 'user',
+      text:
+        "[Earlier messages omitted to fit this model's context]\n" +
+        (omitted === 1
+          ? '1 older message is'
+          : omitted + ' older messages are') +
+        ' not in this request.',
+    });
+  }
   let pending: string[] = [];
   const flush = (): void => {
     if (pending.length === 0) return;
     out.push({ role: 'user', text: ACTIVITY_LABEL + '\n' + pending.join('\n') });
     pending = [];
   };
-  for (const row of tail.slice(from)) {
+  for (let i = from; i < rows.length; i += 1) {
+    const row = rows[i]!;
     if (isToolRow(row)) {
-      pending.push('- ' + toolLine(row));
+      if ((row.digest ?? '').length > 0) pending.push('- ' + toolLine(row));
       continue;
     }
+    if (!isMessageRow(row)) continue;
     flush();
     const inbound = row.cls === 'in';
     out.push({
@@ -312,7 +431,25 @@ export function requestFromLog(
     });
   }
   flush();
-  return out;
+  return { turns: out, omitted };
+}
+
+/** The turns alone — the shape most callers want; see `planRequest` for the cap. */
+export function requestFromLog(
+  rows: readonly LogRow[],
+  maxTailTokens: number = Number.POSITIVE_INFINITY,
+): RequestTurn[] {
+  return planRequest(rows, maxTailTokens).turns;
+}
+
+/**
+ * The estimated size of the history a model would be sent: the summary plus the
+ * tail, by the same chars/4 estimator the run's context ring uses.
+ */
+export function historyTokens(rows: readonly LogRow[]): number {
+  let n = 0;
+  for (const turn of requestFromLog(rows)) n += estimateTokens(turn.text);
+  return n;
 }
 
 /**
@@ -354,32 +491,63 @@ export interface FoldPlan<T extends LogRow> {
    * A caller that wants the pair count filters with `isMessageRow`.
    */
   covered: readonly T[];
+  /** The measured size of the history when the plan was made, in tokens. */
+  tokens: number;
+}
+
+/** What decides whether a fold runs, and how much it keeps. */
+export interface FoldBudget {
+  /** The model's context window — the run's own `resolveMaxContext` result. */
+  maxContext: number;
+  /** The user's compaction threshold (0..1) — the SAME one the run uses. */
+  threshold: number;
+  /**
+   * True when the user asked (`/compact`): the request is the trigger, so the
+   * size trigger is skipped. How much is kept is STILL the token budget — there
+   * must be something older than it to summarise, or there is nothing to do.
+   */
+  manual?: boolean;
 }
 
 /**
- * Where a fold writes its summary, or null when the tail is still short enough.
+ * Where a fold writes its summary, or null when the history does not call for
+ * one.
  *
- * `insertAt` is the index of the first message the tail KEEPS, so the rows from
- * the last summary up to it are the ones being summarised. Returning null rather
- * than an empty plan keeps "nothing to do" distinct from "fold at the start".
+ * D44d amended: the trigger is the size of the history the model would be sent
+ * — the summary plus the tail — against the model's window and the user's
+ * threshold, through `shouldAutoCompact`, the SAME function and numbers the
+ * run's in-run compaction uses. There is no message count anywhere: a few very
+ * large messages fold long before many short ones do.
+ *
+ * The cut is a token budget (`FOLD_KEEP_FRACTION` of the window), minus the
+ * summary already in the log because it is sent with the tail. `insertAt` is the
+ * index of the first row the tail keeps, so the rows from the last summary up to
+ * it are the ones being summarised. Returning null rather than an empty plan
+ * keeps "nothing to do" distinct from "fold at the start".
  */
 export function planFold<T extends LogRow>(
   rows: readonly T[],
-  keepPairs: number,
+  budget: FoldBudget,
 ): FoldPlan<T> | null {
   const start = lastSummaryIndex(rows) + 1;
-  const pairs: number[] = [];
-  for (let i = start; i < rows.length; i += 1) {
-    if (isMessageRow(rows[i]!)) pairs.push(i);
+  const tokens = historyTokens(rows);
+  if (
+    budget.manual !== true &&
+    !shouldAutoCompact(tokens, budget.maxContext, budget.threshold)
+  ) {
+    return null;
   }
-  if (pairs.length <= keepPairs) return null;
-  const insertAt = pairs[pairs.length - keepPairs]!;
+  const summaryTokens =
+    start > 0 ? estimateTokens(rows[start - 1]!.text ?? '') : 0;
+  const room = Math.floor(budget.maxContext * FOLD_KEEP_FRACTION) - summaryTokens;
+  const keep = keepFrom(rows, sentIndexes(rows, start), room);
+  if (keep.omitted === 0) return null;
   const covered: T[] = [];
-  for (let i = start; i < insertAt; i += 1) {
+  for (let i = start; i < keep.from; i += 1) {
     const row = rows[i]!;
     if (isMessageRow(row) || isToolRow(row)) covered.push(row);
   }
-  return { insertAt, covered };
+  return { insertAt: keep.from, covered, tokens };
 }
 
 /**
@@ -435,4 +603,67 @@ export function applyFold<T extends LogRow>(
     summaryRow,
     ...rows.slice(plan.insertAt),
   ];
+}
+
+/** What the display cap removed, by kind of row. */
+export interface TrimRemoved {
+  /** Tool records — the work. */
+  tools: number;
+  /** Message rows — the user's own words and the assistant's replies. */
+  messages: number;
+  /** Cards, notes and the summary row itself. */
+  other: number;
+  /** The model's summary was among the rows removed; the caller must say so. */
+  lostSummary: boolean;
+}
+
+/**
+ * D49aa amended (2026-11-12): apply the transcript's display cap, dropping the
+ * WORK before the CONVERSATION.
+ *
+ * Every row counted against one cap, so a client chat with 265 tool records hit
+ * it and lost its opening question and answer first — the transcript he then
+ * read began with an answer to a question he could no longer see. The order is
+ * now: tool rows, oldest first; then other bookkeeping rows; and only when
+ * nothing else is left, message rows. A transcript bounded by losing its
+ * conversation is not a bounded transcript, it is a different one.
+ *
+ * `trim` rows are never dropped: they ARE the record of this cap, and the
+ * caller writes one. The caller keeps the log within `max` itself, including
+ * that note.
+ */
+export function planTrim<T extends LogRow>(
+  rows: readonly T[],
+  max: number,
+): { rows: T[]; removed: TrimRemoved } {
+  const kept = [...rows];
+  const removed: TrimRemoved = {
+    tools: 0,
+    messages: 0,
+    other: 0,
+    lostSummary: false,
+  };
+  let need = kept.length - max;
+  const take = (
+    match: (row: T) => boolean,
+    kind: 'tools' | 'messages' | 'other',
+  ): void => {
+    for (let i = 0; i < kept.length && need > 0; ) {
+      const row = kept[i]!;
+      if (!match(row)) {
+        i += 1;
+        continue;
+      }
+      if (row.k === 'compact') removed.lostSummary = true;
+      kept.splice(i, 1);
+      removed[kind] += 1;
+      need -= 1;
+    }
+  };
+  if (need > 0) take((r) => r.k === 'tool', 'tools');
+  if (need > 0) {
+    take((r) => r.k !== 'tool' && r.k !== 'trim' && !isMessageRow(r), 'other');
+  }
+  if (need > 0) take(isMessageRow, 'messages');
+  return { rows: kept, removed };
 }

@@ -56,7 +56,13 @@ const stub = spawn(
   process.execPath,
   [join(REPO, 'scripts/field/stub-model.mjs')],
   {
-    env: { ...process.env, PLATO_STUB_PORT: String(port) },
+    // D44d amended: the fold is measured against a window. The stub advertises
+    // a small one so the fixture can be a few thousand tokens, not a million.
+    env: {
+      ...process.env,
+      PLATO_STUB_PORT: String(port),
+      PLATO_STUB_CONTEXT: '16384',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
 );
@@ -99,6 +105,9 @@ const settings = {
       kind: 'openai',
       baseUrl: `http://127.0.0.1:${port}/v1`,
       models: ['stub-model'],
+      // Read before any run refreshes the pool from /models; the stub
+      // advertises the same number.
+      pool: [{ id: 'stub-model', maxContext: 16384 }],
     },
   ],
   'plato.model': 'stub:stub-model',
@@ -112,10 +121,15 @@ const settings = {
 
 /* ---- the state a user already has: a live log, and one saved chat -------- */
 
+// D44d amended: `/compact` folds what is older than a quarter of the window
+// (4,096 of 16,384 tokens), not what is older than twelve rows. The seed is
+// 30 messages of 800 characters — 6,000 tokens — so there is something older
+// than the keep budget and the fold is a real one.
+const padded = (s) => s + ' ' + 'x'.repeat(800 - s.length - 1);
 const seedLog = [];
 for (let i = 1; i <= 15; i += 1) {
-  seedLog.push({ k: 'msg', cls: 'you', who: 'You', text: `Question ${i}` });
-  seedLog.push({ k: 'msg', cls: 'bot', who: 'Plato', text: `Answer ${i}` });
+  seedLog.push({ k: 'msg', cls: 'you', who: 'You', text: padded(`Question ${i}`) });
+  seedLog.push({ k: 'msg', cls: 'bot', who: 'Plato', text: padded(`Answer ${i}`) });
 }
 const saved = {
   id: 'saved-1',
@@ -243,20 +257,25 @@ try {
   /* ================================================================== */
   /* 1. /compact folds older turns without removing them                */
   /* ================================================================== */
-  // 30 message rows, take the newest 12 pairs verbatim: 18 are covered.
+  // D44d amended: the fold keeps the newest messages that fit a quarter of the
+  // window and summarises everything older. The count is measured, so it is read
+  // from the notice rather than assumed.
   let mark = posts.length;
   host.receive({ type: 'slash-run', id: 'compact' });
   const foldNotice = await waitPost(
     (m) =>
       m.type === 'notice' &&
-      m.text === 'Summary added for 18 earlier messages. Nothing was removed.',
+      m.text ===
+        'Summary added for 10 earlier messages, as you asked. Nothing was removed from the transcript.',
     'the fold notice',
     mark,
   );
+  // 4,096 tokens of budget, 200-token messages: the newest 20 are kept, so 10
+  // of the 30 seeded messages are covered. A row count would say 18.
   assert.equal(
     foldNotice.text,
-    'Summary added for 18 earlier messages. Nothing was removed.',
-    'the fold says what it accounted for, and that nothing was removed',
+    'Summary added for 10 earlier messages, as you asked. Nothing was removed from the transcript.',
+    'the fold names the user as the cause and says nothing was removed',
   );
   const folded = await waitState(
     (s) => (chatValue(s, 'log') || []).some((e) => e.k === 'compact'),

@@ -63,21 +63,39 @@ const snapshot = (p) => p.evaluate(() => {
   await p.close();
 }
 
-// B. The display cap reports what it dropped.
+// B. The display cap reports what it dropped, and WHICH KIND it took.
+//    D49aa amended: the cap drops work before conversation, so a note that says
+//    only "37 older entries" hides the one fact that matters — did the user's
+//    own words go? The kinds are named when the note carries them.
 {
   const p = await page(760);
   await replay(p, [
-    { k: 'trim', dropped: 37, lostSummary: false },
+    { k: 'trim', dropped: 37, lostSummary: false, tools: 30, messages: 5 },
     { k: 'msg', cls: 'you', who: 'You', text: 'still here' },
   ]);
   const r = await snapshot(p);
   check('the cap renders a marker', r.banners.length === 1, r.banners);
   check('the marker is marked as a trim', r.banners[0].isTrim, r.banners);
-  check('it says how many entries went',
-    r.banners[0].head.includes('37'), r.banners[0]);
+  check('it names the conversation and the work',
+    r.banners[0].head ===
+      '5 earlier messages, 30 tool calls and 2 older notes are no longer shown',
+    r.banners[0].head);
   check('it does not claim the summary was lost',
     r.banners[0].body === '', r.banners[0]);
   checkPageClean(p, 'trim marker');
+  await p.close();
+}
+
+// B2. A note written before the kinds existed keeps the generic wording: its
+//     kinds were never recorded, and inventing a split would be a lie.
+{
+  const p = await page(760);
+  await replay(p, [{ k: 'trim', dropped: 37, lostSummary: false }]);
+  const r = await snapshot(p);
+  check('an old note still says how many entries went',
+    r.banners[0].head === '37 older entries are no longer shown',
+    r.banners[0].head);
+  checkPageClean(p, 'old trim marker');
   await p.close();
 }
 
@@ -85,11 +103,12 @@ const snapshot = (p) => p.evaluate(() => {
 {
   const p = await page(760);
   await replay(p, [
-    { k: 'trim', dropped: 1, lostSummary: true },
+    { k: 'trim', dropped: 1, lostSummary: true, messages: 1 },
   ]);
   const r = await snapshot(p);
   const b = r.banners[0];
-  check('one dropped entry reads in the singular', b && /^1 older entry /.test(b.head), b);
+  check('one dropped message reads in the singular',
+    b && /^1 earlier message is no longer shown$/.test(b.head), b);
   check('losing the summary is called out', /no longer remembers/.test(b.body), b);
   checkPageClean(p, 'summary loss');
   await p.close();

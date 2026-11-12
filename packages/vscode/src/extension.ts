@@ -27,10 +27,12 @@ import {
   isMessageRow,
   lastSummaryIndex,
   planFold,
-  requestFromLog,
-  tailPairs,
+  planTrim,
+  planRequest,
+  historyTokens,
   digestToolCall,
   buildFoldPrompt,
+  DEFAULT_CONTEXT_WINDOW,
   parseTodos,
   unfinishedPlanNote,
   type RefusalReason,
@@ -145,14 +147,12 @@ const MAX_ATTACH_BYTES = 200 * 1024;
  */
 const MAX_IMAGE_BYTES = DEFAULT_MAX_IMAGE_BYTES;
 
-// D44d: cross-message memory fold cadence. A run's context is the running
-// conversation summary + the raw recent tail; when the tail grows past
-// AUTO_FOLD_AT pairs the oldest are folded into the summary, keeping the
-// newest KEEP_AFTER_FOLD pairs verbatim. MAX_TAIL_PAIRS is a safety cap on
-// historyFor when a fold is skipped (run in progress etc.).
-const KEEP_AFTER_FOLD = 12;
-const AUTO_FOLD_AT = 26;
-const MAX_TAIL_PAIRS = 60;
+// D44d amended (2026-11-12): the memory fold has no cadence of its own any
+// more. It is triggered by the measured size of the history — the summary plus
+// the tail — against the same threshold and window the run uses, and keeps a
+// token budget of the newest conversation (see core's `planFold` and
+// `FOLD_KEEP_FRACTION`). A count of 26 and 12 used to live here; a
+// 1,000,000-token window folded at 20% of itself because of them.
 
 /** D49t: how long a connection's discovered model metadata stays trusted. */
 const POOL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -1103,8 +1103,19 @@ type Entry =
    * D49aa: the display cap dropped rows. The transcript may be bounded; it may
    * not lose a row without saying so. `lostSummary` is true when the cap took
    * the summary itself, which is the model's memory and not just the display.
+   *
+   * D49aa amended: `tools` and `messages` say WHICH KIND went, so the note can
+   * tell "12 tool calls" from "3 earlier messages" instead of calling both
+   * "entries". They are absent on a note written before this change, which
+   * keeps the generic wording honest for old transcripts.
    */
-  | { k: 'trim'; dropped: number; lostSummary: boolean };
+  | {
+      k: 'trim';
+      dropped: number;
+      lostSummary: boolean;
+      tools?: number;
+      messages?: number;
+    };
 
 /** D44a: per-run context attachments add to a run. */
 interface RunCtx {
@@ -3057,41 +3068,83 @@ class ChatHost {
    * used to splice the front off in silence, which was survivable only while a
    * fold cleared the log often enough to keep it under the limit — with the fold
    * no longer deleting anything, this is the one place rows can still leave.
+   *
+   * D49aa amended: WHICH rows leave is core's rule (`planTrim`) — the work goes
+   * before the conversation. This method only carries the running count: the
+   * note already at the head is folded into the new one, so a log that trims
+   * often still has a single note that tells the whole story.
    */
   private recordTrim(max: number): void {
-    const drop = this.log.length - max;
-    if (drop <= 0) return;
-    const gone = this.log.splice(0, drop);
-    const lostSummary = gone.some((e) => e.k === 'compact');
+    if (this.log.length <= max) return;
     const head = this.log[0];
-    if (head !== undefined && head.k === 'trim') {
-      head.dropped += drop;
-      head.lostSummary = head.lostSummary || lostSummary;
-      return;
-    }
-    this.log.unshift({ k: 'trim', dropped: drop, lostSummary });
-  }
-
-  /** Number of raw you/bot pairs sitting after the last summary. */
-  private tailPairCount(): number {
-    return tailPairs(this.log);
+    const prior = head !== undefined && head.k === 'trim' ? head : null;
+    if (prior !== null) this.log.shift();
+    // The note takes one slot; the rest of the bound is the rows' to keep.
+    const { rows, removed } = planTrim(this.log, max - 1);
+    this.log = rows;
+    // A note written before `tools`/`messages` existed has no kind breakdown to
+    // merge, so the merged note keeps the generic wording rather than inventing
+    // a split for rows it cannot classify.
+    const priorHasKinds =
+      prior !== null &&
+      (prior.tools !== undefined || prior.messages !== undefined);
+    const note: Entry = {
+      k: 'trim',
+      dropped:
+        (prior?.dropped ?? 0) + removed.tools + removed.messages + removed.other,
+      lostSummary: (prior?.lostSummary ?? false) || removed.lostSummary,
+      ...(prior !== null && !priorHasKinds
+        ? {}
+        : {
+            tools: (prior?.tools ?? 0) + removed.tools,
+            messages: (prior?.messages ?? 0) + removed.messages,
+          }),
+    };
+    this.log.unshift(note);
   }
 
   /**
-   * Fold the raw tail down to KEEP_AFTER_FOLD pairs: summarise everything older
-   * (plus any prior summary) into a single compact entry, WRITTEN into the log.
-   * The rows it accounts for stay where they are (D49aa) — a fold changes what
-   * the model is sent, never what the user can read. Returns true on a fold.
+   * D44d amended: the context plan the fold and the run share — one window and
+   * one threshold, resolved by the same helpers in both places. The in-run loop
+   * receives `advertised` and `this.compactionState()`; the fold resolves the
+   * same two here, so the two mechanisms cannot disagree about when a
+   * conversation is full.
+   */
+  private contextPlan(
+    conn: ConnectionConfig,
+    ref: string,
+  ): { maxContext: number; threshold: number } {
+    const parts = splitModelRef(ref);
+    const advertised = parts
+      ? this.advertisedLimits(conn, parts.model)
+      : undefined;
+    return {
+      maxContext:
+        resolveMaxContext(advertised?.context) ?? DEFAULT_CONTEXT_WINDOW,
+      threshold: this.compactionState().threshold,
+    };
+  }
+
+  /**
+   * Fold everything older than the keep budget into a summary, WRITTEN into the
+   * log. The rows it accounts for stay where they are (D49aa) — a fold changes
+   * what the model is sent, never what the user can read. Returns true on a fold.
+   *
+   * D44d amended: `manual` marks a fold the user asked for (`/compact`); the
+   * size trigger is skipped for it, because the request IS the trigger. How much
+   * is kept is the same token budget either way.
    */
   private async foldTail(
     conn: ConnectionConfig,
     apiKey: string,
     ref: string,
+    manual: boolean,
   ): Promise<boolean> {
     const c = this.lastCompactIndex();
     const prior =
       c >= 0 && this.log[c]!.k === 'compact' ? this.log[c]!.text : null;
-    const plan = planFold(this.log, KEEP_AFTER_FOLD);
+    const ctx = this.contextPlan(conn, ref);
+    const plan = planFold(this.log, { ...ctx, manual });
     if (plan === null) return false;
     const older = plan.covered;
     // D49ag: the count the user is TOLD stays a count of exchanges. `covered`
@@ -3157,11 +3210,21 @@ class ChatHost {
     // D49aa: the count is what it is, but the old wording — "Compacted N earlier
     // messages into a summary" — now describes something that did NOT happen: the
     // founder read it directly above the very messages it implied were gone.
+    //
+    // D44d amended: and it names the CAUSE. A client run was told a summary had
+    // been added at 20% of its window and had no way to know a row count, rather
+    // than the setting he had made, had decided it. The threshold is the user's
+    // own number, so the line can say it.
     const label = foldCount === 1 ? 'message' : 'messages';
     this.send(
       'notice',
-      'Summary added for ' + foldCount + ' earlier ' + label
-        + '. Nothing was removed.',
+      manual
+        ? 'Summary added for ' + foldCount + ' earlier ' + label
+          + ', as you asked. Nothing was removed from the transcript.'
+        : 'Conversation reached ' + Math.round(ctx.threshold * 100)
+          + "% of this model's context — earlier messages were summarised so"
+          + ' the whole conversation still fits. Nothing was removed from the'
+          + ' transcript.',
     );
     return true;
   }
@@ -3180,9 +3243,20 @@ class ChatHost {
         targets.conn,
         targets.apiKey,
         targets.ref,
+        true,
       );
       if (!folded) {
-        this.send('notice', 'Conversation is short — nothing to compact yet.');
+        // D44d amended: say the measurement, not a verdict about length. A fold
+        // has nothing to do only when every message fits the keep budget.
+        const budget = this.contextPlan(targets.conn, targets.ref);
+        const share = Math.round(
+          (historyTokens(this.log) / budget.maxContext) * 100,
+        );
+        this.send(
+          'notice',
+          'Conversation is at ' + share + "% of this model's context — nothing"
+            + ' to compact yet.',
+        );
       }
     } catch {
       this.send('notice', 'Compaction failed — try again in a moment.');
@@ -3192,9 +3266,11 @@ class ChatHost {
   }
 
   /**
-   * After a run finishes, fold the tail once it outgrows AUTO_FOLD_AT pairs
-   * (down to KEEP_AFTER_FOLD). Fire-and-forget: never runs while a run or an
-   * approval/question is pending, and a failure is silently retried later.
+   * After a run finishes, fold the history if it has reached the user's
+   * threshold of the model's window — the same test the run's own compaction
+   * makes (`planFold` inside `foldTail`). Fire-and-forget: never runs while a
+   * run or an approval/question is pending, and a failure is silently retried
+   * later.
    */
   private scheduleAutoFold(
     conn: ConnectionConfig,
@@ -3211,10 +3287,9 @@ class ChatHost {
         ) {
           return;
         }
-        if (this.tailPairCount() < AUTO_FOLD_AT) return;
         this.folding = true;
         try {
-          await this.foldTail(conn, apiKey, ref);
+          await this.foldTail(conn, apiKey, ref, false);
         } catch {
           // Leave the log untouched; the next completed run retries.
         } finally {
@@ -3938,14 +4013,33 @@ class ChatHost {
   }
 
   /**
-   * Prior conversation for LLM context. D44d: instead of a hard "last 12
-   * pairs, drop the rest", the context is the running conversation summary
-   * (if a fold has happened) followed by the raw tail since it — the fold
-   * cadence keeps that tail bounded. MAX_TAIL_PAIRS is only a safety cap.
+   * Prior conversation for LLM context: the running summary (if a fold has
+   * happened) followed by the raw tail since it — the fold keeps that tail to a
+   * token budget.
+   *
+   * D44d amended: the safety cap is the user's own line (the same threshold x
+   * window the fold uses), measured in TOKENS. The cap used to be 60 message
+   * rows and it dropped the older ones in silence; if this one ever bites, the
+   * model is told in the request and the user is told here. The log loses
+   * nothing either way.
    */
-  private historyFor(): { role: 'user' | 'assistant'; text: string }[] {
+  private historyFor(
+    conn: ConnectionConfig,
+    ref: string,
+  ): { role: 'user' | 'assistant'; text: string }[] {
+    const plan = this.contextPlan(conn, ref);
+    const cap = Math.floor(plan.maxContext * plan.threshold);
     // Exclude the entry for the task being sent now.
-    return requestFromLog(this.log.slice(0, -1), MAX_TAIL_PAIRS);
+    const req = planRequest(this.log.slice(0, -1), cap);
+    if (req.omitted > 0) {
+      this.send(
+        'notice',
+        req.omitted
+          + " older messages were left out of this request to fit the model's"
+          + ' context. The full conversation is still in the transcript.',
+      );
+    }
+    return req.turns;
   }
 
   // ---- Transcript replay (M3) -------------------------------------------
@@ -5466,7 +5560,7 @@ class ChatHost {
         // of a run, so mark them cacheable. A no-op for OpenAI, which caches
         // implicitly; on Anthropic it is a straight input-cost saving.
         cache: true,
-        history: this.historyFor(),
+        history: this.historyFor(conn, ref),
         mcpServers,
         // D37: context compaction. Mode + threshold come from settings
         // (the header pill toggles mode; the slider sets threshold).
