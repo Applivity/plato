@@ -187,6 +187,35 @@ export class Uri {
   }
 }
 
+/**
+ * A URI whose text is the data URL itself. A Visual Studio page is loaded with
+ * NavigateToString, so its origin is opaque and Chromium refuses a `file:`
+ * image inside it whatever the CSP allows; `data:` is the one image source that
+ * needs no host-side plumbing. `thumbUri` builds these for thumbnails.
+ */
+class DataUri extends Uri {
+  constructor(private readonly url: string) {
+    super('data', url);
+  }
+  toString(): string {
+    return this.url;
+  }
+}
+
+/**
+ * The "this host offers no preview" URI. The page skips an entry whose `thumb`
+ * is falsy, so the path stays a plain clickable link — the same thing VS Code
+ * shows when it has no resource URI to give.
+ */
+class NoThumbUri extends Uri {
+  constructor() {
+    super('data', '');
+  }
+  toString(): string {
+    return '';
+  }
+}
+
 export class RelativePattern {
   constructor(
     readonly base: string | Uri,
@@ -644,6 +673,72 @@ class SecretStorage {
 
 /* ------------------------------------------------------------------ panel */
 
+/**
+ * The largest image a thumbnail will inline. A thumbnail draws at about 64 px;
+ * inlining the whole file is only worth it while the bytes stay small. At the
+ * tool's 3 MB cap a reply naming four screenshots would put up to 12 MB into
+ * the page to draw four small squares, so above half a megabyte the host says
+ * it has no preview instead and the path stays a clickable link — the click
+ * still opens the full image in the Visual Studio image editor.
+ */
+const THUMB_MAX_BYTES = 512 * 1024;
+
+/**
+ * The image types the chat draws. The shell asks for a thumbnail only for a
+ * file it sniffed as one of core's IMAGE_EXTENSIONS; this copy exists because
+ * the Visual Studio bundle does not reach the core package, and a file this
+ * cannot name keeps its plain URI.
+ */
+function imageMimeOf(buf: Buffer): string | null {
+  if (
+    buf.length >= 8 &&
+    buf.readUInt32BE(0) === 0x89504e47 &&
+    buf.readUInt32BE(4) === 0x0d0a1a0a
+  ) {
+    return 'image/png';
+  }
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (buf.length >= 6 && buf.toString('ascii', 0, 3) === 'GIF') {
+    return 'image/gif';
+  }
+  if (
+    buf.length >= 12 &&
+    buf.toString('ascii', 0, 4) === 'RIFF' &&
+    buf.toString('ascii', 8, 12) === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * D49dj: the URI the page loads a thumbnail from. In VS Code that is a webview
+ * resource URI under `cspSource`. A Visual Studio page is loaded with
+ * NavigateToString, so its origin is opaque: Chromium blocks a `file:`
+ * subresource there no matter what the CSP says, and there is no resource root
+ * to serve it from. So an image small enough to inline is read here, inside the
+ * page's own hint budget, and handed to the page as a data URI; the panel
+ * reports `data:` as its `cspSource` so the page's `img-src` matches.
+ * Everything else gets no preview: too large to inline, unreadable, or not an
+ * image this can name — the path stays a link and the click still opens it.
+ */
+function thumbUri(uri: Uri): Uri {
+  if (uri.scheme !== 'file') return new NoThumbUri();
+  let data: Buffer;
+  try {
+    if (statSync(uri.fsPath).size > THUMB_MAX_BYTES) return new NoThumbUri();
+    data = readFileSync(uri.fsPath);
+  } catch {
+    return new NoThumbUri();
+  }
+  const mime = imageMimeOf(data);
+  return mime === null
+    ? new NoThumbUri()
+    : new DataUri(`data:${mime};base64,${data.toString('base64')}`);
+}
+
 class WebviewPanelImpl {
   readonly webview: {
     html: string;
@@ -682,9 +777,13 @@ class WebviewPanelImpl {
         cfg().transport.setHtml(value);
       },
       options,
-      cspSource: '',
+      // D49dj: a thumbnail is inlined as a data URI (see `thumbUri`), so this
+      // is the source the page's `img-src` must allow. There is no resource
+      // root in the Visual Studio page; `options.localResourceRoots` is read
+      // by the shell and ignored here on purpose.
+      cspSource: 'data:',
       asWebviewUri(uri: Uri): Uri {
-        return uri;
+        return thumbUri(uri);
       },
       async postMessage(msg: unknown): Promise<boolean> {
         cfg().transport.post(msg);
@@ -741,6 +840,22 @@ let livePanel: WebviewPanelImpl | null = null;
 
 function pathOf(uri: Uri | string): string {
   return typeof uri === 'string' ? uri : uri.fsPath;
+}
+
+/** `vscode.open` is given a Uri by the shell; a plain path is accepted too. */
+function openPathOf(target: unknown): string {
+  if (typeof target === 'string') return target;
+  const fsPath = (target as { fsPath?: unknown } | null)?.fsPath;
+  return typeof fsPath === 'string' ? fsPath : '';
+}
+
+/** A folder or a path that is gone opens nothing, as `vscode.open` would. */
+function existingFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
 }
 
 export interface MementoLike {
@@ -1185,6 +1300,19 @@ export const commands: any = {
   async executeCommand(id: string, ...args: any[]): Promise<unknown> {
     if (id === 'workbench.action.closeActiveEditor') {
       await uiRequest('editor.closeActive', {});
+      return undefined;
+    }
+    // D49dj: a path in a reply, clicked, arrives as `vscode.open`. In VS Code
+    // that is the image viewer for an image and an editor for text; Visual
+    // Studio has one route, `editor.open`, and the C# side decides what shows
+    // the file. The path travels as a bridge argument — never as part of a
+    // shell command — and only a file that exists is opened.
+    if (id === 'vscode.open') {
+      const file = openPathOf(args[0]);
+      if (file.length > 0 && existingFile(file)) {
+        await uiRequest('editor.open', { path: file });
+        publishOnShow(file);
+      }
       return undefined;
     }
     const callback = commandMap.get(id);

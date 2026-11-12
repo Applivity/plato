@@ -1,10 +1,10 @@
 /**
- * Host test: local paths, attached paths and pasted bytes (D49cd).
+ * Host test: local paths, attached paths and pasted bytes (D49dj).
  *
  * What it proves:
  *   - `check-paths` offers a thumbnail only for an image inside the workspace,
- *     and says WHERE it is served from; a text file and a missing file stay
- *     links;
+ *     and serves it as a data URI the Visual Studio page can load; a text file
+ *     and a missing file stay links;
  *   - `attach-paths` accepts a path with a SPACE in it, and refuses a secret
  *     path, an oversized image and a missing file with the real cause;
  *   - `attach-bytes` (a pasted screenshot) is written to Plato's own storage and
@@ -154,9 +154,19 @@ try {
   const missing = info.entries.find((e) => e.path === 'shots/gone.png');
   assert.ok(image, 'the image is answered');
   assert.equal(image.name, 'My Screenshot.png', 'the thumbnail carries its name');
+  // The Visual Studio page is loaded with NavigateToString, so its origin is
+  // opaque and a `file:` image is blocked whatever the CSP allows; the shim
+  // serves the thumbnail as a data URI instead (openpath.test.mjs pins the
+  // CSP side of that).
   assert.ok(
-    typeof image.thumb === 'string' && image.thumb.startsWith('file:'),
-    `the image is served by URI (${image.thumb})`,
+    typeof image.thumb === 'string' &&
+      image.thumb.startsWith('data:image/png;base64,'),
+    `the image is served as a data URI (${String(image.thumb).slice(0, 40)})`,
+  );
+  assert.deepEqual(
+    Buffer.from(image.thumb.slice('data:image/png;base64,'.length), 'base64'),
+    PNG,
+    'the data URI carries the file itself',
   );
   assert.equal(note.thumb, undefined, 'a text file stays a link');
   assert.equal(missing.thumb, undefined, 'a missing file stays a link (and says so on click)');
