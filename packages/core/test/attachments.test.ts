@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  humanBytes,
   loadImageAttachment,
   loadImageFile,
   looksLikeImage,
+  probeImageFile,
   sniffImageMime,
+  sweepPastedFiles,
 } from '../src/runtime/attachments.js';
 
 /**
@@ -114,7 +117,8 @@ describe('loadImageAttachment (D49n)', () => {
     const over = await loadImageAttachment('big.png', r, 2000);
     expect(over.ok).toBe(false);
     if (over.ok) return;
-    expect(over.reason).toContain('larger than');
+    // D49cd: the refusal names the actual size and the actual cap.
+    expect(over.reason).toContain('is over the 2 KB limit');
     const under = await loadImageAttachment('big.png', r, 4000);
     expect(under.ok).toBe(true);
   });
@@ -225,5 +229,119 @@ describe('loadImageFile for a user-picked image outside the workspace (D49cd)', 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* D49cd (2026-11-12): a valid image with a space in its path was      */
+/* refused; every refusal now names the cause, and a read failure     */
+/* carries the platform code.                                          */
+/* ------------------------------------------------------------------ */
+const CLIENT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk' +
+    '+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+const extraDirs: string[] = [];
+function extraTemp(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'plato-attach-'));
+  extraDirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of extraDirs.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+describe('image refusals name the cause (D49cd)', () => {
+  it('accepts a PNG whose path contains spaces', async () => {
+    const dir = extraTemp();
+    const file = join(dir, 'My Folder', 'Screenshot 1.png');
+    mkdirSync(join(dir, 'My Folder'));
+    writeFileSync(file, CLIENT_PNG);
+    const r = await loadImageFile(file, 3 * 1024 * 1024);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.image.mime).toBe('image/png');
+      expect(r.image.name).toBe('Screenshot 1.png');
+    }
+  });
+
+  it('says the bytes are not an image, whatever the name says', async () => {
+    const dir = extraTemp();
+    const file = join(dir, 'fake.png');
+    writeFileSync(file, 'this is text, not a PNG');
+    const r = await loadImageFile(file, 3 * 1024 * 1024);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain('not a PNG, JPEG, WebP or GIF');
+  });
+
+  it('names the size when the file is too large', async () => {
+    const dir = extraTemp();
+    const file = join(dir, 'huge.png');
+    writeFileSync(file, Buffer.concat([CLIENT_PNG, Buffer.alloc(2 * 1024 * 1024)]));
+    const r = await loadImageFile(file, 1024 * 1024);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toContain(humanBytes(2 * 1024 * 1024 + CLIENT_PNG.length));
+      expect(r.reason).toContain('1 MB limit');
+    }
+  });
+
+  it('carries the code when the file cannot be read', async () => {
+    const r = await loadImageFile(join(extraTemp(), 'gone.png'), 1024);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('file not found (ENOENT)');
+  });
+});
+
+describe('probeImageFile (D49cd)', () => {
+  it('reports the type and size without reading the whole file', async () => {
+    const dir = extraTemp();
+    const file = join(dir, 'shot.png');
+    writeFileSync(file, CLIENT_PNG);
+    const r = await probeImageFile(file, 3 * 1024 * 1024);
+    expect(r).toEqual({ ok: true, mime: 'image/png', bytes: CLIENT_PNG.length });
+  });
+
+  it('refuses what the picker would refuse, with the same reasons', async () => {
+    const dir = extraTemp();
+    const text = join(dir, 'notes.png');
+    writeFileSync(text, 'not an image at all');
+    const notImage = await probeImageFile(text, 3 * 1024 * 1024);
+    expect(notImage.ok).toBe(false);
+    if (!notImage.ok) expect(notImage.reason).toContain('not a PNG');
+
+    const big = join(dir, 'big.png');
+    writeFileSync(big, Buffer.concat([CLIENT_PNG, Buffer.alloc(2048)]));
+    const tooBig = await probeImageFile(big, 1024);
+    expect(tooBig.ok).toBe(false);
+    if (!tooBig.ok) expect(tooBig.reason).toContain('limit');
+
+    const missing = await probeImageFile(join(dir, 'gone.png'), 1024);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.reason).toBe('file not found (ENOENT)');
+  });
+});
+
+describe('sweepPastedFiles (D49cd)', () => {
+  it('removes what is older than a week and keeps what is not', async () => {
+    const dir = extraTemp();
+    const old = join(dir, 'old.png');
+    const fresh = join(dir, 'fresh.png');
+    writeFileSync(old, CLIENT_PNG);
+    writeFileSync(fresh, CLIENT_PNG);
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    utimesSync(old, new Date(now - week - 1000), new Date(now - week - 1000));
+    const gone = await sweepPastedFiles(dir, week, now);
+    expect(gone).toEqual(['old.png']);
+    expect(existsSync(fresh)).toBe(true);
+  });
+
+  it('is silent when nothing has ever been pasted', async () => {
+    expect(await sweepPastedFiles(join(extraTemp(), 'missing'), 1000)).toEqual([]);
   });
 });

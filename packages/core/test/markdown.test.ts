@@ -167,3 +167,87 @@ describe('thematic breaks (D49ad)', () => {
     expect(renderMarkdown('| a |\n|---|\n| 1 |')).toContain('md-table');
   });
 });
+
+/**
+ * D49cd: a local path in a reply is a control the user can click.
+ *
+ * The client's agent wrote screenshots as `.scratch/shots/homeowner-PANEL-FINAL.png`
+ * and the user could not open one. The path is carried as `data-path`, never as
+ * an href; the host decides what to open.
+ */
+describe('local paths (D49cd)', () => {
+  const span = (path: string) =>
+    `<span class="md-path" data-path="${path}" role="link" tabindex="0">${path}</span>`;
+
+  it('marks an absolute Windows path', () => {
+    const out = renderMarkdown('see C:\\Users\\me\\shot.png here');
+    expect(out).toContain(span('C:\\Users\\me\\shot.png'));
+  });
+
+  it('marks a UNC path', () => {
+    const out = renderMarkdown('see \\\\server\\share\\shot.png here');
+    expect(out).toContain(span('\\\\server\\share\\shot.png'));
+  });
+
+  it('marks an absolute POSIX path', () => {
+    const out = renderMarkdown('see /home/me/shot.png here');
+    expect(out).toContain(span('/home/me/shot.png'));
+  });
+
+  it('marks a workspace-relative path with an extension', () => {
+    const out = renderMarkdown(
+      '![shot](.scratch/shots/homeowner-PANEL-FINAL.png) was saved',
+    );
+    expect(out).toContain(
+      span('.scratch/shots/homeowner-PANEL-FINAL.png'),
+    );
+  });
+
+  it('marks a path inside inline code, which is where the model puts it', () => {
+    const out = renderMarkdown('I wrote `.scratch/shots/home.png` for you');
+    expect(out).toContain(
+      `<code>${span('.scratch/shots/home.png')}</code>`,
+    );
+  });
+
+  it('marks a bare file name inside inline code', () => {
+    const out = renderMarkdown('see `screenshot.png`');
+    expect(out).toContain(`<code>${span('screenshot.png')}</code>`);
+  });
+
+  it('keeps a path with spaces clickable inside backticks', () => {
+    const out = renderMarkdown('Saved `/Users/me/My Folder/shot.png` now');
+    expect(out).toContain(span('/Users/me/My Folder/shot.png'));
+    expect(out).toContain('data-path="/Users/me/My Folder/shot.png"');
+  });
+
+  it('leaves a slash command alone', () => {
+    expect(renderMarkdown('use `/compact` now')).toBe(
+      '<p>use <code>/compact</code> now</p>',
+    );
+  });
+
+  it('leaves markdown that is not a path alone', () => {
+    const out = renderMarkdown('and/or e.g. 3/4 www.example.com');
+    expect(out).not.toContain('md-path');
+    expect(out).toContain('and/or');
+    expect(out).toContain('e.g.');
+  });
+
+  it('never turns a URL into a local path', () => {
+    const out = renderMarkdown('see https://example.com/a/b.png now');
+    expect(out).not.toContain('md-path');
+    expect(out).toContain('https://example.com/a/b.png');
+  });
+
+  it('never marks a path inside a fenced block', () => {
+    const out = renderMarkdown('```\n/Users/me/shot.png\n```');
+    expect(out).not.toContain('md-path');
+    expect(out).toContain('/Users/me/shot.png');
+  });
+
+  it('does not swallow the punctuation after a path', () => {
+    const out = renderMarkdown('see /home/me/shot.png.');
+    expect(out).toContain(span('/home/me/shot.png') + '.');
+  });
+});

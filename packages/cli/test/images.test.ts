@@ -73,7 +73,7 @@ describe('image mentions', () => {
     expect(result.images).toHaveLength(1);
     expect(result.images[0]?.mime).toBe('image/png');
     expect(result.rejected).toEqual([
-      { path: 'fake.png', reason: 'not a PNG, JPEG, WebP or GIF — checked the bytes, not the name' },
+      { path: 'fake.png', reason: 'not a PNG, JPEG, WebP or GIF — the bytes are not an image, whatever the name says' },
     ]);
   });
 

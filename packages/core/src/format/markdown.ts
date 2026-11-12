@@ -20,6 +20,90 @@ export function escapeHtml(s: string): string {
 
 const FENCE = /```([A-Za-z0-9_+\-.]*)\r?\n([\s\S]*?)```/g;
 
+/**
+ * D49cd (2026-11-12): a local path in a reply is a CONTROL, not prose.
+ *
+ * The agent wrote screenshots as `.scratch/shots/homeowner-PANEL-FINAL.png` and
+ * the user could not open one: only http(s) links were rendered, and the chat
+ * had no way to ask the host to open a file. The renderer now marks a local
+ * path with a `data-path` attribute; the webview posts it to the host on click.
+ *
+ * A `<span>` and never an `<a href>`: a webview that follows a link to a local
+ * file navigates away from the chat, which is exactly the fault the CSP exists
+ * to prevent. The path is carried as data and the host decides what to open.
+ *
+ * What counts, and why the line is drawn here:
+ *   - absolute Windows (`C:\...`), UNC (`\\server\share\...`) and POSIX (`/a/b`)
+ *     are unambiguous;
+ *   - a relative path in prose needs BOTH a slash and a file extension, because
+ *     `and/or` and `e.g.` would otherwise become links;
+ *   - inside inline code one bare file name (`shot.png`) is enough — a code span
+ *     is a deliberate mention — but a one-letter "extension" like `e.g.` is not
+ *     a file name;
+ *   - a POSIX path needs two segments or an extension, so a slash COMMAND such
+ *     as `/compact` stays text;
+ *   - a fenced block is never touched (it is lifted out before this runs);
+ *   - a URL is never a local path, and nothing is transformed outside a path.
+ */
+const PATH_START = '(?:[A-Za-z]:[\\\\/]|\\\\\\\\|\\/|\\.{1,2}[\\\\/]|[A-Za-z0-9_.\\-]+[\\\\/])';
+const PATH_CANDIDATE = new RegExp(
+  `(^|[\\s(<\\[])(${PATH_START}[^\\s<>"']*)`,
+  'g',
+);
+
+/** A path candidate, or null when it is a URL, a command or not a path. */
+function asLocalPath(raw: string, bareName: boolean): string | null {
+  const s = raw;
+  if (s.length === 0 || /\s/.test(s)) return null;
+  if (/^[A-Za-z][A-Za-z0-9+.\-]*:\/\//.test(s)) return null;
+  if (/^(?:https?|mailto|tel|data|file|vscode):/i.test(s)) return null;
+  if (s.startsWith('//')) return null; // protocol-relative, never a file here
+  if (/^[A-Za-z]:[\\/]/.test(s)) return s.length > 3 ? s : null;
+  if (s.startsWith('\\\\')) return s.length > 3 ? s : null;
+  if (s.startsWith('/')) {
+    const segs = s.split('/').filter((x) => x.length > 0);
+    const hasExt = /\.[A-Za-z0-9]{1,10}$/.test(s);
+    return segs.length >= 2 || hasExt ? s : null;
+  }
+  const hasSlash = /[/\\]/.test(s);
+  if (hasSlash) {
+    return /\.[A-Za-z0-9]{1,10}$/.test(s) ? s : null;
+  }
+  return bareName && /\.[A-Za-z0-9]{2,10}$/.test(s) ? s : null;
+}
+
+/** The content of an inline code span, when that content is a path. */
+function asCodePath(raw: string): string | null {
+  if (raw.length === 0 || raw !== raw.trim()) return null;
+  if (!/\s/.test(raw)) return asLocalPath(raw, true);
+  // A space is allowed only in an absolute path, where the start is unambiguous
+  // — a Windows "My Folder" or a POSIX path with a space in it.
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/|\.{1,2}\/)/.test(raw)) {
+    return /^(?:https?|mailto|tel|data|file):/i.test(raw) ? null : raw;
+  }
+  return null;
+}
+
+/** `escaped` is already HTML-escaped; it is safe for both the attribute and the text. */
+function pathSpan(escaped: string): string {
+  return (
+    `<span class="md-path" data-path="${escaped}" role="link" tabindex="0">` +
+    escaped +
+    '</span>'
+  );
+}
+
+/** Marks local paths in already-escaped prose. A URL's slash never starts a match. */
+function linkifyPaths(work: string): string {
+  return work.replace(PATH_CANDIDATE, (_m, lead: string, raw: string) => {
+    // Trailing sentence punctuation belongs to the sentence, not the path.
+    const cut = raw.replace(/[.,;:!?)\]}]+$/, '');
+    const path = asLocalPath(cut, false);
+    if (path === null) return lead + raw;
+    return lead + pathSpan(path) + raw.slice(path.length);
+  });
+}
+
 /** Splits a GFM table row into trimmed cells (leading/trailing pipe dropped). */
 function splitTableRow(line: string): string[] {
   let s = line.trim();
@@ -68,12 +152,22 @@ export function renderMarkdown(src: string): string {
     },
   );
 
-  // 2) Escape everything that is left. From here on we own all markup.
+  // 2) Lift inline code out too, before escaping. A path is most often written
+  //    in backticks, and the code span must not be transformed as prose — but
+  //    its CONTENT can still be a path, which is decided when it is put back.
+  const codes: string[] = [];
+  work = work.replace(/`([^`\n]+)`/g, (_m: string, body: string) => {
+    codes.push(body);
+    return `\u0000C${codes.length - 1}\u0000`;
+  });
+
+  // 3) Escape everything that is left. From here on we own all markup.
   work = escapeHtml(work);
 
-  // 3) Inline transforms on escaped text.
-  work = work
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+  // 4) Inline transforms on escaped text. Paths first: the tags the later
+  //    transforms add never contain a path that this could match, and a URL's
+  //    `//` is not a boundary this starts on.
+  work = linkifyPaths(work)
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>')
     .replace(
@@ -81,7 +175,7 @@ export function renderMarkdown(src: string): string {
       '<a href="$2" rel="noopener noreferrer" target="_blank">$1</a>',
     );
 
-  // 4) Block pass: headings, lists, quotes, paragraphs, code sentinels.
+  // 5) Block pass: headings, lists, quotes, paragraphs, code sentinels.
   const out: string[] = [];
   let para: string[] = [];
   let list: 'ul' | 'ol' | null = null;
@@ -215,8 +309,16 @@ export function renderMarkdown(src: string): string {
   flushPara();
   flushList();
 
-  // 5) Swap code sentinels back in, last.
+  // 6) Swap the sentinels back in, last. An inline code span whose content is
+  //    a path keeps its clickable form inside the code element.
   return out
     .join('')
+    .replace(/\u0000C(\d+)\u0000/g, (_m, i: string) => {
+      const body = codes[Number(i)] ?? '';
+      const escaped = escapeHtml(body);
+      return asCodePath(body) === null
+        ? `<code>${escaped}</code>`
+        : `<code>${pathSpan(escaped)}</code>`;
+    })
     .replace(/\u0000B(\d+)\u0000/g, (_m, i: string) => fences[Number(i)] ?? '');
 }

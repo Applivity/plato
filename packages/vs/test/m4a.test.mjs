@@ -517,7 +517,7 @@ try {
   assert.deepEqual(badImage.accepted, [], 'a corrupt PNG is not attached');
   assert.equal(
     badImage.rejected[0].error,
-    'not a PNG, JPEG, WebP or GIF — checked the bytes, not the name',
+    'not a PNG, JPEG, WebP or GIF — the bytes are not an image, whatever the name says',
     'the refusal says the bytes were checked, not the name',
   );
 

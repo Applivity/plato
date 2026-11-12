@@ -42,14 +42,22 @@ export interface ChatCaps {
 
 export function chatHtml(
   caps: ChatCaps = { tabs: true, relay: true, noun: 'tab' },
+  opts: { imgSrc?: string } = {},
 ): string {
   const nonce = getNonce();
+  // D49cd: a thumbnail is a resource URI the host serves, and the CSP must
+  // allow that source or the image is blocked with no visible error. The host
+  // passes its own `webview.cspSource`; the VS shim has none and passes
+  // `file:`. Nothing else is opened up — the page still cannot fetch, frame or
+  // script from anywhere.
+  const imgSrc = String(opts.imgSrc ?? '').replace(/["\r\n]/g, '').trim();
+  const imgRule = imgSrc.length > 0 ? `img-src ${imgSrc}; ` : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+      content="default-src 'none'; ${imgRule}style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <title>Plato</title>
 <style>
   :root {
@@ -930,6 +938,28 @@ export function chatHtml(
              padding:4px 9px; vertical-align:top; }
   .md-table th { background:var(--vscode-editorWidget-background,
                                rgba(128,128,128,.12)); font-weight:600; }
+  /* D49cd: a local path is clickable, and an image path can show the image.
+     The path is a span with data-path, never an href: following a link to a
+     local file would navigate the chat away from itself. */
+  .md-path { color:var(--vscode-textLink-foreground); cursor:pointer;
+             text-decoration:underline; text-decoration-style:dotted;
+             text-underline-offset:2px; }
+  .md-path:hover, .md-path:focus { text-decoration-style:solid;
+                                   outline:none; }
+  .msg.bot code .md-path { background:none; padding:0; }
+  /* The thumbnail is capped in BOTH directions and scaled down with the panel:
+     max-width:min(280px,100%) means a narrow composer shrinks it instead of
+     overflowing, and object-fit:contain keeps a tall screenshot whole. */
+  .md-thumb { margin:.5em 0; display:inline-flex; flex-direction:column;
+              gap:3px; max-width:100%; }
+  .md-thumb img { display:block; width:auto; height:auto;
+                  max-height:160px; max-width:min(280px,100%);
+                  object-fit:contain; border:1px solid var(--pl-border);
+                  border-radius:4px; cursor:pointer;
+                  background:var(--vscode-editorWidget-background,
+                                 rgba(128,128,128,.08)); }
+  .md-thumb figcaption { font-size:11px; color:var(--pl-muted);
+                         word-break:break-all; }
   .team-card { margin:.5em 0; padding:7px 10px; border:1px solid var(--pl-border);
                border-radius:5px; font-size:11.5px; }
   .team-card .team-name { font-weight:600; margin-bottom:4px; }
@@ -4503,6 +4533,101 @@ export function chatHtml(
     vsapi.postMessage({ type: 'attach' });
   });
 
+  // --- D49cd: paste and drag-and-drop -------------------------------------
+  // What the platform gives us decides the route. Electron-style files carry a
+  // path property; a sandboxed webview (VS Code) usually gives only BYTES for
+  // an image, and no path at all for anything else. All three outcomes are
+  // handled, and the last one is told what to do instead of failing silently.
+  function filePathOf(f) {
+    return typeof f.path === 'string' && f.path.length > 0 ? f.path : '';
+  }
+
+  function postBytes(f) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result || '');
+      const at = s.indexOf(',');
+      vsapi.postMessage({
+        type: 'attach-bytes',
+        name: String(f.name || 'pasted-image'),
+        mime: String(f.type || ''),
+        data: at >= 0 ? s.slice(at + 1) : s,
+      });
+    };
+    reader.readAsDataURL(f);
+  }
+
+  function attachFromFiles(files) {
+    const paths = [];
+    const blobs = [];
+    let missed = 0;
+    for (const f of files) {
+      const p = filePathOf(f);
+      if (p) { paths.push(p); continue; }
+      if (String(f.type || '').indexOf('image/') === 0) { blobs.push(f); continue; }
+      missed += 1;
+    }
+    if (paths.length > 0) { vsapi.postMessage({ type: 'attach-paths', paths }); }
+    for (const f of blobs) { postBytes(f); }
+    if (missed > 0) {
+      addMsg('sys', 'Plato',
+        'Plato cannot read this file from a paste on this platform. Save it, then attach it with the paperclip.');
+    }
+  }
+
+  function pathsFromUriList(text) {
+    const out = [];
+    const lines = String(text || '').split('\\n');
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i].replace(/\\r$/, '').trim();
+      if (!line || line.charAt(0) === '#') { continue; }
+      try {
+        const u = new URL(line);
+        if (u.protocol !== 'file:') { continue; }
+        let p = decodeURIComponent(u.pathname);
+        // file:///C:/x arrives with a leading slash on Windows.
+        const c1 = p.charAt(1);
+        if (p.charAt(0) === '/' && p.charAt(2) === ':' && /[A-Za-z]/.test(c1)) {
+          p = p.slice(1);
+        }
+        out.push(p);
+      } catch { /* not a URI */ }
+    }
+    return out;
+  }
+
+  function carriesFiles(dt) {
+    if (!dt || !dt.types) { return false; }
+    const types = Array.from(dt.types);
+    return types.indexOf('Files') >= 0 || types.indexOf('text/uri-list') >= 0;
+  }
+
+  // Text pastes are NOT intercepted: no files means the browser's own paste
+  // runs, in the middle of a draft exactly as before.
+  q.addEventListener('paste', (ev) => {
+    const dt = ev.clipboardData;
+    if (!dt || !dt.files || dt.files.length === 0) { return; }
+    ev.preventDefault();
+    attachFromFiles(Array.from(dt.files));
+  });
+
+  document.addEventListener('dragover', (ev) => {
+    if (!carriesFiles(ev.dataTransfer)) { return; }
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'copy';
+  });
+  document.addEventListener('drop', (ev) => {
+    if (!carriesFiles(ev.dataTransfer)) { return; }
+    ev.preventDefault();
+    const dt = ev.dataTransfer;
+    const paths = pathsFromUriList(dt.getData ? dt.getData('text/uri-list') : '');
+    if (paths.length > 0) {
+      vsapi.postMessage({ type: 'attach-paths', paths });
+      return;
+    }
+    if (dt.files && dt.files.length > 0) { attachFromFiles(Array.from(dt.files)); }
+  });
+
   q.addEventListener('keydown', (e) => {
     if (slashPop.classList.contains('open')) {
       // While the command menu is up, the arrows move the highlight and
@@ -4717,6 +4842,22 @@ export function chatHtml(
         projMissing = m.noRoot ? false : !m.present;
         const pc = document.getElementById('projCard');
         if (pc) { pc.hidden = !projMissing; }
+        break;
+      }
+      // D49cd: the host's answer about paths in a reply. A thumbnail is a
+      // resource URI it serves; a path with no thumb stays a plain link.
+      case 'path-info': {
+        for (const e of m.entries || []) {
+          const p = String(e.path || '');
+          if (!p) { continue; }
+          pathInfo.set(p, e);
+          if (!e.thumb) { continue; }
+          const nodes = log.querySelectorAll('[data-path]');
+          for (const n of nodes) {
+            if (n.classList.contains('md-thumb')) { continue; }
+            if (n.getAttribute('data-path') === p) { decorateThumb(n, e); }
+          }
+        }
         break;
       }
       case 'attach-result':
@@ -4976,6 +5117,7 @@ export function chatHtml(
     flushToolBuffer();
     chipOff();
     runT0 = 0;
+    scanPaths(log);
     scroll();
   }
 
@@ -5194,9 +5336,78 @@ export function chatHtml(
     if (asHtml) { body.innerHTML = text; } else { body.textContent = text; }
     div.appendChild(body);
     log.appendChild(div);
+    if (asHtml) { scanPaths(div); }
     scroll();
     return div;
   }
+
+  // --- D49cd: local paths and thumbnails ---------------------------------
+  // A path span carries data-path; only the host resolves it. One question per
+  // path per page: the answer is cached so a stream that re-renders its HTML on
+  // every fragment does not ask again.
+  const pathInfo = new Map();
+  const pathAsked = new Set();
+
+  function decorateThumb(span, info) {
+    const name = String(info.name || '');
+    const fig = document.createElement('figure');
+    fig.className = 'md-thumb';
+    fig.setAttribute('data-path', String(info.path || ''));
+    fig.setAttribute('role', 'link');
+    fig.setAttribute('tabindex', '0');
+    fig.title = 'Open ' + (name || 'the image');
+    const img = document.createElement('img');
+    img.src = String(info.thumb || '');
+    img.alt = name || 'image';
+    img.loading = 'lazy';
+    fig.appendChild(img);
+    const cap = document.createElement('figcaption');
+    cap.textContent = name;
+    fig.appendChild(cap);
+    const parent = span.parentElement;
+    // A path written in backticks is rendered inside <code>; when it is the
+    // whole span, the image replaces the code element rather than sitting in
+    // monospace chrome.
+    if (parent && parent.tagName === 'CODE' && parent.childNodes.length === 1) {
+      parent.replaceWith(fig);
+    } else {
+      span.replaceWith(fig);
+    }
+  }
+
+  function scanPaths(root) {
+    if (!root || !root.querySelectorAll) { return; }
+    const ask = [];
+    for (const n of root.querySelectorAll('[data-path]')) {
+      if (n.classList.contains('md-thumb')) { continue; }
+      const p = n.getAttribute('data-path');
+      if (!p) { continue; }
+      const known = pathInfo.get(p);
+      if (known !== undefined && known.thumb) { decorateThumb(n, known); continue; }
+      if (!pathAsked.has(p)) { pathAsked.add(p); ask.push(p); }
+    }
+    if (ask.length > 0) { vsapi.postMessage({ type: 'check-paths', paths: ask }); }
+  }
+
+  function pathAt(target) {
+    if (!target || !target.closest) { return null; }
+    const el = target.closest('[data-path]');
+    if (!el) { return null; }
+    const p = el.getAttribute('data-path');
+    return p ? p : null;
+  }
+
+  log.addEventListener('click', (ev) => {
+    const p = pathAt(ev.target);
+    if (p) { vsapi.postMessage({ type: 'open-path', path: p }); }
+  });
+  log.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') { return; }
+    const p = pathAt(ev.target);
+    if (!p) { return; }
+    ev.preventDefault();
+    vsapi.postMessage({ type: 'open-path', path: p });
+  });
 
   // D31h: read-only team display. The yaml is the source of truth.
   function showTeam(m) {
@@ -5244,6 +5455,9 @@ export function chatHtml(
       el.id = 'streaming';
     }
     el.innerHTML = html; // host-built, escape-first (D25a)
+    // The host's answer is cached per path, so this is a lookup on every
+    // fragment after the first — not a round trip per keystroke.
+    scanPaths(el);
     scroll();
   }
 

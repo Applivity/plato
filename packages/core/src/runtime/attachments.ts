@@ -10,7 +10,7 @@
  * `media_type` that disagrees with the content, and a lying extension is the
  * easiest possible way to send one.
  */
-import { readFile } from 'node:fs/promises';
+import { open, readdir, readFile, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveInRoot } from '../security/paths.js';
 import { isSecretPath } from '../security/secrets.js';
@@ -148,21 +148,14 @@ export async function loadImageFile(abs: string, maxBytes: number): Promise<Imag
   try {
     buf = await readFile(abs);
   } catch (e) {
-    const code = (e as NodeJS.ErrnoException)?.code;
-    return { ok: false, reason: code === 'ENOENT' ? 'file not found' : 'unreadable' };
+    return { ok: false, reason: readErrorReason(e) };
   }
   if (buf.length > maxBytes) {
-    return {
-      ok: false,
-      reason: `larger than ${Math.round(maxBytes / (1024 * 1024))} MB`,
-    };
+    return { ok: false, reason: tooBig(buf.length, maxBytes) };
   }
   const mime = sniffImageMime(buf);
   if (mime === null) {
-    return {
-      ok: false,
-      reason: 'not a PNG, JPEG, WebP or GIF — checked the bytes, not the name',
-    };
+    return { ok: false, reason: notAnImage() };
   }
   const cut = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'));
   const name = cut >= 0 ? abs.slice(cut + 1) : abs;
@@ -170,4 +163,121 @@ export async function loadImageFile(abs: string, maxBytes: number): Promise<Imag
     ok: true,
     image: { name, mime, data: buf.toString('base64'), bytes: buf.length },
   };
+}
+
+/**
+ * D49cd (2026-11-12): what a refusal SAYS.
+ *
+ * A client was given a perfectly good 9.8 KB PNG and remembers being refused
+ * for "invalid data". None of the real causes was named, so the one useful
+ * thing a refusal can do — tell the user what to fix — was missing. Every
+ * reason below names its cause, and a read failure carries the platform code
+ * (EACCES, ENOENT, EISDIR...) because that is what a user can act on.
+ */
+export function readErrorReason(e: unknown): string {
+  const code = (e as NodeJS.ErrnoException)?.code;
+  if (code === 'ENOENT') return 'file not found (ENOENT)';
+  if (code === 'EACCES' || code === 'EPERM') {
+    return `permission denied (${code})`;
+  }
+  if (code === 'EISDIR') return 'that is a folder, not a file (EISDIR)';
+  return code === undefined ? 'could not be read' : `could not be read (${code})`;
+}
+
+/** A size a person can compare at a glance, in the unit that fits it. */
+export function humanBytes(n: number): string {
+  if (n >= 1024 * 1024) {
+    return (n / (1024 * 1024)).toFixed(1).replace(/\.0$/, '') + ' MB';
+  }
+  if (n >= 1024) return Math.round(n / 1024) + ' KB';
+  return n + (n === 1 ? ' byte' : ' bytes');
+}
+
+function tooBig(bytes: number, maxBytes: number): string {
+  return `${humanBytes(bytes)} is over the ${humanBytes(maxBytes)} limit`;
+}
+
+function notAnImage(): string {
+  return 'not a PNG, JPEG, WebP or GIF — the bytes are not an image, whatever the name says';
+}
+
+/** What a thumbnail needs to know: is it an image, how big, and which type. */
+export type ImageProbe =
+  | { ok: true; mime: ImageMime; bytes: number }
+  | { ok: false; reason: string };
+
+/**
+ * D49cd: check an image WITHOUT reading it whole.
+ *
+ * A thumbnail is shown by the webview from a resource URI, so the bytes never
+ * need to cross the message channel. Reading a 3 MB screenshot just to sniff
+ * its first bytes would do that work on every render; this reads the header
+ * only. The size comes from `stat`, so the cap is still the same 3 MB the
+ * picker uses.
+ */
+export async function probeImageFile(
+  abs: string,
+  maxBytes: number,
+): Promise<ImageProbe> {
+  if (isSecretPath(abs)) {
+    return { ok: false, reason: 'on the secret deny-list' };
+  }
+  let size: number;
+  try {
+    const st = await stat(abs);
+    if (!st.isFile()) return { ok: false, reason: 'that is a folder, not a file' };
+    size = st.size;
+  } catch (e) {
+    return { ok: false, reason: readErrorReason(e) };
+  }
+  if (size > maxBytes) return { ok: false, reason: tooBig(size, maxBytes) };
+  let head: Buffer;
+  try {
+    const fh = await open(abs, 'r');
+    try {
+      head = Buffer.alloc(Math.min(16, Math.max(size, 1)));
+      await fh.read(head, 0, head.length, 0);
+    } finally {
+      await fh.close();
+    }
+  } catch (e) {
+    return { ok: false, reason: readErrorReason(e) };
+  }
+  const mime = sniffImageMime(head);
+  if (mime === null) return { ok: false, reason: notAnImage() };
+  return { ok: true, mime, bytes: size };
+}
+
+/**
+ * D49cd: remove pasted images that have outlived their week.
+ *
+ * A pasted image is copied into Plato's own storage because the platform gives
+ * the chat bytes and no path. The copy is an attachment for as long as its
+ * conversation needs it; after seven days it is only disk. Returns the names
+ * removed, for the caller to log or ignore.
+ */
+export async function sweepPastedFiles(
+  dir: string,
+  maxAgeMs: number,
+  now: number = Date.now(),
+): Promise<string[]> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return []; // no folder yet: nothing has been pasted
+  }
+  const gone: string[] = [];
+  for (const name of names) {
+    const abs = join(dir, name);
+    try {
+      const st = await stat(abs);
+      if (!st.isFile() || now - st.mtimeMs <= maxAgeMs) continue;
+      await unlink(abs);
+      gone.push(name);
+    } catch {
+      // Gone already, or not ours to remove: either way, leave it.
+    }
+  }
+  return gone;
 }

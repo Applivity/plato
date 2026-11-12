@@ -42,7 +42,10 @@ function prepareHtml() {
   const min = join(REPO, 'packages/vscode/dist/webview.min.js');
   const out = existsSync(min) ? min : join(REPO, 'packages/vscode/out/webview.js');
   const html = execFileSync('node', [
-    '-e', `import('${out}').then(m=>process.stdout.write(m.chatHtml()))`,
+    // D49cd: the suite stands in for the HOST, which passes its own
+    // `webview.cspSource`. `data:` lets a test post a thumbnail URI without a
+    // webview origin; the production path passes the real source.
+    '-e', `import('${out}').then(m=>process.stdout.write(m.chatHtml(undefined,{imgSrc:'data:'})))`,
   ], { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   if (!html.includes('</html>')) {
     throw new Error('chatHtml() output is truncated — the template literal is broken');

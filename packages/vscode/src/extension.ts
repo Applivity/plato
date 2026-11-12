@@ -70,6 +70,11 @@ import {
   loadProjectFile,
   loadImageAttachment,
   loadImageFile,
+  probeImageFile,
+  sniffImageMime,
+  humanBytes,
+  readErrorReason,
+  sweepPastedFiles,
   DEFAULT_MAX_IMAGE_BYTES,
   looksLikeImage,
   DEFAULT_PLATO_BODY,
@@ -130,7 +135,7 @@ import { chatHtml, type ChatCaps } from './webview.js';
 import { resolvePlatoHome } from './home.js';
 import { attachmentTarget, isAbsoluteAttachmentPath } from './attachments.js';
 import { basename, join } from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
@@ -458,7 +463,16 @@ export function activate(ctx: vscode.ExtensionContext): void {
         await ctx.workspaceState.update(TAB_INDEX_KEY, index);
       }
     }
-    surface.webview.html = chatHtml(opts.caps);
+    // D49cd: the chat may show a thumbnail for an image inside the workspace,
+    // served by the webview's own resource mechanism. The CSP is told which
+    // source that is; the VS shim reports none, and `file:` is what it can
+    // serve.
+    const imgSrc =
+      typeof surface.webview.cspSource === 'string' &&
+      surface.webview.cspSource.length > 0
+        ? surface.webview.cspSource
+        : 'file:';
+    surface.webview.html = chatHtml(opts.caps, { imgSrc });
     const host = new ChatHost(surface, ctx, tabId, {
       displayName: opts.indexed ? fallbackName() : SIDE_NAME,
       newTab: () => {
@@ -578,6 +592,12 @@ export function activate(ctx: vscode.ExtensionContext): void {
         // re-enter a webview whose document was replaced. The memory cost is
         // per tab and is the price of the conversation staying live.
         retainContextWhenHidden: true,
+        // D49cd: a reply may name an image in the workspace, and the chat draws
+        // a thumbnail of it from a webview URI. Without this the URI is not
+        // loadable and the thumbnail would fail silently.
+        localResourceRoots: (vscode.workspace.workspaceFolders ?? []).map(
+          (f) => f.uri,
+        ),
       },
     );
     return attach(tabSurface(panel), tabId ?? newTabId(), {
@@ -587,6 +607,15 @@ export function activate(ctx: vscode.ExtensionContext): void {
   }
 
   setTimeout(reclaimDeadProjects, 0);
+  // D49cd: pasted images are kept in Plato's own storage for a week. Nothing
+  // else would ever collect them; a week is long enough for the conversation
+  // that received one to still need it.
+  setTimeout(() => {
+    void sweepPastedFiles(
+      join(homePlatoDir(), 'pasted'),
+      7 * 24 * 60 * 60 * 1000,
+    );
+  }, 0);
 
   // D49bb: the protected list is the owner's. Read once at activation and again
   // whenever the settings change, because a user who has just taken
@@ -731,7 +760,14 @@ export function activate(ctx: vscode.ExtensionContext): void {
         'plato.chats',
         {
           resolveWebviewView: (view) => {
-            view.webview.options = { enableScripts: true };
+            view.webview.options = {
+              enableScripts: true,
+              // D49cd: the same resource roots as a chat tab, so a thumbnail
+              // from this surface can load too.
+              localResourceRoots: (
+                vscode.workspace.workspaceFolders ?? []
+              ).map((f) => f.uri),
+            };
             void attach(sideSurface(view), SIDE_ID, {
               indexed: false,
               // This surface has no tab strip of its own, so its header mark
@@ -2113,6 +2149,31 @@ class ChatHost {
           this.pendingImages = [];
           return;
         }
+        // D49cd: the ways a file arrives without the native picker — a paste,
+        // a drop, or a path the platform handed the page. All of them go
+        // through attachFiles, so the caps, the secret deny-list and the
+        // refusals are exactly the paperclip's.
+        if (m.type === 'attach-paths' && Array.isArray(m.paths)) {
+          await this.attachPaths(m.paths.map(String));
+          return;
+        }
+        if (m.type === 'attach-bytes' && typeof m.data === 'string') {
+          await this.attachBytes(
+            typeof m.name === 'string' ? m.name : '',
+            m.data,
+          );
+          return;
+        }
+        // D49cd: a path in a reply, clicked. The host resolves it; the page
+        // never navigates to it.
+        if (m.type === 'open-path' && typeof m.path === 'string') {
+          await this.openLocalPath(m.path);
+          return;
+        }
+        if (m.type === 'check-paths' && Array.isArray(m.paths)) {
+          await this.sendPathInfo(m.paths.map(String));
+          return;
+        }
         // D44c: real commands execute in the host — no text expansion.
         // D49bo: `text` carries what followed the command, which only /queue
         // reads today. The four older commands ignore it, exactly as before.
@@ -2738,13 +2799,11 @@ class ChatHost {
         if (r.found) body = r.body;
         else {
           why =
-            r.source === 'too-big'
-              ? 'larger than 200 KB'
+            r.source === 'too-big' || r.source === 'io'
+              ? r.error
               : r.source === 'missing'
-                ? 'file not found'
-                : r.source === 'io'
-                  ? r.error
-                  : 'unreadable';
+                ? 'file not found (ENOENT)'
+                : 'unreadable';
         }
       }
       if (body === null) {
@@ -2773,11 +2832,16 @@ class ChatHost {
     try {
       text = await readFile(abs, 'utf8');
     } catch (e) {
-      const code = (e as NodeJS.ErrnoException)?.code;
-      return { ok: false, reason: code === 'ENOENT' ? 'file not found' : 'unreadable' };
+      // D49cd: name the cause, with the platform's own code.
+      return { ok: false, reason: readErrorReason(e) };
     }
     if (text.length > MAX_ATTACH_BYTES) {
-      return { ok: false, reason: 'larger than 200 KB' };
+      return {
+        ok: false,
+        reason:
+          text.length +
+          ' characters is over the 200 KB text cap',
+      };
     }
     return { ok: true, body: text };
   }
@@ -2823,6 +2887,189 @@ class ChatHost {
       picks.map((p) => p.fsPath),
     );
     void this.panel.webview.postMessage({ type: 'attach-result', accepted, rejected });
+  }
+
+  // ---- D49cd: local paths, pasted bytes and thumbnails -------------------
+
+  /** The workspace roots a relative path may resolve against. */
+  private workspaceRoots(): string[] {
+    return (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
+  }
+
+  /** A path from a reply, resolved the way the renderer wrote it. */
+  private resolveLocalPath(raw: string): string | null {
+    const t = raw.trim();
+    if (t.length === 0) return null;
+    if (isAbsoluteAttachmentPath(t)) return t;
+    const root = this.workspaceRoot();
+    return root === null ? null : join(root, t);
+  }
+
+  /** True when the file is under a workspace folder — the thumbnail rule. */
+  private insideWorkspace(abs: string): boolean {
+    const norm = (p: string): string =>
+      p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const target = norm(abs);
+    return this.workspaceRoots().some((root) => {
+      const r = norm(root);
+      return r.length > 0 && (target === r || target.startsWith(r + '/'));
+    });
+  }
+
+  /** The base name of a path in EITHER separator form. */
+  private baseNameOf(abs: string): string {
+    const cut = Math.max(abs.lastIndexOf('/'), abs.lastIndexOf('\\'));
+    return cut >= 0 ? abs.slice(cut + 1) : abs;
+  }
+
+  /**
+   * D49cd: attach paths the page was handed — a paste or a drop with real
+   * paths, and the paperclip's testable door. The rules are `attachFiles`, so
+   * the caps, the deny-list and the refusals are the same as the picker's.
+   */
+  private async attachPaths(paths: string[]): Promise<void> {
+    const root = this.workspaceRoot();
+    if (root === null) {
+      this.send('error', 'Open a folder before attaching files.');
+      return;
+    }
+    const { accepted, rejected } = await this.attachFiles(root, paths);
+    void this.panel.webview.postMessage({
+      type: 'attach-result',
+      accepted,
+      rejected,
+    });
+  }
+
+  /** Where a pasted image is kept: Plato's own storage, swept after a week. */
+  private pastedDir(): string {
+    return join(this.homePlatoDir(), 'pasted');
+  }
+
+  /**
+   * D49cd: a pasted image that arrived as BYTES (a screenshot, or a sandboxed
+   * webview that gives no path). It is written to Plato's storage once, then
+   * attached by path — so the conversation carries a normal attachment, and a
+   * later run re-reads the file exactly as it does any other.
+   */
+  private async attachBytes(name: string, data: string): Promise<void> {
+    const root = this.workspaceRoot();
+    if (root === null) {
+      this.send('error', 'Open a folder before attaching files.');
+      return;
+    }
+    const buf = Buffer.from(data, 'base64');
+    const refuse = (error: string): void => {
+      void this.panel.webview.postMessage({
+        type: 'attach-result',
+        accepted: [],
+        rejected: [{ path: name || 'pasted image', error }],
+      });
+    };
+    const mime = sniffImageMime(buf);
+    if (mime === null) {
+      refuse('not a PNG, JPEG, WebP or GIF — the bytes are not an image');
+      return;
+    }
+    if (buf.length > MAX_IMAGE_BYTES) {
+      refuse(
+        humanBytes(buf.length) + ' is over the ' + humanBytes(MAX_IMAGE_BYTES) + ' limit',
+      );
+      return;
+    }
+    const base = this.baseNameOf(name) || 'pasted-image';
+    let safe = base.replace(/[^A-Za-z0-9._ -]+/g, '_').slice(0, 80);
+    if (!looksLikeImage(safe)) {
+      safe +=
+        mime === 'image/png'
+          ? '.png'
+          : mime === 'image/jpeg'
+            ? '.jpg'
+            : mime === 'image/webp'
+              ? '.webp'
+              : '.gif';
+    }
+    const dir = this.pastedDir();
+    await mkdir(dir, { recursive: true });
+    const abs = join(
+      dir,
+      'pasted-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + safe,
+    );
+    await writeFile(abs, buf);
+    const { accepted, rejected } = await this.attachFiles(root, [abs]);
+    if (rejected.length > 0) {
+      // Do not leave a copy of a file the user was told was refused.
+      try {
+        await unlink(abs);
+      } catch {
+        // The sweep will collect it.
+      }
+    }
+    void this.panel.webview.postMessage({
+      type: 'attach-result',
+      accepted,
+      rejected,
+    });
+  }
+
+  /**
+   * D49cd: open a path a reply named. `vscode.open` is what shows an IMAGE in
+   * the image viewer and text in an editor; a missing file is said in the chat
+   * rather than opening an empty editor.
+   */
+  private async openLocalPath(raw: string): Promise<void> {
+    const abs = this.resolveLocalPath(raw);
+    const why = (reason: string): void => {
+      this.send('notice', 'Could not open "' + raw + '" — ' + reason + '.');
+    };
+    if (abs === null) {
+      why('open a folder first, so Plato can resolve a relative path');
+      return;
+    }
+    try {
+      const st = await stat(abs);
+      if (!st.isFile()) {
+        why('that is a folder, not a file');
+        return;
+      }
+    } catch (e) {
+      why(readErrorReason(e));
+      return;
+    }
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(abs));
+  }
+
+  /**
+   * D49cd: answer the page's question about paths it rendered. A thumbnail is
+   * offered only for an image INSIDE the workspace — that is what a webview
+   * resource root can serve, and it is what the 3 MB probe guards. Everywhere
+   * else the path stays a link, and clicking it still opens the file.
+   */
+  private async sendPathInfo(paths: string[]): Promise<void> {
+    const entries: { path: string; name?: string; thumb?: string }[] = [];
+    for (const raw of paths.slice(0, 50)) {
+      const abs = this.resolveLocalPath(raw);
+      if (abs === null) {
+        entries.push({ path: raw });
+        continue;
+      }
+      const name = this.baseNameOf(abs);
+      if (!looksLikeImage(name) || !this.insideWorkspace(abs)) {
+        entries.push({ path: raw });
+        continue;
+      }
+      const probe = await probeImageFile(abs, MAX_IMAGE_BYTES);
+      if (!probe.ok) {
+        entries.push({ path: raw });
+        continue;
+      }
+      entries.push({
+        path: raw,
+        name,
+        thumb: this.panel.webview.asWebviewUri(vscode.Uri.file(abs)).toString(),
+      });
+    }
+    void this.panel.webview.postMessage({ type: 'path-info', entries });
   }
 
   /** /compact and the ring's Compact-now share one force-compact path. */
