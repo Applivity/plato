@@ -471,6 +471,21 @@ describe('buildFoldPrompt (D49ag)', () => {
     expect(p.indexOf('EARLIER:')).toBeLessThan(p.indexOf('USER'));
   });
 
+  // D49co: `/compact <what to keep>` steers the summary.
+  it('carries the user’s focus instruction when one was given', () => {
+    const p = buildFoldPrompt(null, rows, 'keep the release date and the API shape');
+    expect(p).toContain('keep the release date and the API shape');
+    expect(p).toContain('[the user asked the summary to keep]');
+    // An instruction belongs before the transcript it applies to.
+    expect(p.indexOf('release date')).toBeLessThan(p.indexOf('--- USER ---'));
+  });
+
+  it('is unchanged when no focus was given', () => {
+    const plain = buildFoldPrompt(null, rows);
+    expect(plain).not.toContain('the user asked the summary to keep');
+    expect(buildFoldPrompt(null, rows, '   ')).toBe(plain);
+  });
+
   it('is just the instruction when there is nothing to summarise', () => {
     const p = buildFoldPrompt(null, []);
     expect(p).toContain('Be terse and fact-only.');

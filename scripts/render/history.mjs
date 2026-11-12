@@ -262,7 +262,14 @@ async function openRunRecords(p) {
     { k: 'compact', text: 'A terse machine summary that must stay hidden.' },
     { k: 'msg', cls: 'you', who: 'You', text: 'Question 3' },
   ];
-  const p = await page(720, {
+  // D49cp: the all-visible layout is now a CHOICE (the setting defaults to
+  // hiding the rows above). This block's subject is the banner and the rows
+  // around it, so it asks for that layout explicitly.
+  const p = await page(720);
+  await p.evaluate(() => window.dispatchEvent(new MessageEvent('message', {
+    data: { type: 'chat-prefs', hideBeforeSummary: false },
+  })));
+  await p.evaluate((x) => window.dispatchEvent(new MessageEvent('message', { data: x })), {
     type: 'restore',
     log,
     hasConnections: true,
@@ -272,6 +279,7 @@ async function openRunRecords(p) {
     queue: [],
     queueHeld: false,
   });
+  await p.waitForTimeout(200);
   checkPageClean(p, 'fold banner');
   const fold = await p.evaluate(() => {
     const banners = [...document.querySelectorAll('#log .msg.compact')];

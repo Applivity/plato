@@ -563,6 +563,7 @@ export function planFold<T extends LogRow>(
 export function buildFoldPrompt(
   prior: string | null,
   covered: readonly LogRow[],
+  focus?: string,
 ): string {
   const blocks: string[] = [
     'Summarise the following conversation so the assistant can continue ' +
@@ -570,6 +571,13 @@ export function buildFoldPrompt(
   ];
   if (prior !== null && prior.length > 0) {
     blocks.push('[existing summary of the earlier conversation]\n' + prior);
+  }
+  // D49co: `/compact <text>` carries the user's own instruction about what the
+  // summary must keep. It sits before the transcript, where an instruction
+  // belongs, and is absent when the user gave none.
+  const keep = (focus ?? '').trim();
+  if (keep.length > 0) {
+    blocks.push('[the user asked the summary to keep]\n' + keep);
   }
   for (const row of covered) {
     if (isToolRow(row)) {

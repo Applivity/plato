@@ -30,6 +30,8 @@ export * from './runtime/approvalCopy.js';
 export * from './runtime/toolWords.js';
 export * from './runtime/secretCopy.js';
 export * from './runtime/outsideReadCopy.js';
+export * from './runtime/idleFold.js';
+export * from './runtime/reinject.js';
 export * from './runtime/seedVault.js';
 export * from './runtime/context.js';
 export * from './runtime/chatlog.js';

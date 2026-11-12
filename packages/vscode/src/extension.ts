@@ -77,6 +77,8 @@ import {
   humanBytes,
   readErrorReason,
   sweepPastedFiles,
+  IdleFold,
+  recentWorkBlock,
   DEFAULT_MAX_IMAGE_BYTES,
   looksLikeImage,
   DEFAULT_PLATO_BODY,
@@ -1236,6 +1238,36 @@ class ChatHost {
    * and a new chat starts with an empty set.
    */
   private outsideFolders = new Set<string>();
+  /**
+   * D49cm: the idle clock. One per chat; every condition is re-read when it
+   * fires, so turning the setting off (or a newer message) means the pending
+   * fold does nothing.
+   */
+  private readonly idleFold = new IdleFold({
+    enabled: () => this.compactionState().idle,
+    tokens: () => historyTokens(this.log),
+    busy: () =>
+      this.running ||
+      this.folding ||
+      this.pendingApproval !== null ||
+      this.pendingQuestion !== null ||
+      this.pendingStuck !== null,
+    fold: async () => {
+      const targets = await this.resolveTurnTargets();
+      if (targets === null) return;
+      this.folding = true;
+      try {
+        await this.foldTail(
+          targets.conn,
+          targets.apiKey,
+          targets.ref,
+          'idle',
+        );
+      } finally {
+        this.folding = false;
+      }
+    },
+  });
   private pendingQuestion: ((answers: string[]) => void) | null = null;
   /**
    * D49aq: how many questions the open card is asking, so cancelling it can
@@ -2113,6 +2145,38 @@ class ChatHost {
           this.postModelState();
           return;
         }
+        if (
+          m.type === 'set-compaction-idle' &&
+          typeof m.value === 'boolean'
+        ) {
+          await vscode.workspace.getConfiguration('plato').update(
+            'compaction.idle',
+            m.value,
+            vscode.ConfigurationTarget.Global,
+          );
+          this.postModelState();
+          this.scheduleIdleFold();
+          void this.sendSettings();
+          return;
+        }
+        if (
+          m.type === 'set-hide-before-summary' &&
+          typeof m.value === 'boolean'
+        ) {
+          await vscode.workspace.getConfiguration('plato').update(
+            'chat.hideBeforeSummary',
+            m.value,
+            vscode.ConfigurationTarget.Global,
+          );
+          this.postModelState();
+          // The page re-applies the view at once; no reload is needed.
+          void this.panel.webview.postMessage({
+            type: 'chat-prefs',
+            hideBeforeSummary: m.value,
+          });
+          void this.sendSettings();
+          return;
+        }
         if (m.type === 'request-compact') {
           // Mid-run: force the live run to compact. Idle: fold the older
           // turns into a summary (same as /compact).
@@ -2271,6 +2335,12 @@ class ChatHost {
           );
           this.postModelState();
           this.postSlashMeta();
+          // D49cp: the view preference travels with the page, so a reload
+          // applies the setting the same way the first load did.
+          void panel.webview.postMessage({
+            type: 'chat-prefs',
+            hideBeforeSummary: this.compactionState().hideBeforeSummary,
+          });
           void panel.webview.postMessage({
             type: 'restore',
             log: decorated,
@@ -3144,7 +3214,8 @@ class ChatHost {
       if (this.running) {
         this.requestCompactNow();
       } else {
-        await this.foldNow();
+        // D49co: `/compact <what to keep>` carries the focus to the prompt.
+        await this.foldNow(text);
       }
       return;
     }
@@ -3410,21 +3481,26 @@ class ChatHost {
    * log. The rows it accounts for stay where they are (D49aa) — a fold changes
    * what the model is sent, never what the user can read. Returns true on a fold.
    *
-   * D44d amended: `manual` marks a fold the user asked for (`/compact`); the
-   * size trigger is skipped for it, because the request IS the trigger. How much
-   * is kept is the same token budget either way.
+   * The TRIGGER is named because the notice names it: `manual` is `/compact`
+   * (the user's request IS the trigger), `idle` is D49cm (an hour of silence at
+   * 200,000 tokens, behind a setting), and `auto` is the size threshold. All
+   * three use the same keep budget.
+   *
+   * D49co: `focus` is what the user asked the summary to keep, passed to the
+   * prompt. Empty for every trigger but `/compact`.
    */
   private async foldTail(
     conn: ConnectionConfig,
     apiKey: string,
     ref: string,
-    manual: boolean,
+    trigger: 'auto' | 'manual' | 'idle',
+    focus = '',
   ): Promise<boolean> {
     const c = this.lastCompactIndex();
     const prior =
       c >= 0 && this.log[c]!.k === 'compact' ? this.log[c]!.text : null;
     const ctx = this.contextPlan(conn, ref);
-    const plan = planFold(this.log, { ...ctx, manual });
+    const plan = planFold(this.log, { ...ctx, manual: trigger !== 'auto' });
     if (plan === null) return false;
     const older = plan.covered;
     // D49ag: the count the user is TOLD stays a count of exchanges. `covered`
@@ -3435,7 +3511,7 @@ class ChatHost {
     // D49ag: the prompt is built in core, where it is tested — the shell has no
     // unit tests, and this is the half that decides whether a fold records the
     // work or only the model's narration of it.
-    const prompt = buildFoldPrompt(prior, older);
+    const prompt = buildFoldPrompt(prior, older, focus);
     const provider = createProvider(conn.kind, {
       apiKey,
       baseUrl: conn.baseUrl,
@@ -3498,19 +3574,27 @@ class ChatHost {
     const label = foldCount === 1 ? 'message' : 'messages';
     this.send(
       'notice',
-      manual
+      trigger === 'manual'
         ? 'Summary added for ' + foldCount + ' earlier ' + label
           + ', as you asked. Nothing was removed from the transcript.'
-        : 'Conversation reached ' + Math.round(ctx.threshold * 100)
-          + "% of this model's context — earlier messages were summarised so"
-          + ' the whole conversation still fits. Nothing was removed from the'
-          + ' transcript.',
+        : trigger === 'idle'
+          ? 'Compacted while idle at ' + fmtTokens(plan.tokens)
+            + ' — earlier messages were summarised so the conversation stays'
+            + ' within the context window. Nothing was removed from the'
+            + ' transcript.'
+          : 'Conversation reached ' + Math.round(ctx.threshold * 100)
+            + "% of this model's context — earlier messages were summarised so"
+            + ' the whole conversation still fits. Nothing was removed from the'
+            + ' transcript.',
     );
     return true;
   }
 
-  /** /compact while idle: fold the tail, or say there is nothing to fold. */
-  private async foldNow(): Promise<void> {
+  /**
+   * /compact while idle: fold the tail, or say there is nothing to fold.
+   * D49co: `focus` is the text after the command, passed to the summary prompt.
+   */
+  private async foldNow(focus = ''): Promise<void> {
     if (this.folding) return;
     const targets = await this.resolveTurnTargets();
     if (targets === null) {
@@ -3523,7 +3607,8 @@ class ChatHost {
         targets.conn,
         targets.apiKey,
         targets.ref,
-        true,
+        'manual',
+        focus,
       );
       if (!folded) {
         // D44d amended: say the measurement, not a verdict about length. A fold
@@ -3546,6 +3631,18 @@ class ChatHost {
   }
 
   /**
+   * D49cm: start the idle clock, or stop it when the setting is off. Called at
+   * every run end and when the setting changes.
+   */
+  private scheduleIdleFold(): void {
+    if (!this.compactionState().idle) {
+      this.idleFold.cancel();
+      return;
+    }
+    this.idleFold.schedule();
+  }
+
+  /**
    * After a run finishes, fold the history if it has reached the user's
    * threshold of the model's window — the same test the run's own compaction
    * makes (`planFold` inside `foldTail`). Fire-and-forget: never runs while a
@@ -3558,6 +3655,9 @@ class ChatHost {
     ref: string,
   ): void {
     setTimeout(() => {
+      // D49cm: the idle clock starts when a run ends, whether or not the size
+      // fold ran just now.
+      this.scheduleIdleFold();
       void (async () => {
         if (this.running || this.folding) return;
         if (
@@ -3569,7 +3669,7 @@ class ChatHost {
         }
         this.folding = true;
         try {
-          await this.foldTail(conn, apiKey, ref, false);
+          await this.foldTail(conn, apiKey, ref, 'auto');
         } catch {
           // Leave the log untouched; the next completed run retries.
         } finally {
@@ -4076,7 +4176,12 @@ class ChatHost {
    * `threshold` is clamped to [0.5, 0.95] in the loop itself.
    */
   /** D44d: compaction is always auto at the threshold (Manual is gone). */
-  private compactionState(): { mode: 'auto' | 'manual'; threshold: number } {
+  private compactionState(): {
+    mode: 'auto' | 'manual';
+    threshold: number;
+    idle: boolean;
+    hideBeforeSummary: boolean;
+  } {
     const cfg = vscode.workspace.getConfiguration('plato');
     const threshold = cfg.get<number>('compaction.threshold', 0.8);
     return {
@@ -4084,6 +4189,12 @@ class ChatHost {
       threshold: typeof threshold === 'number' && Number.isFinite(threshold)
         ? threshold
         : 0.8,
+      // D49cm: off unless the user asked. It summarises BELOW the threshold by
+      // design, which is exactly what the user must opt into.
+      idle: cfg.get<boolean>('compaction.idle', false) === true,
+      // D49cp: a VIEW preference. The transcript keeps every row either way.
+      hideBeforeSummary:
+        cfg.get<boolean>('chat.hideBeforeSummary', true) !== false,
     };
   }
 
@@ -4309,14 +4420,15 @@ class ChatHost {
    * model is told in the request and the user is told here. The log loses
    * nothing either way.
    */
-  private historyFor(
+  private async historyFor(
     conn: ConnectionConfig,
     ref: string,
-  ): { role: 'user' | 'assistant'; text: string }[] {
+  ): Promise<{ role: 'user' | 'assistant'; text: string }[]> {
     const plan = this.contextPlan(conn, ref);
     const cap = Math.floor(plan.maxContext * plan.threshold);
     // Exclude the entry for the task being sent now.
-    const req = planRequest(this.log.slice(0, -1), cap);
+    const before = this.log.slice(0, -1);
+    const req = planRequest(before, cap);
     if (req.omitted > 0) {
       this.send(
         'notice',
@@ -4324,6 +4436,14 @@ class ChatHost {
           + " older messages were left out of this request to fit the model's"
           + ' context. The full conversation is still in the transcript.',
       );
+    }
+    // D49cn: after a summary, the model is shown the CURRENT state of the work
+    // the summary can no longer show. Built fresh here, at run start; absent
+    // before a fold, so nothing is carried twice.
+    const root = this.workspaceRoot();
+    if (root !== null) {
+      const block = await recentWorkBlock(before, { root });
+      if (block !== null) req.turns.push({ role: 'user', text: block });
     }
     return req.turns;
   }
@@ -4851,6 +4971,7 @@ class ChatHost {
     // is not allowed in this one.
     this.pendingOutsideRead = null;
     this.outsideFolders.clear();
+    this.idleFold.cancel();
     this.replyBuffer = '';
     // D49j: the webview is about to be blanked; a pending repaint would post
     // the old conversation's text into the new one.
@@ -5151,6 +5272,9 @@ class ChatHost {
    * just cancelled to finish unwinding before it archives the chat.
    */
   private startRun(task: string, ctx: RunCtx = {}): void {
+    // D49cm: a new message cancels a pending idle fold. It may never summarise
+    // a conversation the user has just continued.
+    this.idleFold.cancel();
     // `runInFlight`, NOT `running` — see the field's note. `running` is false for
     // the whole of a run's preparation, so a second start in that window slipped
     // through and ran two runs at once.
@@ -5853,7 +5977,7 @@ class ChatHost {
         // of a run, so mark them cacheable. A no-op for OpenAI, which caches
         // implicitly; on Anthropic it is a straight input-cost saving.
         cache: true,
-        history: this.historyFor(conn, ref),
+        history: await this.historyFor(conn, ref),
         mcpServers,
         // D37: context compaction. Mode + threshold come from settings
         // (the header pill toggles mode; the slider sets threshold).

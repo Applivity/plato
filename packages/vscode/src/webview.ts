@@ -1354,6 +1354,13 @@ export function chatHtml(
                           margin-bottom:4px; }
   .msg.compact .cc-body { font-size:12px; line-height:1.5;
                           white-space:pre-wrap; color:var(--vscode-foreground); }
+  /* D49cp: the divider's own control. It reveals the rows above for THIS chat;
+     the setting is untouched, and a reload goes back to it. */
+  .msg.compact .cc-show { display:inline-block; margin-top:6px; padding:2px 10px;
+                          font:inherit; font-size:11px; cursor:pointer;
+                          background:transparent; color:var(--vscode-textLink-foreground);
+                          border:1px solid var(--pl-border); border-radius:9px; }
+  .msg.compact .cc-show:hover { border-color:var(--vscode-focusBorder); }
   /* Mode picker popover rows: icon + name + 1-line explainer. */
   .mp-row { display:grid; grid-template-columns:18px 1fr;
             gap:6px 10px; align-items:start; padding:7px 8px;
@@ -1590,6 +1597,10 @@ export function chatHtml(
   /** D49bc: the reveal card — the file Plato cannot mask, offered in full. */
   let openRevealCard = null;
   let openOutsideCard = null;
+  // D49cp: the chat view preference, applied on every render; the reveal is
+  // this page's alone.
+  let hideBeforeSummary = true;
+  let earlierRevealed = false;
   /** D49cb: the model's mode request — the only card that can change a mode. */
   let openModeRequestCard = null;
   /**
@@ -3880,6 +3891,33 @@ export function chatHtml(
     thrRow.appendChild(thrInput);
     thrRow.appendChild(thrLive);
     ctxBlock.appendChild(thrRow);
+    // D49cm / D49cp: two boolean preferences beside the threshold. Each posts
+    // its own setting; the page does not keep a copy.
+    const prefRow = (labelText, checked, type, help) => {
+      const row = el('div', 'row');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = checked;
+      box.addEventListener('change', () => {
+        vsapi.postMessage({ type: type, value: box.checked });
+      });
+      row.appendChild(box);
+      row.appendChild(el('label', null, labelText));
+      ctxBlock.appendChild(row);
+      ctxBlock.appendChild(el('p', 'shelp', help));
+    };
+    prefRow(
+      'Compact while idle',
+      ctxInfo.idle === true,
+      'set-compaction-idle',
+      'After an hour of no activity, and at 200,000 tokens, Plato summarises the earlier messages. Off unless you choose it.',
+    );
+    prefRow(
+      'Hide messages above the latest summary',
+      ctxInfo.hideBeforeSummary !== false,
+      'set-hide-before-summary',
+      'The transcript keeps every message. The divider can show them again for this chat, and a reload goes back to this setting.',
+    );
     // (D47j: no ctxBody.appendChild(ctxBlock) here — ctxBlock IS ctxBody, so
     // that appendChild threw the same "contains the parent" error.)
 
@@ -5038,6 +5076,13 @@ export function chatHtml(
       case 'outside-read-done':
         dismissOutsideRead();
         break;
+      // D49cp: the view preference, from the setting or a toggle. The reveal
+      // is reset, so a setting change shows the state the setting means.
+      case 'chat-prefs':
+        hideBeforeSummary = m.hideBeforeSummary !== false;
+        earlierRevealed = false;
+        applyHideBefore();
+        break;
       // D49cb: the model asked for a different mode. The card is the only path
       // from that request to a switch; it names the cost of the target mode.
       case 'mode-request':
@@ -5130,6 +5175,7 @@ export function chatHtml(
     chipOff();
     runT0 = 0;
     scanPaths(log);
+    applyHideBefore();
     scroll();
   }
 
@@ -5216,7 +5262,73 @@ export function chatHtml(
     head.textContent = 'Plato now carries a summary of the work above';
     div.appendChild(head);
     log.appendChild(div);
+    applyHideBefore();
     scroll();
+  }
+
+  /**
+   * D49cp: the view setting that hides the rows above the newest summary.
+   *
+   * A VIEW rule only. The log keeps every row, the request is unchanged, and
+   * the divider NEVER says the messages were deleted — it says they were
+   * summarised and are still in the transcript, and offers to show them. The
+   * reveal is this page's, not a setting: a reload applies the preference
+   * again.
+   */
+  function applyHideBefore() {
+    const kids = Array.from(log.children);
+    let cut = -1;
+    for (let i = kids.length - 1; i >= 0; i -= 1) {
+      const el = kids[i];
+      if (el.classList.contains('compact') && !el.classList.contains('trim')) {
+        cut = i;
+        break;
+      }
+    }
+    if (cut < 0) { return; } // no summary: nothing to hide
+    const hiding = hideBeforeSummary && !earlierRevealed;
+    // D49cp correction: a VIEW preference must never hide a WARNING. A trim note
+    // says rows left at the display cap (and, when it applies, that the summary
+    // itself was lost); a guard line is a refusal; a sys row is a notice; a card
+    // is a record or a question. All of those stay visible above the divider —
+    // only the rows that exist to CONVERSE are hidden.
+    const warningLike = (el) =>
+      el.classList.contains('trim') ||
+      el.classList.contains('guard') ||
+      el.classList.contains('sys') ||
+      el.classList.contains('compact') ||
+      el.classList.contains('card');
+    for (let i = 0; i < kids.length; i += 1) {
+      if (i >= cut) continue;
+      kids[i].style.display = hiding && !warningLike(kids[i]) ? 'none' : '';
+    }
+    const banner = kids[cut];
+    const head = banner.querySelector('.cc-head');
+    let button = banner.querySelector('.cc-show');
+    if (hideBeforeSummary) {
+      if (head) {
+        head.textContent = 'Earlier messages were summarised. '
+          + 'They are still in the transcript.';
+      }
+      if (earlierRevealed) {
+        if (button) { button.remove(); }
+      } else if (!button) {
+        button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'cc-show';
+        button.textContent = 'Show earlier messages';
+        button.addEventListener('click', () => {
+          earlierRevealed = true;
+          applyHideBefore();
+        });
+        banner.appendChild(button);
+      }
+    } else {
+      if (head) {
+        head.textContent = 'Plato now carries a summary of the work above';
+      }
+      if (button) { button.remove(); }
+    }
   }
 
   /**

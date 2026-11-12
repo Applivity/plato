@@ -22,10 +22,11 @@ const COMMANDS: readonly SlashCommand[] = [
   {
     id: 'compact',
     label: 'Compact',
-    usage: '/compact',
+    usage: '/compact <what to keep>',
     // D49ba: "now, or at the next safe point" left the reader to work out
     // which one would happen. Name both, in the order they are tried.
-    blurb: 'Condense the conversation. Runs now if Plato is idle, otherwise at the next safe point.',
+    // D49co: and name the optional note, which steers what the summary keeps.
+    blurb: 'Condense the conversation. Runs now if Plato is idle, otherwise at the next safe point. Add <what to keep> to steer the summary.',
   },
   {
     id: 'history',

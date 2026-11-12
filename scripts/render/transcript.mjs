@@ -40,6 +40,11 @@ const snapshot = (p) => p.evaluate(() => {
 // A. A fold leaves every row in place and prints no summary.
 {
   const p = await page(760);
+  // D49cp: the default now hides the rows above a summary. This block is about
+  // the rows around it, so it asks for the all-visible layout.
+  await p.evaluate(() => window.dispatchEvent(new MessageEvent('message', {
+    data: { type: 'chat-prefs', hideBeforeSummary: false },
+  })));
   await replay(p, [
     { k: 'msg', cls: 'you', who: 'You', text: 'first question' },
     { k: 'msg', cls: 'bot', who: 'Plato', text: 'first answer' },

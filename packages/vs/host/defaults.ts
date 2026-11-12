@@ -8,6 +8,8 @@ export const DEFAULTS: Record<string, unknown> = {
   "plato.reasoning": "off",
   "plato.orchestration": "solo",
   "plato.compaction.threshold": 0.8,
+  "plato.compaction.idle": false,
+  "plato.chat.hideBeforeSummary": true,
   "plato.secrets.protect": [],
   "plato.secrets.allow": [],
   "plato.search.respectGitignore": false

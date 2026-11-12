@@ -126,7 +126,11 @@ const settings = {
 // 30 messages of 800 characters — 6,000 tokens — so there is something older
 // than the keep budget and the fold is a real one.
 const padded = (s) => s + ' ' + 'x'.repeat(800 - s.length - 1);
-const seedLog = [];
+const seedLog = [
+  // D49cn: a file this chat read, so the post-fold request has something to
+  // restate. The test writes the file just before starting the host.
+  { k: 'tool', tool: 'read_file', phase: 'done', digest: 'note.txt', ok: true },
+];
 for (let i = 1; i <= 15; i += 1) {
   seedLog.push({ k: 'msg', cls: 'you', who: 'You', text: padded(`Question ${i}`) });
   seedLog.push({ k: 'msg', cls: 'bot', who: 'Plato', text: padded(`Answer ${i}`) });
@@ -250,6 +254,13 @@ try {
   await host.execute('plato.openChat');
   assert.ok(transport.html.includes('<title>Plato</title>'), 'chat HTML');
   host.receive({ type: 'ready' });
+  // D49cp: the view preference travels with the page. The default hides the
+  // rows above the newest summary.
+  const prefs = await waitPost(
+    (m) => m.type === 'chat-prefs',
+    'the chat view preference',
+  );
+  assert.equal(prefs.hideBeforeSummary, true, 'earlier turns are hidden by default');
   const restore = await waitPost((m) => m.type === 'restore', 'restore');
   assert.equal(restore.log.length, seedLog.length, 'the saved log is restored');
   assert.equal(restore.title, '', 'an untitled conversation starts with no title');
@@ -261,7 +272,12 @@ try {
   // window and summarises everything older. The count is measured, so it is read
   // from the notice rather than assumed.
   let mark = posts.length;
-  host.receive({ type: 'slash-run', id: 'compact' });
+  // D49co: the text after /compact is the user's focus for the summary.
+  host.receive({
+    type: 'slash-run',
+    id: 'compact',
+    text: 'keep the release date',
+  });
   const foldNotice = await waitPost(
     (m) =>
       m.type === 'notice' &&
@@ -277,6 +293,17 @@ try {
     'Summary added for 10 earlier messages, as you asked. Nothing was removed from the transcript.',
     'the fold names the user as the cause and says nothing was removed',
   );
+  // The focus reached the summariser's own request, not only the host.
+  const foldLog = await (await fetch(`http://127.0.0.1:${port}/__log`)).json();
+  const foldRequest = (foldLog.log ?? []).find((t) =>
+    (t.userTexts ?? []).some((x) => x.includes('Summarise the following conversation')),
+  );
+  assert.ok(foldRequest, 'the fold asked the model to summarise');
+  assert.ok(
+    foldRequest.userTexts.some((x) => x.includes('keep the release date')),
+    'the /compact text reached the summary prompt',
+  );
+
   const folded = await waitState(
     (s) => (chatValue(s, 'log') || []).some((e) => e.k === 'compact'),
     'the summary row in the log',
@@ -288,6 +315,7 @@ try {
     'the fold ADDS a row; it never shrinks the transcript',
   );
   for (const row of seedLog) {
+    if (row.k !== 'msg') continue;
     assert.ok(
       foldedLog.some((e) => e.k === 'msg' && e.text === row.text),
       `the fold kept "${row.text}"`,
@@ -309,6 +337,17 @@ try {
   await setScript([{ text: 'Answer after the fold.' }]);
   mark = posts.length;
   await runToEnd(host, 'First task after the fold.', mark);
+  // D49cn: after a summary, the request restates the current state of the work
+  // the summary cannot show — read fresh at run start.
+  const afterFoldLog = await (await fetch(`http://127.0.0.1:${port}/__log`)).json();
+  const reinjected = (afterFoldLog.log ?? []).find((t) =>
+    (t.userTexts ?? []).some((x) => x.includes('[recent work')),
+  );
+  assert.ok(reinjected, 'a request after the fold carried the recent-work block');
+  assert.ok(
+    reinjected.userTexts.some((x) => x.includes('a stable note')),
+    'the block carried the CURRENT content of the file the chat read',
+  );
   const titlePost = await waitPost(
     (m) => m.type === 'title' && m.text === 'Field test run',
     'the generated title',
@@ -604,6 +643,26 @@ try {
   // Deleting the CURRENT chat is covered by chatdelete.test.mjs: it discards
   // the live conversation rather than archiving it, so it does not belong in
   // this suite's archive-on-close story.
+
+  /* ================================================================== */
+  /* 9. The view preference toggles without a reload (D49cp)            */
+  /* ================================================================== */
+  mark = posts.length;
+  host.receive({ type: 'set-hide-before-summary', value: false });
+  const prefOff = await waitPost(
+    (m) => m.type === 'chat-prefs' && m.hideBeforeSummary === false,
+    'the toggled preference',
+    mark,
+  );
+  assert.equal(prefOff.hideBeforeSummary, false);
+  const settingsNow = JSON.parse(
+    readFileSync(join(STATE, 'settings.json'), 'utf8'),
+  );
+  assert.equal(
+    settingsNow['plato.chat.hideBeforeSummary'],
+    false,
+    'the toggle is written to the setting, and only to the setting',
+  );
 
   console.log('PASS M3b checkpoint 2b history, resume, title and folding');
   console.log(`  posts: ${posts.length}`);

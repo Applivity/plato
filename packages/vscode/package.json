@@ -152,6 +152,16 @@
           "maximum": 0.95,
           "description": "D44d: fraction of the model's context window at which auto-compaction triggers (0.5–0.95, default 0.8). Compaction is always auto at this threshold; /compact (or the ring's Compact-now) forces it on demand."
         },
+        "plato.compaction.idle": {
+          "type": "boolean",
+          "default": false,
+          "description": "D49cm: compact the chat while it is idle. After an hour with no activity, and once the conversation holds at least 200,000 tokens, Plato summarises the earlier messages. Off by default: this summarises below the auto threshold, so it is a choice."
+        },
+        "plato.chat.hideBeforeSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "D49cp: show a divider at the latest summary instead of every earlier message. The transcript keeps every row and nothing is deleted; the divider can reveal them for the chat, and a reload applies this setting."
+        },
         "plato.secrets.protect": {
           "type": "array",
           "items": {

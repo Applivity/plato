@@ -251,6 +251,16 @@ try {
     0.8,
     'the settings payload carries the compaction threshold',
   );
+  assert.equal(
+    firstPayload.compaction?.idle,
+    false,
+    'idle compaction is off unless the user turns it on',
+  );
+  assert.equal(
+    firstPayload.compaction?.hideBeforeSummary,
+    true,
+    'earlier turns are hidden at the latest summary by default',
+  );
   // ---- add + discovery -------------------------------------------------
   send(child, {
     id: 5,
@@ -313,6 +323,20 @@ try {
   await waitFile(
     (s) => s['plato.compaction.threshold'] === 0.7,
     'compaction threshold',
+  );
+
+  // D49cm: idle compaction is a setting, off by default, and the page's
+  // checkbox is the way to turn it on.
+  send(child, {
+    id: 8.1,
+    method: 'webview.message',
+    params: {
+      message: { type: 'set-compaction-idle', value: true },
+    },
+  });
+  await waitFile(
+    (s) => s['plato.compaction.idle'] === true,
+    'idle compaction',
   );
 
   send(child, {
@@ -435,6 +459,11 @@ try {
   assert.equal(reloadPayload.defaultModel, 'localhost:o4-mini');
   assert.equal(reloadPayload.reasoning, 'medium');
   assert.equal(reloadPayload.compaction?.threshold, 0.7);
+  assert.equal(
+    reloadPayload.compaction?.idle,
+    true,
+    'the settings payload carries the idle choice',
+  );
   assert.equal(reloadPayload.respectGitignore, true);
   assert.deepEqual(reloadPayload.secrets.extra, ['*.m3a-secret']);
   assert.equal(reloadPayload.connections[0].keyStatus, 'set');
