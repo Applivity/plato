@@ -782,7 +782,7 @@ describe('the worker is told about its team', () => {
 });
 
 /**
- * D49cd, in the terminal: an `@` mention of an ABSOLUTE path names a file the
+ * D49dj, in the terminal: an `@` mention of an ABSOLUTE path names a file the
  * user chose. The desktop chat's guards apply unchanged — bytes for images, a
  * 200 KB text cap, and the secret deny-list before anything is read.
  */

@@ -34,7 +34,7 @@ export interface PlatoConfig {
    */
   respectGitignore: boolean;
   /**
-   * D49cm: compact while the chat is idle. Off by default, because it
+   * D49dl: compact while the chat is idle. Off by default, because it
    * summarises BELOW the user's threshold — an hour of silence and at least
    * 200,000 estimated tokens of history. Optional so a config built by an older
    * caller (or a test) reads as off.

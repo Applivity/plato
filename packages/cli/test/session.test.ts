@@ -1001,7 +1001,7 @@ describe('live sessions in the CLI (D49cq)', () => {
 });
 
 /**
- * D44d amended, D49cn, D49ck, D49cm: the parity round. The terminal session
+ * D44d amended, D49dn, D49dk, D49dl: the parity round. The terminal session
  * keeps the same conversation rows the desktop chat does, so a fold, the
  * re-injection block, an outside read and the idle clock behave the same way.
  */

@@ -9,7 +9,7 @@ import {
 } from '@applivity/plato-core';
 
 /**
- * D49cd, carried into the terminal (parity round).
+ * D49dj, carried into the terminal (parity round).
  *
  * An `@` mention of an ABSOLUTE or UNC path names a file the user chose, and a
  * person attaching a screenshot from their Desktop is not a tool call: the

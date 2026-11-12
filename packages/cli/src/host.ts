@@ -103,7 +103,7 @@ export interface RunSink {
     current: Mode;
   }): Promise<{ ok: boolean; note: string }>;
   /**
-   * D49ck, in the terminal: a read outside the workspace asks here, at the
+   * D49dk, in the terminal: a read outside the workspace asks here, at the
    * moment the model tries. The card carries the resolved absolute path and the
    * folder a wider answer would cover.
    *
@@ -425,7 +425,7 @@ export async function executeTask(
       ...(attached.images.length === 0 ? {} : { images: attached.images }),
       getMode,
       approve: (request) => sink.approve(request),
-      // D49ck: the host asks; core only offers. The answer approves this call's
+      // D49dk: the host asks; core only offers. The answer approves this call's
       // resolved paths, and a folder answer is remembered by the sink for the
       // life of the session.
       ...(sink.outsideRead === undefined
@@ -563,7 +563,7 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
     }
   };
 
-  // D49ck: folders the user allowed for THIS session. Nothing is written to the
+  // D49dk: folders the user allowed for THIS session. Nothing is written to the
   // settings, and a new process starts with an empty set.
   const outsideFolders = new Set<string>();
   const normalise = (path: string): string => {

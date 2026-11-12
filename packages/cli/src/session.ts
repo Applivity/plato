@@ -158,7 +158,7 @@ export interface ModeCard {
 }
 
 /**
- * D49ck: a read outside the project. Three answers, and only the folder one is
+ * D49dk: a read outside the project. Three answers, and only the folder one is
  * remembered — for this session, in memory, never in the settings.
  */
 export interface OutsideCard {
@@ -244,7 +244,7 @@ export class Session {
   private folding = false;
   /** Resolved once per model; a fold and a request must agree on the window. */
   private window: Promise<number> | null = null;
-  /** D49ck: folders allowed for THIS session only. */
+  /** D49dk: folders allowed for THIS session only. */
   private readonly outsideFolders = new Set<string>();
   private readonly idleFold: IdleFold;
 
@@ -434,7 +434,7 @@ export class Session {
     if (this.state.running) {
       return;
     }
-    // D49cm: a new message cancels a pending idle fold. The clock starts again
+    // D49dl: a new message cancels a pending idle fold. The clock starts again
     // when this run ends.
     this.idleFold.cancel();
     // The log BEFORE this task: the request carries what was said and done up
@@ -467,7 +467,7 @@ export class Session {
           "the model's context. The full conversation is still in the transcript.",
       );
     }
-    // D49cn: after a summary, show the model the CURRENT state of the work the
+    // D49dn: after a summary, show the model the CURRENT state of the work the
     // summary can no longer show. Built fresh here; absent before a fold.
     const block = await recentWorkBlock(before, { root: this.base.root });
     if (block !== null) {

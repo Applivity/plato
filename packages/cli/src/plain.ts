@@ -33,7 +33,7 @@ import { connectionNeedsKey, resolveKey } from './keys.js';
  * same sink the one-shot host uses, over readline instead of Ink. It is the
  * fallback when the TUI cannot start and the surface the scripted runs drive.
  *
- * The parity round (D44d, D49cn, D49ck, D49cm) gave it the same conversation
+ * The parity round (D44d, D49dn, D49dk, D49dl) gave it the same conversation
  * rows the Ink session keeps: a summary survives a `/compact`, re-injection
  * follows a fold, and a read outside the project is a three-answer prompt.
  */
