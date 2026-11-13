@@ -51,7 +51,7 @@ function BlockView({ block, columns }: { block: Block; columns: number }): React
         <Box flexDirection="column">
           {block.items.map((item, index) => (
             <Text key={index}>
-              {block.ordered ? `${index + 1}. ` : '• '}
+              {block.ordered ? `${(block.start ?? 1) + index}. ` : '• '}
               <Spans spans={item} />
             </Text>
           ))}

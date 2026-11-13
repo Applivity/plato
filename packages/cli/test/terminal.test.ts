@@ -96,6 +96,14 @@ describe('parseMarkdown', () => {
     }
   });
 
+  it('keeps the number an ordered list begins at', () => {
+    const [block] = parseMarkdown('5. five\n6. six');
+    expect(block?.kind).toBe('list');
+    if (block?.kind === 'list') {
+      expect(block.start).toBe(5);
+    }
+  });
+
   it('reads a quote and a rule', () => {
     expect(parseMarkdown('> quoted')).toEqual([
       { kind: 'quote', spans: [{ kind: 'text', text: 'quoted' }] },

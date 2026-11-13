@@ -24,7 +24,7 @@ export type Block =
   | { kind: 'heading'; level: number; spans: Span[] }
   | { kind: 'paragraph'; spans: Span[] }
   | { kind: 'code'; lang: string; lines: string[] }
-  | { kind: 'list'; ordered: boolean; items: Span[][] }
+  | { kind: 'list'; ordered: boolean; start?: number; items: Span[][] }
   | { kind: 'quote'; spans: Span[] }
   | { kind: 'rule' }
   | { kind: 'table'; align: Align[]; header: Span[][]; rows: Span[][][] };
@@ -219,7 +219,8 @@ export function parseMarkdown(source: string): Block[] {
 
     const item = LIST_ITEM.exec(line);
     if (item) {
-      const ordered = /\d/.test(item[1] ?? '');
+      const first = Number.parseInt(item[1] ?? '', 10);
+      const ordered = Number.isInteger(first);
       const items: Span[][] = [];
       let cursor = i;
       while (cursor < lines.length) {
@@ -230,7 +231,7 @@ export function parseMarkdown(source: string): Block[] {
         items.push(parseInline(next[2] ?? ''));
         cursor += 1;
       }
-      blocks.push({ kind: 'list', ordered, items });
+      blocks.push({ kind: 'list', ordered, ...(ordered ? { start: first } : {}), items });
       i = cursor;
       continue;
     }

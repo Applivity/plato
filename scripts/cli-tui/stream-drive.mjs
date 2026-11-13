@@ -33,6 +33,17 @@ async function waitFor(test, ms, what) {
   throw new Error(`timed out waiting for ${what}`);
 }
 
+/** How many times the whole sequence appears in the list. */
+function occurrences(haystack, needle) {
+  let count = 0;
+  for (let at = 0; at + needle.length <= haystack.length; at += 1) {
+    if (needle.every((line, index) => haystack[at + index] === line)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /** Every frame Ink draws, with the offset it starts at. */
 function framesFrom(text, from = 0) {
   const frames = [];
@@ -193,7 +204,7 @@ try {
     'the committed row shows exactly the lines the streaming frame showed',
   );
   record(
-    committedLines.filter((line) => line === liveLines[0]).length === 1,
+    occurrences(committedLines, liveLines) === 1,
     'the answer is printed once, not once live and once as a row',
   );
   const widths = liveLines.map((line) => displayWidth(line));
@@ -227,7 +238,49 @@ try {
   record(withTool.includes('✓ listing a folder'), 'a tool row still shows that it finished');
   record(withTool.includes('The listing is done.'), 'the answer after a tool still lands');
 
-  // 5. A long answer keeps the same tail lines, and still commits its row.
+  // 5. A numbered list with no blank lines: the tail keeps the numbers it
+  // carries, and the frame is filled rather than emptied by the cut.
+  const LIST = `${Array.from(
+    { length: 29 },
+    (_, index) => `${index + 1}. step ${index + 1} of the plan`,
+  ).join('\n')}\n\nAll steps listed. END-OF-LIST`;
+  provider.setScript([{ text: LIST, chunks: 10, chunkMs: 120, holdMs: 1200 }]);
+  mark = output.length;
+  await submit('numbered plan');
+  await waitFor(() => plain(output.slice(mark)).includes('END-OF-LIST'), 10000, 'the numbered list');
+  await sleep(150);
+  const listLiveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0);
+  const listLive = listLiveFrames.at(-1);
+  const listLiveLines = listLive === undefined ? [] : bodyLines(listLive);
+  notes.push(`numbered list: ${listLiveLines.length} live lines`);
+  record(
+    listLiveLines.length >= 8 && listLiveLines.length <= 11,
+    'the numbered-list frame is filled without passing the window',
+  );
+  const numbered = listLiveLines.filter((line) => /^\d+\./.test(line));
+  record(
+    numbered.length >= 8 && numbered.every((line) => /^(\d+)\. step \1\b/.test(line)),
+    'every numbered item is drawn with the number it carries',
+  );
+  await waitRunEnd(mark);
+  const listTerminator = '\x1b[?2026l';
+  const listEnd = listLive === undefined
+    ? 0
+    : output.lastIndexOf(listTerminator, listLive.at + listLive.text.length);
+  const listCommitted = plain(output.slice(listEnd + listTerminator.length))
+    .split('\n')
+    .filter((line) => line.startsWith('│'))
+    .map((line) => line.replace(/^│ ?/, '').replace(/\r$/, ''));
+  record(
+    listLiveLines.length > 0 &&
+      listCommitted.length >= listLiveLines.length &&
+      listLiveLines.every(
+        (line, index) => line === listCommitted[listCommitted.length - listLiveLines.length + index],
+      ),
+    'the numbered list shows the same tail lines when it lands',
+  );
+
+  // 6. A long answer keeps the same tail lines, and still commits its row.
   provider.setScript([{ text: LONG, chunks: 25, chunkMs: 40, holdMs: 1200 }]);
   mark = output.length;
   const started = Date.now();

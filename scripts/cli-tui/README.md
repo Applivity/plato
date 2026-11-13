@@ -15,3 +15,7 @@ body carries exactly the lines the capture shows, and Backspace removes the
 block whole; the streaming check adds that the last live frame and the committed
 row carry the same lines. Captures are evidence, not source, and are not
 committed.
+
+Known limit: a single paragraph longer than the live area has no blank line to
+cut at, so its wrapping can shift by one line when the answer lands. Lists, code
+blocks and paragraphs separated by blank lines keep their lines.

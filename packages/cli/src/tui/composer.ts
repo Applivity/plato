@@ -38,8 +38,10 @@ export function removesWholeDraft(text: string, cursor: number): boolean {
   return text.includes('\n') && cursor >= text.length;
 }
 
-/** The parser's fence rule, so a tail cut never lands inside a code block. */
+/** The parser's fence, list and heading rules; their lines are drawn whole. */
 const FENCE = /^\s*```\s*([^\s`]*)\s*$/;
+const LIST_ITEM = /^\s*([-*+]|\d+[.)])\s+(.*)$/;
+const HEADING = /^(#{1,6})\s+(.*)$/;
 
 /**
  * The tail of a streaming answer the live area may draw, cut at a whole block.
@@ -82,14 +84,31 @@ export function liveTail(text: string, maxRows: number, columns: number): string
     }
     return lines.slice(start).join('\n');
   }
-  for (let index = start; index < lines.length - 1; index += 1) {
-    const line = lines[index] ?? '';
-    if (FENCE.test(line)) {
-      continue;
+  // Fill the frame but never exceed it: among the block boundaries that fit,
+  // take the earliest. The row cut is the latest line that fits, so an earlier
+  // whole block is chosen only when it fits as well.
+  const rowsFrom = (index: number): number => {
+    let used = 0;
+    for (let at = index; at < lines.length; at += 1) {
+      used += Math.max(1, Math.ceil(displayWidth(lines[at] ?? '') / width));
     }
-    if (open[index] === false && line.trim().length === 0) {
-      return lines.slice(index + 1).join('\n');
+    return used;
+  };
+  const boundaries: number[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    if (open[index] === false && (lines[index] ?? '').trim().length === 0 && index + 1 < lines.length) {
+      boundaries.push(index + 1);
     }
+  }
+  // A list item and a heading are one row each and are drawn as they are, so
+  // the cut may start there without changing how the line reads.
+  if (LIST_ITEM.test(lines[start] ?? '') || HEADING.test(lines[start] ?? '')) {
+    boundaries.push(start);
+  }
+  boundaries.sort((a, b) => a - b);
+  const fitting = boundaries.filter((index) => rowsFrom(index) <= maxRows);
+  if (fitting.length > 0) {
+    return lines.slice(fitting[0] ?? start).join('\n');
   }
   return lines.slice(start).join('\n');
 }
