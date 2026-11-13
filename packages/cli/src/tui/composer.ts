@@ -1,3 +1,5 @@
+import { displayWidth } from '../format/terminal.js';
+
 /**
  * How the composer holds pasted text (round 1).
  *
@@ -34,4 +36,60 @@ export function draftChip(
 /** Backspace at the end of a draft block removes the block as one unit. */
 export function removesWholeDraft(text: string, cursor: number): boolean {
   return text.includes('\n') && cursor >= text.length;
+}
+
+/** The parser's fence rule, so a tail cut never lands inside a code block. */
+const FENCE = /^\s*```\s*([^\s`]*)\s*$/;
+
+/**
+ * The tail of a streaming answer the live area may draw, cut at a whole block.
+ *
+ * A frame taller than the window cannot be redrawn in place, and Ink then loses
+ * the row that commits the answer. The tail keeps the frame short. The cut is
+ * moved forward to a blank line outside a code fence, so the lines that are
+ * drawn are the lines that will be drawn after the answer lands — a cut inside
+ * a fence would draw code as prose and then change.
+ */
+export function liveTail(text: string, maxRows: number, columns: number): string {
+  const lines = text.split('\n');
+  const width = Math.max(1, columns);
+  let rows = 0;
+  let start = lines.length;
+  while (start > 0) {
+    const cost = Math.max(1, Math.ceil(displayWidth(lines[start - 1] ?? '') / width));
+    if (rows + cost > maxRows) {
+      break;
+    }
+    rows += cost;
+    start -= 1;
+  }
+  if (start === 0) {
+    return text;
+  }
+  // The fence state BEFORE each line, so a cut can be moved back to the
+  // opening fence instead of landing inside the block.
+  const open: boolean[] = [];
+  let fence = false;
+  for (const line of lines) {
+    open.push(fence);
+    if (FENCE.test(line)) {
+      fence = !fence;
+    }
+  }
+  if (open[start] === true) {
+    while (start > 0 && !(open[start] === false && FENCE.test(lines[start] ?? ''))) {
+      start -= 1;
+    }
+    return lines.slice(start).join('\n');
+  }
+  for (let index = start; index < lines.length - 1; index += 1) {
+    const line = lines[index] ?? '';
+    if (FENCE.test(line)) {
+      continue;
+    }
+    if (open[index] === false && line.trim().length === 0) {
+      return lines.slice(index + 1).join('\n');
+    }
+  }
+  return lines.slice(start).join('\n');
 }

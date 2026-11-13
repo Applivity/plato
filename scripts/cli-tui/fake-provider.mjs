@@ -10,6 +10,68 @@ import { createServer } from 'node:http';
 export function startProvider() {
   /** Every chat request, in arrival order. */
   const requests = [];
+  /**
+   * The answers to play, one per agent turn. A step is
+   * `{ text, chunks, chunkMs }` for text, or `{ tool, args }` for a call.
+   * No script, or a script that has run out, answers with a fixed sentence.
+   */
+  let script = [];
+  let cursor = 0;
+
+  const finish = (res, finishReason, usage) => {
+    const chunk = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
+    chunk({ choices: [{ index: 0, delta: {}, finish_reason: finishReason }] });
+    chunk({
+      choices: [{ index: 0, delta: {}, finish_reason: null }],
+      usage,
+    });
+    res.write('data: [DONE]\n\n');
+    res.end();
+  };
+
+  const play = async (res, step) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+    const chunk = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
+    if (step.tool !== undefined) {
+      chunk({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_0',
+                  type: 'function',
+                  function: {
+                    name: step.tool,
+                    arguments: JSON.stringify(step.args ?? {}),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      });
+      finish(res, 'tool_calls', { prompt_tokens: 100, completion_tokens: 20 });
+      return;
+    }
+    const text = typeof step.text === 'string' ? step.text : 'Paste received.';
+    const pieces = Math.max(1, step.chunks ?? 1);
+    const size = Math.ceil(text.length / pieces);
+    for (let index = 0; index < text.length; index += size) {
+      if (res.destroyed) return;
+      chunk({ choices: [{ index: 0, delta: { role: 'assistant', content: text.slice(index, index + size) } }] });
+      if (step.chunkMs !== undefined && index + size < text.length) {
+        await new Promise((done) => setTimeout(done, step.chunkMs));
+      }
+    }
+    // A hold lets a check read the last streaming frame before the answer lands.
+    if (step.holdMs !== undefined) {
+      await new Promise((done) => setTimeout(done, step.holdMs));
+    }
+    finish(res, 'stop', { prompt_tokens: 100, completion_tokens: Math.max(1, text.length >> 2) });
+  };
   const server = createServer((req, res) => {
     let body = '';
     req.on('data', (chunk) => {
@@ -33,16 +95,9 @@ export function startProvider() {
           parsed = body;
         }
         requests.push(parsed);
-        res.writeHead(200, { 'content-type': 'text/event-stream' });
-        const chunk = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
-        chunk({ choices: [{ index: 0, delta: { role: 'assistant', content: 'Paste received.' } }] });
-        chunk({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
-        chunk({
-          choices: [{ index: 0, delta: {}, finish_reason: null }],
-          usage: { prompt_tokens: 10, completion_tokens: 3 },
-        });
-        res.write('data: [DONE]\n\n');
-        res.end();
+        const step = script[cursor];
+        cursor += 1;
+        void play(res, step ?? { text: 'Paste received.' });
         return;
       }
       res.writeHead(404);
@@ -56,6 +111,11 @@ export function startProvider() {
       resolve({
         port,
         requests,
+        /** The answers to play, one per agent turn, from this point on. */
+        setScript: (steps) => {
+          script = steps;
+          cursor = 0;
+        },
         close: () =>
           new Promise((done) => {
             // Keep-alive sockets would hold the close open after the CLI stops.

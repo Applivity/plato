@@ -17,7 +17,6 @@ import {
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { formatCount } from '../host.js';
-import { stripTerminalEscapes, tailWithinRows } from '../format/terminal.js';
 import { Markdown } from './Markdown.js';
 import { Welcome } from './Welcome.js';
 import {
@@ -28,7 +27,7 @@ import {
   suggest,
   type SlashCommand,
 } from '../completion.js';
-import { draftChip, pastedText, removesWholeDraft } from './composer.js';
+import { draftChip, liveTail, pastedText, removesWholeDraft } from './composer.js';
 
 export interface AppProps {
   session: Session;
@@ -405,9 +404,9 @@ export function RowView({ row, columns }: { row: Row; columns: number }): ReactE
 }
 
 /**
- * The answer as it arrives. It shows only the tail that fits: a frame taller
- * than the window cannot be redrawn in place, and every frame then becomes
- * another copy in the scrollback.
+ * The answer as it arrives. The same renderer draws it here and after it lands,
+ * so the lines on screen while it streams are the lines on screen when it is
+ * committed: the answer never reflows at the moment it ends.
  */
 function LiveAnswer({
   text,
@@ -418,10 +417,11 @@ function LiveAnswer({
   columns: number;
   rows: number;
 }): ReactElement {
-  // Header, status, composer, and their margins take about nine rows; the tail
-  // budget leaves room for them and for the line that says rows were cut.
+  // A frame taller than the window cannot be redrawn in place, and Ink loses
+  // the row that commits the answer, so the live area draws only a tail. The
+  // tail is cut at a whole block, so the lines shown are the lines committed.
   const budget = Math.max(1, rows - 13);
-  const tail = tailWithinRows(stripTerminalEscapes(text), budget, columns);
+  const shown = liveTail(text, budget, columns);
   return (
     <Box marginTop={1}>
       <Box
@@ -434,12 +434,7 @@ function LiveAnswer({
         borderColor={COLOURS ? 'gray' : undefined}
         paddingLeft={1}
       >
-        {tail.hidden > 0 ? (
-          <Text dimColor>
-            … {tail.hidden} earlier {tail.hidden === 1 ? 'line' : 'lines'}
-          </Text>
-        ) : null}
-        <Text>{tail.text}</Text>
+        <Markdown text={shown} columns={Math.max(20, columns - 2)} />
       </Box>
     </Box>
   );

@@ -4,7 +4,6 @@ import {
   parseMarkdown,
   plainText,
   stripTerminalEscapes,
-  tailWithinRows,
 } from '../src/format/terminal.js';
 
 describe('stripTerminalEscapes', () => {
@@ -120,29 +119,5 @@ describe('parseMarkdown', () => {
     if (block?.kind === 'paragraph') {
       expect(plainText(block.spans)).toBe('one line and the next');
     }
-  });
-});
-
-describe('tailWithinRows', () => {
-  it('keeps the whole text when it fits', () => {
-    expect(tailWithinRows('a\nb', 5, 80)).toEqual({ text: 'a\nb', hidden: 0 });
-  });
-
-  it('keeps the last rows and counts the ones it dropped', () => {
-    const text = Array.from({ length: 10 }, (_, i) => `line ${i}`).join('\n');
-    const tail = tailWithinRows(text, 3, 80);
-    expect(tail.text).toBe('line 7\nline 8\nline 9');
-    expect(tail.hidden).toBe(7);
-  });
-
-  it('counts a wrapped line by its display rows', () => {
-    const long = 'x'.repeat(200);
-    expect(tailWithinRows(`${long}\nend`, 2, 100)).toEqual({ text: 'end', hidden: 2 });
-  });
-
-  it('cuts a single line taller than the window', () => {
-    const tail = tailWithinRows('x'.repeat(500), 2, 100);
-    expect(tail.text.length).toBe(200);
-    expect(tail.hidden).toBe(3);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { insertText } from '../src/editor.js';
-import { draftChip, pastedText, removesWholeDraft } from '../src/tui/composer.js';
+import { draftChip, liveTail, pastedText, removesWholeDraft } from '../src/tui/composer.js';
 
 describe('a pasted chunk', () => {
   it('keeps the line breaks inside it', () => {
@@ -71,5 +71,23 @@ describe('a draft block', () => {
 
   it('is not touched by Backspace when it is not a block', () => {
     expect(removesWholeDraft('one line', 8)).toBe(false);
+  });
+});
+
+describe('the live tail', () => {
+  it('is the whole answer when it fits', () => {
+    expect(liveTail('one\ntwo\nthree', 10, 80)).toBe('one\ntwo\nthree');
+  });
+
+  it('starts after a blank line, so whole blocks survive the cut', () => {
+    const text = 'first block\nline two\n\nsecond block\nline two\n\nthird block\nline two';
+    expect(liveTail(text, 3, 80)).toBe('third block\nline two');
+  });
+
+  it('does not cut inside a code fence', () => {
+    const text = 'before\n\n```js\nconst a = 1;\nconst b = 2;\n```\n\nafter';
+    const tail = liveTail(text, 5, 80);
+    expect(tail.startsWith('```js')).toBe(true);
+    expect(tail.includes('const b = 2;')).toBe(true);
   });
 });
