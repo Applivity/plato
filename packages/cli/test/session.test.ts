@@ -202,6 +202,101 @@ describe('approval card', () => {
     expect(readFileSync(join(root, 'note.txt'), 'utf8')).toBe('hello');
   });
 
+  it('records a declined decision as a row', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Refused.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardConfirm();
+    await done;
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter((row) => row.kind === 'notice' && row.text === 'Declined — writing a file.'),
+    ).toHaveLength(1);
+  });
+
+  it('records an approval in the tool\'s words', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Written.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardMove(1);
+    active.cardConfirm();
+    await done;
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter((row) => row.kind === 'notice' && row.text === 'Approved — writing a file.'),
+    ).toHaveLength(1);
+  });
+
+  it('records a session approval in its own words', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Written.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardMove(2);
+    active.cardConfirm();
+    await done;
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter(
+          (row) =>
+            row.kind === 'notice' && row.text === 'Approved for this session — writing a file.',
+        ),
+    ).toHaveLength(1);
+  });
+
+  it('denies and stops the run in one press, and records it', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Written.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardStop();
+    await done;
+    const rows = active.getSnapshot().rows;
+    expect(
+      rows.filter(
+        (row) => row.kind === 'notice' && row.text === 'Denied and stopped — writing a file.',
+      ),
+    ).toHaveLength(1);
+    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: cancelled.')).toBe(
+      true,
+    );
+    expect(active.getSnapshot().running).toBe(false);
+    expect(existsSync(join(root, 'note.txt'))).toBe(false);
+  });
+
   it('remembers "allow for this session" across calls', async () => {
     const root = tempDir('plato-cli-session-root-');
     const active = session(

@@ -254,6 +254,8 @@ export class Session {
   private outsideAllowed = false;
   /** "Stopping after this step." is said once per run, however often asked. */
   private stopNoticed = false;
+  /** The pending approval was answered with Esc: deny, and stop the run. */
+  private approvalStopped = false;
   private readonly idleFold: IdleFold;
 
   /** The flat pairs the session store and the title read. */
@@ -1118,6 +1120,8 @@ export class Session {
     }
     const target = request.host !== undefined ? `the host ${request.host}` : 'this file';
     const options = ['No', 'Yes', `Yes, allow ${target} for this session`];
+    const doing = toolWords(request.tool).doing;
+    this.approvalStopped = false;
     return this.present<number>({
       kind: 'approval',
       tool: request.tool,
@@ -1125,9 +1129,18 @@ export class Session {
       options,
       selected: 0,
     }).then((choice) => {
+      // The decision is its own row: the tool's line says what it did, and
+      // this says what the user answered.
+      if (this.approvalStopped) {
+        this.append('notice', `Denied and stopped — ${doing}.`);
+        return false;
+      }
       if (choice === 2) {
         this.remembered.add(key);
       }
+      const word =
+        choice === 0 ? 'Declined' : choice === 2 ? 'Approved for this session' : 'Approved';
+      this.append('notice', `${word} — ${doing}.`);
       return choice !== 0;
     });
   }
@@ -1234,6 +1247,28 @@ export class Session {
       return;
     }
     this.settle(card.options[card.selected] ?? '');
+  }
+
+  /**
+   * Esc on an approval card is the one press that denies AND stops the run.
+   * The card's own No answer keeps its meaning: deny, and the run continues.
+   * Ctrl+C still goes through `cardCancel`, which answers safely.
+   */
+  cardStop(): void {
+    const card = this.state.card;
+    if (card === null) {
+      return;
+    }
+    if (card.kind !== 'approval') {
+      this.cardCancel();
+      return;
+    }
+    this.approvalStopped = true;
+    // The decision row is the acknowledgement; the generic stop notice would
+    // say the same thing twice.
+    this.stopNoticed = true;
+    this.settle(0);
+    this.controller?.cancel();
   }
 
   cardCancel(): void {

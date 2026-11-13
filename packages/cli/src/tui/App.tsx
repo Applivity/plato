@@ -154,10 +154,16 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         return;
       }
       if (key.escape) {
-        session.cardCancel();
+        // On an approval card Esc is deny AND stop; every other card keeps
+        // today's meaning, and Ctrl+C answers safely on all of them.
+        if (card.kind === 'approval') {
+          session.cardStop();
+        } else {
+          session.cardCancel();
+        }
         return;
       }
-      // Ctrl+C answers a card with its safe choice, as Esc does. Before this it
+      // Ctrl+C answers a card with its safe choice. Before this it
       // was ignored while a card was open — the one moment the run is waiting on
       // the user, so the one moment the key must not do nothing (D49cb).
       if (key.ctrl && input === 'c') {
@@ -612,6 +618,9 @@ function CardView({ card }: { card: Card }): ReactElement {
             <Text dimColor>{capLines(card.preview, 12)}</Text>
           ) : null}
           <OptionList options={card.options} selected={card.selected} />
+          <Text dimColor>
+            ↑↓ move · Enter answers · No declines and continues · Esc denies and stops the run
+          </Text>
         </>
       ) : null}
 
