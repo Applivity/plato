@@ -28,6 +28,7 @@ import {
   suggest,
   type SlashCommand,
 } from '../completion.js';
+import { draftChip, pastedText, removesWholeDraft } from './composer.js';
 
 export interface AppProps {
   session: Session;
@@ -113,7 +114,9 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     setHistoryAt(null);
     setMenuDismissedAt(null);
     setSubmitted((previous) => [...previous, line]);
-    if (line.startsWith('/')) {
+    // A draft block is a message even when its first line starts with a slash:
+    // only a single line can be a command.
+    if (line.startsWith('/') && !line.includes('\n')) {
       if ((await session.handleCommand(line)) === 'exit') {
         onExit();
       }
@@ -246,15 +249,17 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       }
       return;
     }
-    // A pasted line can carry its own Enter in the same chunk; Ink reports the
-    // whole paste as one string, with no key flags.
-    if (newline && !key.ctrl && !key.meta) {
-      const combined = insertText(editor, input.replace(/[\r\n]+/g, ' '));
-      const line = combined.text.trim();
-      if (line.length > 0) {
-        void submitLine(line);
+    // A paste can carry its own line breaks in the same chunk; Ink reports the
+    // whole paste as one string, with no key flags. The block becomes draft
+    // text with its breaks kept, and waits for Enter — a pasted stack trace
+    // must never go out before it can be read. One trailing break is the end
+    // of the paste, not an empty line, so a one-line paste is ordinary text.
+    if (!key.ctrl && !key.meta) {
+      const text = pastedText(input);
+      if (text !== input) {
+        setEditor(insertText(editor, text));
+        return;
       }
-      return;
     }
     if (key.upArrow) {
       if (submitted.length === 0) {
@@ -303,6 +308,12 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     // plain Backspace, which cannot be told apart from the key itself.
     if (key.ctrl && input === 'w') {
       setEditor(deleteWordBack(editor));
+      return;
+    }
+    // A draft block is shown as one chip, so Backspace at its end takes the
+    // whole block rather than editing text the user cannot see (round 1).
+    if (key.backspace && !key.ctrl && !key.meta && removesWholeDraft(editor.text, editor.cursor)) {
+      setEditor(EMPTY_EDITOR);
       return;
     }
     if (key.backspace) {
@@ -492,13 +503,25 @@ function CommandMenu({
 
 function Composer({ editor, disabled }: { editor: EditorState; disabled: boolean }): ReactElement {
   const cursor = editor.text.slice(editor.cursor, editor.cursor + 1);
+  // A pasted block stays one line high. It shows the line the cursor is on and
+  // its place, so a keystroke or an arrow is never hidden (round 1).
+  const draft = editor.text.includes('\n') ? draftChip(editor.text, editor.cursor) : null;
   return (
     <Box flexDirection="column" marginTop={1}>
       <Box>
         <Text color="cyan">› </Text>
-        <Text>{editor.text.slice(0, editor.cursor)}</Text>
-        <Text inverse>{cursor.length > 0 ? cursor : ' '}</Text>
-        <Text>{editor.text.slice(editor.cursor + 1)}</Text>
+        {draft === null ? (
+          <>
+            <Text>{editor.text.slice(0, editor.cursor)}</Text>
+            <Text inverse>{cursor.length > 0 ? cursor : ' '}</Text>
+            <Text>{editor.text.slice(editor.cursor + 1)}</Text>
+          </>
+        ) : (
+          <>
+            <Text>{draft.line}</Text>
+            <Text dimColor>{` [line ${draft.at} of ${draft.total}]`}</Text>
+          </>
+        )}
         {disabled ? <Text dimColor> </Text> : null}
       </Box>
       <Text dimColor>Shift+Tab mode · /help · Esc interrupt · Ctrl+C twice exits</Text>

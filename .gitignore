@@ -70,3 +70,6 @@ docs/telemetry-notes.md
 packages/cli/*.tgz
 packages/vscode/*.vsix
 packages/vs/*.vsix
+
+# --- CLI terminal-check captures (evidence, rewritten on every run) ---
+scripts/cli-tui/*.txt
