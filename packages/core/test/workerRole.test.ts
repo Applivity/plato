@@ -479,6 +479,84 @@ describe('the worker prompt forbids reading absence from a failed guess', () => 
 });
 
 /**
+ * Facts about the machine are HOST facts, appended after the body like the mode
+ * and team paragraphs — so a project's PLATO.md can replace the body without
+ * deleting what the model needs to know about the shell it runs in.
+ */
+describe('the worker prompt states the environment', () => {
+  it('names the operating system, the shell and the root when supplied', async () => {
+    const r = await buildWorkerRole({
+      root: dir,
+      env: { platform: 'win32', shell: 'cmd.exe via %COMSPEC%', root: 'C:\\work' },
+    });
+    expect(r.system).toContain('Environment: this run is on Windows (win32).');
+    expect(r.system).toContain('The shell tool runs cmd.exe via %COMSPEC%.');
+    expect(r.system).toContain('The workspace root is C:\\work;');
+    expect(r.system).toContain('the file tools work only inside that root, and the shell does not.');
+  });
+
+  it('names the right shell on a POSIX platform', async () => {
+    const r = await buildWorkerRole({
+      root: dir,
+      env: { platform: 'linux', shell: '/bin/bash -c', root: '/work' },
+    });
+    expect(r.system).toContain('this run is on Linux (linux)');
+    expect(r.system).toContain('The shell tool runs /bin/bash -c.');
+  });
+
+  it('appends the facts after the body, so a project PLATO.md cannot delete them', async () => {
+    write('PLATO.md', 'PROJECT TUNING: be terse.');
+    const r = await buildWorkerRole({
+      root: dir,
+      env: { platform: 'darwin', shell: '/bin/bash -c', root: dir },
+    });
+    expect(r.system).toContain('Environment: this run is on macOS (darwin).');
+    expect(r.system.indexOf('PROJECT TUNING')).toBeLessThan(
+      r.system.indexOf('Environment:'),
+    );
+  });
+
+  it('adds nothing when the host supplies no environment', async () => {
+    const r = await buildWorkerRole({ root: dir });
+    expect(r.system).not.toContain('Environment:');
+  });
+});
+
+/**
+ * The prompt must say which instruction wins, because the three layers can
+ * disagree — and a model that picks silently will pick the wrong one.
+ */
+describe('the worker prompt states instruction precedence', () => {
+  const one = DEFAULT_PLATO_BODY.replace(/\s+/g, ' ');
+
+  it('names the three sources in order', () => {
+    const user = one.indexOf("the user's message decides the task");
+    const project = one.indexOf('decide its conventions over Plato');
+    const safety = one.indexOf('Plato\'s safety rules (containment, secrets, approvals) decide over both');
+    expect(user).toBeGreaterThan(-1);
+    expect(project).toBeGreaterThan(user);
+    expect(safety).toBeGreaterThan(project);
+  });
+
+  it('asks the model to say which it followed when it matters', () => {
+    expect(one).toContain('When it matters, say which you followed.');
+  });
+});
+
+/**
+ * The failure: "I cannot view images" while `read_image` existed. A capability
+ * is not a question — try the tool, and report what it returned.
+ */
+describe('the worker prompt forbids denying a capability it has', () => {
+  it('says to try the tool and report what it returned', () => {
+    const one = DEFAULT_PLATO_BODY.replace(/\s+/g, ' ');
+    expect(one).toContain('Never say you cannot do something a tool exists for');
+    expect(one).toContain('try the tool and report what it returned');
+    expect(one).toContain('if the tool is not available, say that instead');
+  });
+});
+
+/**
  * D49av. The diagnostics block in a tool result is only worth appending if the
  * model treats it as evidence rather than background noise — and only if it does
  * NOT treat it as a licence to go and fix pre-existing problems nobody asked

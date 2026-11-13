@@ -117,6 +117,7 @@ async function run(
     provider: ChatProvider;
     model?: string;
     task?: string;
+    platform?: NodeJS.Platform;
   },
 ) {
   const io = capture();
@@ -124,6 +125,7 @@ async function run(
     root: options.root,
     task: options.task ?? 'do the work',
     mode: options.mode,
+    ...(options.platform === undefined ? {} : { platform: options.platform }),
     outputFormat: options.format ?? 'text',
     config: config(),
     env: options.env,
@@ -875,9 +877,48 @@ describe('attachments from anywhere', () => {
 
     expect(code).toBe(0);
     expect(io.err()).toContain('Read a file outside the project?');
-    expect(io.err()).toContain('1. Allow once');
-    expect(io.err()).toContain('3. Deny');
+    expect(io.err()).toContain('1. Allow once — Just this one request.');
+    expect(io.err()).toContain(
+      '2. Allow for this session — Anything outside the project until this chat ends.',
+    );
+    expect(io.err()).toContain('3. Deny — Nothing is read.');
+    expect(io.err()).not.toContain('Allow this folder');
     expect(JSON.stringify(requests)).toContain('the user declined to read');
     expect(JSON.stringify(requests)).not.toContain('outside-body');
+  });
+
+  it('tells the model the platform, the shell, and the workspace root', async () => {
+    const root = tempDir('plato-cli-env-root-');
+    const requests: TurnRequest[] = [];
+    const result = await run({
+      root,
+      env: environment(),
+      mode: 'auto',
+      // Injected so the Windows facts are testable on a Mac.
+      platform: 'win32',
+      provider: scripted([{ text: 'done' }], (request) => requests.push(request)),
+    });
+
+    expect(result.code).toBe(0);
+    const system = requests.at(-1)?.system ?? '';
+    expect(system).toContain('Environment: this run is on Windows (win32).');
+    expect(system).toContain('The shell tool runs cmd.exe via %COMSPEC%.');
+    expect(system).toContain(`The workspace root is ${root};`);
+  });
+
+  it('names the POSIX shell when the run is not on Windows', async () => {
+    const root = tempDir('plato-cli-env-root-');
+    const requests: TurnRequest[] = [];
+    await run({
+      root,
+      env: environment(),
+      mode: 'auto',
+      platform: 'linux',
+      provider: scripted([{ text: 'done' }], (request) => requests.push(request)),
+    });
+
+    const system = requests.at(-1)?.system ?? '';
+    expect(system).toContain('Environment: this run is on Linux (linux).');
+    expect(system).toContain('The shell tool runs /bin/bash -c.');
   });
 });

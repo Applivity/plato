@@ -1,15 +1,19 @@
 /**
- * Host test: reading outside the project with the user's say-so (D49dk).
+ * Host test: touching a path outside the project with the user's say-so (D49dk).
  *
  * What it proves, through the real host and card flow:
  *   - a read of a path outside the workspace raises the card, which names the
  *     path, says it is outside the project, says why Plato wants it, and offers
- *     Allow once / Allow this folder for this session / Deny;
- *   - "Allow once" lets the tool run and the model sees the file;
- *   - "Allow this folder" covers a SECOND file in it with no card;
- *   - "Deny" is a normal tool result the model reads — the run continues;
- *   - a NEW chat asks again: the folder memory is the chat session's, not a
- *     setting, and nothing is written to workspace state.
+ *     exactly core's three answers with their hints — no folder answer;
+ *   - "Allow once" lets the tool run and is FORGOTTEN: the next call asks again;
+ *   - "Allow for this session" covers a later READ and a later WRITE with no
+ *     card at all;
+ *   - a NEW chat asks again: the memory is the chat session's, not a setting,
+ *     and nothing is written to workspace state;
+ *   - "Deny" is a normal tool result the model reads — the run continues, and
+ *     for a write nothing is written;
+ *   - a call carrying TWO outside paths (apply_patch) puts BOTH on the card,
+ *     and denying it leaves both files absent.
  *
  * The page's drawing is pinned by `scripts/render/outside.mjs`; the core rules
  * by `packages/core/test/outsideRead.test.ts`.
@@ -17,7 +21,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -38,6 +48,8 @@ const require = createRequire(import.meta.url);
 const ONE = join(AWAY, 'one.txt');
 const TWO = join(AWAY, 'two.txt');
 const THREE = join(AWAY2, 'three.txt');
+const WRITTEN = join(AWAY, 'written.txt');
+const DENIED = join(AWAY, 'denied.txt');
 writeFileSync(ONE, 'first outside fact\n', 'utf8');
 writeFileSync(TWO, 'second outside fact\n', 'utf8');
 writeFileSync(THREE, 'third outside fact\n', 'utf8');
@@ -173,6 +185,17 @@ async function lastToolText() {
 
 const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
 
+/** Core's three answers for a read; the card must carry exactly these. */
+const READ_ANSWERS = [
+  { choice: 'once', label: 'Allow once', hint: 'Just this one request.' },
+  {
+    choice: 'session',
+    label: 'Allow for this session',
+    hint: 'Anything outside the project until this chat ends.',
+  },
+  { choice: 'deny', label: 'Deny', hint: 'Nothing is read.' },
+];
+
 let failure = null;
 try {
   const host = start({
@@ -203,7 +226,7 @@ try {
   host.receive({ type: 'ready' });
   await waitPost((m) => m.type === 'restore', 'restore');
 
-  /* ---- 1. Allow this folder ---------------------------------------- */
+  /* ---- 1. The card: three answers, in core's order, no folder -------- */
   await setScript([
     { calls: [{ tool: 'read_file', args: { path: ONE } }] },
     { text: 'Read it.' },
@@ -212,11 +235,12 @@ try {
   host.receive(runStart('read the first file outside'));
   const card = await waitPost(
     (m) => m.type === 'outside-read',
-    'the outside-read card',
+    'the outside-path card',
     mark,
   );
   assert.equal(card.path, ONE, 'the card carries the path the model asked for');
   assert.equal(card.abs, ONE, 'and the path Plato resolved it to');
+  assert.equal(card.kind, 'read', 'a read card says it is a read');
   assert.equal(card.title, 'Read a file outside the project?');
   assert.ok(
     card.lines.some((l) => l.includes(ONE)) &&
@@ -227,80 +251,176 @@ try {
     card.why.includes('reading a file'),
     `the card says why Plato wants it: ${card.why}`,
   );
-  assert.equal(card.once, 'Allow once');
-  assert.equal(card.folderLabel, 'Allow this folder for this session');
-  assert.equal(card.deny, 'Deny');
-  host.receive({ type: 'outside-answer', value: 'folder' });
-  await waitPost((m) => m.type === 'done', 'the approved run', mark);
+  assert.deepEqual(card.answers, READ_ANSWERS, 'the card carries core\'s three answers verbatim');
+  assert.equal(card.folderLabel, undefined, 'there is no folder answer');
+
+  /* ---- 2. Allow once: this call runs, the next asks again ------------ */
+  host.receive({ type: 'outside-answer', value: 'once' });
+  await waitPost((m) => m.type === 'done', 'the run allowed once', mark);
   assert.match(await lastToolText(), /first outside fact/, 'the model saw the file');
 
-  /* ---- 2. The allowed folder covers a second file, with no card ----- */
   await settle();
   await setScript([
     { calls: [{ tool: 'read_file', args: { path: TWO } }] },
     { text: 'Read that one too.' },
   ]);
   mark = posts.length;
-  host.receive(runStart('read the second file in the same folder'));
-  await waitPost((m) => m.type === 'done', 'the second run', mark);
-  assert.equal(
-    posts.slice(mark).filter((m) => m.type === 'outside-read').length,
-    0,
-    'the allowed folder covered the second file without a card',
+  host.receive(runStart('read the second file outside'));
+  const again = await waitPost(
+    (m) => m.type === 'outside-read',
+    'the card for the second call',
+    mark,
   );
-  assert.ok(
-    posts.slice(mark).some(
-      (m) => m.type === 'notice' && /you allowed this folder for this session/i.test(String(m.text)),
-    ),
-    'the user is told why no card appeared',
-  );
-  assert.match(await lastToolText(), /second outside fact/, 'the second file was read');
+  assert.equal(again.abs, TWO, '"Allow once" was not remembered');
 
-  /* ---- 3. Deny: a normal result, and the run continues --------------- */
+  /* ---- 3. Allow for this session: a later READ and WRITE, no card ---- */
+  host.receive({ type: 'outside-answer', value: 'session' });
+  await waitPost((m) => m.type === 'done', 'the run allowed for the session', mark);
+  assert.match(await lastToolText(), /second outside fact/, 'the second read ran');
+
   await settle();
   await setScript([
     { calls: [{ tool: 'read_file', args: { path: THREE } }] },
+    { text: 'Read the third.' },
+  ]);
+  mark = posts.length;
+  host.receive(runStart('read another folder outside'));
+  await waitPost((m) => m.type === 'done', 'the later read', mark);
+  assert.equal(
+    posts.slice(mark).filter((m) => m.type === 'outside-read').length,
+    0,
+    'the session answer covered a later read with no card',
+  );
+  assert.match(await lastToolText(), /third outside fact/, 'the later read ran');
+
+  await settle();
+  await setScript([
+    { calls: [{ tool: 'write_file', args: { path: WRITTEN, content: 'session write\n' } }] },
+    { text: 'Wrote it.' },
+  ]);
+  mark = posts.length;
+  host.receive(runStart('write a file outside'));
+  await waitPost((m) => m.type === 'done', 'the later write', mark);
+  assert.equal(
+    posts.slice(mark).filter((m) => m.type === 'outside-read').length,
+    0,
+    'the session answer covered a later WRITE with no card',
+  );
+  assert.equal(
+    existsSync(WRITTEN) && readFileSync(WRITTEN, 'utf8') === 'session write\n',
+    true,
+    'the write outside the project landed',
+  );
+
+  /* ---- 4. Deny a read: a normal result, and the run continues -------- */
+  host.receive({ type: 'newChat', fromHeader: true });
+  await settle(500);
+  await setScript([
+    { calls: [{ tool: 'read_file', args: { path: ONE } }] },
     { text: 'Understood.' },
   ]);
   mark = posts.length;
-  host.receive(runStart('read a file in another folder'));
-  const denyCard = await waitPost(
+  host.receive(runStart('read outside in a new chat'));
+  const newCard = await waitPost(
     (m) => m.type === 'outside-read',
-    'the card for the other folder',
+    'the card in the new chat',
     mark,
   );
-  assert.equal(denyCard.abs, THREE, 'a different folder asks again');
+  assert.equal(newCard.abs, ONE, 'a new chat asks again');
   host.receive({ type: 'outside-answer', value: 'deny' });
   const denied = await waitPost((m) => m.type === 'done', 'the run after a denial', mark);
   assert.equal(denied.type, 'done', 'a denial does not fail the run');
   const text = await lastToolText();
   assert.match(text, /user declined/, 'the model is told the user declined');
-  assert.doesNotMatch(text, /third outside fact/, 'nothing was read');
+  assert.match(
+    text,
+    /ask for it again only if the task genuinely cannot be done otherwise/,
+    'the model is told when a later ask is permitted',
+  );
+  assert.doesNotMatch(text, /first outside fact/, 'nothing was read');
 
-  /* ---- 4. A new chat is a new session: it asks again ----------------- */
+  /* ---- 5. Deny a write: nothing is written, the run continues -------- */
   await settle();
-  host.receive({ type: 'newChat', fromHeader: true });
-  await settle(500);
   await setScript([
-    { calls: [{ tool: 'read_file', args: { path: ONE } }] },
-    { text: 'Read it again.' },
+    { calls: [{ tool: 'write_file', args: { path: DENIED, content: 'must not land\n' } }] },
+    { text: 'Not written.' },
   ]);
   mark = posts.length;
-  host.receive(runStart('read the first file in a new chat'));
-  const again = await waitPost(
+  host.receive(runStart('write a file outside'));
+  const writeCard = await waitPost(
     (m) => m.type === 'outside-read',
-    'the card in the new session',
+    'the write card',
     mark,
   );
-  assert.equal(again.abs, ONE, 'a later session asks again, for the same file');
-  host.receive({ type: 'outside-answer', value: 'once' });
-  await waitPost((m) => m.type === 'done', 'the new-chat run', mark);
+  assert.equal(writeCard.kind, 'write', 'the card says the call is a write');
+  assert.equal(writeCard.title, 'Write a file outside the project?');
+  assert.equal(writeCard.answers[2].hint, 'Nothing is changed.');
+  host.receive({ type: 'outside-answer', value: 'deny' });
+  const writeDenied = await waitPost(
+    (m) => m.type === 'done',
+    'the run after a write denial',
+    mark,
+  );
+  assert.equal(writeDenied.type, 'done', 'a write denial does not fail the run');
+  assert.equal(existsSync(DENIED), false, 'the denied write wrote nothing');
+  const writeText = await lastToolText();
+  assert.match(writeText, /declined to write/, 'the model is told a write was declined');
+  assert.match(writeText, /Nothing was written/, 'and that nothing was written');
 
-  // Nothing about the approval was written to a setting.
+  /* ---- 6. A call carrying TWO outside paths names both --------------- */
+  // apply_patch is the real shape: a call can carry several paths, and a
+  // mapping loop that kept only the first would ask consent for a change the
+  // user was never shown. The assertions read the POSTED card's lines, so they
+  // fail if the host dropped an entry even though core would list both.
+  const PATCH_ONE = join(AWAY, 'patch-one.txt');
+  const PATCH_TWO = join(AWAY2, 'patch-two.txt');
+  await settle();
+  await setScript([
+    {
+      calls: [{
+        tool: 'apply_patch',
+        args: {
+          patches: [
+            { path: PATCH_ONE, diffs: [{ search: 'old-one', replace: 'new-one' }] },
+            { path: PATCH_TWO, diffs: [{ search: 'old-two', replace: 'new-two' }] },
+          ],
+        },
+      }],
+    },
+    { text: 'Patched.' },
+  ]);
+  mark = posts.length;
+  host.receive(runStart('patch two files outside'));
+  const manyCard = await waitPost(
+    (m) => m.type === 'outside-read',
+    'the two-path card',
+    mark,
+  );
+  assert.equal(manyCard.kind, 'write', 'the two-path card is a write card');
+  assert.equal((manyCard.entries ?? []).length, 2, 'the card carries both entries');
+  assert.ok(
+    manyCard.lines.some((l) => l.includes(PATCH_ONE)),
+    `the card names the first path: ${JSON.stringify(manyCard.lines)}`,
+  );
+  assert.ok(
+    manyCard.lines.some((l) => l.includes(PATCH_TWO)),
+    `the card names the second path: ${JSON.stringify(manyCard.lines)}`,
+  );
+  host.receive({ type: 'outside-answer', value: 'deny' });
+  const patchDenied = await waitPost(
+    (m) => m.type === 'done',
+    'the run after the two-path denial',
+    mark,
+  );
+  assert.equal(patchDenied.type, 'done', 'a two-path denial does not fail the run');
+  assert.equal(existsSync(PATCH_ONE), false, 'the first file was not written');
+  assert.equal(existsSync(PATCH_TWO), false, 'the second file was not written');
+
+  // Nothing about the approvals was written to a setting.
   const raw = readFileSync(join(STATE, 'workspace-state.json'), 'utf8');
-  assert.doesNotMatch(raw, /outsideFolders|allowOnce|outsideRead|allowedFolders/i);
+  assert.doesNotMatch(raw, /outsideSession|allowOnce|outsideRead|allowedFolders/i);
 
-  console.log('PASS outside reads: card, allow once, allow folder, deny, new chat');
+  console.log('PASS outside paths: card, allow once, session read+write, deny read+write, two-path card, new chat');
   console.log(`  card path: ${card.abs}`);
   console.log(`  requests: ${requests.length}`);
 
@@ -312,7 +432,7 @@ try {
 stub.kill();
 
 if (failure !== null) {
-  console.error('FAIL outside reads: card, allow once, allow folder, deny, new chat');
+  console.error('FAIL outside paths: card, allow once, session read+write, deny read+write, two-path card, new chat');
   console.error(failure instanceof Error ? failure.stack : failure);
   console.error(
     'last posts: ' + JSON.stringify(posts.slice(-12).map((p) => p?.type ?? '?')),

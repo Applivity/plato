@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isGitignored, listWorkspace, listWorkspaceFiles } from '../src/tools/files.js';
+import { executeTool } from '../src/tools/execute.js';
 
 function makeTempTree(): string {
   const root = mkdtempSync(join(tmpdir(), 'plato-walker-'));
@@ -174,5 +175,42 @@ describe('listWorkspaceFiles', () => {
         listWorkspaceFiles(root, '', { includeSecret: true, respectGitignore: false }),
       ).toContain('local.properties');
     });
+  });
+});
+
+/**
+ * The walk stops at MAX_FILES. It used to stop SILENTLY, so a model saw a
+ * prefix and read it as the whole answer — a file it could not see looked like
+ * a file that does not exist. The listing now carries the fact and the tools
+ * render it, with the two arguments that narrow the walk.
+ */
+describe('a capped listing says that more files exist', () => {
+  function manyFiles(count: number): string {
+    const root = mkdtempSync(join(tmpdir(), 'plato-cap-'));
+    for (let i = 0; i < count; i += 1) {
+      writeFileSync(join(root, `f${String(i).padStart(5, '0')}.txt`), '');
+    }
+    return root;
+  }
+
+  it('carries the flag at the cap and ends list_dir with the count', async () => {
+    const root = manyFiles(2001);
+    const listing = listWorkspace(root);
+    expect(listing.files).toHaveLength(2000);
+    expect(listing.truncated).toBe(true);
+    const out = await executeTool(root, 'list_dir', {}, {});
+    expect(out.ok).toBe(true);
+    expect(out.output).toContain('[listing stopped at 2000 files; more exist');
+    const last = out.output.trim().split('\n').pop() ?? '';
+    expect(last).toContain('narrow the path or pattern');
+  });
+
+  it('says nothing below the cap', async () => {
+    const root = manyFiles(2);
+    const listing = listWorkspace(root);
+    expect(listing.truncated).toBe(false);
+    const out = await executeTool(root, 'list_dir', {}, {});
+    expect(out.ok).toBe(true);
+    expect(out.output).not.toContain('listing stopped');
   });
 });

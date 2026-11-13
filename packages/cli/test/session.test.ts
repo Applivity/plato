@@ -8,6 +8,7 @@ import type {
   TurnRequest,
   TurnResponse,
 } from '@applivity/plato-core';
+import { outsidePathCard } from '@applivity/plato-core';
 import { loadConfig, type PlatoConfig } from '../src/config.js';
 import { Session } from '../src/session.js';
 import { latestSession, type StoredSession } from '../src/sessions.js';
@@ -1157,13 +1158,20 @@ describe('conversation parity in the terminal', () => {
 
     const done = active.submit('read the outside file');
     const card = await waitForCard(active, 'outside');
-    expect(card.options).toEqual([
-      'Allow once',
-      'Allow this folder for this session',
-      'Deny',
-    ]);
+    // The wording is core's, label and hint, in core's order — the host only
+    // adds its own number.
+    const expected = outsidePathCard('read', 'read_file', [
+      { path: abs, abs },
+    ]).answers.map(
+      (answer, index) => `${index + 1}. ${answer.label} — ${answer.hint}`,
+    );
+    expect(card.options).toEqual(expected);
+    expect(card.options).toHaveLength(3);
+    expect(card.options[0]).toBe('1. Allow once — Just this one request.');
+    expect(card.options[2]).toBe('3. Deny — Nothing is read.');
     expect(card.selected).toBe(2);
-    active.cardConfirm();
+    // Esc answers with the default, which is deny.
+    active.cardCancel();
     await done;
 
     const sent = JSON.stringify(requests);
@@ -1212,13 +1220,12 @@ describe('conversation parity in the terminal', () => {
     expect(sent).not.toContain('second-outside-body');
   });
 
-  it('allows one outside read, and remembers a folder for the session', async () => {
+  it('allows every outside path for the session, read and write, without asking again', async () => {
     const root = tempDir('plato-cli-outside-root-');
     const outside = tempDir('plato-cli-outside-file-');
     const one = join(outside, 'one.txt');
     const two = join(outside, 'two.txt');
     writeFileSync(one, 'first-outside-body');
-    writeFileSync(two, 'second-outside-body');
     const requests: TurnRequest[] = [];
     const active = new Session({
       root,
@@ -1227,28 +1234,118 @@ describe('conversation parity in the terminal', () => {
       provider: scripted(
         [
           { tool: { name: 'read_file', input: { path: one } } },
-          { tool: { name: 'read_file', input: { path: two } } },
-          { text: 'Both read.' },
+          {
+            tool: {
+              name: 'write_file',
+              input: { path: two, content: 'written-outside-body' },
+            },
+          },
+          { text: 'Read and written.' },
         ],
         (request) => requests.push(request),
       ),
       fetchImpl: offline,
     });
 
-    const done = active.submit('read both outside files');
+    const done = active.submit('read one, then write the other');
     await waitForCard(active, 'outside');
-    // The folder answer is the second; choosing it covers both files.
+    // The session answer is the second; it covers the later WRITE too.
     active.cardMove(-1);
     active.cardConfirm();
     await done;
 
+    expect(readFileSync(two, 'utf8')).toBe('written-outside-body');
     const sent = JSON.stringify(requests.at(-1));
     expect(sent).toContain('first-outside-body');
-    expect(sent).toContain('second-outside-body');
     expect(
       active.getSnapshot().rows.some((row) =>
-        row.text.includes('Plato did not ask — you allowed this folder for this session.'),
+        row.text.includes(
+          'Plato did not ask — you allowed outside paths for this session.',
+        ),
       ),
+    ).toBe(true);
+  });
+
+  it('names every path in a call that leaves the project', async () => {
+    const root = tempDir('plato-cli-outside-root-');
+    const outside = tempDir('plato-cli-outside-file-');
+    const one = join(outside, 'one.txt');
+    const two = join(outside, 'two.txt');
+    writeFileSync(one, 'a');
+    writeFileSync(two, 'b');
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted([
+        {
+          tool: {
+            name: 'apply_patch',
+            input: {
+              patches: [
+                { path: one, diffs: [{ search: 'a', replace: 'x' }] },
+                { path: two, diffs: [{ search: 'b', replace: 'y' }] },
+              ],
+            },
+          },
+        },
+        { text: 'Declined.' },
+      ]),
+      fetchImpl: offline,
+    });
+
+    const done = active.submit('patch both outside files');
+    const card = await waitForCard(active, 'outside');
+    if (card.kind !== 'outside') throw new Error('expected an outside card');
+    expect(card.lines).toContain(
+      'Plato wants to write 2 files outside the project:',
+    );
+    expect(card.lines).toContain(one);
+    expect(card.lines).toContain(two);
+    active.cardCancel();
+    await done;
+
+    expect(readFileSync(one, 'utf8')).toBe('a');
+    expect(readFileSync(two, 'utf8')).toBe('b');
+  });
+
+  it('denies an outside write, writes nothing, and continues the run', async () => {
+    const root = tempDir('plato-cli-outside-root-');
+    const outside = tempDir('plato-cli-outside-file-');
+    const target = join(outside, 'never.txt');
+    const requests: TurnRequest[] = [];
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted(
+        [
+          {
+            tool: {
+              name: 'write_file',
+              input: { path: target, content: 'must-not-land' },
+            },
+          },
+          { text: 'I did not write it.' },
+        ],
+        (request) => requests.push(request),
+      ),
+      fetchImpl: offline,
+    });
+
+    const done = active.submit('write the outside file');
+    const card = await waitForCard(active, 'outside');
+    expect(card.options[2]).toBe('3. Deny — Nothing is changed.');
+    expect(card.selected).toBe(2);
+    active.cardConfirm();
+    await done;
+
+    expect(existsSync(target)).toBe(false);
+    const sent = JSON.stringify(requests.at(-1));
+    expect(sent).toContain('the user declined to write');
+    expect(sent).toContain('Nothing was written.');
+    expect(
+      active.getSnapshot().rows.some((row) => row.text.includes('I did not write it.')),
     ).toBe(true);
   });
 

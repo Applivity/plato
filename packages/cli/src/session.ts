@@ -12,7 +12,7 @@ import {
   type ApprovalRequest,
   type ChatProvider,
   type Mode,
-  type OutsideReadCard,
+  type OutsidePathCard,
   type StuckRequest,
 } from '@applivity/plato-core';
 import {
@@ -158,17 +158,14 @@ export interface ModeCard {
 }
 
 /**
- * D49dk: a read outside the project. Three answers, and only the folder one is
- * remembered — for this session, in memory, never in the settings.
+ * A path outside the project — read or write. Core supplies the three answers
+ * and their hints; the session remembers the wider one in memory only.
  */
 export interface OutsideCard {
   kind: 'outside';
   title: string;
   lines: string[];
   why: string;
-  /** The absolute path the answer covers, used by the folder memory. */
-  abs: string;
-  folder: string;
   options: string[];
   selected: number;
 }
@@ -244,8 +241,8 @@ export class Session {
   private folding = false;
   /** Resolved once per model; a fold and a request must agree on the window. */
   private window: Promise<number> | null = null;
-  /** D49dk: folders allowed for THIS session only. */
-  private readonly outsideFolders = new Set<string>();
+  /** "Allow for this session" covers every outside path, read or write. */
+  private outsideAllowed = false;
   private readonly idleFold: IdleFold;
 
   /** The flat pairs the session store and the title read. */
@@ -732,45 +729,32 @@ export class Session {
   }
 
   /** True when an outside folder was allowed in this session. */
-  private outsideCovered(abs: string): boolean {
-    const normalise = (path: string): string => {
-      const one = path.replace(/[\\/]+$/, '');
-      return process.platform === 'win32' ? one.toLowerCase() : one;
-    };
-    const target = normalise(abs);
-    for (const folder of this.outsideFolders) {
-      const f = normalise(folder);
-      if (target === f || target.startsWith(`${f}/`) || target.startsWith(`${f}\\`)) {
-        return true;
-      }
+  private async askOutsidePath(
+    card: OutsidePathCard,
+  ): Promise<'once' | 'session' | 'deny'> {
+    if (this.outsideAllowed) {
+      this.append('notice', 'Plato did not ask — you allowed outside paths for this session.');
+      return 'session';
     }
-    return false;
-  }
-
-  private async askOutsideRead(
-    card: OutsideReadCard,
-  ): Promise<'once' | 'folder' | 'deny'> {
-    if (this.outsideCovered(card.abs)) {
-      this.append('notice', 'Plato did not ask — you allowed this folder for this session.');
-      return 'once';
-    }
+    // Core owns the labels and the hints; the number is the host's own key.
+    const options = card.answers.map(
+      (answer, index) => `${index + 1}. ${answer.label} — ${answer.hint}`,
+    );
     const choice = await this.present<number>({
       kind: 'outside',
       title: card.title,
       lines: card.lines,
       why: card.why,
-      abs: card.abs,
-      folder: card.folder,
-      options: [card.once, card.folderLabel, card.deny],
-      // Deny is the default: an unanswered card must not widen what can be read.
+      options,
+      // Deny is the default: an unanswered card, Enter or Esc must not widen
+      // what can be read or written.
       selected: 2,
     });
-    if (choice === 0) return 'once';
-    if (choice === 1) {
-      this.outsideFolders.add(card.folder);
-      return 'folder';
+    const answer = card.answers[choice] ?? card.answers[2];
+    if (answer?.choice === 'session') {
+      this.outsideAllowed = true;
     }
-    return 'deny';
+    return answer?.choice ?? 'deny';
   }
 
   async handleCommand(line: string): Promise<'exit' | 'handled'> {
@@ -847,6 +831,8 @@ export class Session {
       case '/new': {
         this.log = [];
         this.idleFold.cancel();
+        // A new conversation asks about outside paths again.
+        this.outsideAllowed = false;
         const fresh = createSession(this.model, this.mode, this.config.team);
         this.sessionId = fresh.id;
         this.createdAt = fresh.createdAt;
@@ -939,7 +925,7 @@ export class Session {
       askUser: (request) => this.askQuestions(request),
       stuck: (request) => this.askStuck(request),
       reveal: (rel) => this.askReveal(rel),
-      outsideRead: (card) => this.askOutsideRead(card),
+      outsidePath: (card) => this.askOutsidePath(card),
       notice: (text) => this.append('notice', text),
       observer: (event) => this.observeEvent(event),
       requestMode: (request) => this.askModeChange(request),

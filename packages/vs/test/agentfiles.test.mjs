@@ -136,6 +136,9 @@ try {
   mkdirSync(join(ROOT, '.claude'), { recursive: true });
   writeFileSync(join(ROOT, '.github', 'AGENTS.md'), 'GITHUB-MARKER: use pnpm for builds.\n');
   writeFileSync(join(ROOT, '.claude', 'CLAUDE.md'), 'CLAUDE-MARKER: cite file paths in reviews.\n');
+  // D49dk: environment facts are a HOST paragraph and must survive a project
+  // PLATO.md, so this run has one.
+  writeFileSync(join(ROOT, 'PLATO.md'), 'PLATO-MARKER: keep the build green.\n');
 
   const host = start({
     root: ROOT,
@@ -176,6 +179,28 @@ try {
   assert.ok(
     system.indexOf('GITHUB-MARKER') < system.indexOf('CLAUDE-MARKER'),
     'the .claude section comes last',
+  );
+
+  // D49dk: the machine the run is on, as a host fact appended after the body.
+  const shell =
+    process.platform === 'win32' ? 'cmd.exe via %COMSPEC%' : '/bin/bash -c';
+  assert.ok(system.includes('PLATO-MARKER'), 'the project PLATO.md reached the model');
+  assert.ok(
+    system.includes(`Environment: this run is on `) &&
+      system.includes(`(${process.platform})`),
+    `the prompt names the platform: ${system.slice(system.indexOf('Environment:'))}`,
+  );
+  assert.ok(
+    system.includes(`The shell tool runs ${shell}.`),
+    `the prompt names the real shell: ${system.slice(system.indexOf('Environment:'))}`,
+  );
+  assert.ok(
+    system.includes(`The workspace root is ${ROOT};`),
+    'the prompt names the workspace root',
+  );
+  assert.ok(
+    system.indexOf('PLATO-MARKER') < system.indexOf('Environment: this run is on'),
+    'the environment paragraph comes after the project body, so PLATO.md cannot delete it',
   );
 
   console.log('PASS agent files: both project instruction files reach the real host, .claude last');

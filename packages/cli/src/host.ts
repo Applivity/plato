@@ -1,4 +1,4 @@
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   AgentBus,
   RunController,
@@ -6,7 +6,7 @@ import {
   createProvider,
   createVault,
   modelSupportsReasoning,
-  outsideReadCard,
+  outsidePathCard,
   parseModelRef,
   runAgentLoop,
   seedVault,
@@ -14,7 +14,7 @@ import {
   type ChatProvider,
   type LoopResult,
   type Mode,
-  type OutsideReadCard,
+  type OutsidePathCard,
   type ReasoningConfig,
   type RunEndReason,
   type RunOrigin,
@@ -22,6 +22,7 @@ import {
   type SessionPeer,
   type SendOutcome,
   type StuckRequest,
+  type WorkerEnv,
   toolWords,
 } from '@applivity/plato-core';
 import { MAX_IMAGE_BYTES, taskAttachments } from './attachments.js';
@@ -103,20 +104,23 @@ export interface RunSink {
     current: Mode;
   }): Promise<{ ok: boolean; note: string }>;
   /**
-   * D49dk, in the terminal: a read outside the workspace asks here, at the
-   * moment the model tries. The card carries the resolved absolute path and the
-   * folder a wider answer would cover.
+   * A path outside the workspace — a read or a write — asks here, at the moment
+   * the model tries. The card carries core's three answers, each with its own
+   * hint; the host shows that wording and maps the choice onto its session
+   * memory.
    *
-   * A sink without this keeps the old rule: the read is refused as contained.
-   * Writes never ask.
+   * A sink without this keeps the old rule: an outside path is refused as
+   * contained.
    */
-  outsideRead?(card: OutsideReadCard): Promise<'once' | 'folder' | 'deny'>;
+  outsidePath?(card: OutsidePathCard): Promise<'once' | 'session' | 'deny'>;
 }
 
 export interface ExecuteOptions {
   root: string;
   task: string;
   mode: Mode;
+  /** Injected by tests; the real platform otherwise. */
+  platform?: NodeJS.Platform;
   /**
    * The mode the running loop reads at every tool call. Absent, the run-start
    * `mode` above is used, which cannot change mid-run.
@@ -154,6 +158,22 @@ export interface ExecuteOptions {
 /** `~/.plato` state is shared with the extension (D49bw). */
 export function undoDir(root: string, env: Env = process.env): string {
   return join(platoHome(env), 'undo', projectKey(root));
+}
+
+/**
+ * The machine facts the worker prompt carries. The shell is named the way this
+ * host really runs it: `%COMSPEC%` is what the Windows shell tool calls, and a
+ * POSIX run goes through `/bin/bash -c`.
+ */
+export function workerEnvironment(
+  root: string,
+  platform: NodeJS.Platform = process.platform,
+): WorkerEnv {
+  return {
+    platform,
+    shell: platform === 'win32' ? 'cmd.exe via %COMSPEC%' : '/bin/bash -c',
+    root,
+  };
 }
 
 /** D49n: the extension's cap, applied to attached images. */
@@ -423,19 +443,30 @@ export async function executeTask(
       // the team matches the one the user sees.
       team: { mode: config.team, watchers: handles.map((handle) => handle.name) },
       ...(attached.images.length === 0 ? {} : { images: attached.images }),
+      platform: options.platform ?? process.platform,
+      env: workerEnvironment(options.root, options.platform ?? process.platform),
       getMode,
       approve: (request) => sink.approve(request),
-      // D49dk: the host asks; core only offers. The answer approves this call's
-      // resolved paths, and a folder answer is remembered by the sink for the
-      // life of the session.
-      ...(sink.outsideRead === undefined
+      // A path outside the project asks here, read or write. Core supplies the
+      // three answers and their wording; the sink owns the session memory.
+      ...(sink.outsidePath === undefined
         ? {}
         : {
-            outsideRead: async (paths: readonly string[], tool: string) => {
-              const raw = String(paths[0] ?? '');
-              const abs = resolve(options.root, raw);
-              const answer = await sink.outsideRead!(
-                outsideReadCard(tool, raw, abs, dirname(abs)),
+            outsidePath: async ({
+              paths,
+              tool,
+              kind,
+            }: {
+              paths: readonly string[];
+              tool: string;
+              kind: 'read' | 'write';
+            }) => {
+              const entries = paths.map((path) => ({
+                path,
+                abs: resolve(options.root, path),
+              }));
+              const answer = await sink.outsidePath!(
+                outsidePathCard(kind, tool, entries),
               );
               return answer !== 'deny';
             },
@@ -563,23 +594,9 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
     }
   };
 
-  // D49dk: folders the user allowed for THIS session. Nothing is written to the
-  // settings, and a new process starts with an empty set.
-  const outsideFolders = new Set<string>();
-  const normalise = (path: string): string => {
-    const one = path.replace(/[\\/]+$/, '');
-    return process.platform === 'win32' ? one.toLowerCase() : one;
-  };
-  const outsideCovered = (abs: string): boolean => {
-    const target = normalise(abs);
-    for (const folder of outsideFolders) {
-      const f = normalise(folder);
-      if (target === f || target.startsWith(`${f}/`) || target.startsWith(`${f}\\`)) {
-        return true;
-      }
-    }
-    return false;
-  };
+  // The "allow for this session" answer covers every outside path, read or
+  // write, until this process ends. Nothing is written to the settings.
+  let outsideAllowed = false;
 
   return {
     textDelta(soFar) {
@@ -727,27 +744,29 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
       );
       return answer !== null && /^(y|yes)$/i.test(answer.trim());
     },
-    async outsideRead(card) {
-      if (outsideCovered(card.abs)) {
-        io.err('Plato did not ask — you allowed this folder for this session.\n');
-        return 'once';
+    async outsidePath(card) {
+      if (outsideAllowed) {
+        io.err('Plato did not ask — you allowed outside paths for this session.\n');
+        return 'session';
       }
       io.err(`\n${card.title}\n`);
       for (const line of card.lines) {
         io.err(`${line}\n`);
       }
       io.err(`${card.why}\n`);
-      io.err(`  1. ${card.once}\n  2. ${card.folderLabel}\n  3. ${card.deny}\n`);
+      card.answers.forEach((answer, index) => {
+        io.err(`  ${index + 1}. ${answer.label} — ${answer.hint}\n`);
+      });
       if (io.prompter === undefined) {
-        io.err('No terminal to ask; the read was refused.\n');
+        io.err('No terminal to ask; the path was refused.\n');
         return 'deny';
       }
       const answer = await ask('Choose 1, 2 or 3 [3]: ');
       const pick = answer?.trim();
       if (pick === '1') return 'once';
       if (pick === '2') {
-        outsideFolders.add(card.folder);
-        return 'folder';
+        outsideAllowed = true;
+        return 'session';
       }
       return 'deny';
     },

@@ -324,7 +324,7 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
     {
       name: 'grep',
       description:
-        'Search file contents. Returns path:line:text by default; mode changes that to matching file names or per-file counts. The pattern is a literal string unless regex is true.',
+        'Search file contents. Returns path:line:text by default; mode changes that to matching file names or per-file counts. The pattern is a literal string unless regex is true. Results name paths from the WORKSPACE ROOT even when path scopes the search: path narrows what is searched, it does not change how a hit is named.',
       parameters: {
         type: 'object',
         properties: {
@@ -364,7 +364,7 @@ export function toolDeclarations(opts: ToolDeclarationOpts = {}): CanonicalTool[
     {
       name: 'glob',
       description:
-        'Find files by NAME pattern, e.g. "**/*.test.ts" or "*.json". A pattern with no slash matches the file name at any depth. Use this to discover files when you do not know the path.',
+        'Find files by NAME pattern, e.g. "**/*.test.ts" or "*.json". A pattern with no slash matches the file name at any depth. Use this to discover files when you do not know the path. It covers only the workspace.',
       parameters: {
         type: 'object',
         properties: {

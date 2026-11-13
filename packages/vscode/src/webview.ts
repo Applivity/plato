@@ -276,6 +276,14 @@ export function chatHtml(
   .card button.no { background:var(--vscode-button-secondaryBackground,
                                     #3a3d41);
                     color:var(--vscode-button-secondaryForeground, #ddd); }
+  /* D49dk: each outside answer is its label with core's one-line hint under it.
+     A squeezed column rather than a sentence: the hint is why the answer is
+     different from its neighbours, and the page never writes it. */
+  .outside-card .actions button { display:flex; flex-direction:column;
+                                  align-items:flex-start; gap:1px;
+                                  text-align:left; padding:5px 12px; }
+  .outside-card .oa-hint { font-size:10.5px; font-weight:400; opacity:.78;
+                           white-space:normal; }
   /* D49aw: the stuck card. A warning stripe rather than an error colour — the
      run has not failed, it has stopped to ask. */
   .card.stuck-card { border-left:2px solid var(--vscode-editorWarning-foreground,#cca700); }
@@ -6229,9 +6237,12 @@ export function chatHtml(
   }
 
   /**
-   * D49dk: may Plato read outside the project? The card names the path, says it
-   * is outside, and says why Plato wants it. Three answers: once, this folder
-   * for the session, or no.
+   * D49dk: may Plato touch a path outside the project — read or write?
+   *
+   * The card names the path, says it is outside, and says why Plato wants it.
+   * The three answers and their one-line hints come from CORE, in order; the
+   * page prints them and invents nothing, so a card without answers gets no
+   * buttons rather than wording of its own.
    */
   function showOutsideRead(m) {
     flushToolBuffer();
@@ -6239,7 +6250,7 @@ export function chatHtml(
     card.className = 'card reveal-card outside-card';
 
     const h = document.createElement('h3');
-    h.textContent = String(m.title || 'Read a file outside the project?');
+    h.textContent = String(m.title || 'A path outside the project?');
     card.appendChild(h);
 
     for (const line of Array.isArray(m.lines) ? m.lines : []) {
@@ -6255,24 +6266,27 @@ export function chatHtml(
 
     const actions = document.createElement('div');
     actions.className = 'actions';
-    const answer = (label, value, secondary) => {
+    for (const a of Array.isArray(m.answers) ? m.answers : []) {
+      const choice = String((a && a.choice) || 'deny');
       const b = document.createElement('button');
-      if (secondary) b.className = 'no';
-      b.textContent = label;
+      if (choice !== 'once') b.className = 'no';
+      const label = document.createElement('span');
+      label.className = 'oa-label';
+      label.textContent = String((a && a.label) || '');
+      const hint = document.createElement('span');
+      hint.className = 'oa-hint';
+      hint.textContent = String((a && a.hint) || '');
+      b.appendChild(label);
+      b.appendChild(hint);
       b.addEventListener('click', () => {
-        vsapi.postMessage({ type: 'outside-answer', value });
+        vsapi.postMessage({ type: 'outside-answer', value: choice });
         card.classList.add('answered');
         actions.remove();
         if (openOutsideCard === card) openOutsideCard = null;
         clearStatus();
       });
-      return b;
-    };
-    actions.appendChild(answer(String(m.once || 'Allow once'), 'once', false));
-    actions.appendChild(
-      answer(String(m.folderLabel || 'Allow this folder for this session'), 'folder', true),
-    );
-    actions.appendChild(answer(String(m.deny || 'Deny'), 'deny', true));
+      actions.appendChild(b);
+    }
     card.appendChild(actions);
 
     if (openOutsideCard) {
@@ -6281,7 +6295,10 @@ export function chatHtml(
     }
     openOutsideCard = card;
     log.appendChild(card);
-    setStatus('waiting for you — read outside the project?');
+    setStatus(
+      'waiting for you — '
+        + (m.kind === 'write' ? 'write outside the project?' : 'read outside the project?'),
+    );
     scroll();
   }
 

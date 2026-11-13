@@ -117,6 +117,12 @@ export interface ToolContext {
    * later call could be made to match — and it is never passed to a write.
    */
   outsideRead?: readonly string[];
+  /**
+   * The same allowance for the WRITE tools, filled only when a write approval
+   * produced it for this call. Separate from `outsideRead` so an approval to
+   * read can never be spent on a write.
+   */
+  outsideWrite?: readonly string[];
 
 }
 
@@ -155,13 +161,14 @@ function resolveTarget(
   if (rel === null) {
     // D49dk: an outside path is allowed only when the loop says the user
     // approved THIS absolute path for THIS call. The comparison is exact, so an
-    // approval for one file cannot admit another. Writes never pass `outside`.
+    // approval for one file cannot admit another.
     const abs = resolve(root, raw);
     const approved = (opts.outside ?? []).some((p) => samePath(p, abs));
     if (!approved) return { err: `path is outside the workspace: ${raw}` };
-    const secretOutside = isSecretPath(abs);
-    if (secretOutside && opts.allowSecret !== true) return { err: 'protected file' };
-    return { abs, rel: abs, secret: secretOutside, outside: true };
+    // The deny-list outranks an outside approval, read or write: an approval for
+    // a path is not an approval to move a secret through it.
+    if (isSecretPath(abs)) return { err: 'protected file' };
+    return { abs, rel: abs, secret: false, outside: true };
   }
   const secret = isSecretPath(rel);
   // D49bb: `allowSecret` is set by the tools that can MASK what they return. A
@@ -471,7 +478,10 @@ async function writeFileTool(
   }
   // A write to a protected file is allowed, and the owner keeps their secrets:
   // the model writes the placeholder back and `materialise` restores the value.
-  const target = resolveTarget(root, raw, { allowSecret: ctx.vault !== undefined });
+  const target = resolveTarget(root, raw, {
+    allowSecret: ctx.vault !== undefined,
+    outside: ctx.outsideWrite,
+  });
   if ('err' in target) return fail(target.err);
   const { abs, rel } = target;
   const overwrite = args['overwrite'] === true;
@@ -523,7 +533,10 @@ async function applyDiffTool(
 ): Promise<ToolOutcome> {
   const rawPath = argPath(args);
   if (rawPath.length === 0) return fail('missing path');
-  const target = resolveTarget(root, rawPath, { allowSecret: ctx.vault !== undefined });
+  const target = resolveTarget(root, rawPath, {
+    allowSecret: ctx.vault !== undefined,
+    outside: ctx.outsideWrite,
+  });
   if ('err' in target) return fail(target.err);
   const { abs, rel, secret } = target;
   let blocks: DiffBlock[];
@@ -628,7 +641,10 @@ async function applyPatchTool(
     ) as Record<string, unknown>;
     const rawPath = typeof rec['path'] === 'string' ? rec['path'] : '';
     if (rawPath.length === 0) return fail('each patch needs a path');
-    const target = resolveTarget(root, rawPath, { allowSecret: ctx.vault !== undefined });
+    const target = resolveTarget(root, rawPath, {
+      allowSecret: ctx.vault !== undefined,
+      outside: ctx.outsideWrite,
+    });
     if ('err' in target) return fail(target.err);
     const { abs, rel, secret } = target;
 
@@ -974,7 +990,7 @@ async function listDirTool(
   // No path: the whole workspace, as before.
   if (raw.length === 0) {
     const listing = listWorkspace(root, '', { respectGitignore: ctx.respectGitignore });
-    const output = listing.files.join('\n');
+    const output = listing.files.join('\n') + truncationLine(listing);
     const note = ignoredNote(listing, listing.files);
     return note === undefined ? { ok: true, output } : { ok: true, output, note };
   }
@@ -999,16 +1015,30 @@ async function listDirTool(
       respectGitignore: ctx.respectGitignore,
     });
     const files = outside.files.map((f) => join(abs, f));
+    const output = files.length > 0 ? files.join('\n') : `(no files under ${rel})`;
     return {
       ok: true,
-      output: files.length > 0 ? files.join('\n') : `(no files under ${rel})`,
+      output: output + truncationLine(outside),
     };
   }
   const listing = listWorkspace(root, rel, { respectGitignore: ctx.respectGitignore });
   const output =
-    listing.files.length > 0 ? listing.files.join('\n') : `(no files under ${rel})`;
+    (listing.files.length > 0 ? listing.files.join('\n') : `(no files under ${rel})`) +
+    truncationLine(listing);
   const note = ignoredNote(listing, listing.files);
   return note === undefined ? { ok: true, output } : { ok: true, output, note };
+}
+
+/**
+ * The line a capped listing ends with. The walk stops at its file cap with
+ * entries still to visit, so what the tool returned is a PREFIX; saying so is
+ * what keeps a silent cap from reading as a complete answer, and the suggestion
+ * is the two arguments that narrow the walk.
+ */
+function truncationLine(listing: WorkspaceListing): string {
+  return listing.truncated
+    ? `\n[listing stopped at ${listing.files.length} files; more exist — narrow the path or pattern to see them]`
+    : '';
 }
 
 /**
@@ -1054,7 +1084,7 @@ async function globTool(
       ? `\n[${matches.length} files match; showing the first ${shown.length}]`
       : '';
   const ignored = ignoredNote(listing, shown);
-  const outcome: ToolOutcome = { ok: true, output: shown.join('\n') + note };
+  const outcome: ToolOutcome = { ok: true, output: shown.join('\n') + note + truncationLine(listing) };
   if (ignored !== undefined) {
     outcome.note = ignored;
   }
@@ -1186,20 +1216,20 @@ async function grepTool(
   }
 
   if (mode === 'files_with_matches') {
-    if (matchedFiles.length === 0) return { ok: true, output: 'no matches' };
+    if (matchedFiles.length === 0) return { ok: true, output: 'no matches' + truncationLine(listing) };
     const shown = matchedFiles.slice(0, limit);
     const note =
       matchedFiles.length > shown.length
         ? `\n[${matchedFiles.length} files matched; showing ${shown.length} — raise limit or narrow with glob]`
         : '';
     return withNote(
-      { ok: true, output: shown.join('\n') + note },
+      { ok: true, output: shown.join('\n') + note + truncationLine(listing) },
       outsideScope ? undefined : ignoredNote(listing, shown),
     );
   }
 
   if (mode === 'count') {
-    if (counts.length === 0) return { ok: true, output: 'no matches' };
+    if (counts.length === 0) return { ok: true, output: 'no matches' + truncationLine(listing) };
     const shown = counts.slice(0, limit);
     const note =
       counts.length > shown.length
@@ -1209,19 +1239,19 @@ async function grepTool(
     return withNote(
       {
         ok: true,
-        output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}`,
+        output: `${shown.join('\n')}\n[total ${total} matches in ${counts.length} files]${note}${truncationLine(listing)}`,
       },
       outsideScope ? undefined : ignoredNote(listing, counted),
     );
   }
 
-  if (content.length === 0) return { ok: true, output: 'no matches' };
+  if (content.length === 0) return { ok: true, output: 'no matches' + truncationLine(listing) };
   const note = truncated
     ? `\n[stopped at ${limit} hits — raise limit, or narrow with glob]`
     : '';
   const hitFiles = content.map((line) => line.slice(0, line.indexOf(':')));
   return withNote(
-    { ok: true, output: content.join('\n') + note },
+    { ok: true, output: content.join('\n') + note + truncationLine(listing) },
     outsideScope ? undefined : ignoredNote(listing, hitFiles),
   );
 }

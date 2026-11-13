@@ -122,6 +122,12 @@ export interface WorkspaceListing {
    * them: there is nothing to report about a file that is not in the results.
    */
   ignored: Set<string>;
+  /**
+   * The walk stopped at MAX_FILES and there were entries left to visit. The
+   * listing is a PREFIX, not a complete answer, and every caller that shows it
+   * must say so — a silent cap reads as "this is everything".
+   */
+  truncated: boolean;
 }
 
 /**
@@ -154,6 +160,7 @@ export function listWorkspace(
 ): WorkspaceListing {
   const out: string[] = [];
   const ignored = new Set<string>();
+  const state = { truncated: false };
   try {
     walk(
       root,
@@ -161,14 +168,15 @@ export function listWorkspace(
       subpath,
       out,
       ignored,
+      state,
       opts.includeSecret === true,
       opts.respectGitignore === true,
       ancestorIgnores(root, subpath),
     );
   } catch {
-    return { files: [], ignored: new Set() };
+    return { files: [], ignored: new Set(), truncated: false };
   }
-  return { files: out, ignored };
+  return { files: out, ignored, truncated: state.truncated };
 }
 
 export function listWorkspaceFiles(root: string, subpath = '', opts: ListOptions = {}): string[] {
@@ -201,6 +209,7 @@ function walk(
   relDir: string,
   out: string[],
   ignored: Set<string>,
+  state: { truncated: boolean },
   includeSecret: boolean,
   skipIgnored: boolean,
   gitignore: IgnoreFile[],
@@ -219,6 +228,7 @@ function walk(
   const dirs: string[] = [];
   for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : 1))) {
     if (out.length >= MAX_FILES) {
+      state.truncated = true;
       return;
     }
     const rel = relDir === '' ? e.name : `${relDir}/${e.name}`;
@@ -249,6 +259,7 @@ function walk(
   }
   for (const d of dirs) {
     if (out.length >= MAX_FILES) {
+      state.truncated = true;
       return;
     }
     walk(
@@ -257,6 +268,7 @@ function walk(
       relDir === '' ? d : `${relDir}/${d}`,
       out,
       ignored,
+      state,
       includeSecret,
       skipIgnored,
       stack,

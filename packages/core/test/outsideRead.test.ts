@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { runAgentLoop } from '../src/runtime/loop.js';
 import { AgentBus } from '../src/runtime/bus.js';
 import { executeTool } from '../src/tools/execute.js';
+import { outsidePathCard, outsidePathDeclined } from '../src/runtime/outsideReadCopy.js';
 import type {
   ChatProvider,
   CanonicalMessage,
@@ -281,5 +282,266 @@ describe('outside reads need a decision (D49dk)', () => {
     );
     expect(text).toContain(join(away, 'one.txt'));
     expect(text).toContain(join(away, 'two.txt'));
+  });
+});
+
+/**
+ * D49dk (widened 2026-11-13): a WRITE may leave the project too, under its own
+ * approval, and `outsidePath` carries both kinds. The remembered scope is the
+ * host's; core decides one call at a time. The secret deny-list outranks an
+ * approval, and a denial stays an ordinary result the run continues past.
+ */
+describe('outside writes and the widened hook', () => {
+  it('asks for a READ under kind "read" and runs on approval', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const file = join(away, 'outside.txt');
+    writeFileSync(file, 'a fact from outside');
+    const asked: Array<{ paths: readonly string[]; tool: string; kind: string }> = [];
+    const { text } = await loopWith(
+      root,
+      [{ name: 'read_file', input: { path: file } }],
+      {
+        outsidePath: async (req: {
+          paths: readonly string[];
+          tool: string;
+          kind: 'read' | 'write';
+        }) => {
+          asked.push(req);
+          return true;
+        },
+      },
+    );
+    expect(asked).toEqual([{ paths: [file], tool: 'read_file', kind: 'read' }]);
+    expect(text).toContain('a fact from outside');
+  });
+
+  it('asks for a WRITE under kind "write" and creates the file on approval', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const file = join(away, 'written.txt');
+    const asked: Array<{ kind: string; tool: string; paths: readonly string[] }> = [];
+    const { text } = await loopWith(
+      root,
+      [{ name: 'write_file', input: { path: file, content: 'written outside' } }],
+      {
+        outsidePath: async (req: {
+          paths: readonly string[];
+          tool: string;
+          kind: 'read' | 'write';
+        }) => {
+          asked.push(req);
+          return true;
+        },
+      },
+    );
+    expect(asked).toEqual([{ paths: [file], tool: 'write_file', kind: 'write' }]);
+    expect(existsSync(file)).toBe(true);
+    expect(text).not.toContain('outside the workspace');
+  });
+
+  it('turns a denied WRITE into an ordinary result and writes nothing', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const file = join(away, 'denied.txt');
+    const { text, events } = await loopWith(
+      root,
+      [{ name: 'write_file', input: { path: file, content: 'no' } }],
+      { outsidePath: async () => false },
+    );
+    expect(text).toContain('declined to write');
+    expect(text).toContain('Nothing was written');
+    expect(existsSync(file)).toBe(false);
+    const declined = events.find(
+      (e) => e.type === 'tool-event' && e.phase === 'declined',
+    );
+    expect(declined?.tool).toBe('write_file');
+  });
+
+  it('still refuses a WRITE when the host has no hook at all', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const file = join(away, 'never.txt');
+    const { text } = await loopWith(
+      root,
+      [{ name: 'write_file', input: { path: file, content: 'x' } }],
+      {},
+    );
+    expect(text).toContain('outside the workspace');
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it('an allowance covers only the exact path it names', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const allowed = join(away, 'allowed.txt');
+    const other = join(away, 'other.txt');
+
+    const refused = await executeTool(
+      root,
+      'write_file',
+      { path: other, content: 'no' },
+      { outsideWrite: [allowed] },
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.output).toContain('outside the workspace');
+    expect(existsSync(other)).toBe(false);
+
+    const allowedOut = await executeTool(
+      root,
+      'write_file',
+      { path: allowed, content: 'yes' },
+      { outsideWrite: [allowed] },
+    );
+    expect(allowedOut.ok).toBe(true);
+    expect(existsSync(allowed)).toBe(true);
+  });
+
+  it('keeps the secret deny-list above an outside approval, read and write', async () => {
+    const root = tempDir('plato-out-root-');
+    const away = tempDir('plato-out-away-');
+    const secret = join(away, '.env');
+    writeFileSync(secret, 'TOKEN=abc');
+
+    const read = await executeTool(
+      root,
+      'read_file',
+      { path: secret },
+      { outsideRead: [secret] },
+    );
+    expect(read.ok).toBe(false);
+    expect(read.output).toContain('protected file');
+    expect(read.output).not.toContain('TOKEN=abc');
+
+    const target = join(away, '.env.local');
+    const write = await executeTool(
+      root,
+      'write_file',
+      { path: target, content: 'TOKEN=def' },
+      { outsideWrite: [target] },
+    );
+    expect(write.ok).toBe(false);
+    expect(write.output).toContain('protected file');
+    expect(existsSync(target)).toBe(false);
+  });
+});
+
+/**
+ * The card a host draws. THREE answers — the founder dropped the per-folder
+ * choice — and, on a write only, a calm statement that the change is beyond
+ * undo. "Allow once" covers this call's paths wherever they are, so a call that
+ * names several outside paths (apply_patch) is one answer, not many.
+ */
+describe('the outside-path card', () => {
+  it('offers exactly three answers, in order, each with its own hint', () => {
+    const card = outsidePathCard('read', 'read_file', [
+      { path: '/e/a.txt', abs: '/e/a.txt' },
+    ]);
+    expect(card.answers).toEqual([
+      { choice: 'once', label: 'Allow once', hint: 'Just this one request.' },
+      {
+        choice: 'session',
+        label: 'Allow for this session',
+        hint: 'Anything outside the project until this chat ends.',
+      },
+      { choice: 'deny', label: 'Deny', hint: 'Nothing is read.' },
+    ]);
+    // No per-folder answer, and no field a host could draw one from.
+    expect('folder' in card).toBe(false);
+    expect('folderLabel' in card).toBe(false);
+  });
+
+  it('says "Nothing is changed." when the ask is a write', () => {
+    const write = outsidePathCard('write', 'write_file', [
+      { path: '/e/a.txt', abs: '/e/a.txt' },
+    ]);
+    expect(write.answers.map((a) => a.label)).toEqual([
+      'Allow once',
+      'Allow for this session',
+      'Deny',
+    ]);
+    expect(write.answers[2]!.hint).toBe('Nothing is changed.');
+  });
+
+  it('renders ONE path exactly as before, with no dense supporting line', () => {
+    const card = outsidePathCard('read', 'read_file', [
+      { path: 'x.txt', abs: '/elsewhere/x.txt' },
+    ]);
+    expect(card.title).toBe('Read a file outside the project?');
+    expect(card.lines).toEqual([
+      'Plato wants to read /elsewhere/x.txt.',
+      'The model asked for "x.txt".',
+      'That path is outside the project folder.',
+    ]);
+    expect(card.lines.join(' ')).not.toContain('Plato saves neither');
+    expect(card.why).toContain('reading a file');
+  });
+
+  it('names every path when a call carries several', () => {
+    const card = outsidePathCard('read', 'apply_patch', [
+      { path: '/e/a.txt', abs: '/e/a.txt' },
+      { path: '/e/b.txt', abs: '/e/b.txt' },
+      { path: '/e/c.txt', abs: '/e/c.txt' },
+    ]);
+    expect(card.lines).toEqual([
+      'Plato wants to read 3 files outside the project:',
+      '/e/a.txt',
+      '/e/b.txt',
+      '/e/c.txt',
+      'These paths are outside the project folder.',
+    ]);
+    expect(card.entries).toHaveLength(3);
+  });
+
+  it('lists eight of nine paths and says how many it left out', () => {
+    const entries = Array.from({ length: 9 }, (_, i) => ({
+      path: `/e/f${i}.txt`,
+      abs: `/e/f${i}.txt`,
+    }));
+    const card = outsidePathCard('read', 'apply_patch', entries);
+    expect(card.lines[0]).toBe('Plato wants to read 9 files outside the project:');
+    expect(card.lines.slice(1, 9)).toEqual(entries.slice(0, 8).map((e) => e.abs));
+    expect(card.lines[9]).toBe('and 1 more');
+    expect(card.lines).not.toContain('/e/f8.txt');
+  });
+
+  it('titles a write differently and states the undo limit calmly', () => {
+    const read = outsidePathCard('read', 'read_file', [
+      { path: 'a.txt', abs: '/e/a.txt' },
+    ]);
+    const write = outsidePathCard('write', 'write_file', [
+      { path: 'a.txt', abs: '/e/a.txt' },
+    ]);
+    expect(read.title).toBe('Read a file outside the project?');
+    expect(write.title).toBe('Write a file outside the project?');
+    expect(read.lines.join(' ')).not.toContain('undo');
+    expect(write.lines.join(' ')).toContain(
+      "Plato's undo covers files inside the project, so this change is outside it.",
+    );
+    expect(write.lines.join(' ')).not.toContain('cannot undo');
+  });
+
+  it('keeps the calm undo line and the write deny hint with several paths', () => {
+    const write = outsidePathCard('write', 'apply_patch', [
+      { path: '/e/a.txt', abs: '/e/a.txt' },
+      { path: '/e/b.txt', abs: '/e/b.txt' },
+    ]);
+    expect(write.lines[0]).toBe('Plato wants to write 2 files outside the project:');
+    expect(write.lines.join(' ')).toContain(
+      "Plato's undo covers files inside the project, so this change is outside it.",
+    );
+    expect(write.answers[2]!.hint).toBe('Nothing is changed.');
+  });
+});
+
+describe('a declined ask does not forbid asking again', () => {
+  it('says the user declined, and allows a later ask when the task needs it', () => {
+    const text = outsidePathDeclined('write', 'write_file', '/e/a.txt');
+    expect(text).toContain('declined to write');
+    expect(text).toContain('Nothing was written');
+    expect(text).toContain(
+      'ask for it again only if the task genuinely cannot be done otherwise',
+    );
+    expect(text).not.toContain('do not ask');
   });
 });

@@ -103,15 +103,23 @@ export function containmentRefusal(
  * D49dk (2026-11-12): the READ tools whose paths may leave the workspace, with
  * the user's approval asked at the moment of the call.
  *
- * Writes are deliberately absent. An approval to READ a file is not an approval
- * to write one, and the loop never asks for a write: `write_file`, `apply_diff`
- * and `apply_patch` keep `containmentRefusal` exactly as it was.
+ * D49dk (2026-11-12, widened 2026-11-13): a WRITE may leave too, with its own
+ * approval — see OUTSIDE_WRITE_TOOLS. An approval to read is still not an
+ * approval to write: the two lists are separate, and each call asks under its
+ * own kind.
  */
 export const OUTSIDE_READ_TOOLS: readonly string[] = [
   'read_file',
   'read_image',
   'grep',
   'list_dir',
+];
+
+/** The WRITE tools whose paths may leave the workspace with an approval. */
+export const OUTSIDE_WRITE_TOOLS: readonly string[] = [
+  'write_file',
+  'apply_diff',
+  'apply_patch',
 ];
 
 /**

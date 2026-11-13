@@ -14,7 +14,12 @@
  */
 import { toolWords } from './toolWords.js';
 
-/** What the outside-read card says, and what its three buttons are called. */
+/**
+ * The card the CURRENT hosts draw for the superseded read-only hook. Kept
+ * unchanged — folder choice included — so those hosts compile and behave as
+ * they did until phase 2 moves them to `outsidePathCard`. New code uses
+ * `OutsidePathCard`.
+ */
 export interface OutsideReadCard {
   /** The tool that asked. The card uses it for the WHY line. */
   tool: string;
@@ -32,6 +37,121 @@ export interface OutsideReadCard {
   deny: string;
 }
 
+export type OutsideKind = 'read' | 'write';
+
+/**
+ * One answer a renderer prints as its label plus its hint. The hint travels
+ * with the label so a host never invents wording; `choice` is the value the
+ * host maps onto its own remembered scope.
+ */
+export interface OutsideAnswer {
+  choice: 'once' | 'session' | 'deny';
+  label: string;
+  hint: string;
+}
+
+/** One path the card must name: the argument as written, and its absolute form. */
+export interface OutsideEntry {
+  /** The path as the model wrote it. */
+  path: string;
+  /** The absolute path Plato resolved it to. */
+  abs: string;
+}
+
+/**
+ * D49dk (widened 2026-11-13, corrected by the founder the same day): what Plato
+ * says when paths leave the project, for a read or a write.
+ *
+ * THREE answers, each with one short line, and no per-folder choice: once
+ * covers this call's paths wherever they are; the session choice covers every
+ * outside path until the chat ends; deny reads and writes nothing. The
+ * remembered scope is the HOST's state — core decides one call at a time.
+ *
+ * The card names EVERY outside path the call carries, because a call can carry
+ * several (apply_patch): an answer given while one path was shown would be a
+ * consent the user could not have meant.
+ */
+export interface OutsidePathCard {
+  /** The tool that asked. The card uses it for the WHY line. */
+  tool: string;
+  /** Every path the call carries, as arguments and absolute forms. */
+  entries: readonly OutsideEntry[];
+  /** The first entry's argument, kept for a single-path renderer. */
+  path: string;
+  /** The first entry's absolute path, kept for a single-path renderer. */
+  abs: string;
+  kind: OutsideKind;
+  title: string;
+  lines: string[];
+  why: string;
+  answers: readonly OutsideAnswer[];
+}
+
+/** How many absolute paths a several-path card lists before "and N more". */
+const OUTSIDE_MAX_LISTED = 8;
+
+export function outsidePathCard(
+  kind: OutsideKind,
+  tool: string,
+  entries: readonly OutsideEntry[],
+): OutsidePathCard {
+  const action = kind === 'write' ? 'write to' : 'read';
+  const lines: string[] = [];
+  if (entries.length <= 1) {
+    const entry = entries[0] ?? { path: '', abs: '' };
+    lines.push(`Plato wants to ${action} ${entry.abs}.`);
+    // A relative path that escapes, or a UNC address of an inside file, is
+    // worth showing as itself: the user recognises what the model typed.
+    if (entry.path !== entry.abs) {
+      lines.push(`The model asked for "${entry.path}".`);
+    }
+    lines.push('That path is outside the project folder.');
+  } else {
+    lines.push(
+      `Plato wants to ${kind === 'write' ? 'write' : 'read'} ${entries.length} files outside the project:`,
+    );
+    for (const entry of entries.slice(0, OUTSIDE_MAX_LISTED)) {
+      lines.push(entry.abs);
+    }
+    if (entries.length > OUTSIDE_MAX_LISTED) {
+      lines.push(`and ${entries.length - OUTSIDE_MAX_LISTED} more`);
+    }
+    lines.push('These paths are outside the project folder.');
+  }
+  if (kind === 'write') {
+    // A statement of fact, not a warning: the undo store keeps workspace-
+    // relative paths, and skips an outside one.
+    lines.push("Plato's undo covers files inside the project, so this change is outside it.");
+  }
+  return {
+    tool,
+    entries,
+    path: entries[0]?.path ?? '',
+    abs: entries[0]?.abs ?? '',
+    kind,
+    title:
+      kind === 'write'
+        ? 'Write a file outside the project?'
+        : 'Read a file outside the project?',
+    lines,
+    why: `Plato is ${toolWords(tool).doing}. The path it was given is not inside the project.`,
+    answers: [
+      { choice: 'once', label: 'Allow once', hint: 'Just this one request.' },
+      {
+        choice: 'session',
+        label: 'Allow for this session',
+        hint: 'Anything outside the project until this chat ends.',
+      },
+      {
+        choice: 'deny',
+        label: 'Deny',
+        hint: kind === 'write' ? 'Nothing is changed.' : 'Nothing is read.',
+      },
+    ],
+  };
+}
+
+/** The READ card the current hosts draw; superseded, unchanged on purpose. */
 export function outsideReadCard(
   tool: string,
   path: string,
@@ -39,8 +159,6 @@ export function outsideReadCard(
   folder: string,
 ): OutsideReadCard {
   const lines = [`Plato wants to read ${abs}.`];
-  // A relative path that escapes, or a UNC address of an inside file, is worth
-  // showing as itself: the user recognises what the model typed.
   if (path !== abs) {
     lines.push(`The model asked for "${path}".`);
   }
@@ -63,16 +181,27 @@ export function outsideReadCard(
 }
 
 /**
- * The tool result a DENIED outside read becomes.
+ * The tool result a DENIED outside path becomes, read or write.
  *
  * A denial is a normal result, not a failure: the model reads it, says what it
  * would have done, and the run continues. It never reaches the executor, so
- * nothing was read.
+ * nothing was read or written.
  */
-export function outsideReadDeclined(tool: string, path: string): string {
+export function outsidePathDeclined(
+  kind: OutsideKind,
+  tool: string,
+  path: string,
+): string {
+  const action = kind === 'write' ? 'write' : 'read';
+  const done = kind === 'write' ? 'Nothing was written.' : 'Nothing was read.';
   return (
-    `${tool}: the user declined to read "${path}" outside the workspace. ` +
-    'Nothing was read. Continue without it, and do not ask for the same file ' +
-    'again unless they raise it.'
+    `${tool}: the user declined to ${action} "${path}" outside the workspace. ` +
+    `${done} Continue without it, and ask for it again only if the task ` +
+    'genuinely cannot be done otherwise.'
   );
+}
+
+/** The READ-only spelling, kept for callers that predate the write approval. */
+export function outsideReadDeclined(tool: string, path: string): string {
+  return outsidePathDeclined('read', tool, path);
 }

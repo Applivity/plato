@@ -102,6 +102,46 @@ export interface BuildWorkerRoleOpts {
    * key is not announced. Omitted by a host that has no observers.
    */
   team?: TeamContext;
+  /**
+   * Facts about the machine the run is on. Appended after the body, like the
+   * mode and team paragraphs, so a project's PLATO.md cannot delete them.
+   */
+  env?: WorkerEnv;
+}
+
+export interface WorkerEnv {
+  /** `process.platform` as the host reports it: 'win32', 'darwin', 'linux'. */
+  platform: string;
+  /** The interpreter the shell tool actually runs, as the host names it. */
+  shell: string;
+  /** Absolute workspace root. */
+  root: string;
+}
+
+function osName(platform: string): string {
+  if (platform === 'win32') return 'Windows';
+  if (platform === 'darwin') return 'macOS';
+  if (platform === 'linux') return 'Linux';
+  return platform;
+}
+
+/**
+ * What the model knows about the machine, in three sentences: the operating
+ * system, the shell its commands really run in, and the root the file tools are
+ * confined to while the shell is not. A model that assumes the wrong shell
+ * writes commands that cannot run, and one that assumes the shell is confined
+ * either refuses a legal command or is surprised by a refusal.
+ */
+export function environmentParagraph(env: WorkerEnv | undefined): string {
+  if (env === undefined) {
+    return '';
+  }
+  return (
+    `Environment: this run is on ${osName(env.platform)} (${env.platform}). ` +
+    `The shell tool runs ${env.shell}. ` +
+    `The workspace root is ${env.root}; the file tools work only inside that root, ` +
+    'and the shell does not.'
+  );
 }
 
 export interface TeamContext {
@@ -167,6 +207,8 @@ change, and its answer would tell you the user agreed when nothing changed. Neve
 (the host enforces a deny-list) and never ignore errors silently. If the
 context grows large, older turns fold into a running summary automatically, or
 when the user asks with /compact.
+
+**Precedence:** the user's message decides the task; the project's PLATO.md and AGENTS.md/CLAUDE.md decide its conventions over Plato's defaults; Plato's safety rules (containment, secrets, approvals) decide over both. When it matters, say which you followed.
 
 # Karpathy Guidelines
 
@@ -282,6 +324,8 @@ Inference is allowed. Presenting it as observation is not. This rule exists beca
 **A fix must name the assumption it rests on.** If it is correct only because some input takes a particular form, say which form. A reader who cannot see the assumption cannot judge whether the fix is safe.
 
 **When a task asks for findings and then for fixes, write the findings out before the first edit.** A wrong premise is cheap while it is a sentence and expensive once it is a change.
+
+Never say you cannot do something a tool exists for — try the tool and report what it returned; if the tool is not available, say that instead.
 
 **Absence is not proved.** If a path, host or share you were given cannot be
 found, enumerate what the machine already knows — existing connections and
@@ -494,7 +538,8 @@ ask_user, for a mode change.`
     : `If a call comes back refused because of the mode, say in one sentence what
 you would do if it were permitted and let the user decide.`;
   const team = teamParagraph(opts.team);
-  const system = [...parts, modeParagraph, team].filter((part) => part.length > 0).join('\n\n');
+  const env = environmentParagraph(opts.env);
+  const system = [...parts, modeParagraph, team, env].filter((part) => part.length > 0).join('\n\n');
   return { system, layers };
 }
 

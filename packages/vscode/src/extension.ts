@@ -63,9 +63,9 @@ import {
   protectNameError,
   allowPathError,
   revealCard,
-  outsideReadCard,
+  outsidePathCard,
   type RevealCard,
-  type OutsideReadCard,
+  type OutsidePathCard,
   formatDiagnostics,
   stuckCard,
   type StuckCard,
@@ -140,7 +140,7 @@ import {
 import { chatHtml, type ChatCaps } from './webview.js';
 import { resolvePlatoHome } from './home.js';
 import { attachmentTarget, isAbsoluteAttachmentPath } from './attachments.js';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import { rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -1109,11 +1109,11 @@ type Entry =
   | ({ k: 'reveal-open' } & RevealCard)
   | { k: 'reveal-done' }
   /**
-   * D49dk: the card that asks whether a READ may leave the project. Written to
-   * the log BEFORE the host waits, so a reload rebuilds it exactly as the
-   * reveal card does.
+   * D49dk: the card that asks whether a path outside the project may be read
+   * or written. Written to the log BEFORE the host waits, so a reload rebuilds
+   * it exactly as the reveal card does.
    */
-  | ({ k: 'outside-open' } & OutsideReadCard)
+  | ({ k: 'outside-open' } & OutsidePathCard)
   | { k: 'outside-done' }
   /**
    * D49bg: the question card, recorded for exactly the reason the four cards
@@ -1226,17 +1226,16 @@ class ChatHost {
   /** D49bc: the run is parked on a reveal card until this is answered. */
   private pendingReveal: PendingResolve | null = null;
   /**
-   * D49dk: is Plato waiting on the outside-read card? A fix for the live run.
+   * D49dk: is Plato waiting on the outside-path card? A fix for the live run.
    */
   private pendingOutsideRead:
-    | ((v: 'once' | 'folder' | 'deny') => void)
+    | ((v: 'once' | 'session' | 'deny') => void)
     | null = null;
   /**
-   * D49dk: folders the user allowed for THIS chat only. "Allow this folder for
-   * this session" is remembered here and nowhere else — no setting is written,
-   * and a new chat starts with an empty set.
+   * D49dk: the user allowed every outside path for THIS chat. Nothing is
+   * written to a setting, and a new chat starts with it false.
    */
-  private outsideFolders = new Set<string>();
+  private outsideSession = false;
   /**
    * D49dl: the idle clock. One per chat; every condition is re-read when it
    * fires, so turning the setting off (or a newer message) means the pending
@@ -2302,13 +2301,13 @@ class ChatHost {
           resolve?.(m.allow === true);
           return;
         }
-        // D49dk: the three answers to the outside-read card. Only these exact
+        // D49dk: the three answers to the outside-path card. Only these exact
         // words are consent; anything else reads as a denial.
         if (m.type === 'outside-answer') {
           const resolve = this.pendingOutsideRead;
           this.pendingOutsideRead = null;
           const value =
-            m.value === 'once' || m.value === 'folder' ? m.value : 'deny';
+            m.value === 'once' || m.value === 'session' ? m.value : 'deny';
           resolve?.(value);
           this.push({ k: 'outside-done' });
           this.send('outside-read-done');
@@ -4969,7 +4968,7 @@ class ChatHost {
     // D49dk: a fresh chat is a new session, so a folder allowed in the old one
     // is not allowed in this one.
     this.pendingOutsideRead = null;
-    this.outsideFolders.clear();
+    this.outsideSession = false;
     this.idleFold.cancel();
     this.replyBuffer = '';
     // D49j: the webview is about to be blanked; a pending repaint would post
@@ -5917,9 +5916,21 @@ class ChatHost {
           : {}),
         ...(ctx.originFrom === undefined ? {} : { originFrom: ctx.originFrom }),
         approve: (req) => this.approve(req),
-        // D49dk: a read outside the project asks here, at the moment the model
-        // tries. The host decides whether to ask; core only offers.
-        outsideRead: (paths, tool) => this.outsideRead(paths, tool),
+        // D49dk: what the model knows about this machine. Appended after the
+        // body, so a project PLATO.md cannot delete it: a model that assumes
+        // the wrong shell writes commands that cannot run.
+        env: {
+          platform: process.platform,
+          shell:
+            process.platform === 'win32'
+              ? 'cmd.exe via %COMSPEC%'
+              : '/bin/bash -c',
+          root,
+        },
+        // D49dk: a path outside the project — read OR write — asks here, at the
+        // moment the model tries. The host decides whether to ask; core only
+        // offers.
+        outsidePath: (req) => this.outsidePath(req),
         getMode: () => this.mode,
         // D49cb: the model can ask; the user's card is what changes anything.
         requestMode: (req) => this.requestMode(req),
@@ -6376,62 +6387,42 @@ class ChatHost {
   }
 
   /**
-   * D49dk: may Plato read these paths, which are outside the project?
+   * D49dk: may Plato touch these paths, which are outside the project — read
+   * or write?
    *
-   * The question is asked with the path, the reason (the tool's own words) and
-   * the folder a wider answer would cover. Three answers, and only one is
-   * remembered: "Allow this folder for this session" goes into
-   * `outsideFolders`, which lives as long as this chat. "Allow once" approves
-   * this call and is forgotten — the next call asks again.
+   * Three answers. "Allow once" approves this call and is forgotten — the next
+   * call asks again. "Allow for this session" covers every outside path, read
+   * or write, until the chat ends; a new chat asks again. "Deny" returns false
+   * and core turns it into a normal result the model reads.
    */
-  private async outsideRead(
-    paths: readonly string[],
-    tool: string,
-  ): Promise<boolean> {
-    const raw = String(paths[0] ?? '');
-    const abs = this.resolveLocalPath(raw);
-    if (abs === null) return false;
-    if (this.outsideCovered(abs)) {
-      // The same passive note the write approval uses: the user should know why
-      // a card they allowed the folder for is not appearing again.
-      this.send(
-        'notice',
-        'Plato did not ask — you allowed this folder for this session.',
-      );
-      return true;
+  private async outsidePath(req: {
+    paths: readonly string[];
+    tool: string;
+    kind: 'read' | 'write';
+  }): Promise<boolean> {
+    // EVERY path the call carries is named on the card: a call can carry
+    // several, and an answer given while one path was shown would be a consent
+    // the user could not have meant.
+    const entries: Array<{ path: string; abs: string }> = [];
+    for (const p of req.paths) {
+      const raw = String(p);
+      const abs = this.resolveLocalPath(raw);
+      if (abs === null) return false;
+      entries.push({ path: raw, abs });
     }
-    const answer = await this.promptOutsideRead(tool, raw, abs);
-    if (answer === 'deny') return false;
-    if (answer === 'folder') this.outsideFolders.add(dirname(abs));
-    return true;
+    if (entries.length === 0) return false;
+    if (this.outsideSession) return true;
+    const answer = await this.promptOutsidePath(req.kind, req.tool, entries);
+    if (answer === 'session') this.outsideSession = true;
+    return answer !== 'deny';
   }
 
-  /** True when a folder allowed in this chat covers the absolute path. */
-  private outsideCovered(abs: string): boolean {
-    const norm = (p: string): string => {
-      const one = p.replace(/[\\/]+$/, '');
-      return process.platform === 'win32' ? one.toLowerCase() : one;
-    };
-    const target = norm(abs);
-    for (const folder of this.outsideFolders) {
-      const f = norm(folder);
-      if (
-        target === f ||
-        target.startsWith(f + '/') ||
-        target.startsWith(f + '\\')
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private promptOutsideRead(
+  private promptOutsidePath(
+    kind: 'read' | 'write',
     tool: string,
-    raw: string,
-    abs: string,
-  ): Promise<'once' | 'folder' | 'deny'> {
-    const card = outsideReadCard(tool, raw, abs, dirname(abs));
+    entries: ReadonlyArray<{ path: string; abs: string }>,
+  ): Promise<'once' | 'session' | 'deny'> {
+    const card = outsidePathCard(kind, tool, entries);
     // In the log before the wait, so a reload rebuilds the card.
     this.push({ k: 'outside-open', ...card });
     return new Promise((resolve) => {

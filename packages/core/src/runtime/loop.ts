@@ -30,8 +30,9 @@ import {
   outsideAbsolute,
   outsidePathArgs,
   OUTSIDE_READ_TOOLS,
+  OUTSIDE_WRITE_TOOLS,
 } from '../security/paths.js';
-import { outsideReadDeclined } from './outsideReadCopy.js';
+import { outsidePathDeclined } from './outsideReadCopy.js';
 import { maskText, type SecretVault } from '../security/mask.js';
 import { isSecretPath } from '../security/secrets.js';
 import { seedVault } from './seedVault.js';
@@ -55,7 +56,7 @@ import {
   promptBreakdown,
   shouldAutoCompact,
 } from './context.js';
-import { buildWorkerRole, type TeamContext } from './workerRole.js';
+import { buildWorkerRole, type TeamContext, type WorkerEnv } from './workerRole.js';
 import {
   askNote,
   continueText,
@@ -421,6 +422,13 @@ export interface LoopOptions {
    * a Mac.
    */
   platform?: NodeJS.Platform;
+  /**
+   * The machine facts the worker prompt carries: the operating system, the
+   * shell the shell tool really runs, and the workspace root. The HOST knows
+   * which shell it uses; core cannot infer one from the platform alone without
+   * naming something the tool does not run.
+   */
+  env?: WorkerEnv;
   /** Returns true to allow a gated tool call. */
   approve: (req: ApprovalRequest) => Promise<boolean>;
   /**
@@ -430,11 +438,27 @@ export interface LoopOptions {
    * escape and the tool's name. `true` approves THESE absolute paths for THIS
    * call only — the loop hands them to the executor and forgets them. Absent, a
    * read outside is refused exactly as before, so a host that has not opted in
-   * (the CLI, Visual Studio) behaves as it always did.
+   * behaves as it always did.
    *
-   * Writes are never offered: an approval to read is not an approval to write.
+   * SUPERSEDED by `outsidePath`, which can also approve a write. Kept so a host
+   * that has not moved yet keeps working; `outsidePath` wins when both are set.
    */
   outsideRead?: (paths: readonly string[], tool: string) => Promise<boolean>;
+  /**
+   * May Plato touch these paths, which leave the workspace — read or write?
+   *
+   * Asked once per call, with the raw paths that escape, the tool's name and
+   * what the call would do. `true` approves THESE absolute paths for THIS call
+   * only; the loop hands them to the executor under the matching kind and
+   * forgets them. The remembered scope (this call, or every path until the chat
+   * ends) is the HOST's state: core decides one call at a time and never keeps
+   * the answer.
+   */
+  outsidePath?: (req: {
+    paths: readonly string[];
+    tool: string;
+    kind: 'read' | 'write';
+  }) => Promise<boolean>;
   /** Progress callbacks for the shell UI. */
   onText?: (text: string) => void;
   /**
@@ -860,6 +884,7 @@ async function runLoop(
     // the prose-only path, which is what the CLI does until it grows one.
     modeRequest: opts.requestMode !== undefined,
     ...(opts.team === undefined ? {} : { team: opts.team }),
+    ...(opts.env === undefined ? {} : { env: opts.env }),
   });
   // D37: the system string is mutable across a run because compaction
   // prepends a conversation summary to it. Each turn's `completeTurn`
@@ -1261,15 +1286,28 @@ async function runLoop(
       // D49dk: a READ may go outside with the user's say-so, asked here at the
       // moment the model tries. The answer approves the resolved absolute paths
       // for THIS call only; they reach the executor and are not remembered.
-      // Writes never ask — their containment refusal is the one it always was.
+      // D49dk (widened): a WRITE may too, under its own kind — an approval to
+      // read is never spent on a write. With no host hook, the old containment
+      // refusal stands exactly as it was.
       const escaped = outsidePathArgs(opts.root, name, args);
       let approvedOutside: string[] | undefined;
+      let approvedKind: 'read' | 'write' | null = null;
       let contained: string | null = null;
       if (escaped.length > 0) {
-        if (OUTSIDE_READ_TOOLS.includes(name) && opts.outsideRead !== undefined) {
-          const allowed = await opts.outsideRead(escaped, name);
-          if (!allowed) {
-            const declined = outsideReadDeclined(name, escaped[0]!);
+        const kind: 'read' | 'write' | null = OUTSIDE_READ_TOOLS.includes(name)
+          ? 'read'
+          : OUTSIDE_WRITE_TOOLS.includes(name)
+            ? 'write'
+            : null;
+        let ask: (() => Promise<boolean>) | undefined;
+        if (opts.outsidePath !== undefined && kind !== null) {
+          ask = () => opts.outsidePath!({ paths: escaped, tool: name, kind });
+        } else if (kind === 'read' && opts.outsideRead !== undefined) {
+          ask = () => opts.outsideRead!(escaped, name);
+        }
+        if (kind !== null && ask !== undefined) {
+          if (!(await ask())) {
+            const declined = outsidePathDeclined(kind, name, escaped[0]!);
             results.push({
               type: 'tool_result',
               toolUseId: call.id,
@@ -1281,6 +1319,7 @@ async function runLoop(
             continue;
           }
           approvedOutside = escaped.map((p) => outsideAbsolute(opts.root, p));
+          approvedKind = kind;
         } else {
           contained = containmentRefusal(opts.root, name, args);
         }
@@ -1698,8 +1737,13 @@ async function runLoop(
           signal: ctrl.signal,
           vault: opts.secretVault,
           // D49dk: this call's approval and nothing else. Built per call, so it
-          // cannot survive into a later one.
-          ...(approvedOutside === undefined ? {} : { outsideRead: approvedOutside }),
+          // cannot survive into a later one, and filed under the kind that was
+          // approved — a read allowance never reaches a write.
+          ...(approvedOutside === undefined
+            ? {}
+            : approvedKind === 'write'
+              ? { outsideWrite: approvedOutside }
+              : { outsideRead: approvedOutside }),
           respectGitignore: opts.respectGitignore === true,
           revealProtected: opts.revealProtected,
           recordWrites: undoStore
