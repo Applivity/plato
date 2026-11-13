@@ -12,7 +12,8 @@ export interface InteractiveOptions extends SessionOptions {
 }
 
 export async function runInteractive(options: InteractiveOptions): Promise<number> {
-  const session = new Session(options);
+  let instance: ReturnType<typeof render> | undefined;
+  const session = new Session({ ...options, onExit: () => instance?.unmount() });
   const home = platoHome(options.env);
 
   // D49cq: register before the first run so another session can find this one
@@ -37,7 +38,6 @@ export async function runInteractive(options: InteractiveOptions): Promise<numbe
   // when a window holds a dozen chat tabs. A per-session listener here would be
   // the second one for this process.
 
-  let instance: ReturnType<typeof render> | undefined;
   const onExit = (): void => {
     instance?.unmount();
   };

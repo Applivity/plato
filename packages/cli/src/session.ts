@@ -82,6 +82,8 @@ export interface SessionOptions {
    * the fold tests so a small conversation can cross a real threshold.
    */
   maxContext?: number;
+  /** Called when a queued `/exit` runs; the terminal owns leaving. */
+  onExit?: () => void;
   /** Injected by the idle-fold tests; production uses an hour and 200k tokens. */
   idle?: {
     afterMs?: number;
@@ -229,6 +231,8 @@ export class Session {
   private editorIsEmpty: (() => boolean) | undefined;
   /** Messages that arrived while a run, a card, or an edit was in the way. */
   private readonly pendingInbound: InboundMessage[] = [];
+  /** Lines the user typed during a run; they run in order when it ends. */
+  private readonly queuedLines: string[] = [];
   /** The task of the current (or last) run, for the registry summary. */
   private lastTask = '';
 
@@ -405,7 +409,57 @@ export class Session {
     return 'started';
   }
 
-  /** Starts queued messages one run at a time, when nothing is in the way. */
+  /**
+   * A line typed while a run is in progress. It waits here, in the same order
+   * it was typed, and the run end takes it through the path a typed line takes:
+   * a command runs as a command, anything else becomes the next run. The
+   * composer keeps whatever draft the user is writing; this queue never touches
+   * it.
+   */
+  queueLine(text: string): void {
+    const line = text.trim();
+    if (line.length === 0) {
+      return;
+    }
+    this.queuedLines.push(line);
+    this.append('notice', `Queued: ${line}`);
+    if (!this.state.running && this.state.card === null) {
+      queueMicrotask(() => this.drainQueue());
+    }
+  }
+
+  /**
+   * One item at a time, and the user's own lines before peer messages. A
+   * command returns at once and the next item goes; a sentence becomes a run,
+   * and `submit`'s own end starts the drain again.
+   */
+  private drainQueue(): void {
+    if (this.state.running || this.state.card !== null) {
+      return;
+    }
+    const line = this.queuedLines.shift();
+    if (line !== undefined) {
+      void this.runQueued(line);
+      return;
+    }
+    this.drainInbound();
+  }
+
+  private async runQueued(line: string): Promise<void> {
+    if (line.startsWith('/') && !line.includes('\n')) {
+      const outcome = await this.handleCommand(line);
+      if (outcome === 'exit') {
+        this.base.onExit?.();
+        return;
+      }
+      queueMicrotask(() => this.drainQueue());
+      return;
+    }
+    // The same path a typed line takes: the App's submit, without its editor.
+    await this.submit(line);
+  }
+
+  /** Starts queued peer messages one run at a time, when nothing is in the way. */
   private drainInbound(): void {
     if (this.state.running || this.pendingInbound.length === 0) {
       return;
@@ -554,7 +608,7 @@ export class Session {
       // against a conversation the user has changed.
       await this.afterRun();
       // After the run has fully settled: deliver anything that queued behind it.
-      queueMicrotask(() => this.drainInbound());
+      queueMicrotask(() => this.drainQueue());
     }
   }
 

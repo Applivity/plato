@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type {
   ChatProvider,
+  InboundMessage,
   LiveSession,
   TurnRequest,
   TurnResponse,
@@ -99,6 +100,52 @@ function session(
     provider,
     fetchImpl: offline,
   });
+}
+
+async function waitUntil(predicate: () => boolean, label: string): Promise<void> {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+/**
+ * The first turn hangs until aborted; every later turn answers at once. Each
+ * task text the model is shown is recorded, in order.
+ */
+function recordingProvider(): ChatProvider & { calls: number; tasks: string[] } {
+  const tasks: string[] = [];
+  let calls = 0;
+  const provider: ChatProvider & { calls: number; tasks: string[] } = {
+    id: 'openai',
+    calls: 0,
+    tasks,
+    async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+      calls += 1;
+      provider.calls = calls;
+      const last = request.messages.filter((message) => message.role === 'user').at(-1);
+      tasks.push(
+        (last?.content ?? [])
+          .filter((block) => block.type === 'text')
+          .map((block) => (block.type === 'text' ? block.text : ''))
+          .join(''),
+      );
+      if (calls === 1) {
+        return await new Promise<TurnResponse>((_, reject) => {
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }
+      return {
+        content: [{ type: 'text', text: 'Reply.' }],
+        usage: { inputTokens: 10, outputTokens: 5 },
+        stopReason: 'stop',
+      };
+    },
+  };
+  return provider;
 }
 
 async function waitForCard(session: Session, kind: string) {
@@ -434,6 +481,80 @@ describe('a long step', () => {
       true,
     );
     expect(active.getSnapshot().running).toBe(false);
+  });
+});
+
+describe('a line typed during a run', () => {
+  it('is held, shown as queued, and runs when the run ends', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = recordingProvider();
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('first task');
+    await waitUntil(() => provider.calls === 1, 'the first request');
+
+    active.queueLine('second task');
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter((row) => row.kind === 'notice' && row.text === 'Queued: second task'),
+    ).toHaveLength(1);
+    expect(provider.calls).toBe(1);
+
+    active.cancel();
+    await done;
+    await waitUntil(() => provider.calls === 2, 'the queued run');
+    await waitUntil(() => !active.getSnapshot().running, 'the queued run to end');
+    expect(provider.tasks[1]).toContain('second task');
+  });
+
+  it('runs two queued lines in the order they were typed', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = recordingProvider();
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('first task');
+    await waitUntil(() => provider.calls === 1, 'the first request');
+    active.queueLine('one');
+    active.queueLine('two');
+    active.cancel();
+    await done;
+    await waitUntil(() => provider.calls === 3, 'both queued runs');
+    await waitUntil(() => !active.getSnapshot().running, 'the queue to drain');
+    expect(provider.tasks[1]).toContain('one');
+    expect(provider.tasks[2]).toContain('two');
+  });
+
+  it('runs a queued command without sending anything to the model', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = recordingProvider();
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('first task');
+    await waitUntil(() => provider.calls === 1, 'the first request');
+    active.queueLine('/help');
+    active.cancel();
+    await done;
+    await waitUntil(
+      () => active.getSnapshot().rows.some((row) => row.text.includes('Commands')),
+      'the queued help',
+    );
+    expect(provider.calls).toBe(1);
+  });
+
+  it('runs a typed line before a message from another session', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = recordingProvider();
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('first task');
+    await waitUntil(() => provider.calls === 1, 'the first request');
+    await active.receive({
+      from: { id: 'peer-1', name: 'Peer' },
+      text: 'peer task',
+    } as InboundMessage);
+    active.queueLine('my line');
+    active.cancel();
+    await done;
+    await waitUntil(() => provider.calls === 3, 'both runs');
+    expect(provider.tasks[1]).toContain('my line');
+    expect(provider.tasks[2]).toContain('peer task');
   });
 });
 

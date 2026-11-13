@@ -8,8 +8,10 @@ uses the same setup to check streaming: the answer is drawn by its final
 renderer while it arrives and does not reflow when it lands. `node
 scripts/cli-tui/stop-drive.mjs` checks a long tool and a stop: the running line
 names the tool and ticks, the stop is acknowledged at once, and the part of the
-answer that arrived is kept. `--cli <path>` runs the same checks against another
-build.
+answer that arrived is kept. `node scripts/cli-tui/queue-drive.mjs` checks a
+line typed during a run: the composer stays live, Enter queues it, and queued
+lines and commands run in order when the run ends. `--cli <path>` runs the same
+checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

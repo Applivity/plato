@@ -250,13 +250,20 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       session.addNotice('Press Ctrl+C again to exit.');
       return;
     }
-    if (state.running) {
-      return;
-    }
     if (enter) {
       const line = editor.text.trim();
       if (line.length > 0) {
-        void submitLine(line);
+        if (state.running) {
+          // The line is held and runs when this run ends; the composer keeps
+          // whatever the user writes next.
+          session.queueLine(line);
+          setEditor(EMPTY_EDITOR);
+          setHistoryAt(null);
+          setMenuDismissedAt(null);
+          setSubmitted((previous) => [...previous, line]);
+        } else {
+          void submitLine(line);
+        }
       }
       return;
     }
@@ -365,7 +372,7 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         }
       />
       {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
-      <Composer editor={editor} disabled={state.running} />
+      <Composer editor={editor} />
     </Box>
   );
 }
@@ -526,7 +533,7 @@ function CommandMenu({
   );
 }
 
-function Composer({ editor, disabled }: { editor: EditorState; disabled: boolean }): ReactElement {
+function Composer({ editor }: { editor: EditorState }): ReactElement {
   const cursor = editor.text.slice(editor.cursor, editor.cursor + 1);
   // A pasted block stays one line high. It shows the line the cursor is on and
   // its place, so a keystroke or an arrow is never hidden (round 1).
@@ -547,7 +554,6 @@ function Composer({ editor, disabled }: { editor: EditorState; disabled: boolean
             <Text dimColor>{` [line ${draft.at} of ${draft.total}]`}</Text>
           </>
         )}
-        {disabled ? <Text dimColor> </Text> : null}
       </Box>
       <Text dimColor>Shift+Tab mode · /help · Esc interrupt · Ctrl+C twice exits</Text>
     </Box>
