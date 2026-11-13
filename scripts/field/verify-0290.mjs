@@ -40,7 +40,7 @@ const STUB = `http://127.0.0.1:${PORT}`;
 
 const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.29.0.vsix');
 const EXPECTED_SHA =
-  '63046d7c1d4cc97994acb14c470bdb9e0e133af55796d4d824254f10bf3e3f75';
+  'fcc86c4a2cac1ac587b17f4a3373afa210c33f29f6e955a4101246790c295fe5';
 
 try {
   await import('vscode-extension-tester');

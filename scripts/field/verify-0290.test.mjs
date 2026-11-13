@@ -12,8 +12,9 @@
  *   - a path that does not exist posts the chat notice and opens no tab;
  *   - a paste posted from the real page becomes a chip, and the model is sent
  *     the bytes (the host route, not the OS clipboard);
- *   - an outside read asks its card; "Allow once" lets the tool result reach the
- *     model and the run finish.
+ *   - an outside read asks its card; it offers core's three answers with their
+ *     hints, and "Allow once" lets the tool result reach the model and the run
+ *     finish.
  *
  * The packaged webview is a compiled page with no test hooks, so an uncaught
  * page error cannot be observed from outside the frame the way the render
@@ -329,6 +330,18 @@ describe('0.29.0 real-window check — settings, hints, paths, paste, outside re
     const outside = await waitForOutsideRun(outsideBefore);
     say(`OK   the outside card was answered: Allow once  card=${JSON.stringify(outside.cardText)}`);
     assert.equal(outside.answered, true, 'the outside-read card never appeared or was not answered');
+    // The three answers, with core's own one-line hints, in order.
+    assert.deepEqual(
+      outside.answers.map((a) => a.label),
+      ['Allow once', 'Allow for this session', 'Deny'],
+      `the card did not offer core's three answers: ${JSON.stringify(outside.answers)}`,
+    );
+    assert.deepEqual(
+      outside.answers.map((a) => a.hint),
+      ['Just this one request.', 'Anything outside the project until this chat ends.', 'Nothing is read.'],
+      `the card did not carry core's hints: ${JSON.stringify(outside.answers)}`,
+    );
+    say(`OK   the card offers three answers with their hints  ${JSON.stringify(outside.answers)}`);
     assert.equal(outside.events.find((e) => e.type === 'run-failed'), undefined);
     assert.ok(
       outside.events.some((e) => e.type === 'run-completed'),
@@ -367,19 +380,30 @@ describe('0.29.0 real-window check — settings, hints, paths, paste, outside re
     const started = Date.now();
     let answered = false;
     let cardText = '';
+    let answers = [];
     while (Date.now() - started < timeoutMs) {
       await field.switchToChatFrame().catch(() => {});
       const card = await read(`
         const c = document.querySelector('.card.outside-card:not(.answered)');
-        return c ? c.textContent : null;
+        if (!c) return null;
+        return {
+          text: c.textContent,
+          answers: [...c.querySelectorAll('.actions button')].map((b) => ({
+            label: ((b.querySelector('.oa-label') || {}).textContent || '').trim(),
+            hint: ((b.querySelector('.oa-hint') || {}).textContent || '').trim(),
+          })),
+        };
       `).catch(() => null);
       if (card !== null && card !== undefined) {
-        if (!answered) cardText = String(card);
+        if (!answered) {
+          cardText = String(card.text);
+          answers = card.answers;
+        }
         const clicked = await read(`
           const c = document.querySelector('.card.outside-card:not(.answered)');
           if (!c) return false;
-          const b = [...c.querySelectorAll('button')]
-            .find((x) => x.textContent.trim() === 'Allow once');
+          const b = [...c.querySelectorAll('button')].find((x) =>
+            ((x.querySelector('.oa-label') || {}).textContent || '').trim() === 'Allow once');
           if (!b) return false;
           b.click();
           return true;
@@ -398,7 +422,7 @@ describe('0.29.0 real-window check — settings, hints, paths, paste, outside re
           continue;
         }
         if (text.includes('"run-completed"') || text.includes('"run-failed"')) {
-          return { answered, cardText, events: field.readRun(file) };
+          return { answered, cardText, answers, events: field.readRun(file) };
         }
       }
       await sleep(400);

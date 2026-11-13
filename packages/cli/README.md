@@ -17,10 +17,11 @@ extension has shipped, but the terminal host is new.
 messages into a summary, and so does the history when it reaches your compaction
 threshold; `plato config set compactionIdle true` also summarises after an hour
 with no activity. Later runs receive the summary and the recent tail, together
-with the current content of the files the conversation worked on. A read outside
-the project asks first — allow once, allow this folder for this session, or
-deny. An `@` mention of an absolute or UNC path attaches an image or a text
-file.
+with the current content of the files the conversation worked on. A path outside
+the project, for a read or a write, asks first: allow once, allow for this
+session, or deny. Plato now starts knowing the operating system, the shell and
+the project root, and a very large folder listing says when it stopped. An `@`
+mention of an absolute or UNC path attaches an image or a text file.
 
 **0.2.4** tells Plato that a path, host or share it cannot find is not proof
 that it is absent: it checks the connections, mounts, known hosts, drives and
