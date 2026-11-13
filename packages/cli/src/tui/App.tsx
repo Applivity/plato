@@ -16,7 +16,7 @@ import {
   type EditorState,
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
-import { formatCount } from '../host.js';
+import { compactTokens } from '../format/terminal.js';
 import { Markdown } from './Markdown.js';
 import { Welcome } from './Welcome.js';
 import {
@@ -376,6 +376,7 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
             ? 0
             : Math.max(0, Math.floor((now - state.status.startedAt) / 1000))
         }
+        columns={columns}
       />
       {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
       <Composer editor={editor} />
@@ -473,36 +474,83 @@ function LiveAnswer({
   );
 }
 
+interface StatusPart {
+  key: string;
+  text: string;
+  color?: string;
+  dim?: boolean;
+  /**
+   * How soon this part gives way when the line is too wide for the terminal.
+   * 0 never gives way; the smallest positive number goes first.
+   */
+  gives: number;
+}
+
+/**
+ * The status line, fitted to the window. The conversation share and the
+ * "summary due" notice never give way; the team, the cost and the model do,
+ * in that order, because the share is the number the user needs to see
+ * before a fold — and the line must not wrap.
+ */
 function StatusLine({
   status,
   running,
   elapsed,
+  columns,
 }: {
   status: SessionStatus;
   running: boolean;
   elapsed: number;
+  columns: number;
 }): ReactElement {
+  const parts: StatusPart[] = [
+    { key: 'mode', text: status.mode, color: MODE_COLOR[status.mode], gives: 0 },
+    { key: 'model', text: status.model, dim: true, gives: 3 },
+  ];
+  if (status.team !== 'solo') {
+    parts.push({ key: 'team', text: status.team, dim: true, gives: 1 });
+  }
+  if (status.costUsd > 0) {
+    parts.push({ key: 'cost', text: `$${status.costUsd.toFixed(4)}`, dim: true, gives: 2 });
+  }
+  if (status.contextWindow !== undefined) {
+    parts.push({
+      key: 'share',
+      text: `${compactTokens(status.contextTokens)} of ${compactTokens(status.contextWindow)}`,
+      gives: 0,
+    });
+  }
+  if (status.contextDue === true) {
+    parts.push({ key: 'due', text: 'summary due next run', gives: 0 });
+  }
+  if (running) {
+    parts.push({ key: 'running', text: 'running', color: 'cyan', gives: 0 });
+    if (status.activity !== undefined) {
+      parts.push({ key: 'activity', text: status.activity, dim: true, gives: 6 });
+    }
+    parts.push({ key: 'elapsed', text: `${elapsed}s`, dim: true, gives: 5 });
+  }
+
+  const widthOf = (list: StatusPart[]): number =>
+    list.reduce((sum, part) => sum + part.text.length, 0) + Math.max(0, list.length - 1) * 3;
+  let shown = parts;
+  while (widthOf(shown) > columns) {
+    const optional = shown.filter((part) => part.gives > 0);
+    if (optional.length === 0) {
+      break;
+    }
+    const first = optional.reduce((a, b) => (b.gives < a.gives ? b : a));
+    shown = shown.filter((part) => part !== first);
+  }
+
   return (
     <Box marginTop={1}>
-      <Text color={MODE_COLOR[status.mode]}>{status.mode}</Text>
-      <Text dimColor> · {status.model}</Text>
-      {status.team !== 'solo' ? <Text dimColor> · {status.team}</Text> : null}
-      {status.inputTokens > 0 ? (
-        <Text dimColor>
-          {' · '}
-          {formatCount(status.inputTokens)} in · {formatCount(status.outputTokens)} out
+      {shown.map((part, index) => (
+        <Text key={part.key} color={part.color} dimColor={part.dim}>
+          {index > 0 ? ' \u00b7 ' : ''}
+          {part.text}
         </Text>
-      ) : null}
-      {status.costUsd > 0 ? <Text dimColor>{` · $${status.costUsd.toFixed(4)}`}</Text> : null}
-      {running ? (
-        <>
-          <Text color="cyan"> · running</Text>
-          {status.activity === undefined ? null : (
-            <Text dimColor> · {status.activity}</Text>
-          )}
-          <Text dimColor> · {elapsed}s</Text>
-        </>
-      ) : null}
+      ))}
     </Box>
   );
 }

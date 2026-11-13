@@ -7,7 +7,9 @@
  */
 import { createServer } from 'node:http';
 
-export function startProvider() {
+export function startProvider(options = {}) {
+  /** The context window `/models` advertises; absent, Plato falls back. */
+  const context = options.context;
   /** Every chat request, in arrival order. */
   const requests = [];
   /**
@@ -82,7 +84,12 @@ export function startProvider() {
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(
           JSON.stringify({
-            data: [{ id: 'paste-model', context_length: 131072 }],
+            data: [
+              {
+                id: 'paste-model',
+                ...(context === undefined ? {} : { context_length: context }),
+              },
+            ],
           }),
         );
         return;
@@ -95,6 +102,37 @@ export function startProvider() {
           parsed = body;
         }
         requests.push(parsed);
+        // A compaction call is the engine's own summary request, not a turn
+        // of the script: answer it at once so the script stays aligned.
+        const system = (parsed?.messages ?? []).find((message) => message?.role === 'system');
+        const systemText =
+          typeof system?.content === 'string'
+            ? system.content
+            : Array.isArray(system?.content)
+              ? system.content.map((block) => block?.text ?? '').join('')
+              : '';
+        // A compaction call is not streamed: the adapter reads a plain JSON
+        // body when no one is watching the deltas.
+        if (parsed?.stream !== true) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              id: 'chatcmpl-local',
+              object: 'chat.completion',
+              created: 0,
+              model: parsed?.model ?? 'paste-model',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'Short summary.' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13 },
+            }),
+          );
+          return;
+        }
         const step = script[cursor];
         cursor += 1;
         void play(res, step ?? { text: 'Paste received.' });

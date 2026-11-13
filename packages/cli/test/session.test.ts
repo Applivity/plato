@@ -653,6 +653,69 @@ describe('a line typed during a run', () => {
   });
 });
 
+describe('the conversation share', () => {
+  it('shows the tokens against the window the fold uses', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider: scripted([{ text: 'x'.repeat(800) }]),
+      fetchImpl: offline,
+      maxContext: 1000,
+    });
+    await active.submit('go');
+    const status = active.getSnapshot().status;
+    expect(status.contextWindow).toBe(1000);
+    expect(status.contextTokens).toBeGreaterThan(0);
+  });
+
+  it('says the summary is due once the history is at the threshold', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    let calls = 0;
+    const provider: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            content: [{ type: 'text', text: 'y'.repeat(4000) }],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'stop',
+          };
+        }
+        // The fold cannot run, so the history stays where it was.
+        throw new Error('no fold');
+      },
+    };
+    const active = new Session({
+      root,
+      config: config('auto'),
+      env: environment(),
+      provider,
+      fetchImpl: offline,
+      maxContext: 1000,
+    });
+    await active.submit('go');
+    expect(active.getSnapshot().status.contextDue).toBe(true);
+  });
+
+  it('shows the default window when the provider advertises none', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([{ text: 'Done.' }]),
+      'auto',
+    );
+    await waitUntil(
+      () => active.getSnapshot().status.contextWindow !== undefined,
+      'the context window',
+    );
+    expect(active.getSnapshot().status.contextWindow).toBe(131_072);
+  });
+});
+
 describe('stuck card', () => {
   it('stops the run when the card says Stop', async () => {
     const root = tempDir('plato-cli-session-root-');

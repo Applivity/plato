@@ -177,24 +177,31 @@ try {
   await submit('show me the answer');
   await waitFor(() => plain(output.slice(mark)).includes('END-OF-ANSWER'), 8000, 'the last chunk');
   await sleep(250);
-  const liveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0);
+  const liveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0 && plain(frame.text).includes('Plato · terminal'));
   const liveFrame = liveFrames.at(-1);
-  const liveLines = liveFrame === undefined ? [] : bodyLines(liveFrame);
-  record(liveLines.length >= 5, `the streaming frame shows the rendered answer (${liveLines.length} lines)`);
-  record(!liveLines.join('\n').includes('**'), 'Markdown markers are rendered while the answer streams');
-  record(!liveLines.join('\n').includes('```'), 'a code fence is drawn as code while it streams');
-  record(liveLines.some((line) => line.includes('• item one')), 'a list is a list while it streams');
+  const liveLinesSnapshot = () => (liveFrame === undefined ? [] : bodyLines(liveFrame));
+  const streamedLines = liveLinesSnapshot();
+  record(streamedLines.length >= 5, `the streaming frame shows the rendered answer (${streamedLines.length} lines)`);
+  record(!streamedLines.join('\n').includes('**'), 'Markdown markers are rendered while the answer streams');
+  record(!streamedLines.join('\n').includes('```'), 'a code fence is drawn as code while it streams');
+  record(streamedLines.some((line) => line.includes('• item one')), 'a list is a list while it streams');
 
   await waitRunEnd(mark);
-  // A committed row is printed to the scrollback directly, not inside a
-  // synchronized frame: it follows the live frame's own terminator.
-  const terminator = '\x1b[?2026l';
-  const liveEnd = output.lastIndexOf(terminator, liveFrame.at + liveFrame.text.length);
-  const afterLive = plain(output.slice(liveEnd + terminator.length));
-  const committedLines = afterLive
-    .split('\n')
-    .filter((line) => line.startsWith('│'))
-    .map((line) => line.replace(/^│ ?/, '').replace(/\r$/, ''));
+  // At the commit, the answer row is printed BEFORE the redraw that follows
+  // it, inside one synchronized write. So a committed row is the bordered text
+  // that precedes the header line; a live frame's body follows its header.
+  const frames = framesFrom(output, mark);
+  const committedRows = (frame) =>
+    (plain(frame.text).split('Plato · terminal')[0] ?? '')
+      .split('\n')
+      .filter((line) => line.startsWith('│'))
+      .map((line) => line.replace(/^│ ?/, '').replace(/\r$/, ''));
+  const commitFrame = frames.filter((frame) => committedRows(frame).length > 0).at(-1);
+  const committedLines = commitFrame === undefined ? [] : committedRows(commitFrame);
+  const finalLive = frames
+    .filter((frame) => bodyLines(frame).length > 0 && plain(frame.text).includes('Plato · terminal'))
+    .at(-1);
+  const liveLines = finalLive === undefined ? liveLinesSnapshot() : bodyLines(finalLive);
   record(
     liveLines.length > 0 &&
       committedLines.length >= liveLines.length &&
@@ -249,7 +256,7 @@ try {
   await submit('numbered plan');
   await waitFor(() => plain(output.slice(mark)).includes('END-OF-LIST'), 10000, 'the numbered list');
   await sleep(150);
-  const listLiveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0);
+  const listLiveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0 && plain(frame.text).includes('Plato · terminal'));
   const listLive = listLiveFrames.at(-1);
   const listLiveLines = listLive === undefined ? [] : bodyLines(listLive);
   notes.push(`numbered list: ${listLiveLines.length} live lines`);
@@ -287,7 +294,7 @@ try {
   await submit('write a long answer');
   await waitFor(() => plain(output.slice(mark)).includes('END-OF-LONG'), 10000, 'the long answer');
   await sleep(150);
-  const longLiveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0);
+  const longLiveFrames = framesFrom(output, mark).filter((frame) => bodyLines(frame).length > 0 && plain(frame.text).includes('Plato · terminal'));
   const longLive = longLiveFrames.at(-1);
   const longLiveLines = longLive === undefined ? [] : bodyLines(longLive);
   await waitRunEnd(mark);

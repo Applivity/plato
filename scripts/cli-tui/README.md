@@ -14,8 +14,10 @@ lines and commands run in order when the run ends. `node
 scripts/cli-tui/approve-drive.mjs` checks the approval card: its hint, Esc that
 denies and stops in one press, No that continues, the session answer, and the
 decisions read back from the run records, including whether each card was drawn
-or settled from memory. `--cli <path>` runs the same checks against another
-build.
+or settled from memory. `node scripts/cli-tui/context-drive.mjs` checks the
+status line's conversation share: the used and window numbers, the summary-due
+wording, the drop after a fold, and that nothing wraps at 80 or 120 columns.
+`--cli <path>` runs the same checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

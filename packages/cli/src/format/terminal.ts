@@ -75,6 +75,17 @@ function isWide(cp: number): boolean {
   );
 }
 
+/** A token count a status line can read at a glance: 950, 1.3k, 38k, 200k. */
+export function compactTokens(count: number): string {
+  if (count < 1000) {
+    return String(Math.max(0, Math.round(count)));
+  }
+  if (count < 10_000) {
+    return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  }
+  return `${Math.round(count / 1000)}k`;
+}
+
 /** The text of a run of spans, without its styles. */
 export function plainText(spans: readonly Span[]): string {
   return spans.map((span) => span.text).join('');

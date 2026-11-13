@@ -3,11 +3,13 @@ import {
   RunController,
   createProvider,
   digestToolCall,
+  estimateTokens,
   historyTokens,
   inboundTask,
   parseModelRef,
   planFold,
   recentWorkBlock,
+  shouldAutoCompact,
   toolLine as logToolLine,
   toolWords,
   type ApprovalRequest,
@@ -113,6 +115,12 @@ export interface SessionStatus {
   activity?: string;
   /** When the run started, so the terminal can tick the elapsed seconds. */
   startedAt?: number;
+  /** The history the next request carries, as estimated tokens. */
+  contextTokens: number;
+  /** The window the fold measures against; absent until it is resolved. */
+  contextWindow?: number;
+  /** True when the next run would fold: the history is at the threshold. */
+  contextDue?: boolean;
 }
 
 export interface ApprovalCard {
@@ -308,6 +316,7 @@ export class Session {
         outputTokens: 0,
         costUsd: 0,
         turns: 0,
+        contextTokens: historyTokens(this.log),
       },
       observers: [],
       running: false,
@@ -329,6 +338,18 @@ export class Session {
         : { clearTimer: options.idle.clearTimer }),
     });
     this.scheduleIdleFold();
+    // The window is what the fold will use, so the status line reads the same
+    // promise. A connection that cannot answer falls back to the fold default.
+    void this.contextWindow()
+      .then((window) => {
+        this.update({
+          status: { ...this.state.status, contextWindow: window },
+        });
+        this.refreshUsage();
+      })
+      .catch(() => {
+        // The fold has the same fallback; no number is worse than a wrong one.
+      });
   }
 
   /** Stable identities, because `useSyncExternalStore` compares them. */
@@ -346,6 +367,26 @@ export class Session {
     for (const listener of this.listeners) {
       listener();
     }
+  }
+
+  /** The status fields that depend on how full the conversation is. */
+  private statusFor(tokens: number): SessionStatus {
+    const window = this.state.status.contextWindow;
+    const due =
+      window !== undefined && shouldAutoCompact(tokens, window, this.config.compactionThreshold);
+    return {
+      ...this.state.status,
+      contextTokens: tokens,
+      ...(due ? { contextDue: true } : { contextDue: false }),
+    };
+  }
+
+  /** Recomputes the share from the log and whatever is streaming now. */
+  private refreshUsage(): void {
+    const tokens =
+      historyTokens(this.log) +
+      (this.state.streaming.length === 0 ? 0 : estimateTokens(this.state.streaming));
+    this.update({ status: this.statusFor(tokens) });
   }
 
   private append(kind: RowKind, text: string): void {
@@ -517,7 +558,11 @@ export class Session {
       running: true,
       streaming: '',
       observers: [],
-      status: { ...this.state.status, activity: undefined, startedAt: Date.now() },
+      status: {
+        ...this.statusFor(historyTokens(this.log)),
+        activity: undefined,
+        startedAt: Date.now(),
+      },
     });
     this.live?.refresh();
     this.modeRequestsThisRun = 0;
@@ -577,7 +622,7 @@ export class Session {
       this.log.push({ k: 'msg', cls: 'bot', text: result.finalText });
       this.update({
         status: {
-          ...this.state.status,
+          ...this.statusFor(historyTokens(this.log)),
           turns: this.state.status.turns + result.turns,
           inputTokens: this.state.status.inputTokens + result.inputTokens,
           outputTokens: this.state.status.outputTokens + result.outputTokens,
@@ -606,7 +651,11 @@ export class Session {
       this.update({
         running: false,
         streaming: '',
-        status: { ...this.state.status, activity: undefined, startedAt: undefined },
+        status: {
+          ...this.statusFor(historyTokens(this.log)),
+          activity: undefined,
+          startedAt: undefined,
+        },
       });
       this.live?.refresh();
       // D44d amended: the size fold runs after the run, then the idle clock
@@ -791,6 +840,7 @@ export class Session {
         ...(focus.length === 0 ? {} : { focus }),
       });
       this.log = outcome.rows;
+      this.update({ status: this.statusFor(historyTokens(this.log)) });
       if (outcome.folded) {
         if (outcome.notice !== null) this.append('notice', outcome.notice);
         this.save();
@@ -918,6 +968,7 @@ export class Session {
         return 'handled';
       case '/new': {
         this.log = [];
+        this.update({ status: this.statusFor(0) });
         this.idleFold.cancel();
         // A new conversation asks about outside paths again.
         this.outsideAllowed = false;
@@ -979,10 +1030,17 @@ export class Session {
 
   private sink(): RunSink {
     return {
-      textDelta: (soFar) => this.update({ streaming: soFar }),
+      textDelta: (soFar) =>
+        this.update({
+          streaming: soFar,
+          status: this.statusFor(historyTokens(this.log) + estimateTokens(soFar)),
+        }),
       textCommitted: (text) => {
         this.append('assistant', text);
-        this.update({ streaming: '' });
+        this.update({
+          streaming: '',
+          status: this.statusFor(historyTokens(this.log) + estimateTokens(text)),
+        });
       },
       tool: (event) => {
         if (event.phase === 'requested') {

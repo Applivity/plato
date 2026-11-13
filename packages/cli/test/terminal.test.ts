@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compactTokens,
   displayWidth,
   parseMarkdown,
   plainText,
@@ -127,5 +128,22 @@ describe('parseMarkdown', () => {
     if (block?.kind === 'paragraph') {
       expect(plainText(block.spans)).toBe('one line and the next');
     }
+  });
+});
+
+describe('compactTokens', () => {
+  it('reads small counts as they are', () => {
+    expect(compactTokens(950)).toBe('950');
+  });
+
+  it('reads thousands with one decimal below ten thousand', () => {
+    expect(compactTokens(1300)).toBe('1.3k');
+    expect(compactTokens(9000)).toBe('9k');
+  });
+
+  it('reads larger counts in whole thousands', () => {
+    expect(compactTokens(38_000)).toBe('38k');
+    expect(compactTokens(131_072)).toBe('131k');
+    expect(compactTokens(200_000)).toBe('200k');
   });
 });
