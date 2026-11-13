@@ -102,7 +102,7 @@ async function waitRunEnd(mark) {
   await waitFor(() => /\b\d+ turns?\b/.test(plain(output.slice(mark))), 15000, 'the run summary');
   await sleep(400);
 }
-function runDecisions() {
+function runEvents(type) {
   const base = join(home, 'runs');
   const found = [];
   let projects = [];
@@ -129,7 +129,7 @@ function runDecisions() {
         } catch {
           continue;
         }
-        if (event?.type === 'approval-decided') found.push(event);
+        if (event?.type === type) found.push(event);
       }
     }
   }
@@ -232,8 +232,26 @@ try {
   );
   record(third.includes('After three.'), 'the remembered call runs and the answer lands');
 
-  // 4. The run records carry each decision with the tool and the answer.
-  const decisions = runDecisions();
+  // 4. The run records carry each decision with the tool and the answer, and
+  // say whether a card was drawn or an earlier answer settled the ask.
+  const decisions = runEvents('approval-decided');
+  const cards = runEvents('approval-card');
+  const shown = cards.filter((event) => event.via === 'shown').length;
+  const memory = cards.filter((event) => event.via === 'session-memory').length;
+  const session = cards.filter((event) => event.via === 'session-approval').length;
+  notes.push(`approval-card entries: ${cards.length} — shown ${shown}, session-memory ${memory}, session-approval ${session}`);
+  record(
+    shown === 3 && memory === 1 && session === 0,
+    'the record says which cards were drawn and which came from memory',
+  );
+  record(
+    cards.length === 4 &&
+      cards.every(
+      (event) =>
+        event.tool === 'write_file' && event.preview === undefined && event.args === undefined,
+    ),
+    'the card records keep the redaction rules',
+  );
   notes.push(
     `approval-decided entries: ${decisions.length} — ${decisions
       .map((event) => `${event.tool}:${event.allowed}`)

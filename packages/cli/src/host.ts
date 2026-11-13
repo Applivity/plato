@@ -79,6 +79,9 @@ export interface ToolEvent {
  * streams; the interactive host answers them with cards. Both drive the same
  * `executeTask`, so the engine sees one host contract (D49bw).
  */
+/** How an approval ask was answered, for the run record (D49aq). */
+export type ApprovalVia = 'shown' | 'session-memory' | 'session-approval';
+
 export interface RunSink {
   textDelta(textSoFar: string): void;
   textCommitted(text: string): void;
@@ -88,6 +91,12 @@ export interface RunSink {
   stuck(request: StuckRequest): Promise<{ action: 'continue' | 'stop'; guidance?: string }>;
   reveal(protectedPath: string): Promise<boolean>;
   notice(text: string): void;
+  /**
+   * The host hands the sink the way to report an approval ask, so the run
+   * record can say whether a card was drawn or an earlier answer settled it.
+   * A sink without this keeps the record silent on the question.
+   */
+  bindApprovalCards?(emit: (tool: string, via: ApprovalVia) => void): void;
   /** The observer strip and the closing observer line. */
   observer?(event: ObserverEvent): void;
   /**
@@ -400,6 +409,13 @@ export async function executeTask(
     }
   });
   const requestMode = sink.requestMode;
+  // D49aq: the host is consulted for every ask; the sink knows whether it drew
+  // a card or answered from memory. The record needs both facts together.
+  sink.bindApprovalCards?.((tool, via) => {
+    if (currentRunId !== '') {
+      bus.emit({ type: 'approval-card', runId: currentRunId, tool, via });
+    }
+  });
 
   const specs = observerSpecs(config.team, ref, platoHome(env));
   const { handles, skipped } = await createObservers(specs, {

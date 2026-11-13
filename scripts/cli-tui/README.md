@@ -13,8 +13,9 @@ line typed during a run: the composer stays live, Enter queues it, and queued
 lines and commands run in order when the run ends. `node
 scripts/cli-tui/approve-drive.mjs` checks the approval card: its hint, Esc that
 denies and stops in one press, No that continues, the session answer, and the
-decisions read back from the run records. `--cli <path>` runs the same checks
-against another build.
+decisions read back from the run records, including whether each card was drawn
+or settled from memory. `--cli <path>` runs the same checks against another
+build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

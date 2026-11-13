@@ -256,6 +256,10 @@ export class Session {
   private stopNoticed = false;
   /** The pending approval was answered with Esc: deny, and stop the run. */
   private approvalStopped = false;
+  /** The host's way to report how an ask was answered (D49aq). */
+  private reportApprovalCard:
+    | ((tool: string, via: 'shown' | 'session-memory' | 'session-approval') => void)
+    | undefined;
   private readonly idleFold: IdleFold;
 
   /** The flat pairs the session store and the title read. */
@@ -1019,6 +1023,9 @@ export class Session {
       reveal: (rel) => this.askReveal(rel),
       outsidePath: (card) => this.askOutsidePath(card),
       notice: (text) => this.append('notice', text),
+      bindApprovalCards: (emit) => {
+        this.reportApprovalCard = emit;
+      },
       observer: (event) => this.observeEvent(event),
       requestMode: (request) => this.askModeChange(request),
     };
@@ -1116,12 +1123,14 @@ export class Session {
   private askApproval(request: ApprovalRequest): Promise<boolean> {
     const key = approvalKey(request);
     if (this.remembered.has(key)) {
+      this.reportApprovalCard?.(request.tool, 'session-memory');
       return Promise.resolve(true);
     }
     const target = request.host !== undefined ? `the host ${request.host}` : 'this file';
     const options = ['No', 'Yes', `Yes, allow ${target} for this session`];
     const doing = toolWords(request.tool).doing;
     this.approvalStopped = false;
+    this.reportApprovalCard?.(request.tool, 'shown');
     return this.present<number>({
       kind: 'approval',
       tool: request.tool,
