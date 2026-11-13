@@ -9,6 +9,7 @@ import {
   planFold,
   recentWorkBlock,
   toolLine as logToolLine,
+  toolWords,
   type ApprovalRequest,
   type ChatProvider,
   type Mode,
@@ -106,6 +107,10 @@ export interface SessionStatus {
   outputTokens: number;
   costUsd: number;
   turns: number;
+  /** What the run is doing now: the tool's own words. */
+  activity?: string;
+  /** When the run started, so the terminal can tick the elapsed seconds. */
+  startedAt?: number;
 }
 
 export interface ApprovalCard {
@@ -243,6 +248,8 @@ export class Session {
   private window: Promise<number> | null = null;
   /** "Allow for this session" covers every outside path, read or write. */
   private outsideAllowed = false;
+  /** "Stopping after this step." is said once per run, however often asked. */
+  private stopNoticed = false;
   private readonly idleFold: IdleFold;
 
   /** The flat pairs the session store and the title read. */
@@ -445,7 +452,13 @@ export class Session {
       this.log.push({ k: 'msg', cls: 'you', text: task });
     }
     this.lastTask = task;
-    this.update({ running: true, streaming: '', observers: [] });
+    this.stopNoticed = false;
+    this.update({
+      running: true,
+      streaming: '',
+      observers: [],
+      status: { ...this.state.status, activity: undefined, startedAt: Date.now() },
+    });
     this.live?.refresh();
     this.modeRequestsThisRun = 0;
     const controller = new RunController();
@@ -511,6 +524,12 @@ export class Session {
           costUsd: this.state.status.costUsd + result.costUsd,
         },
       });
+      if (result.reason === 'cancelled' && this.state.streaming.length > 0) {
+        // What had arrived stays on screen; the log keeps only the final
+        // answer, so the next request cannot resend a half turn.
+        this.append('assistant', this.state.streaming);
+        this.append('notice', 'Stopped — the answer above is what had arrived.');
+      }
       if (result.reason !== 'complete') {
         this.append('notice', `Run ended: ${reasonText(result.reason)}.`);
         if (result.stuckNote !== undefined) {
@@ -524,7 +543,11 @@ export class Session {
       this.append('error', message);
     } finally {
       this.controller = null;
-      this.update({ running: false, streaming: '' });
+      this.update({
+        running: false,
+        streaming: '',
+        status: { ...this.state.status, activity: undefined, startedAt: undefined },
+      });
       this.live?.refresh();
       // D44d amended: the size fold runs after the run, then the idle clock
       // starts. Both read the user's settings at fire time, so neither can run
@@ -545,6 +568,11 @@ export class Session {
       this.settle(
         card.kind === 'question' ? '' : card.kind === 'outside' ? 2 : 0,
       );
+    }
+    // A stop that will wait for a long tool must say so at once, and only once.
+    if (card === null && this.state.running && !this.stopNoticed) {
+      this.stopNoticed = true;
+      this.append('notice', 'Stopping after this step.');
     }
     this.controller?.cancel();
   }
@@ -899,6 +927,14 @@ export class Session {
       tool: (event) => {
         if (event.phase === 'requested') {
           return;
+        }
+        // The status line names what the run is doing, in the tool's words.
+        if (event.phase === 'allowed') {
+          this.update({
+            status: { ...this.state.status, activity: toolWords(event.tool).doing },
+          });
+        } else if (this.state.status.activity !== undefined) {
+          this.update({ status: { ...this.state.status, activity: undefined } });
         }
         // D49ag: the log records what the call was FOR, never its result. The
         // digest is the argument; a later fold and the re-injection block both

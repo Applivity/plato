@@ -58,6 +58,7 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   const [submitted, setSubmitted] = useState<string[]>([]);
   const [historyAt, setHistoryAt] = useState<number | null>(null);
   const [ctrlC, setCtrlC] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [choice, setChoice] = useState(0);
   // Esc closes the menu for the text it was showing; the next keystroke reopens it.
   const [menuDismissedAt, setMenuDismissedAt] = useState<string | null>(null);
@@ -106,6 +107,17 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     if (!state.running) {
       setCtrlC(0);
     }
+  }, [state.running]);
+
+  // The elapsed seconds tick only while a run is in progress; an idle
+  // terminal leaves no interval behind.
+  useEffect(() => {
+    if (!state.running) {
+      return;
+    }
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, [state.running]);
 
   const submitLine = async (line: string): Promise<void> => {
@@ -343,7 +355,15 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       ) : null}
       {state.card !== null ? <CardView card={state.card} /> : null}
       {state.observers.length > 0 ? <ObserverStrip observers={state.observers} /> : null}
-      <StatusLine status={state.status} running={state.running} />
+      <StatusLine
+        status={state.status}
+        running={state.running}
+        elapsed={
+          state.status.startedAt === undefined
+            ? 0
+            : Math.max(0, Math.floor((now - state.status.startedAt) / 1000))
+        }
+      />
       {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
       <Composer editor={editor} disabled={state.running} />
     </Box>
@@ -443,9 +463,11 @@ function LiveAnswer({
 function StatusLine({
   status,
   running,
+  elapsed,
 }: {
   status: SessionStatus;
   running: boolean;
+  elapsed: number;
 }): ReactElement {
   return (
     <Box marginTop={1}>
@@ -459,7 +481,15 @@ function StatusLine({
         </Text>
       ) : null}
       {status.costUsd > 0 ? <Text dimColor>{` · $${status.costUsd.toFixed(4)}`}</Text> : null}
-      {running ? <Text color="cyan"> · running</Text> : null}
+      {running ? (
+        <>
+          <Text color="cyan"> · running</Text>
+          {status.activity === undefined ? null : (
+            <Text dimColor> · {status.activity}</Text>
+          )}
+          <Text dimColor> · {elapsed}s</Text>
+        </>
+      ) : null}
     </Box>
   );
 }

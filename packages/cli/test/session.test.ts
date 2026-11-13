@@ -370,6 +370,73 @@ describe('cancel', () => {
   });
 });
 
+describe('a long step', () => {
+  it('names the tool it is in and records when the run started', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider = scripted([
+      {
+        tool: {
+          name: 'shell',
+          input: { command: 'node -e "setTimeout(() => {}, 300)"' },
+        },
+      },
+      { text: 'done' },
+    ]);
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('run the slow command');
+    let named = false;
+    for (let attempt = 0; attempt < 400 && !named; attempt += 1) {
+      if (active.getSnapshot().status.activity === 'running a command') {
+        named = true;
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    }
+    expect(named).toBe(true);
+    expect(active.getSnapshot().status.startedAt).toBeTypeOf('number');
+    await done;
+    expect(active.getSnapshot().status.activity).toBeUndefined();
+    expect(active.getSnapshot().status.startedAt).toBeUndefined();
+  });
+
+  it('acknowledges a stop once and keeps the part of the answer that arrived', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const provider: ChatProvider = {
+      id: 'openai',
+      async completeTurn(request: TurnRequest): Promise<TurnResponse> {
+        request.onDelta?.('Half an answer.');
+        return await new Promise<TurnResponse>((_, reject) => {
+          request.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      },
+    };
+    const active = session(root, environment(), provider, 'auto');
+    const done = active.submit('go');
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      if (active.getSnapshot().streaming.length > 0) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    active.cancel();
+    active.cancel();
+    await done;
+
+    const rows = active.getSnapshot().rows;
+    expect(
+      rows.filter((row) => row.kind === 'notice' && row.text === 'Stopping after this step.'),
+    ).toHaveLength(1);
+    expect(rows.some((row) => row.kind === 'assistant' && row.text === 'Half an answer.')).toBe(true);
+    expect(rows.some((row) => row.kind === 'notice' && row.text.includes('what had arrived'))).toBe(
+      true,
+    );
+    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: cancelled.')).toBe(
+      true,
+    );
+    expect(active.getSnapshot().running).toBe(false);
+  });
+});
+
 describe('stuck card', () => {
   it('stops the run when the card says Stop', async () => {
     const root = tempDir('plato-cli-session-root-');
