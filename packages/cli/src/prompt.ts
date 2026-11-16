@@ -34,6 +34,20 @@ export function withCloseRejection(rl: Interface): (question: string) => Promise
   return async (question) => await Promise.race([rl.question(question), closed]);
 }
 
+/**
+ * Reads a key typed or pasted at a terminal, or piped into it. A terminal is
+ * still standard input: `--key-stdin` must not depend on there being no tty.
+ */
+export async function readKeyLine(
+  input: NodeJS.ReadStream,
+  output: NodeJS.WriteStream,
+): Promise<string> {
+  if (input.isTTY !== true) {
+    return await readLine(input);
+  }
+  return await readHidden(input, output, '');
+}
+
 /** Reads one line from a pipe. Used for the headless login path. */
 export async function readLine(input: CliInput): Promise<string> {
   let buffer = '';
@@ -73,6 +87,13 @@ function readHidden(
         return;
       }
       if (key.name === 'return' || key.name === 'enter') {
+        finish();
+        output.write('\n');
+        resolve(value);
+        return;
+      }
+      // Ctrl+D on a terminal is the end of input; what was typed is the answer.
+      if (key.ctrl && key.name === 'd') {
         finish();
         output.write('\n');
         resolve(value);

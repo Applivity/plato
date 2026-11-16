@@ -72,12 +72,14 @@ function pty(env, cwd, argv = []) {
     state.output += chunk.toString();
   });
   state.child = child;
+  state.closed = new Promise((done) => child.on('close', done));
   state.send = (text) => child.stdin.write(text);
   state.line = async (text) => {
     state.send(text);
     await sleep(120);
     state.send('\r');
   };
+  state.end = () => child.stdin.end();
   state.kill = () => {
     try {
       process.kill(-child.pid, 'SIGTERM');
@@ -169,6 +171,7 @@ try {
       await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
       await ui.line('n');
       await waitFor(() => plain(ui.output).includes("Run 'plato auth login'"), 5000, 'the command');
+      await Promise.race([ui.closed, sleep(2000)]);
       record(!plain(ui.output).includes('Type / for commands'), 'No exits without starting a session');
       record(true, 'No names the one command');
     } catch (error) {
@@ -292,7 +295,7 @@ try {
     sessions.push(ui);
     try {
       await sleep(400);
-      ui.send('sk-tty-key\n');
+      await ui.line('sk-tty-key');
       await waitFor(
         () => plain(ui.output).includes('Saved. Using zed:paste-model.'),
         8000,
@@ -306,11 +309,56 @@ try {
           saved.model === 'zed:paste-model',
         'the one command under a terminal saves the connection and the model',
       );
+      const status = await runOnce(env, ['auth', 'status']);
+      const statusText = plain(status.output);
+      record(
+        /^zed\s+(file|keychain)/m.test(statusText),
+        'the key typed under a terminal resolves afterwards',
+      );
     } catch (error) {
       record(false, `one command under a terminal: ${error.message}`);
     } finally {
       captures.push({ name: 'one command under a terminal', output: ui.output });
       ui.kill();
+    }
+    // The same command with no key at all: EOF is an error, not a success.
+    const empty = pty(env, root, [
+      'auth',
+      'login',
+      'c2',
+      '--kind',
+      'openai',
+      '--base-url',
+      'https://example.test/v1',
+      '--key-stdin',
+      '--model',
+      'paste-model',
+    ]);
+    sessions.push(empty);
+    try {
+      await sleep(1500);
+      // Ctrl+D at the terminal is end of input; closing the pty would kill it.
+      empty.send('\x04');
+      await sleep(300);
+      empty.send('\x04');
+      await waitFor(
+        () => plain(empty.output).includes('no key was saved'),
+        8000,
+        'the no-key sentence',
+      );
+      record(
+        !plain(empty.output).includes('Saved. Using'),
+        'an empty key is an error, not a silent success',
+      );
+      record(
+        plain(empty.output).includes('run \'plato auth login c2\''),
+        'the sentence says how to add the key',
+      );
+    } catch (error) {
+      record(false, `empty key: ${error.message}`);
+    } finally {
+      captures.push({ name: 'empty key under a terminal', output: empty.output });
+      empty.kill();
     }
     await provider.close();
   }

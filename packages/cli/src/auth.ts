@@ -3,6 +3,7 @@ import { PROVIDER_PRESETS } from '@applivity/plato-core';
 import { loadConfig, saveConfig, type ConnectionConfig } from './config.js';
 import { authPath, type Env } from './paths.js';
 import {
+  connectionNeedsKey,
   deleteKey,
   formatMode,
   isWideMode,
@@ -16,7 +17,7 @@ import {
   type ResolvedKey,
 } from './keys.js';
 import type { CliInput, Streams } from './io.js';
-import { readLine, type Prompter } from './prompt.js';
+import { readKeyLine, readLine, type Prompter } from './prompt.js';
 import { runWizard } from './setup.js';
 
 export const AUTH_HELP = `Usage
@@ -240,7 +241,7 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   let key = '';
   if (scripted) {
     if (flags.keyStdin === true) {
-      key = await readLine(context.input);
+      key = await readKeyLine(context.input as NodeJS.ReadStream, process.stderr);
     }
   } else if (prompter !== undefined) {
     key = await prompter.secret('API key: ');
@@ -279,6 +280,20 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
         keychain: context.keychain,
         forceFile: flags.noKeyring === true || keyringDisabled(context.env),
       });
+    }
+    // Success is only claimed when the connection can actually answer.
+    const resolved =
+      flags.keyEnv === undefined
+        ? await resolveKey(connection, { env: context.env, keychain: context.keychain })
+        : null;
+    const noKey = resolved === null && flags.keyEnv === undefined && connectionNeedsKey(connection);
+    if (noKey) {
+      const variable = `PLATO_KEY_${target.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+      context.streams.out(
+        `The connection ${target} is saved, but no key was saved. ` +
+          `Set ${variable} or run 'plato auth login ${target}' to add one.\n`,
+      );
+      return flags.keyStdin === true ? 1 : 0;
     }
     if (flags.model !== undefined) {
       context.streams.out(`Saved. Using ${config.model}.\n`);

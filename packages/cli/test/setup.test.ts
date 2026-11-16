@@ -110,6 +110,39 @@ describe('the setup wizard', () => {
   });
 });
 
+describe('a piped key with no key', () => {
+  it('says the connection is saved and the key is not, and does not claim success', async () => {
+    const env = environment();
+    const out: string[] = [];
+    const code = await runAuth(
+      [
+        'login',
+        'c1',
+        '--kind',
+        'openai',
+        '--base-url',
+        'https://example.test/v1',
+        '--key-stdin',
+        '--model',
+        'm1',
+      ],
+      {
+        env,
+        streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+        input: (async function* () {})() as unknown as NodeJS.ReadableStream,
+        keychain: null,
+      },
+    );
+
+    expect(code).toBe(1);
+    const printed = out.join('');
+    expect(printed).toContain('no key was saved');
+    expect(printed).not.toContain('Saved. Using');
+    expect(loadConfig(env).connections[0]?.id).toBe('c1');
+    expect(readAuthFile(env).keys['c1']).toBeUndefined();
+  });
+});
+
 describe('a terminal does not turn flags into questions', () => {
   it('saves a named connection from flags without asking anything', async () => {
     const env = environment();
