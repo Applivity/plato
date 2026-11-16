@@ -129,6 +129,21 @@ const openPicker = async (ui) => {
   ui.send('\r');
 };
 
+function runOnce(env, argv, input = '') {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [cli, ...argv], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    let output = '';
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      output += chunk.toString();
+    });
+    child.on('close', (code) => done({ code, output }));
+    child.stdin.end(input);
+  });
+}
+
 const results = [];
 const captures = [];
 const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
@@ -162,6 +177,22 @@ try {
       await ui.line('2');
       await waitFor(() => plain(ui.output).includes('Using connB:model-b.'), 5000, 'the switch');
       record(configOf(env).model === 'connB:model-b', 'choosing a number changes the config');
+      const refusedNumber = await runOnce(env, ['model'], '9\n');
+      record(
+        refusedNumber.code === 2 &&
+          plain(refusedNumber.output).includes("'9' was not one of the choices"),
+        'a number out of range is refused with a sentence',
+      );
+      const refusedWord = await runOnce(env, ['model'], 'abc\n');
+      record(
+        refusedWord.code === 2 &&
+          plain(refusedWord.output).includes("'abc' was not one of the choices"),
+        'a word is refused the same way',
+      );
+      record(
+        configOf(env).model === 'connB:model-b',
+        'a refused answer changes nothing',
+      );
     } catch (error) {
       record(false, `shell model command: ${error.message}`);
     } finally {
@@ -235,6 +266,28 @@ try {
       // 4. Esc changes nothing.
       await openPicker(ui);
       await waitFor(() => plain(ui.output).includes('Esc closes'), 8000, 'the picker again');
+      ui.send('9');
+      record(
+        await attempt(() =>
+          waitFor(
+            () => plain(ui.output).includes("'9' is not a choice"),
+            4000,
+            'the out-of-range note',
+          ),
+        ),
+        'the session says an out-of-range number is not a choice',
+      );
+      ui.send('abc');
+      record(
+        await attempt(() =>
+          waitFor(() => plain(ui.output).includes("'abc' is not a choice"), 4000, 'the word note'),
+        ),
+        'the session answers a word the same way',
+      );
+      record(
+        plain(ui.output).includes('Esc closes'),
+        'the picker stays open after a refused answer',
+      );
       const current = configOf(env).model;
       ui.send('\x1b');
       await sleep(600);

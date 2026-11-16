@@ -366,6 +366,7 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         return await runModel(rest, {
           env: process.env,
           streams: io,
+          input,
           ...(prompter === undefined ? {} : { prompter }),
         });
       case 'sessions':

@@ -3,7 +3,8 @@ import { loadConfig, saveConfig } from './config.js';
 import type { Streams } from './io.js';
 import { connectionModels, modelRefs } from './modelList.js';
 import type { Env } from './paths.js';
-import type { Prompter } from './prompt.js';
+import { readLine, type Prompter } from './prompt.js';
+import type { CliInput } from './io.js';
 import { runWizard } from './setup.js';
 
 export const MODEL_HELP = `Usage
@@ -19,6 +20,7 @@ export async function runModel(
     env: Env;
     streams: Streams;
     prompter?: Prompter;
+    input?: CliInput;
     fetchImpl?: typeof fetch;
   },
 ): Promise<number> {
@@ -74,12 +76,15 @@ export async function runModel(
     }
   }
 
-  if (prompter === undefined) {
+  let answer = '';
+  if (prompter !== undefined) {
+    answer = (await prompter.ask('Model (number, or Enter keeps the current): ')).trim();
+  } else if (options.input !== undefined && options.input.isTTY !== true) {
+    // A piped answer is still an answer; an empty pipe means "keep".
+    answer = (await readLine(options.input)).trim();
+  } else {
     return 0;
   }
-  const answer = (
-    await prompter.ask('Model (number, or Enter keeps the current): ')
-  ).trim();
   if (answer.length === 0) {
     streams.out(`Using ${config.model}.\n`);
     return 0;
@@ -90,7 +95,10 @@ export async function runModel(
       ? refs[index - 1]
       : refs.find((ref) => ref === answer);
   if (chosen === undefined) {
-    streams.err(`No model called '${answer}' in the list.\n`);
+    streams.err(
+      `'${answer}' was not one of the choices, so nothing changed; ` +
+        `use a number from 1 to ${refs.length} or Enter to keep the current model.\n`,
+    );
     return 2;
   }
   saveConfig({ ...config, model: chosen }, env);

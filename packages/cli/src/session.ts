@@ -1439,6 +1439,15 @@ export class Session {
     );
   }
 
+  /** A picker line that says an answer was not understood, without closing. */
+  cardNotice(text: string): void {
+    const card = this.state.card;
+    if (card === null || card.kind !== 'model') {
+      return;
+    }
+    this.update({ card: { ...card, notes: [...card.notes, text] } });
+  }
+
   cardType(text: string): void {
     const card = this.state.card;
     if (card === null || card.kind !== 'question' || !card.freeText) {

@@ -186,6 +186,18 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         }
         return;
       }
+      if (card.kind === 'model') {
+        // The picker takes a number, the arrows, Enter or Esc. Anything else is
+        // said plainly and the picker stays open.
+        if (/^[1-9]$/.test(input) && Number(input) <= card.options.length) {
+          session.cardMove(Number(input) - 1 - card.selected);
+          return;
+        }
+        if (!key.ctrl && !key.meta && input.length > 0) {
+          session.cardNotice(`'${input.trim()}' is not a choice; nothing changed — use the arrows and Enter, or Esc.`);
+        }
+        return;
+      }
       if (input === ' ') {
         session.cardToggle();
         return;

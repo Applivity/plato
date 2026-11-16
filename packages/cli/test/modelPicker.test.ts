@@ -147,6 +147,63 @@ describe('plato model', () => {
   });
 });
 
+describe('an answer that is not on the list', () => {
+  function piped(text: string) {
+    return (async function* () {
+      yield text;
+    })() as unknown as NodeJS.ReadableStream;
+  }
+
+  it('refuses a number out of range in one sentence and exits non-zero', async () => {
+    const env = environment();
+    seedCache(env, { connA: ['m-a'], connB: ['m-b'] });
+    const { saveConfig } = await import('../src/config.js');
+    saveConfig(config(), env);
+    const out: string[] = [];
+    const code = await runModel([], {
+      env,
+      streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+      input: piped('9\n'),
+      fetchImpl: offline,
+    });
+    expect(code).toBe(2);
+    expect(out.join('')).toContain("'9' was not one of the choices, so nothing changed");
+    expect(loadConfig(env).model).toBe('connA:m-a');
+  });
+
+  it('refuses a word the same way', async () => {
+    const env = environment();
+    seedCache(env, { connA: ['m-a'] });
+    const { saveConfig } = await import('../src/config.js');
+    saveConfig(config(), env);
+    const out: string[] = [];
+    const code = await runModel([], {
+      env,
+      streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+      input: piped('abc\n'),
+      fetchImpl: offline,
+    });
+    expect(code).toBe(2);
+    expect(out.join('')).toContain("'abc' was not one of the choices");
+  });
+
+  it('keeps the current model on an empty answer', async () => {
+    const env = environment();
+    seedCache(env, { connA: ['m-a'] });
+    const { saveConfig } = await import('../src/config.js');
+    saveConfig(config(), env);
+    const out: string[] = [];
+    const code = await runModel([], {
+      env,
+      streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+      input: piped('\n'),
+      fetchImpl: offline,
+    });
+    expect(code).toBe(0);
+    expect(out.join('')).toContain('Using connA:m-a.');
+  });
+});
+
 describe('/model', () => {
   function session(env: Record<string, string>): Session {
     return new Session({
@@ -185,6 +242,27 @@ describe('/model', () => {
     await answered;
     expect(active.model).toBe('connB:m-b');
     expect(active.getSnapshot().running).toBe(false);
+  });
+
+  it('says an out-of-range choice is not understood and stays open', async () => {
+    const env = environment();
+    seedCache(env, { connA: ['m-a'], connB: ['m-b'] });
+    const active = session(env);
+    const answered = active.handleCommand('/model');
+    const card = await waitForCard(active, 'model');
+    if (card.kind === 'model') {
+      active.cardNotice("'9' is not a choice; nothing changed — use the arrows and Enter, or Esc.");
+      const after = active.getSnapshot().card;
+      expect(after?.kind).toBe('model');
+      if (after?.kind === 'model') {
+        expect(after.notes).toContain(
+          "'9' is not a choice; nothing changed — use the arrows and Enter, or Esc.",
+        );
+      }
+    }
+    active.cardCancel();
+    await answered;
+    expect(active.model).toBe('connA:m-a');
   });
 
   it('runs the setup hook from the last entry', async () => {
