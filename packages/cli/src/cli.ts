@@ -13,6 +13,7 @@ import { runPlain } from './plain.js';
 import { runSessions } from './sessionsCommand.js';
 import { createSession, latestSession, loadSession } from './sessions.js';
 import { createPrompter, type Prompter } from './prompt.js';
+import { runWizard } from './setup.js';
 import type { SessionOptions } from './session.js';
 import type { CliInput, Streams } from './io.js';
 
@@ -74,6 +75,31 @@ export interface Io extends Streams {
   prompter?: Prompter;
   /** Whether stdout is a terminal. Injected by tests. */
   isTTY?: boolean;
+}
+
+/**
+ * The first run with nothing configured: one question, defaulting to Yes. The
+ * wizard saves everything, so the session starts without another command.
+ * Returns null when there is nothing to offer.
+ */
+async function offerSetup(io: Io, prompter: Prompter): Promise<number | null> {
+  const config = loadConfig(process.env);
+  if (config.connections.length > 0) {
+    return null;
+  }
+  const answer = (
+    await prompter.ask(
+      'No model is set up yet. Plato needs a provider to answer.\nSet one up now? [Y/n] ',
+      { default: 'y' },
+    )
+  )
+    .trim()
+    .toLowerCase();
+  if (answer === 'n' || answer === 'no') {
+    io.out("No provider is set up. Run 'plato auth login' when you are ready.\n");
+    return 0;
+  }
+  return await runWizard({ env: process.env, streams: io, prompter });
 }
 
 function parsePrint(args: readonly string[]) {
@@ -215,6 +241,11 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
 
   if (first === undefined) {
     if (interactiveAvailable) {
+      const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
+      const setup = await offerSetup(io, prompter);
+      if (setup !== null) {
+        if (setup !== 0) return setup;
+      }
       return await runInteractive(sessionOptions());
     }
     io.out(HELP);
@@ -290,6 +321,13 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
       });
     }
     if (first === '--plain') {
+      if (stdinIsTty) {
+        const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
+        const setup = await offerSetup(io, prompter);
+        if (setup !== null) {
+          if (setup !== 0) return setup;
+        }
+      }
       const prompt = rest.join(' ').trim();
       return await runPlain({
         ...sessionOptions(),

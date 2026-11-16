@@ -8,6 +8,7 @@ import {
   type Team,
 } from './config.js';
 import type { Streams } from './io.js';
+import { loadKeychain, resolveKey } from './keys.js';
 import { configPath, type Env } from './paths.js';
 
 /**
@@ -32,6 +33,9 @@ Keys
   compactionThreshold   0.5 to 0.95
   respectGitignore      true | false — skip what .gitignore excludes
   compactionIdle        true | false — summarise after an hour idle, off by default
+
+  'plato config' also lists the connections, where each one sends, and where
+  its key comes from. The key itself is never shown.
 
   true/false also accept on/off and yes/no.
 `;
@@ -131,10 +135,37 @@ function withValue(
   }
 }
 
-export function runConfig(
+async function printConnections(
+  config: PlatoConfig,
+  options: { env: Env; streams: Streams },
+): Promise<void> {
+  const { streams } = options;
+  streams.out('Connections\n');
+  if (config.connections.length === 0) {
+    streams.out("  none. Set one up with 'plato auth login'.\n");
+    return;
+  }
+  const keychain = await loadKeychain(options.env);
+  for (const connection of config.connections) {
+    const resolved = await resolveKey(connection, { env: options.env, keychain });
+    const source =
+      resolved === null
+        ? 'no key'
+        : resolved.source === 'keychain'
+          ? 'keychain'
+          : resolved.source === 'file'
+            ? `file ${resolved.detail}`
+            : `env ${resolved.detail}`;
+    streams.out(
+      `  ${connection.id}  ${connection.kind}  ${connection.baseUrl ?? '(provider default)'}  key: ${source}\n`,
+    );
+  }
+}
+
+export async function runConfig(
   args: readonly string[],
   options: { env: Env; streams: Streams },
-): number {
+): Promise<number> {
   const { streams } = options;
   const [sub, key, value] = args;
   if (sub === '-h' || sub === '--help') {
@@ -154,6 +185,7 @@ export function runConfig(
     for (const name of KEYS) {
       streams.out(`${name}: ${show(config, name)}\n`);
     }
+    await printConnections(config, options);
     return 0;
   }
 

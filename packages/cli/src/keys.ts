@@ -12,7 +12,7 @@ import { authPath, type Env } from './paths.js';
  * wire kind is `openai` but whose vendor is not OpenAI: sending `OPENAI_API_KEY`
  * to OpenRouter would send the wrong account's key to the wrong host.
  */
-export type KeySource = 'env-connection' | 'env-provider' | 'keychain' | 'file';
+export type KeySource = 'env-named' | 'env-connection' | 'env-provider' | 'keychain' | 'file';
 
 export interface ResolvedKey {
   key: string;
@@ -212,6 +212,15 @@ export async function resolveKey(
   opts: ResolveOptions = {},
 ): Promise<ResolvedKey | null> {
   const env = opts.env ?? process.env;
+
+  // A variable the user named is their explicit choice and is read first.
+  const named = (connection as { keyEnv?: string }).keyEnv;
+  if (typeof named === 'string' && named.length > 0) {
+    const value = env[named];
+    if (value !== undefined && value.length > 0) {
+      return { key: value, source: 'env-named', detail: named };
+    }
+  }
 
   const connectionVariable = connectionEnvName(connection.id);
   const fromConnection = env[connectionVariable];

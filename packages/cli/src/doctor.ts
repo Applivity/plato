@@ -257,7 +257,9 @@ export async function runDoctor(context: DoctorContext): Promise<number> {
       );
     } else {
       const where =
-        resolved.source === 'env-connection' || resolved.source === 'env-provider'
+        resolved.source === 'env-named' ||
+        resolved.source === 'env-connection' ||
+        resolved.source === 'env-provider'
           ? `env:${resolved.detail}`
           : resolved.source;
       line('ok', `Key ${connection.id}: ${where}`);

@@ -17,6 +17,7 @@ import {
 } from './keys.js';
 import type { CliInput, Streams } from './io.js';
 import { readLine, type Prompter } from './prompt.js';
+import { runWizard } from './setup.js';
 
 export const AUTH_HELP = `Usage
   plato auth login [connection] [--no-keyring] [--kind anthropic|openai] [--base-url URL]
@@ -24,7 +25,10 @@ export const AUTH_HELP = `Usage
   plato auth list
   plato auth logout <connection>
 
-  login    Save a key. A standard provider asks for the key only.
+  login    Set up a provider: connection, key and model, in one flow.
+           With no name it opens the wizard. With flags it asks nothing:
+           plato auth login deepseek --key-stdin --model deepseek-chat
+           plato auth login mine --kind openai --base-url URL --key-env NAME --model id
   status   Show which source resolves each connection's key.
   list     Show the connections that have a saved key.
   logout   Remove a connection's saved key. The connection stays.
@@ -73,6 +77,9 @@ interface LoginFlags {
   noKeyring?: boolean;
   kind?: string;
   baseUrl?: string;
+  keyStdin?: boolean;
+  keyEnv?: string;
+  model?: string;
 }
 
 function parseLogin(args: readonly string[]): { flags: LoginFlags; target?: string } {
@@ -84,6 +91,9 @@ function parseLogin(args: readonly string[]): { flags: LoginFlags; target?: stri
       'no-keyring': { type: 'boolean' },
       kind: { type: 'string' },
       'base-url': { type: 'string' },
+      'key-stdin': { type: 'boolean' },
+      'key-env': { type: 'string' },
+      model: { type: 'string' },
     },
   });
   if (parsed.positionals.length > 1) {
@@ -95,6 +105,9 @@ function parseLogin(args: readonly string[]): { flags: LoginFlags; target?: stri
       noKeyring: parsed.values['no-keyring'],
       kind: parsed.values.kind,
       baseUrl: parsed.values['base-url'],
+      keyStdin: parsed.values['key-stdin'],
+      keyEnv: parsed.values['key-env'],
+      model: parsed.values.model,
     },
     target: parsed.positionals[0],
   };
@@ -119,15 +132,27 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   if (target === undefined) {
     if (prompter === undefined) {
       context.streams.err(
-        "plato auth login: name a connection, for example 'plato auth login anthropic'.\n",
+        'plato auth login: with no terminal, name the connection and give the details:\n' +
+          '  plato auth login deepseek --key-stdin --model deepseek-chat\n',
       );
       return 2;
     }
-    target = await prompter.ask(
-      'Provider (anthropic, openai, openrouter, litellm, or a name you choose): ',
-      { default: 'anthropic' },
-    );
+    // The wizard: provider, key and model in one flow.
+    return await runWizard({
+      env: context.env,
+      streams: context.streams,
+      prompter,
+      ...(context.keychain === undefined ? {} : { keychain: context.keychain }),
+    });
   }
+
+  // Any of these flags means "do not ask": the one-command path.
+  const scripted =
+    flags.keyStdin === true ||
+    flags.keyEnv !== undefined ||
+    flags.model !== undefined ||
+    flags.baseUrl !== undefined ||
+    flags.kind !== undefined;
 
   let requestedKind: 'anthropic' | 'openai' | undefined;
   if (flags.kind !== undefined) {
@@ -185,23 +210,65 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
     kind = requestedKind;
   }
 
-  const key =
-    prompter !== undefined ? await prompter.secret('API key: ') : await readLine(context.input);
+  if (flags.keyStdin === true && flags.keyEnv !== undefined) {
+    context.streams.err('plato auth login: use --key-stdin or --key-env, not both.\n');
+    return 2;
+  }
+
+  let key = '';
+  if (scripted) {
+    if (flags.keyStdin === true) {
+      key = await readLine(context.input);
+    }
+  } else if (prompter !== undefined) {
+    key = await prompter.secret('API key: ');
+  } else {
+    key = await readLine(context.input);
+  }
   const trimmed = key.trim();
 
-  const connection: ConnectionConfig =
-    baseUrl === undefined ? { id: target, kind } : { id: target, kind, baseUrl };
+  const connection: ConnectionConfig = {
+    id: target,
+    kind,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(flags.keyEnv === undefined ? {} : { keyEnv: flags.keyEnv }),
+  };
   const index = config.connections.findIndex((c) => c.id === target);
   if (index >= 0) {
     config.connections[index] = connection;
   } else {
     config.connections.push(connection);
   }
+  if (flags.keyEnv !== undefined) {
+    // The variable's NAME is stored; the value never passes through here.
+    if ((context.env[flags.keyEnv] ?? '').length === 0) {
+      context.streams.err(`note: ${flags.keyEnv} is not set right now.\n`);
+    }
+  }
+  if (flags.model !== undefined) {
+    config.model = flags.model.includes(':') ? flags.model : `${target}:${flags.model}`;
+  }
   saveConfig(config, context.env);
+
+  if (scripted) {
+    if (trimmed.length > 0) {
+      await saveKey(target, trimmed, {
+        env: context.env,
+        keychain: context.keychain,
+        forceFile: flags.noKeyring === true || keyringDisabled(context.env),
+      });
+    }
+    if (flags.model !== undefined) {
+      context.streams.out(`Saved. Using ${config.model}.\n`);
+      return 0;
+    }
+    context.streams.out(`✓ ${target} is configured.\n`);
+    return 0;
+  }
 
   if (trimmed.length === 0) {
     context.streams.out(
-      `✓ ${target} is configured. No key saved; run 'plato auth login ${target}' to add one.\n`,
+      `✓ ${target} is configured. No key saved; set the provider's key variable when you are ready.\n`,
     );
     return 0;
   }
@@ -233,6 +300,7 @@ function describe(key: ResolvedKey | null): string {
     return 'no key';
   }
   switch (key.source) {
+    case 'env-named':
     case 'env-connection':
     case 'env-provider':
       return `env:${key.detail}`;

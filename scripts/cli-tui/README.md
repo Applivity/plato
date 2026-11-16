@@ -17,7 +17,10 @@ decisions read back from the run records, including whether each card was drawn
 or settled from memory. `node scripts/cli-tui/context-drive.mjs` checks the
 status line's conversation share: the used and window numbers, the summary-due
 wording, the drop after a fold, and that nothing wraps at 80 or 120 columns.
-`--cli <path>` runs the same checks against another build.
+`node scripts/cli-tui/setup-drive.mjs` checks setup: the first-run offer, the
+wizard saving a working connection, the one-command path, and the context
+question for a custom endpoint. `--cli <path>` runs the same checks against
+another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

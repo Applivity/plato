@@ -134,6 +134,9 @@ export async function resolveContextWindow(options: {
     (entry) => entry.id === parts.connectionId,
   );
   if (connection === undefined) return DEFAULT_CONTEXT_WINDOW;
+  // What the user told us when the endpoint advertised no window. This is the
+  // window the fold uses, too, because both ask this function.
+  if (connection.contextWindow !== undefined) return connection.contextWindow;
   try {
     const pool = await modelPool(connection, {
       env: options.env,

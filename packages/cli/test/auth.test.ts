@@ -166,7 +166,7 @@ describe('auth login', () => {
       input: stdin(''),
     });
     expect(code).toBe(2);
-    expect(io.err()).toContain('name a connection');
+    expect(io.err()).toContain('plato auth login deepseek --key-stdin');
   });
 
   it('needs a base URL for a custom OpenAI-compatible endpoint', async () => {

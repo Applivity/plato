@@ -8,6 +8,7 @@ import {
 import {
   foldConversation,
   requestHistory,
+  resolveContextWindow,
   type ChatRow,
 } from '../src/compaction.js';
 
@@ -146,5 +147,35 @@ describe('conversation fold', () => {
     expect(plan.omitted).toBeGreaterThan(0);
     const first = plan.turns[0]?.text ?? '';
     expect(first).toContain('Earlier messages omitted');
+  });
+});
+
+describe('the context window', () => {
+  it('prefers a window stored on the connection', async () => {
+    const config = {
+      connections: [
+        {
+          id: 'mine',
+          kind: 'openai' as const,
+          baseUrl: 'http://localhost:1/v1',
+          contextWindow: 4096,
+        },
+      ],
+      model: 'mine:any',
+      team: 'solo' as const,
+      mode: 'edit' as const,
+      reasoning: 'off' as const,
+      compactionThreshold: 0.8,
+      respectGitignore: false,
+    };
+    const window = await resolveContextWindow({
+      config,
+      model: 'mine:any',
+      env: { PLATO_DISABLE_KEYRING: '1' },
+      fetchImpl: (async () => {
+        throw new Error('offline');
+      }) as unknown as typeof fetch,
+    });
+    expect(window).toBe(4096);
   });
 });

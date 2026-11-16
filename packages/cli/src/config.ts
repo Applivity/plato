@@ -15,6 +15,10 @@ export interface ConnectionConfig {
   id: string;
   kind: 'anthropic' | 'openai';
   baseUrl?: string;
+  /** A variable to read the key from, when the user named one. */
+  keyEnv?: string;
+  /** What this endpoint said its window is, when it did not advertise one. */
+  contextWindow?: number;
 }
 
 export type Team = 'solo' | 'duo' | 'academy';
@@ -128,7 +132,24 @@ function connectionAt(value: unknown, where: string): ConnectionConfig {
       throw new ConfigError(`${where}.baseUrl must use http or https`);
     }
   }
-  return baseUrl === undefined ? { id, kind } : { id, kind, baseUrl };
+  const keyEnv = optionalString(raw, 'keyEnv', where);
+  if (keyEnv !== undefined && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(keyEnv)) {
+    throw new ConfigError(`${where}.keyEnv must be an environment variable name`);
+  }
+  const contextWindow = raw['contextWindow'];
+  if (
+    contextWindow !== undefined &&
+    (typeof contextWindow !== 'number' || !Number.isInteger(contextWindow) || contextWindow <= 0)
+  ) {
+    throw new ConfigError(`${where}.contextWindow must be a positive whole number`);
+  }
+  return {
+    id,
+    kind,
+    ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(keyEnv === undefined ? {} : { keyEnv }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+  };
 }
 
 export function validateConfig(value: unknown, where = 'config'): PlatoConfig {
