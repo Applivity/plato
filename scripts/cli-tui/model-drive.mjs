@@ -120,12 +120,10 @@ function pty(env, cwd, argv = []) {
   return state;
 }
 
-// The slash menu fills `/model ` in on the first Enter; the second runs it.
+// One Enter: the exact name runs, so the picker opens at once.
 const openPicker = async (ui) => {
   ui.send('/model');
   await sleep(150);
-  ui.send('\r');
-  await sleep(300);
   ui.send('\r');
 };
 
@@ -213,6 +211,19 @@ try {
     const ui = pty(env, root);
     try {
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
+      // A partial name is still completed by Enter.
+      ui.send('/mod');
+      await sleep(150);
+      ui.send('\r');
+      record(
+        await attempt(() =>
+          waitFor(() => plain(ui.output).includes('› /mode '), 4000, 'the completed line'),
+        ),
+        'a partial name is completed, not run',
+      );
+      // That line is the first match; Enter runs it. Then the exact name.
+      ui.send('\r');
+      await sleep(400);
       await openPicker(ui);
       await waitFor(() => plain(ui.output).includes('Add a provider…'), 8000, 'the picker');
       record(plain(ui.output).includes('connA:model-a  (current)'), 'the picker marks the current model');

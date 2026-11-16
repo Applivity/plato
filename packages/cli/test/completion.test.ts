@@ -3,6 +3,7 @@ import {
   COMMANDS,
   MENU_ROWS,
   accepted,
+  enterAction,
   menuWindow,
   slashQuery,
   slashText,
@@ -65,6 +66,30 @@ describe('the command menu', () => {
     for (const command of COMMANDS) {
       expect(SESSION_HELP).toContain(slashText(command));
       expect(SESSION_HELP).toContain(command.summary);
+    }
+  });
+});
+
+describe('enterAction', () => {
+  const model = COMMANDS.find((command) => command.name === 'model');
+  const help = COMMANDS.find((command) => command.name === 'help');
+
+  it('runs a command whose exact name is typed, arguments or not', () => {
+    expect(model).toBeDefined();
+    if (model !== undefined) {
+      expect(enterAction('/model', model)).toEqual({ action: 'run', text: '/model' });
+    }
+  });
+
+  it('completes a partial name into the line', () => {
+    if (model !== undefined) {
+      expect(enterAction('/mod', model)).toEqual({ action: 'fill', text: '/model ' });
+    }
+  });
+
+  it('runs a command that takes no arguments on its first Enter', () => {
+    if (help !== undefined) {
+      expect(enterAction('/help', help)).toEqual({ action: 'run', text: '/help' });
     }
   });
 });

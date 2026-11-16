@@ -76,3 +76,20 @@ export function accepted(command: SlashCommand): { text: string; run: boolean } 
     ? { text: `/${command.name}`, run: true }
     : { text: `/${command.name} `, run: false };
 }
+
+/**
+ * What Enter does with the highlighted command. Text that already IS the
+ * command is run, however many arguments it usually takes: a completion only
+ * helps a partial name. A partial name is filled in as before.
+ */
+export function enterAction(
+  text: string,
+  command: SlashCommand,
+): { action: 'run' | 'fill'; text: string } {
+  const typed = text.trim();
+  if (typed === `/${command.name}`) {
+    return { action: 'run', text: typed };
+  }
+  const pick = accepted(command);
+  return pick.run ? { action: 'run', text: pick.text } : { action: 'fill', text: pick.text };
+}

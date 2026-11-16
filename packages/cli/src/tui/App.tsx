@@ -21,6 +21,7 @@ import { Markdown } from './Markdown.js';
 import { Welcome } from './Welcome.js';
 import {
   accepted,
+  enterAction,
   menuWindow,
   slashQuery,
   slashText,
@@ -239,13 +240,13 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         return;
       }
       if (enter && pick !== undefined) {
-        const pickText = accepted(pick);
+        const choice = enterAction(editor.text, pick);
         setMenuDismissedAt(null);
-        if (pickText.run) {
-          void submitLine(pickText.text);
+        if (choice.action === 'run') {
+          void submitLine(choice.text);
           return;
         }
-        setEditor(setText(pickText.text));
+        setEditor(setText(choice.text));
         return;
       }
     }
