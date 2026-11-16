@@ -241,7 +241,12 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   let key = '';
   if (scripted) {
     if (flags.keyStdin === true) {
-      key = await readKeyLine(context.input as NodeJS.ReadStream, process.stderr);
+      // A person at a terminal needs to see what is being asked for; a pipe
+      // has nobody to read a prompt.
+      const question = connectionNeedsKey({ kind, ...(baseUrl === undefined ? {} : { baseUrl }) })
+        ? 'API key: '
+        : 'API key (Enter skips this one): ';
+      key = await readKeyLine(context.input as NodeJS.ReadStream, process.stderr, question);
     }
   } else if (prompter !== undefined) {
     key = await prompter.secret('API key: ');

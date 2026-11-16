@@ -82,7 +82,9 @@ export interface Io extends Streams {
  * wizard saves everything, so the session starts without another command.
  * Returns null when there is nothing to offer.
  */
-async function offerSetup(io: Io, prompter: Prompter): Promise<number | null> {
+type SetupOffer = { action: 'continue' | 'stop'; code: number };
+
+async function offerSetup(io: Io, prompter: Prompter): Promise<SetupOffer | null> {
   const config = loadConfig(process.env);
   if (config.connections.length > 0) {
     return null;
@@ -97,9 +99,10 @@ async function offerSetup(io: Io, prompter: Prompter): Promise<number | null> {
     .toLowerCase();
   if (answer === 'n' || answer === 'no') {
     io.out("No provider is set up. Run 'plato auth login' when you are ready.\n");
-    return 0;
+    return { action: 'stop', code: 0 };
   }
-  return await runWizard({ env: process.env, streams: io, prompter });
+  const code = await runWizard({ env: process.env, streams: io, prompter });
+  return code === 0 ? { action: 'continue', code } : { action: 'stop', code };
 }
 
 function parsePrint(args: readonly string[]) {
@@ -243,8 +246,8 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
     if (interactiveAvailable) {
       const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
       const setup = await offerSetup(io, prompter);
-      if (setup !== null) {
-        if (setup !== 0) return setup;
+      if (setup !== null && setup.action === 'stop') {
+        return setup.code;
       }
       return await runInteractive(sessionOptions());
     }
@@ -324,8 +327,8 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
       if (stdinIsTty) {
         const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
         const setup = await offerSetup(io, prompter);
-        if (setup !== null) {
-          if (setup !== 0) return setup;
+        if (setup !== null && setup.action === 'stop') {
+          return setup.code;
         }
       }
       const prompt = rest.join(' ').trim();

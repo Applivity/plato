@@ -294,7 +294,12 @@ try {
     ]);
     sessions.push(ui);
     try {
-      await sleep(400);
+      await waitFor(
+        () => plain(ui.output).includes('API key'),
+        6000,
+        'the key prompt under a terminal',
+      );
+      record(true, 'a terminal shows a prompt before the key is read');
       await ui.line('sk-tty-key');
       await waitFor(
         () => plain(ui.output).includes('Saved. Using zed:paste-model.'),

@@ -41,11 +41,12 @@ export function withCloseRejection(rl: Interface): (question: string) => Promise
 export async function readKeyLine(
   input: NodeJS.ReadStream,
   output: NodeJS.WriteStream,
+  question = '',
 ): Promise<string> {
   if (input.isTTY !== true) {
     return await readLine(input);
   }
-  return await readHidden(input, output, '');
+  return await readHidden(input, output, question);
 }
 
 /** Reads one line from a pipe. Used for the headless login path. */
