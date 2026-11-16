@@ -9,6 +9,7 @@ import { runDoctor } from './doctor.js';
 import { runTask, type OutputFormat } from './host.js';
 import { runInteractive } from './interactive.js';
 import { runModels } from './models.js';
+import { runModel } from './modelCommand.js';
 import { runPlain } from './plain.js';
 import { runSessions } from './sessionsCommand.js';
 import { createSession, latestSession, loadSession } from './sessions.js';
@@ -46,6 +47,7 @@ Run
 
 Commands
   auth               Manage connections and API keys
+  model              Pick the model to use (and add a provider)
   models             List the models each connection offers
   sessions           List, export, or delete saved conversations
   config             Show or change a setting (see 'plato config --help')
@@ -360,6 +362,12 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
       }
       case 'models':
         return await runModels(rest, { env: process.env, streams: io });
+      case 'model':
+        return await runModel(rest, {
+          env: process.env,
+          streams: io,
+          ...(prompter === undefined ? {} : { prompter }),
+        });
       case 'sessions':
         return runSessions(rest, {
           root: process.cwd(),

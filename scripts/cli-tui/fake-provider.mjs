@@ -11,6 +11,7 @@ export function startProvider(options = {}) {
   /** The context window `/models` advertises; absent, Plato falls back. */
   const context = options.context;
   const port = options.port;
+  const modelId = options.model ?? 'paste-model';
   /** Every chat request, in arrival order. */
   const requests = [];
   /**
@@ -87,7 +88,7 @@ export function startProvider(options = {}) {
           JSON.stringify({
             data: [
               {
-                id: 'paste-model',
+                id: modelId,
                 ...(context === undefined ? {} : { context_length: context }),
               },
             ],
@@ -121,7 +122,7 @@ export function startProvider(options = {}) {
               id: 'chatcmpl-local',
               object: 'chat.completion',
               created: 0,
-              model: parsed?.model ?? 'paste-model',
+              model: parsed?.model ?? modelId,
               choices: [
                 {
                   index: 0,

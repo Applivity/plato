@@ -19,8 +19,10 @@ status line's conversation share: the used and window numbers, the summary-due
 wording, the drop after a fold, and that nothing wraps at 80 or 120 columns.
 `node scripts/cli-tui/setup-drive.mjs` checks setup: the first-run offer, the
 wizard saving a working connection, the one-command path, and the context
-question for a custom endpoint. `--cli <path>` runs the same checks against
-another build.
+question for a custom endpoint. `node scripts/cli-tui/model-drive.mjs` checks the
+model pickers: the shell command, the in-session picker, the suspend-and-setup
+path, Esc, and a connection that cannot list its models. `--cli <path>` runs the
+same checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

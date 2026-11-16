@@ -3,6 +3,9 @@ import { createElement } from 'react';
 import { createLiveSession, type LiveSession } from '@applivity/plato-core';
 import { App } from './tui/App.js';
 import { Session, type SessionOptions } from './session.js';
+import { createPrompter } from './prompt.js';
+import { runWizard } from './setup.js';
+import { withSuspendedTerminal } from './suspend.js';
 import { platoHome } from './paths.js';
 import { VERSION } from './version.js';
 
@@ -41,12 +44,41 @@ export async function runInteractive(options: InteractiveOptions): Promise<numbe
   const onExit = (): void => {
     instance?.unmount();
   };
-  instance = render(
+  const element = (): ReturnType<typeof createElement> =>
     createElement(App, {
       session,
       onExit,
       ...(options.firstPrompt === undefined ? {} : { firstPrompt: options.firstPrompt }),
-    }),
+    });
+
+  // `/model add` leaves the drawing, runs the setup wizard on the terminal,
+  // and comes back. The redraw shows the new connection without a restart.
+  session.setAddProvider(async () => {
+    await withSuspendedTerminal(
+      {
+        clear: () => instance?.clear(),
+        redraw: () => {
+          instance?.rerender(element());
+        },
+      },
+      process.stdin,
+      async () => {
+        const prompter = createPrompter(process.stdin, process.stderr);
+        await runWizard({
+          env: options.env,
+          streams: {
+            out: (text) => process.stdout.write(text),
+            err: (text) => process.stderr.write(text),
+          },
+          prompter,
+        });
+      },
+    );
+    session.reloadConfig();
+  });
+
+  instance = render(
+    element(),
     // Ctrl+C is the run control first and the exit second; App owns it.
     { exitOnCtrlC: false },
   );

@@ -28,7 +28,7 @@ import {
   type FoldCause,
 } from './compaction.js';
 import { COMMANDS, slashText } from './completion.js';
-import { saveConfig, type ConnectionConfig, type PlatoConfig, type Team } from './config.js';
+import { loadConfig, saveConfig, type ConnectionConfig, type PlatoConfig, type Team } from './config.js';
 import { HostError } from './errors.js';
 import { connectionNeedsKey, resolveKey } from './keys.js';
 import { applyUndo, planUndo } from '@applivity/plato-core';
@@ -39,6 +39,7 @@ import {
   titleFor,
   type StoredSession,
 } from './sessions.js';
+import { connectionModels, modelRefs } from './modelList.js';
 import type {
   InboundMessage,
   LiveSession,
@@ -191,7 +192,17 @@ export type Card =
   | StuckCard
   | RevealCard
   | ModeCard
-  | OutsideCard;
+  | OutsideCard
+  | ModelCard;
+
+/** The model picker: each choice is a `connection:model`, plus one way in. */
+export interface ModelCard {
+  kind: 'model';
+  title: string;
+  notes: string[];
+  options: string[];
+  selected: number;
+}
 
 export interface ObserverView {
   name: string;
@@ -264,6 +275,8 @@ export class Session {
   private stopNoticed = false;
   /** The pending approval was answered with Esc: deny, and stop the run. */
   private approvalStopped = false;
+  /** How the terminal runs the setup wizard without Ink in the way. */
+  private addProvider: (() => Promise<void>) | undefined;
   /** The host's way to report how an ask was answered (D49aq). */
   private reportApprovalCard:
     | ((tool: string, via: 'shown' | 'session-memory' | 'session-approval') => void)
@@ -416,6 +429,25 @@ export class Session {
   /** D49cq: the TUI tells the session whether a prompt is half-written. */
   setEditorProbe(editorIsEmpty: () => boolean): void {
     this.editorIsEmpty = editorIsEmpty;
+  }
+
+  /** The terminal's way to leave the drawing, run setup, and come back. */
+  setAddProvider(addProvider: () => Promise<void>): void {
+    this.addProvider = addProvider;
+  }
+
+  /** After setup: the connections and the model on disk are the live ones. */
+  reloadConfig(): void {
+    const config = loadConfig(this.base.env);
+    this.config = { ...config, mode: this.mode, team: this.config.team };
+    if (config.model.length > 0 && config.model !== this.model) {
+      this.model = config.model;
+      this.window = null;
+      this.update({
+        status: { ...this.statusFor(historyTokens(this.log)), model: this.model },
+      });
+    }
+    this.append('notice', 'Provider setup finished; the new models are in /model.');
   }
 
   /** What the registry publishes about this session (D49cq). */
@@ -916,11 +948,12 @@ export class Session {
         return 'handled';
       }
       case '/model': {
+        if (argument === 'add') {
+          await this.addProviderFromSession();
+          return 'handled';
+        }
         if (argument.length === 0) {
-          const refs = this.config.connections
-            .map((connection) => `${connection.id}:<model>`)
-            .join('  ');
-          this.append('notice', `Model: ${this.model}${refs.length > 0 ? `\nTry: ${refs}` : ''}`);
+          await this.pickModel();
           return 'handled';
         }
         if (this.setModel(argument)) {
@@ -1252,6 +1285,54 @@ export class Session {
     return choice === 1 ? { action: 'continue' } : { action: 'stop' };
   }
 
+  /**
+   * The model picker: every configured model, the current one marked, and one
+   * way to add a provider. A connection that cannot list its models keeps the
+   * ones already known, with its own note. Esc changes nothing.
+   */
+  private async pickModel(): Promise<void> {
+    const lists = await connectionModels(this.config, {
+      env: this.base.env,
+      ...(this.base.fetchImpl === undefined ? {} : { fetchImpl: this.base.fetchImpl }),
+    });
+    const refs = modelRefs(lists);
+    if (!refs.includes(this.model)) {
+      refs.unshift(this.model);
+    }
+    const notes = lists
+      .filter((list) => list.note !== undefined)
+      .map((list) => `${list.id}: ${list.note ?? ''}`);
+    const choice = await this.present<number>({
+      kind: 'model',
+      title: 'Model',
+      notes,
+      options: [
+        ...refs.map((ref) => `${ref}${ref === this.model ? '  (current)' : ''}`),
+        'Add a provider…',
+      ],
+      selected: Math.max(0, refs.indexOf(this.model)),
+    });
+    if (choice < 0) {
+      return;
+    }
+    if (choice >= refs.length) {
+      await this.addProviderFromSession();
+      return;
+    }
+    const ref = refs[choice];
+    if (ref !== undefined && this.setModel(ref)) {
+      this.append('notice', `Model: ${ref}.`);
+    }
+  }
+
+  private async addProviderFromSession(): Promise<void> {
+    if (this.addProvider === undefined) {
+      this.append('notice', 'Setup needs the interactive terminal.');
+      return;
+    }
+    await this.addProvider();
+  }
+
   private askReveal(protectedPath: string): Promise<boolean> {
     return this.present<number>({
       kind: 'reveal',
@@ -1348,7 +1429,13 @@ export class Session {
       return;
     }
     this.settle(
-      card.kind === 'question' ? '' : card.kind === 'outside' ? 2 : 0,
+      card.kind === 'question'
+        ? ''
+        : card.kind === 'outside'
+          ? 2
+          : card.kind === 'model'
+            ? -1
+            : 0,
     );
   }
 

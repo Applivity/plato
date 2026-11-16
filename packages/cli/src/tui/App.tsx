@@ -731,6 +731,19 @@ function CardView({ card }: { card: Card }): ReactElement {
         </>
       ) : null}
 
+      {card.kind === 'model' ? (
+        <>
+          <Text bold>{card.title}</Text>
+          {card.notes.map((note, index) => (
+            <Text key={`${index}-${note}`} dimColor>
+              {note}
+            </Text>
+          ))}
+          <OptionList options={card.options} selected={card.selected} />
+          <Text dimColor>↑↓ move · Enter picks · Esc closes</Text>
+        </>
+      ) : null}
+
       {card.kind === 'outside' ? (
         <>
           <Text bold>{card.title}</Text>
