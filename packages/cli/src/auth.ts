@@ -45,6 +45,8 @@ export interface AuthContext {
   prompter?: Prompter;
   /** Injected by tests; loaded otherwise. `null` means unavailable. */
   keychain?: Keychain | null;
+  /** Injected by tests; the wizard lists models through it. */
+  fetchImpl?: typeof fetch;
 }
 
 export async function runAuth(args: readonly string[], context: AuthContext): Promise<number> {
@@ -143,6 +145,7 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
       streams: context.streams,
       prompter,
       ...(context.keychain === undefined ? {} : { keychain: context.keychain }),
+      ...(context.fetchImpl === undefined ? {} : { fetchImpl: context.fetchImpl }),
     });
   }
 
@@ -153,6 +156,19 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
     flags.model !== undefined ||
     flags.baseUrl !== undefined ||
     flags.kind !== undefined;
+
+  // A provider named on the command line runs the same flow as the wizard,
+  // with the provider already chosen: key, then model, then one save.
+  if (!scripted && prompter !== undefined && PROVIDER_PRESETS.some((entry) => entry.id === target)) {
+    return await runWizard({
+      env: context.env,
+      streams: context.streams,
+      prompter,
+      provider: target,
+      ...(context.keychain === undefined ? {} : { keychain: context.keychain }),
+      ...(context.fetchImpl === undefined ? {} : { fetchImpl: context.fetchImpl }),
+    });
+  }
 
   let requestedKind: 'anthropic' | 'openai' | undefined;
   if (flags.kind !== undefined) {
@@ -178,6 +194,12 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   } else {
     if (requestedKind !== undefined) {
       kind = requestedKind;
+    } else if (scripted) {
+      context.streams.err(
+        `plato auth login: '${target}' is not a known provider. ` +
+          'Pass --kind anthropic|openai and --base-url for a custom endpoint.\n',
+      );
+      return 2;
     } else if (prompter !== undefined) {
       kind =
         (await prompter.ask('Wire protocol (anthropic or openai): ', {
@@ -192,7 +214,7 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
       );
       return 2;
     }
-    if (prompter !== undefined) {
+    if (!scripted && prompter !== undefined) {
       const answer = await prompter.ask('Base URL: ');
       if (answer.length > 0) {
         baseUrl ??= answer;

@@ -56,9 +56,9 @@ function freshEnv() {
 }
 
 /** Runs the CLI under a PTY and collects everything it writes. */
-function pty(env, cwd) {
+function pty(env, cwd, argv = []) {
   const state = { output: '' };
-  const inner = `stty cols 100; exec node ${JSON.stringify(cli)}`;
+  const inner = `stty cols 100; exec node ${[cli, ...argv].map(JSON.stringify).join(' ')}`;
   const child = spawn('sh', ['-c', `cat | script -q /dev/null sh -c ${JSON.stringify(inner)}`], {
     cwd,
     env,
@@ -271,6 +271,114 @@ try {
       captures.push({ name: 'custom endpoint, advertised window', output: ui.output });
       ui.kill();
     }
+  }
+  // 5. The one-command flags under a real terminal: no questions at all.
+  {
+    const { root, env } = freshEnv();
+    const provider = await startProvider({});
+    const base = `http://127.0.0.1:${provider.port}/v1`;
+    const ui = pty(env, root, [
+      'auth',
+      'login',
+      'zed',
+      '--kind',
+      'openai',
+      '--base-url',
+      base,
+      '--key-stdin',
+      '--model',
+      'paste-model',
+    ]);
+    sessions.push(ui);
+    try {
+      await sleep(400);
+      ui.send('sk-tty-key\n');
+      await waitFor(
+        () => plain(ui.output).includes('Saved. Using zed:paste-model.'),
+        8000,
+        'the saved line under a terminal',
+      );
+      record(!plain(ui.output).includes('Base URL:'), 'a terminal does not turn flags into questions');
+      const saved = configOf(env);
+      record(
+        saved.connections[0]?.id === 'zed' &&
+          saved.connections[0]?.baseUrl === base &&
+          saved.model === 'zed:paste-model',
+        'the one command under a terminal saves the connection and the model',
+      );
+    } catch (error) {
+      record(false, `one command under a terminal: ${error.message}`);
+    } finally {
+      captures.push({ name: 'one command under a terminal', output: ui.output });
+      ui.kill();
+    }
+    await provider.close();
+  }
+
+  // 6. A named provider is the wizard with the provider chosen: key, model,
+  // save; and a second run offers Keep without losing the working key.
+  {
+    const { root, env } = freshEnv();
+    const provider = await startProvider({ port: 8000, context: 8192 });
+    const ui = pty(env, root, ['auth', 'login', 'vllm']);
+    sessions.push(ui);
+    try {
+      await waitFor(() => plain(ui.output).includes('API key'), 8000, 'the key question');
+      await ui.line('sk-vllm');
+      await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model list');
+      await ui.line('1');
+      await waitFor(
+        () => plain(ui.output).includes('Saved. Using vllm:paste-model.'),
+        8000,
+        'the saved line',
+      );
+      record(
+        !plain(ui.output).includes('Custom endpoint') && !plain(ui.output).includes('Anthropic'),
+        'a named provider skips the picker',
+      );
+      const saved = configOf(env);
+      record(
+        saved.model === 'vllm:paste-model' &&
+          saved.connections[0]?.baseUrl === 'http://localhost:8000/v1',
+        'the preset URL is used and the model is saved',
+      );
+    } catch (error) {
+      record(false, `named provider: ${error.message}`);
+    } finally {
+      captures.push({ name: 'named provider', output: ui.output });
+      ui.kill();
+    }
+
+    const again = pty(env, root, ['auth', 'login', 'vllm']);
+    sessions.push(again);
+    try {
+      await waitFor(
+        () => plain(again.output).includes('A key is saved for vllm: sk-v'),
+        8000,
+        'the existing key',
+      );
+      await waitFor(
+        () => plain(again.output).includes('Keep, replace or clear'),
+        5000,
+        'the keep question',
+      );
+      await again.line('k');
+      await waitFor(() => plain(again.output).includes('Model (number or id)'), 8000, 'the model list');
+      await again.line('1');
+      await waitFor(
+        () => plain(again.output).includes('Saved. Using vllm:paste-model.'),
+        8000,
+        'the saved line',
+      );
+      const stored = JSON.parse(readFileSync(join(env.PLATO_DATA_DIR, 'auth.json'), 'utf8'));
+      record(stored.keys['vllm'] === 'sk-vllm', 'Keep does not lose the working key');
+    } catch (error) {
+      record(false, `keep an existing key: ${error.message}`);
+    } finally {
+      captures.push({ name: 'named provider, existing key', output: again.output });
+      again.kill();
+    }
+    await provider.close();
   }
 } catch (error) {
   record(false, error.message);

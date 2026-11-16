@@ -110,6 +110,138 @@ describe('the setup wizard', () => {
   });
 });
 
+describe('a terminal does not turn flags into questions', () => {
+  it('saves a named connection from flags without asking anything', async () => {
+    const env = environment();
+    const out: string[] = [];
+    const asked: string[] = [];
+    const prompt = {
+      async ask(question: string): Promise<string> {
+        asked.push(question);
+        return '';
+      },
+      async secret(question: string): Promise<string> {
+        asked.push(question);
+        return '';
+      },
+    };
+    const input = (async function* () {
+      yield 'sk-tty-key\n';
+    })();
+    const code = await runAuth(
+      [
+        'login',
+        'zed',
+        '--kind',
+        'openai',
+        '--base-url',
+        'http://127.0.0.1:9/v1',
+        '--key-stdin',
+        '--model',
+        'z-model',
+      ],
+      {
+        env,
+        streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+        input: input as unknown as NodeJS.ReadableStream,
+        prompter: prompt,
+        keychain: null,
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(asked).toEqual([]);
+    const saved = loadConfig(env);
+    expect(saved.connections[0]?.baseUrl).toBe('http://127.0.0.1:9/v1');
+    expect(saved.model).toBe('zed:z-model');
+  });
+
+  it('lets --base-url override a preset address', async () => {
+    const env = environment();
+    const input = (async function* () {
+      yield 'sk-key\n';
+    })();
+    const code = await runAuth(
+      [
+        'login',
+        'litellm',
+        '--base-url',
+        'http://127.0.0.1:9/v1',
+        '--key-stdin',
+        '--model',
+        'mine',
+      ],
+      {
+        env,
+        streams: { out: () => {}, err: () => {} },
+        input: input as unknown as NodeJS.ReadableStream,
+        keychain: null,
+      },
+    );
+    expect(code).toBe(0);
+    expect(loadConfig(env).connections[0]?.baseUrl).toBe('http://127.0.0.1:9/v1');
+  });
+});
+
+describe('a named provider in a terminal', () => {
+  it('asks for the key and the model, and saves both', async () => {
+    const env = environment();
+    const out: string[] = [];
+    const prompt = prompter(['1'], ['sk-deepseek']);
+    const code = await runAuth(['login', 'deepseek'], {
+      env,
+      streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+      input: (async function* () {})() as unknown as NodeJS.ReadableStream,
+      prompter: prompt,
+      keychain: null,
+      fetchImpl: models([{ id: 'deepseek-chat' }]),
+    });
+
+    expect(code).toBe(0);
+    const saved = loadConfig(env);
+    expect(saved.model).toBe('deepseek:deepseek-chat');
+    expect(saved.connections[0]?.baseUrl).toBe('https://api.deepseek.com');
+    expect(readAuthFile(env).keys['deepseek']).toBe('sk-deepseek');
+    expect(out.join('')).toContain('Saved. Using deepseek:deepseek-chat.');
+  });
+
+  it('offers Keep and keeps a working key', async () => {
+    const env = environment();
+    await saveKey('deepseek', 'sk-original', { env, keychain: null, forceFile: true });
+    const { saveConfig } = await import('../src/config.js');
+    saveConfig(
+      {
+        connections: [
+          { id: 'deepseek', kind: 'openai', baseUrl: 'https://api.deepseek.com' },
+        ],
+        model: 'deepseek:deepseek-reasoner',
+        team: 'solo',
+        mode: 'edit',
+        reasoning: 'off',
+        compactionThreshold: 0.8,
+        respectGitignore: false,
+      },
+      env,
+    );
+    const out: string[] = [];
+    const prompt = prompter(['k', '1']);
+    const code = await runAuth(['login', 'deepseek'], {
+      env,
+      streams: { out: (text) => out.push(text), err: (text) => out.push(text) },
+      input: (async function* () {})() as unknown as NodeJS.ReadableStream,
+      prompter: prompt,
+      keychain: null,
+      fetchImpl: models([{ id: 'deepseek-chat' }]),
+    });
+
+    expect(code).toBe(0);
+    expect(out.join('')).toContain('A key is saved for deepseek: sk-o…');
+    expect(readAuthFile(env).keys['deepseek']).toBe('sk-original');
+    expect(loadConfig(env).model).toBe('deepseek:deepseek-chat');
+    expect(prompt.asked.some((question) => question.includes('Keep, replace or clear'))).toBe(true);
+  });
+});
+
 describe('one command', () => {
   it('sets the connection, the key and the model with a piped key', async () => {
     const env = environment();

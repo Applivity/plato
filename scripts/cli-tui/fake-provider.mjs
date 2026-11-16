@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 export function startProvider(options = {}) {
   /** The context window `/models` advertises; absent, Plato falls back. */
   const context = options.context;
+  const port = options.port;
   /** Every chat request, in arrival order. */
   const requests = [];
   /**
@@ -144,7 +145,7 @@ export function startProvider(options = {}) {
   });
 
   return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(port ?? 0, '127.0.0.1', () => {
       const { port } = server.address();
       resolve({
         port,

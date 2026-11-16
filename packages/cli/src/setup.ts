@@ -41,6 +41,8 @@ export interface SetupOptions {
   keychain?: Keychain | null;
   /** Injected by tests; the real fetch otherwise. */
   fetchImpl?: typeof fetch;
+  /** A provider already chosen (a named login), so the picker is skipped. */
+  provider?: string;
 }
 
 function preset(id: string): ProviderPreset | undefined {
@@ -214,7 +216,7 @@ async function chooseKey(
  */
 export async function runWizard(options: SetupOptions): Promise<number> {
   const { streams, prompter } = options;
-  const picked = await pickProvider(options);
+  const picked = options.provider ?? (await pickProvider(options));
   if (picked === null) {
     return 1;
   }
