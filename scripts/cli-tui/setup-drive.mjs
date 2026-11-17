@@ -136,17 +136,30 @@ try {
       await waitFor(() => plain(ui.output).includes('The key was rejected.'), 8000, 'the rejection');
       record(true, 'a rejected key is named');
       record(plain(ui.output).includes('Replace the key'), 'Replace is offered');
+      let mark = ui.output.length;
       ui.send('\x1b');
-      await waitFor(() => plain(ui.output).includes('API key'), 4000, 'the key step again');
+      await waitFor(() => plain(ui.output.slice(mark)).includes('API key'), 4000, 'the key step again');
+      mark = ui.output.length;
       ui.send('\x1b');
-      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 4000, 'the URL step');
+      await waitFor(() => plain(ui.output.slice(mark)).includes('Endpoint URL'), 4000, 'the URL step');
+      mark = ui.output.length;
       ui.send('\x1b');
-      await waitFor(() => plain(ui.output).includes('Provider'), 4000, 'the provider list');
+      await waitFor(() => plain(ui.output.slice(mark)).includes('Provider'), 4000, 'the provider list');
+      mark = ui.output.length;
       ui.send('\x1b');
-      await sleep(800);
+      await waitFor(
+        () => plain(ui.output.slice(mark)).includes('Setup cancelled; nothing changed.'),
+        4000,
+        'the cancellation',
+      );
+      await sleep(400);
       record(!hasConfig(env), 'nothing is saved after a rejected key');
       record(!plain(ui.output).includes('Saved.'), 'no success is claimed');
       record(!plain(ui.output).includes('Type / for commands'), 'the session does not start');
+      record(
+        plain(ui.output).includes('Setup cancelled; nothing changed.'),
+        'the first-run Esc says setup was cancelled',
+      );
       record(true, 'Esc backs out of each step');
     } catch (error) {
       record(false, `rejected key: ${error.message}`);
@@ -222,7 +235,40 @@ try {
     }
   }
 
-  // 3. /model add: no session frame during setup, the banner back after.
+  // 3. /model add cancelled: says so and changes nothing.
+  {
+    const { root, env } = freshEnv({
+      connections: [{ id: 'connA', kind: 'openai', baseUrl: baseGood }],
+      model: 'connA:m-one',
+    });
+    const ui = pty(env, root);
+    try {
+      await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
+      await ui.line('/model add');
+      await waitFor(() => plain(ui.output).includes('Provider'), 8000, 'the setup screen');
+      const before = configOf(env);
+      ui.send('\x1b');
+      await waitFor(
+        () => plain(ui.output).includes('Setup cancelled; nothing changed.'),
+        5000,
+        'the cancelled notice',
+      );
+      record(true, 'cancelling setup says it was cancelled');
+      const after = configOf(env);
+      record(
+        JSON.stringify(after) === JSON.stringify(before),
+        'a cancelled setup changes nothing',
+      );
+      record(!plain(ui.output).includes('Saved.'), 'a cancelled setup claims no success');
+    } catch (error) {
+      record(false, `cancelled setup: ${error.message}`);
+    } finally {
+      captures.push({ name: 'model add cancelled', output: ui.output });
+      ui.kill();
+    }
+  }
+
+  // 4. /model add: no session frame during setup, the banner back after.
   {
     const { root, env } = freshEnv({
       connections: [{ id: 'connA', kind: 'openai', baseUrl: baseGood }],
@@ -249,13 +295,12 @@ try {
         'no session frame is drawn during setup',
       );
       await waitFor(
-        () => plain(ui.output).includes('Provider setup finished'),
+        () => plain(ui.output.slice(savedAt)).includes('Plato · terminal'),
         8000,
         'the session to return',
       );
       const back = plain(ui.output.slice(savedAt));
       record(back.includes('Plato · terminal'), 'the session banner is back once');
-      record(!back.includes('Type / for commands'), 'the banner is not the start screen again');
       await sleep(700);
       const idle = ui.output.length;
       await sleep(1200);

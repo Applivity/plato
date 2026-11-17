@@ -450,7 +450,11 @@ export class Session {
     this.update({ setup: false });
     const resolve = this.setupResolve;
     this.setupResolve = null;
-    this.reloadConfig();
+    if (result.saved) {
+      this.reloadConfig();
+    } else {
+      this.append('notice', 'Setup cancelled; nothing changed.');
+    }
     resolve?.(result);
   }
 
@@ -465,7 +469,6 @@ export class Session {
         status: { ...this.statusFor(historyTokens(this.log)), model: this.model },
       });
     }
-    this.append('notice', 'Provider setup finished; the new models are in /model.');
   }
 
   /** The environment the setup screen reads and writes. */

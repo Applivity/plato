@@ -147,6 +147,8 @@ export async function runSetup(options: {
         options.streams.out(
           "No provider is set up. Run 'plato auth login' when you are ready.\n",
         );
+      } else if (!result.saved) {
+        options.streams.out('Setup cancelled; nothing changed.\n');
       }
       resolve({
         code: result.saved ? 0 : 1,
