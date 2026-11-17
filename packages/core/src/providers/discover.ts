@@ -208,9 +208,18 @@ export async function fetchModelPool(opts: {
         typeof top === 'object' && top !== null
           ? (top as Record<string, unknown>)
           : undefined;
+      // `context_window` is DeepSeek's spelling of the same number; without it a
+      // DeepSeek model fell back to the 131k default while its own /models said
+      // 1048576. Added to the same min-across-keys rule, not given a new one.
       maxContext = minNum(
         [rec, topRec],
-        ['context_length', 'max_input_tokens', 'max_context', 'max_model_len'],
+        [
+          'context_length',
+          'max_input_tokens',
+          'max_context',
+          'max_model_len',
+          'context_window',
+        ],
       );
       maxOutput = minNum(
         [rec, topRec],

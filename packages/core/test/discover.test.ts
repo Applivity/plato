@@ -221,6 +221,38 @@ describe('fetchModelPool context parsing (D49t)', () => {
     expect(e!.maxContext).toBe(12288);
   });
 
+  it('reads DeepSeek\'s context_window and max_output_tokens', async () => {
+    // The real DeepSeek /models shape for deepseek-flash: these two fields and
+    // nothing else this parser knows. The window was discarded and the model ran
+    // on 131k, so summarising fired far too late.
+    const [e] = await pool({
+      id: 'deepseek-flash',
+      context_window: 1048576,
+      max_output_tokens: 393216,
+    });
+    expect(e!.maxContext).toBe(1048576);
+    expect(e!.maxOutput).toBe(393216);
+  });
+
+  it('takes the smaller when context_length and context_window disagree', async () => {
+    // Same rule as the ceiling/route case: two names for one number, and the
+    // smaller is the safe reading — whichever key it came from. Pinned in both
+    // directions so a later "first name in the list wins" change cannot widen
+    // the window.
+    const [e] = await pool({
+      id: 'm',
+      context_length: 131072,
+      context_window: 1048576,
+    });
+    expect(e!.maxContext).toBe(131072);
+    const [f] = await pool({
+      id: 'm',
+      context_length: 1048576,
+      context_window: 131072,
+    });
+    expect(f!.maxContext).toBe(131072);
+  });
+
   it('keeps reading the fields it always did', async () => {
     const [e] = await pool({ id: 'm', context_length: 200000 });
     expect(e!.maxContext).toBe(200000);
