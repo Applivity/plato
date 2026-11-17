@@ -1,16 +1,15 @@
 /**
- * Drives the built CLI through the setup wizard in a real terminal.
+ * Drives the built CLI through the Ink setup screen.
  *
  *   node scripts/cli-tui/setup-drive.mjs [--cli path/to/cli.js]
  *
- * 1. Empty config, bare `plato`: the offer, the wizard, a working session.
- * 2. The same offer answered No: exit, one command named.
- * 3. The one-command path with a piped key, then `plato config`.
- * 4. A custom endpoint that omits its window asks once; one that advertises
- *    does not ask.
+ * 1. A 401 endpoint: the key is rejected, Replace is offered, nothing is saved.
+ * 2. The fake endpoint: the flow, the session, and the first request.
+ * 3. `/model add`: no session frame during setup, the banner back after.
+ * 4. Esc at each step, arrows on the model list, idle redraws at zero.
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,13 +32,23 @@ async function waitFor(test, ms, what) {
   }
   throw new Error(`timed out waiting for ${what}`);
 }
+async function attempt(run) {
+  try {
+    await run();
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-const results = [];
-const notes = [];
-const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
+const bad = await startProvider({ modelsStatus: 401 });
+const good = await startProvider({ models: ['m-one', 'm-two'], context: undefined });
+const add = await startProvider({ model: 'model-c', context: 8192 });
+const baseBad = `http://127.0.0.1:${bad.port}/v1`;
+const baseGood = `http://127.0.0.1:${good.port}/v1`;
+const baseAdd = `http://127.0.0.1:${add.port}/v1`;
 
-/** A fresh home/config for one scenario. */
-function freshEnv() {
+function freshEnv(config) {
   const root = mkdtempSync(join(tmpdir(), 'plato-cli-setup-'));
   const env = {
     ...process.env,
@@ -52,10 +61,26 @@ function freshEnv() {
   for (const key of ['PLATO_CONFIG_DIR', 'PLATO_DATA_DIR', 'PLATO_HOME']) {
     mkdirSync(env[key], { recursive: true });
   }
+  if (config !== undefined) {
+    writeFileSync(
+      join(env.PLATO_CONFIG_DIR, 'config.json'),
+      `${JSON.stringify(
+        {
+          ...config,
+          team: 'solo',
+          mode: 'edit',
+          reasoning: 'off',
+          compactionThreshold: 0.8,
+          respectGitignore: false,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  }
   return { root, env };
 }
 
-/** Runs the CLI under a PTY and collects everything it writes. */
 function pty(env, cwd, argv = []) {
   const state = { output: '' };
   const inner = `stty cols 100; exec node ${[cli, ...argv].map(JSON.stringify).join(' ')}`;
@@ -72,14 +97,12 @@ function pty(env, cwd, argv = []) {
     state.output += chunk.toString();
   });
   state.child = child;
-  state.closed = new Promise((done) => child.on('close', done));
   state.send = (text) => child.stdin.write(text);
   state.line = async (text) => {
-    state.send(text);
-    await sleep(120);
+    if (text.length > 0) state.send(text);
+    await sleep(140);
     state.send('\r');
   };
-  state.end = () => child.stdin.end();
   state.kill = () => {
     try {
       process.kill(-child.pid, 'SIGTERM');
@@ -90,377 +113,184 @@ function pty(env, cwd, argv = []) {
   return state;
 }
 
-function runOnce(env, argv, input = '') {
-  return new Promise((done) => {
-    const child = spawn(process.execPath, [cli, ...argv], { env, stdio: ['pipe', 'pipe', 'pipe'] });
-    let output = '';
-    child.stdout.on('data', (chunk) => {
-      output += chunk.toString();
-    });
-    child.stderr.on('data', (chunk) => {
-      output += chunk.toString();
-    });
-    child.on('close', (code) => done({ code, output }));
-    child.stdin.end(input);
-  });
-}
-
-const configOf = (env) => JSON.parse(readFileSync(join(env.PLATO_CONFIG_DIR, 'config.json'), 'utf8'));
-
-const providerA = await startProvider({ context: 8192 });
-const providerB = await startProvider({});
-const baseA = `http://127.0.0.1:${providerA.port}/v1`;
-const baseB = `http://127.0.0.1:${providerB.port}/v1`;
-const sessions = [];
+const results = [];
 const captures = [];
+const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
+const configOf = (env) => JSON.parse(readFileSync(join(env.PLATO_CONFIG_DIR, 'config.json'), 'utf8'));
+const hasConfig = (env) => existsSync(join(env.PLATO_CONFIG_DIR, 'config.json'));
 
 try {
-  // 1. Empty config: the offer, the wizard, a session that talks to the model.
+  // 1. A rejected key: named, Replace offered, nothing saved; Esc backs out.
   {
-    const { root, env } = freshEnv();
+    const { root, env } = freshEnv(undefined);
     const ui = pty(env, root);
-    sessions.push(ui);
     try {
-      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the first-run offer');
-      record(true, 'an empty config offers setup once');
-      await ui.line('y');
-      await waitFor(() => plain(ui.output).includes('Provider (number or name)'), 5000, 'the provider picker');
-      await ui.line('11');
-      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL question');
-      await ui.line(baseA);
-      await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key question');
-      await ui.line('sk-local-test');
-      await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model list');
-      record(
-        plain(ui.output).includes('paste-model'),
-        'the model list comes from the endpoint',
+      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
+      await ui.line('');
+      await waitFor(() => plain(ui.output).includes('Provider'), 5000, 'the picker');
+      await ui.line('custom');
+      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL');
+      await ui.line(baseBad);
+      await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key');
+      await ui.line('sk-rejected');
+      await waitFor(() => plain(ui.output).includes('The key was rejected.'), 8000, 'the rejection');
+      record(true, 'a rejected key is named');
+      record(plain(ui.output).includes('Replace the key'), 'Replace is offered');
+      ui.send('\x1b');
+      await waitFor(() => plain(ui.output).includes('API key'), 4000, 'the key step again');
+      ui.send('\x1b');
+      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 4000, 'the URL step');
+      ui.send('\x1b');
+      await waitFor(() => plain(ui.output).includes('Provider'), 4000, 'the provider list');
+      ui.send('\x1b');
+      await sleep(800);
+      record(!hasConfig(env), 'nothing is saved after a rejected key');
+      record(!plain(ui.output).includes('Saved.'), 'no success is claimed');
+      record(!plain(ui.output).includes('Type / for commands'), 'the session does not start');
+      record(true, 'Esc backs out of each step');
+    } catch (error) {
+      record(false, `rejected key: ${error.message}`);
+    } finally {
+      captures.push({ name: 'rejected key', output: ui.output });
+      ui.kill();
+    }
+  }
+
+  // 2-4. A working setup, then the session and its first request.
+  {
+    const { root, env } = freshEnv(undefined);
+    const ui = pty(env, root);
+    try {
+      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
+      await ui.line('');
+      await waitFor(() => plain(ui.output).includes('Provider'), 5000, 'the picker');
+      // Arrows move in the list before typing filters it.
+      ui.send('\x1b[B');
+      await sleep(100);
+      ui.send('\x1b[A');
+      await sleep(100);
+      await ui.line('custom');
+      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL');
+      await ui.line(baseGood);
+      await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key');
+      await ui.line('sk-good');
+      await waitFor(
+        () => plain(ui.output).includes('✓ key accepted · 2 models'),
+        8000,
+        'the model list',
       );
-      await ui.line('1');
-      await waitFor(() => plain(ui.output).includes('Saved. Using custom:paste-model.'), 5000, 'the saved line');
-      record(true, 'one flow saves the connection and the model');
+      record(true, 'a good key is validated and the models are listed');
+      ui.send('\x1b');
+      await waitFor(() => plain(ui.output).includes('API key'), 4000, 'the key step');
+      record(true, 'Esc goes back from the model list');
+      const revalidated = ui.output.length;
+      await ui.line('');
+      await waitFor(
+        () => plain(ui.output.slice(revalidated)).includes('Type a model id…'),
+        8000,
+        'the list again',
+      );
+      // Arrows choose the second model, no number typed.
+      ui.send('\x1b[B');
+      await sleep(250);
+      await ui.line('');
+      await waitFor(() => plain(ui.output).includes('Context length in tokens'), 5000, 'the context');
+      await ui.line('4096');
+      await waitFor(() => plain(ui.output).includes('Saved. Using custom:m-two.'), 8000, 'the saved line');
+      record(true, 'arrows choose a model and setup saves it');
+      const saved = configOf(env);
+      record(
+        saved.model === 'custom:m-two' && saved.connections[0]?.contextWindow === 4096,
+        'the config holds the model and the chosen window',
+      );
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
-      record(true, 'the session starts without another command');
       await ui.line('hello there');
-      await waitFor(() => providerA.requests.length > 0, 10000, 'the first request');
-      const body = providerA.requests.at(-1);
+      await waitFor(() => good.requests.length > 0, 10000, 'the first request');
+      const body = good.requests.at(-1);
       const user = (body?.messages ?? []).filter((message) => message?.role === 'user').at(-1);
       record(
-        typeof user?.content === 'string' && user.content.includes('hello there'),
-        'the provider receives the first request',
-      );
-      const saved = configOf(env);
-      record(
-        saved.model === 'custom:paste-model' &&
-          saved.connections[0]?.baseUrl === baseA,
-        'the config holds the connection and the model',
+        body?.model === 'm-two' &&
+          typeof user?.content === 'string' &&
+          user.content.includes('hello there'),
+        'the first request succeeds with the chosen model',
       );
     } catch (error) {
-      record(false, `first run: ${error.message}`);
+      record(false, `working setup: ${error.message}`);
     } finally {
-      captures.push({ name: 'first run', output: ui.output });
+      captures.push({ name: 'working setup', output: ui.output });
       ui.kill();
     }
   }
 
-  // 2. The offer answered No: exit, and name one command.
+  // 3. /model add: no session frame during setup, the banner back after.
   {
-    const { root, env } = freshEnv();
+    const { root, env } = freshEnv({
+      connections: [{ id: 'connA', kind: 'openai', baseUrl: baseGood }],
+      model: 'connA:m-one',
+    });
     const ui = pty(env, root);
-    sessions.push(ui);
     try {
-      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
-      await ui.line('n');
-      await waitFor(() => plain(ui.output).includes("Run 'plato auth login'"), 5000, 'the command');
-      await Promise.race([ui.closed, sleep(2000)]);
-      record(!plain(ui.output).includes('Type / for commands'), 'No exits without starting a session');
-      record(true, 'No names the one command');
-    } catch (error) {
-      record(false, `offer answered No: ${error.message}`);
-    } finally {
-      captures.push({ name: 'offer answered No', output: ui.output });
-      ui.kill();
-    }
-  }
-
-  // 3. One command, a piped key, then `plato config`.
-  {
-    const { root, env } = freshEnv();
-    const login = await runOnce(
-      env,
-      [
-        'auth',
-        'login',
-        'mine',
-        '--kind',
-        'openai',
-        '--base-url',
-        baseB,
-        '--key-stdin',
-        '--model',
-        'paste-model',
-      ],
-      'sk-piped-key\n',
-    );
-    record(
-      login.code === 0 && plain(login.output).includes('Saved. Using mine:paste-model.'),
-      'one command saves the connection, the key and the model',
-    );
-    const saved = configOf(env);
-    record(
-      saved.connections[0]?.id === 'mine' && saved.model === 'mine:paste-model',
-      'the one command writes the connection and the model',
-    );
-    const listed = await runOnce(env, ['config']);
-    const listing = plain(listed.output);
-    record(
-      listing.includes('mine  openai') && listing.includes(baseB) && listing.includes('key: file'),
-      'plato config lists the connection and where its key comes from',
-    );
-    record(!listing.includes('sk-piped-key'), 'plato config never prints the key');
-  }
-
-  // 4. A custom endpoint asks for a window only when it did not advertise one.
-  {
-    const { root, env } = freshEnv();
-    const ui = pty(env, root);
-    sessions.push(ui);
-    try {
-      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
-      await ui.line('y');
-      await waitFor(() => plain(ui.output).includes('Provider (number or name)'), 5000, 'the picker');
-      await ui.line('11');
+      await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
+      await ui.line('/model add');
+      await waitFor(() => plain(ui.output).includes('Provider'), 8000, 'the setup screen');
+      const during = ui.output.length;
+      await ui.line('custom');
       await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL');
-      await ui.line(baseB);
+      await ui.line(baseAdd);
       await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key');
       await ui.line('');
-      await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model');
-      await ui.line('1');
-      await waitFor(() => plain(ui.output).includes('Context length in tokens'), 5000, 'the context question');
-      record(true, 'an endpoint with no window is asked once');
-      await ui.line('4096');
-      await waitFor(() => plain(ui.output).includes('Saved. Using custom:paste-model.'), 5000, 'the saved line');
-      record(configOf(env).connections[0]?.contextWindow === 4096, 'the answer is saved on the connection');
-    } catch (error) {
-      record(false, `custom endpoint, no window: ${error.message}`);
-    } finally {
-      captures.push({ name: 'custom endpoint, no window', output: ui.output });
-      ui.kill();
-    }
-  }
-  {
-    const { root, env } = freshEnv();
-    const ui = pty(env, root);
-    sessions.push(ui);
-    try {
-      await waitFor(() => plain(ui.output).includes('Set one up now?'), 8000, 'the offer');
-      await ui.line('y');
-      await waitFor(() => plain(ui.output).includes('Provider (number or name)'), 5000, 'the picker');
-      await ui.line('11');
-      await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL');
-      await ui.line(baseA);
-      await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key');
+      await waitFor(() => plain(ui.output).includes('Model'), 8000, 'the models');
       await ui.line('');
-      await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model');
-      await ui.line('1');
-      await waitFor(() => plain(ui.output).includes('Saved. Using custom:paste-model.'), 5000, 'the saved line');
+      await waitFor(() => plain(ui.output).includes('Saved. Using custom:model-c.'), 8000, 'the saved line');
+      const savedAt = ui.output.indexOf('Saved. Using custom:model-c.', during);
+      const setupSegment = plain(ui.output.slice(during, savedAt));
       record(
-        !plain(ui.output).includes('Context length in tokens'),
-        'an advertised window is not asked again',
+        !setupSegment.includes('Plato · terminal'),
+        'no session frame is drawn during setup',
       );
-      record(configOf(env).connections[0]?.contextWindow === undefined, 'no window is invented');
-    } catch (error) {
-      record(false, `custom endpoint, advertised window: ${error.message}`);
-    } finally {
-      captures.push({ name: 'custom endpoint, advertised window', output: ui.output });
-      ui.kill();
-    }
-  }
-  // 5. The one-command flags under a real terminal: no questions at all.
-  {
-    const { root, env } = freshEnv();
-    const provider = await startProvider({});
-    const base = `http://127.0.0.1:${provider.port}/v1`;
-    const ui = pty(env, root, [
-      'auth',
-      'login',
-      'zed',
-      '--kind',
-      'openai',
-      '--base-url',
-      base,
-      '--key-stdin',
-      '--model',
-      'paste-model',
-    ]);
-    sessions.push(ui);
-    try {
       await waitFor(
-        () => plain(ui.output).includes('API key'),
-        6000,
-        'the key prompt under a terminal',
-      );
-      record(true, 'a terminal shows a prompt before the key is read');
-      await ui.line('sk-tty-key');
-      await waitFor(
-        () => plain(ui.output).includes('Saved. Using zed:paste-model.'),
+        () => plain(ui.output).includes('Provider setup finished'),
         8000,
-        'the saved line under a terminal',
+        'the session to return',
       );
-      record(!plain(ui.output).includes('Base URL:'), 'a terminal does not turn flags into questions');
-      const saved = configOf(env);
-      record(
-        saved.connections[0]?.id === 'zed' &&
-          saved.connections[0]?.baseUrl === base &&
-          saved.model === 'zed:paste-model',
-        'the one command under a terminal saves the connection and the model',
-      );
-      const status = await runOnce(env, ['auth', 'status']);
-      const statusText = plain(status.output);
-      record(
-        /^zed\s+(file|keychain)/m.test(statusText),
-        'the key typed under a terminal resolves afterwards',
-      );
-    } catch (error) {
-      record(false, `one command under a terminal: ${error.message}`);
-    } finally {
-      captures.push({ name: 'one command under a terminal', output: ui.output });
-      ui.kill();
-    }
-    // The same command with no key at all: EOF is an error, not a success.
-    const empty = pty(env, root, [
-      'auth',
-      'login',
-      'c2',
-      '--kind',
-      'openai',
-      '--base-url',
-      'https://example.test/v1',
-      '--key-stdin',
-      '--model',
-      'paste-model',
-    ]);
-    sessions.push(empty);
-    try {
-      await sleep(1500);
-      // Ctrl+D at the terminal is end of input; closing the pty would kill it.
-      empty.send('\x04');
+      const back = plain(ui.output.slice(savedAt));
+      record(back.includes('Plato · terminal'), 'the session banner is back once');
+      record(!back.includes('Type / for commands'), 'the banner is not the start screen again');
+      await sleep(700);
+      const idle = ui.output.length;
+      await sleep(1200);
+      record(ui.output.length === idle, 'an idle session draws nothing');
+      await ui.line('/model');
+      await waitFor(() => plain(ui.output).includes('custom:model-c'), 8000, 'the new model');
+      record(true, 'the new connection is selectable without a restart');
+      ui.send('\x1b');
       await sleep(300);
-      empty.send('\x04');
-      await waitFor(
-        () => plain(empty.output).includes('no key was saved'),
-        8000,
-        'the no-key sentence',
-      );
-      record(
-        !plain(empty.output).includes('Saved. Using'),
-        'an empty key is an error, not a silent success',
-      );
-      record(
-        plain(empty.output).includes('run \'plato auth login c2\''),
-        'the sentence says how to add the key',
-      );
     } catch (error) {
-      record(false, `empty key: ${error.message}`);
+      record(false, `model add: ${error.message}`);
     } finally {
-      captures.push({ name: 'empty key under a terminal', output: empty.output });
-      empty.kill();
-    }
-    await provider.close();
-  }
-
-  // 6. A named provider is the wizard with the provider chosen: key, model,
-  // save; and a second run offers Keep without losing the working key.
-  {
-    const { root, env } = freshEnv();
-    const provider = await startProvider({ port: 8000, context: 8192 });
-    const ui = pty(env, root, ['auth', 'login', 'vllm']);
-    sessions.push(ui);
-    try {
-      await waitFor(() => plain(ui.output).includes('API key'), 8000, 'the key question');
-      await ui.line('sk-vllm');
-      await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model list');
-      await ui.line('1');
-      await waitFor(
-        () => plain(ui.output).includes('Saved. Using vllm:paste-model.'),
-        8000,
-        'the saved line',
-      );
-      record(
-        !plain(ui.output).includes('Custom endpoint') && !plain(ui.output).includes('Anthropic'),
-        'a named provider skips the picker',
-      );
-      const saved = configOf(env);
-      record(
-        saved.model === 'vllm:paste-model' &&
-          saved.connections[0]?.baseUrl === 'http://localhost:8000/v1',
-        'the preset URL is used and the model is saved',
-      );
-    } catch (error) {
-      record(false, `named provider: ${error.message}`);
-    } finally {
-      captures.push({ name: 'named provider', output: ui.output });
+      captures.push({ name: 'model add', output: ui.output });
       ui.kill();
     }
-
-    const again = pty(env, root, ['auth', 'login', 'vllm']);
-    sessions.push(again);
-    try {
-      await waitFor(
-        () => plain(again.output).includes('A key is saved for vllm: sk-v'),
-        8000,
-        'the existing key',
-      );
-      await waitFor(
-        () => plain(again.output).includes('Keep, replace or clear'),
-        5000,
-        'the keep question',
-      );
-      await again.line('k');
-      await waitFor(() => plain(again.output).includes('Model (number or id)'), 8000, 'the model list');
-      await again.line('1');
-      await waitFor(
-        () => plain(again.output).includes('Saved. Using vllm:paste-model.'),
-        8000,
-        'the saved line',
-      );
-      const stored = JSON.parse(readFileSync(join(env.PLATO_DATA_DIR, 'auth.json'), 'utf8'));
-      record(stored.keys['vllm'] === 'sk-vllm', 'Keep does not lose the working key');
-    } catch (error) {
-      record(false, `keep an existing key: ${error.message}`);
-    } finally {
-      captures.push({ name: 'named provider, existing key', output: again.output });
-      again.kill();
-    }
-    await provider.close();
   }
 } catch (error) {
   record(false, error.message);
 } finally {
-  for (const ui of sessions) {
-    ui.kill();
-  }
-  await providerA.close();
-  await providerB.close();
+  await bad.close();
+  await good.close();
+  await add.close();
   writeFileSync(
     capturePath,
     [
-      'Plato CLI — setup wizard proof',
+      'Plato CLI — setup screen proof',
       `cli: ${cli}`,
       '',
       ...results,
       '',
-      ...notes,
-      '',
-      ...captures.flatMap((capture) => [
-        `--- ${capture.name} ---`,
-        capture.output,
-        '',
-      ]),
+      ...captures.flatMap((capture) => [`--- ${capture.name} ---`, capture.output, '']),
     ].join('\n'),
   );
 }
 
 for (const line of results) console.log(line);
-for (const line of notes) console.log(line);
 console.log(`capture: ${capturePath}`);
 if (results.some((line) => line.startsWith('FAIL'))) process.exitCode = 1;

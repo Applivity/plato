@@ -12,6 +12,8 @@ export function startProvider(options = {}) {
   const context = options.context;
   const port = options.port;
   const modelId = options.model ?? 'paste-model';
+  const modelIds = Array.isArray(options.models) ? options.models : [modelId];
+  const modelsStatus = options.modelsStatus;
   /** Every chat request, in arrival order. */
   const requests = [];
   /**
@@ -83,15 +85,18 @@ export function startProvider(options = {}) {
     });
     req.on('end', () => {
       if (req.method === 'GET' && req.url?.endsWith('/models')) {
+        if (modelsStatus !== undefined) {
+          res.writeHead(modelsStatus, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'the key is not accepted' }));
+          return;
+        }
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(
           JSON.stringify({
-            data: [
-              {
-                id: modelId,
-                ...(context === undefined ? {} : { context_length: context }),
-              },
-            ],
+            data: modelIds.map((id) => ({
+              id,
+              ...(context === undefined ? {} : { context_length: context }),
+            })),
           }),
         );
         return;

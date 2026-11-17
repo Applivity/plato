@@ -18,7 +18,7 @@ import {
 } from './keys.js';
 import type { CliInput, Streams } from './io.js';
 import { readKeyLine, readLine, type Prompter } from './prompt.js';
-import { runWizard } from './setup.js';
+import { runSetup } from './setup.js';
 
 export const AUTH_HELP = `Usage
   plato auth login [connection] [--no-keyring] [--kind anthropic|openai] [--base-url URL]
@@ -141,13 +141,12 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
       return 2;
     }
     // The wizard: provider, key and model in one flow.
-    return await runWizard({
+    const setup = await runSetup({
       env: context.env,
       streams: context.streams,
-      prompter,
-      ...(context.keychain === undefined ? {} : { keychain: context.keychain }),
       ...(context.fetchImpl === undefined ? {} : { fetchImpl: context.fetchImpl }),
     });
+    return setup.code;
   }
 
   // Any of these flags means "do not ask": the one-command path.
@@ -161,14 +160,13 @@ async function login(args: readonly string[], context: AuthContext): Promise<num
   // A provider named on the command line runs the same flow as the wizard,
   // with the provider already chosen: key, then model, then one save.
   if (!scripted && prompter !== undefined && PROVIDER_PRESETS.some((entry) => entry.id === target)) {
-    return await runWizard({
+    const setup = await runSetup({
       env: context.env,
       streams: context.streams,
-      prompter,
       provider: target,
-      ...(context.keychain === undefined ? {} : { keychain: context.keychain }),
       ...(context.fetchImpl === undefined ? {} : { fetchImpl: context.fetchImpl }),
     });
+    return setup.code;
   }
 
   let requestedKind: 'anthropic' | 'openai' | undefined;

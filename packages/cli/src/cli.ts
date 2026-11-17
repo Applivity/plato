@@ -14,7 +14,7 @@ import { runPlain } from './plain.js';
 import { runSessions } from './sessionsCommand.js';
 import { createSession, latestSession, loadSession } from './sessions.js';
 import { createPrompter, type Prompter } from './prompt.js';
-import { runWizard } from './setup.js';
+import { runSetup } from './setup.js';
 import type { SessionOptions } from './session.js';
 import type { CliInput, Streams } from './io.js';
 
@@ -86,25 +86,16 @@ export interface Io extends Streams {
  */
 type SetupOffer = { action: 'continue' | 'stop'; code: number };
 
-async function offerSetup(io: Io, prompter: Prompter): Promise<SetupOffer | null> {
+async function offerSetup(io: Io): Promise<SetupOffer | null> {
   const config = loadConfig(process.env);
   if (config.connections.length > 0) {
     return null;
   }
-  const answer = (
-    await prompter.ask(
-      'No model is set up yet. Plato needs a provider to answer.\nSet one up now? [Y/n] ',
-      { default: 'y' },
-    )
-  )
-    .trim()
-    .toLowerCase();
-  if (answer === 'n' || answer === 'no') {
-    io.out("No provider is set up. Run 'plato auth login' when you are ready.\n");
+  const setup = await runSetup({ env: process.env, streams: io, offer: true });
+  if (setup.declined) {
     return { action: 'stop', code: 0 };
   }
-  const code = await runWizard({ env: process.env, streams: io, prompter });
-  return code === 0 ? { action: 'continue', code } : { action: 'stop', code };
+  return setup.code === 0 ? { action: 'continue', code: 0 } : { action: 'stop', code: setup.code };
 }
 
 function parsePrint(args: readonly string[]) {
@@ -246,8 +237,7 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
 
   if (first === undefined) {
     if (interactiveAvailable) {
-      const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
-      const setup = await offerSetup(io, prompter);
+      const setup = await offerSetup(io);
       if (setup !== null && setup.action === 'stop') {
         return setup.code;
       }
@@ -327,8 +317,7 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
     }
     if (first === '--plain') {
       if (stdinIsTty) {
-        const prompter = io.prompter ?? createPrompter(process.stdin, process.stderr);
-        const setup = await offerSetup(io, prompter);
+        const setup = await offerSetup(io);
         if (setup !== null && setup.action === 'stop') {
           return setup.code;
         }

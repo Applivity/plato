@@ -18,6 +18,7 @@ import {
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { compactTokens } from '../format/terminal.js';
 import { Markdown } from './Markdown.js';
+import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
 import {
   accepted,
@@ -138,6 +139,10 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   };
 
   useInput((input, key) => {
+    // The setup screen owns the keyboard while it is up.
+    if (state.setup) {
+      return;
+    }
     const enter = key.return || input === '\r' || input === '\n';
     const newline = input.includes('\r') || input.includes('\n');
     const card = state.card;
@@ -371,28 +376,42 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
 
   return (
     <Box flexDirection="column">
-      <Header mode={state.status.mode} running={state.running} />
-      {showWelcome ? <Welcome /> : null}
+      {state.setup ? null : <Header mode={state.status.mode} running={state.running} />}
       <Static items={state.rows}>
         {(row: Row) => <RowView key={row.id} row={row} columns={columns} />}
       </Static>
-      {state.streaming.length > 0 ? (
-        <LiveAnswer text={state.streaming} columns={columns} rows={rows} />
+      {state.setup ? (
+        <SetupScreen
+          env={session.setupEnv()}
+          onDone={(result) => session.finishSetup(result)}
+        />
       ) : null}
-      {state.card !== null ? <CardView card={state.card} /> : null}
-      {state.observers.length > 0 ? <ObserverStrip observers={state.observers} /> : null}
-      <StatusLine
-        status={state.status}
-        running={state.running}
-        elapsed={
-          state.status.startedAt === undefined
-            ? 0
-            : Math.max(0, Math.floor((now - state.status.startedAt) / 1000))
-        }
-        columns={columns}
-      />
-      {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
-      <Composer editor={editor} />
+      {state.setup ? null : showWelcome ? (
+        <Welcome />
+      ) : null}
+      {state.setup || state.streaming.length === 0 ? null : (
+        <LiveAnswer text={state.streaming} columns={columns} rows={rows} />
+      )}
+      {state.setup || state.card === null ? null : <CardView card={state.card} />}
+      {state.setup || state.observers.length === 0 ? null : (
+        <ObserverStrip observers={state.observers} />
+      )}
+      {state.setup ? null : (
+        <>
+          <StatusLine
+            status={state.status}
+            running={state.running}
+            elapsed={
+              state.status.startedAt === undefined
+                ? 0
+                : Math.max(0, Math.floor((now - state.status.startedAt) / 1000))
+            }
+            columns={columns}
+          />
+          {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
+          <Composer editor={editor} />
+        </>
+      )}
     </Box>
   );
 }

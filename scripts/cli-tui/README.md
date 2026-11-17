@@ -17,8 +17,9 @@ decisions read back from the run records, including whether each card was drawn
 or settled from memory. `node scripts/cli-tui/context-drive.mjs` checks the
 status line's conversation share: the used and window numbers, the summary-due
 wording, the drop after a fold, and that nothing wraps at 80 or 120 columns.
-`node scripts/cli-tui/setup-drive.mjs` checks setup: the first-run offer, the
-wizard saving a working connection, the one-command path, and the context
+`node scripts/cli-tui/setup-drive.mjs` checks setup: the first-run offer, the Ink
+setup screen saving a working connection, a rejected key leaving nothing
+saved, `/model add` drawing no session frame while it runs, and the context
 question for a custom endpoint. `node scripts/cli-tui/model-drive.mjs` checks the
 model pickers: the shell command, the in-session picker, the suspend-and-setup
 path, Esc, and a connection that cannot list its models. `--cli <path>` runs the

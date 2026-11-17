@@ -1,38 +1,26 @@
 /**
- * Leaves the drawing, lets a command own the terminal, and comes back.
+ * Leaves the terminal to a command and comes back.
  *
- * Ink keeps its input listener on standard input, so the stream is paused
- * while the command reads and the terminal is put back in line mode. The next
- * render redraws the frame below the transcript the command left behind.
- * `/model add` uses this now; a later shortcut needs the same pause.
+ * The Ink instance is fully unmounted first, so no frame can be drawn while the
+ * command owns the terminal; the caller renders again in `mount`. Setup does
+ * NOT use this — it is an Ink screen of its own — but an external editor
+ * (Ctrl+G) needs exactly this.
  */
 export interface TerminalFrame {
-  /** Erases the live frame, so the command starts on clean lines. */
-  clear(): void;
-  /** Draws the frame again after the command returns. */
-  redraw(): void;
+  /** Removes the Ink instance and restores the terminal to line mode. */
+  unmount(): void;
+  /** Renders the app again, after the command has finished. */
+  mount(): void;
 }
 
 export async function withSuspendedTerminal(
   frame: TerminalFrame,
-  input: NodeJS.ReadStream,
   run: () => Promise<void>,
 ): Promise<void> {
-  frame.clear();
-  process.stdout.write('\n');
-  const tty =
-    input.isTTY === true && typeof input.setRawMode === 'function' ? input : null;
-  input.pause();
-  if (tty !== null) {
-    tty.setRawMode(false);
-  }
+  frame.unmount();
   try {
     await run();
   } finally {
-    if (tty !== null) {
-      tty.setRawMode(true);
-    }
-    input.resume();
-    frame.redraw();
+    frame.mount();
   }
 }

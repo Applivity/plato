@@ -265,21 +265,24 @@ describe('/model', () => {
     expect(active.model).toBe('connA:m-a');
   });
 
-  it('runs the setup hook from the last entry', async () => {
+  it('opens the setup screen from the last entry and returns to the session', async () => {
     const env = environment();
     seedCache(env, { connA: ['m-a'], connB: ['m-b'] });
     const active = session(env);
-    let added = 0;
-    active.setAddProvider(async () => {
-      added += 1;
-    });
     const answered = active.handleCommand('/model');
     const card = await waitForCard(active, 'model');
     if (card.kind === 'model') {
       active.cardMove(card.options.length - 1 - card.selected);
     }
     active.cardConfirm();
+    let shown = false;
+    for (let attempt = 0; attempt < 400 && !shown; attempt += 1) {
+      shown = active.getSnapshot().setup;
+      if (!shown) await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(shown).toBe(true);
+    active.finishSetup({ saved: false });
     await answered;
-    expect(added).toBe(1);
+    expect(active.getSnapshot().setup).toBe(false);
   });
 });

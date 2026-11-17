@@ -5,7 +5,7 @@ import { connectionModels, modelRefs } from './modelList.js';
 import type { Env } from './paths.js';
 import { readLine, type Prompter } from './prompt.js';
 import type { CliInput } from './io.js';
-import { runWizard } from './setup.js';
+import { runSetup } from './setup.js';
 
 export const MODEL_HELP = `Usage
   plato model                         List the models and pick one
@@ -52,7 +52,7 @@ export async function runModel(
       streams.err("No connections yet. Run 'plato auth login' to set one up.\n");
       return 2;
     }
-    return await runWizard({ env, streams, prompter });
+    return (await runSetup({ env, streams })).code;
   }
 
   const lists = await connectionModels(config, {

@@ -218,6 +218,8 @@ export interface ViewState {
   status: SessionStatus;
   observers: ObserverView[];
   running: boolean;
+  /** The setup screen has the terminal until it finishes. */
+  setup: boolean;
 }
 
 /** `/help`, built from the menu's table so the two can never disagree (D49cd). */
@@ -275,8 +277,8 @@ export class Session {
   private stopNoticed = false;
   /** The pending approval was answered with Esc: deny, and stop the run. */
   private approvalStopped = false;
-  /** How the terminal runs the setup wizard without Ink in the way. */
-  private addProvider: (() => Promise<void>) | undefined;
+  /** Resolves when the setup screen finishes, so `/model add` can wait. */
+  private setupResolve: ((result: { saved: boolean; model?: string }) => void) | null = null;
   /** The host's way to report how an ask was answered (D49aq). */
   private reportApprovalCard:
     | ((tool: string, via: 'shown' | 'session-memory' | 'session-approval') => void)
@@ -333,6 +335,7 @@ export class Session {
       },
       observers: [],
       running: false,
+      setup: false,
     };
     this.idleFold = new IdleFold({
       enabled: () => this.config.compactionIdle === true,
@@ -431,9 +434,24 @@ export class Session {
     this.editorIsEmpty = editorIsEmpty;
   }
 
-  /** The terminal's way to leave the drawing, run setup, and come back. */
-  setAddProvider(addProvider: () => Promise<void>): void {
-    this.addProvider = addProvider;
+  /** `/model add`: the App draws the setup screen until this resolves. */
+  async startSetup(): Promise<void> {
+    const result = await new Promise<{ saved: boolean; model?: string }>((resolve) => {
+      this.setupResolve = resolve;
+      this.update({ setup: true });
+    });
+    if (result.saved && result.model !== undefined) {
+      this.append('notice', `Saved. Using ${result.model}.`);
+    }
+  }
+
+  /** The setup screen is done: reload what it wrote and give the terminal back. */
+  finishSetup(result: { saved: boolean; model?: string }): void {
+    this.update({ setup: false });
+    const resolve = this.setupResolve;
+    this.setupResolve = null;
+    this.reloadConfig();
+    resolve?.(result);
   }
 
   /** After setup: the connections and the model on disk are the live ones. */
@@ -448,6 +466,11 @@ export class Session {
       });
     }
     this.append('notice', 'Provider setup finished; the new models are in /model.');
+  }
+
+  /** The environment the setup screen reads and writes. */
+  setupEnv(): Env {
+    return this.base.env;
   }
 
   /** What the registry publishes about this session (D49cq). */
@@ -1326,11 +1349,7 @@ export class Session {
   }
 
   private async addProviderFromSession(): Promise<void> {
-    if (this.addProvider === undefined) {
-      this.append('notice', 'Setup needs the interactive terminal.');
-      return;
-    }
-    await this.addProvider();
+    await this.startSetup();
   }
 
   private askReveal(protectedPath: string): Promise<boolean> {
