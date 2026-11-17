@@ -69,13 +69,25 @@ One command, one key:
 plato auth login anthropic
 ```
 
+Setup is one screen. Pick a provider — the arrows move, and typing filters the
+list — paste the key, and pick a model from the list Plato fetches from the
+provider. If the provider does not say how large its context window is, setup
+asks for it.
+
+The key is checked before anything is saved. A rejected key says so, and
+nothing is written; Plato offers to replace or edit it. If the provider cannot
+be reached, Plato shows the reason and lets you carry on anyway. When all is
+well the screen says `✓ key accepted` and how many models the provider listed.
+Esc at any point says "Setup cancelled; nothing changed."
+
 The key goes to the operating system's keychain when one is available. If it is
 not, Plato writes `~/.local/share/plato/auth.json` with mode 0600 and says so.
 The config file never holds a key.
 
-`plato auth login` alone asks for the provider. It offers `anthropic`, `openai`,
-`openrouter` and `litellm`, and accepts any other name — for a name it does not
-know it asks for the wire protocol and the base URL. The **connection** it saves
+The first screen offers the ten most used providers — Anthropic, OpenAI,
+DeepSeek, OpenRouter, Groq, xAI, Mistral, Gemini, Ollama and LM Studio — then
+`Custom endpoint`, then any other provider. A name Plato does not know asks for
+the wire protocol and the base URL. The **connection** it saves
 is what tells Plato where to send requests; pressing Enter at the key prompt
 saves the connection and no key.
 
@@ -95,7 +107,11 @@ For a container or CI:
 
 ```sh
 echo "$ANTHROPIC_API_KEY" | plato auth login anthropic
+plato auth login anthropic --key-stdin --model claude-sonnet-4-5
 ```
+
+When the provider, the key and the model are given on the command line, setup
+asks nothing.
 
 ## Run
 
@@ -111,7 +127,7 @@ In the interactive terminal:
 |---|---|
 | `Shift+Tab` | switch `plan`, `edit`, `auto` |
 | `Enter` | send |
-| `Esc` | interrupt the run |
+| `Esc` | stop after the current step |
 | `Ctrl+C` twice | exit |
 | `↑` / `↓` | prompt history |
 
@@ -121,6 +137,27 @@ Slash commands: `/mode`, `/model`, `/team`, `/gitignore`, `/compact`, `/undo`,
 Type `/` to list them. Typing after the slash filters the list, `↑`/`↓` move,
 `Tab` fills the command in, and `Enter` runs a command that takes no
 arguments. A long list scrolls; it never covers the conversation.
+
+A command that takes a word lists its words: after `/mode `, `/model `,
+`/team ` or `/gitignore `, each choice appears with one line on what it does.
+`Tab` completes and `Enter` accepts only a word from the list.
+
+### The header and the status line
+
+The top line names Plato, how it is running and the conversation. The
+conversation's title is your first message, shortened once to fit and then
+left alone, so it does not shift while a run works.
+
+Below the conversation, one line says what is happening:
+
+```
+mode: edit · team: solo · deepseek-chat · 16k/1M ░░░░░░░░ 2% · ↑5.6k ↓47 · 117 t/s · 12s
+```
+
+The mode and the context share always stay. On a narrow terminal the team, the
+duration, the rate, the token totals and then the model drop away, in that
+order. A context window Plato had to assume is marked `~`, so a guess never
+looks like a fact.
 
 ### Modes
 
@@ -259,6 +296,7 @@ Plan-mode session asks before it sends.
 |---|---|
 | `plato auth login\|status\|list\|logout` | Manage connections and keys |
 | `plato models [connection] [--refresh]` | List the models a connection offers |
+| `plato model [name]` | Show the model in use, or switch to another |
 | `plato sessions list\|export\|delete` | Manage saved conversations |
 | `plato config [get\|set] [key] [value]` | Show or change a setting |
 | `plato doctor` | Check the config, keys, keychain, model limits, writes, and the last run |

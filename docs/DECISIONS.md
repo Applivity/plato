@@ -8112,3 +8112,99 @@ a rule with named constants and **no setting**.
 without text the prompt is unchanged. The command's menu line names the optional
 note, so the capability is visible where the command is chosen.
 
+
+**D49dp — Setup is a screen of the same interface, never a wizard inside the live screen (2026-11-16).**
+
+The first run, `plato auth login` and `/model add` all open **one screen**: the
+provider list (arrows move, typing filters), the key field with the characters
+masked, and the model list fetched from the endpoint. The context length is
+asked for there when the endpoint does not supply one.
+
+- **A line-by-line question sequence suspended inside the running screen was
+  tried and rejected.** The screen kept drawing over it — nine frames in two
+  and a half seconds — and the founder saw questions arrive after he had moved
+  on. A question sequence and a live screen cannot share the terminal.
+- The suspend helper is **kept only for a real external program** (Ctrl+G,
+  Round 2), and the screen is unmounted before that program starts.
+- **Esc at any point says "Setup cancelled; nothing changed."**
+- **Non-interactive flags are never turned into questions.** `plato auth login
+  <id> --key-stdin --model <m> [--base-url …] [--key-env NAME]` completes the
+  same flow without a terminal, and a terminal changes nothing about it.
+
+**D49dq — A key is checked before anything is saved (2026-11-16).**
+
+- **A 401 or 403 says "The key was rejected." and offers Replace/Edit; nothing
+  is written.** The error is checked against the endpoint before the connection,
+  the key or the model is stored.
+- **A network failure offers "Continue anyway", with the reason shown** — a
+  wrong key and an unreachable host are different answers and must not look the
+  same.
+- **Success shows `✓ key accepted · N models`**, taken from the endpoint's own
+  list.
+- **"The endpoint did not list any models." is used only when the endpoint
+  answered with an empty list** — never as the message for a failed request.
+
+**D49dr — A fallback context window is approximate, and says so (2026-11-17).**
+
+- Core now reads **`context_window`** from a provider's model list. **DeepSeek
+  publishes 1,048,576**, and the CLI had fallen back to 131k, so every DeepSeek
+  session summarised far too late. Discovery is shared, so **all three hosts
+  get the real number**.
+- When the endpoint does not advertise a window, **setup asks for it**, for
+  every provider.
+- **A fallback is shown with a tilde (`~131k`); a known number is exact (`1M`).**
+  A guess never looks like a fact. The same rule as the unknown-window work:
+  never invent a number the endpoint did not give.
+
+**D49ds — Identity on the header, state on the status line (2026-11-17).**
+
+The conversation's **title sits at the right edge of the header**, truncated
+once to the width it had when it first appeared and then stable; it is the first
+user message, the same string the session list uses. The mode left the header.
+
+- The status line is
+  `mode: edit · team: solo · <model> · 16k/1M ░░░░░░░░ 2% · ↑5.6k ↓47 · 117 t/s · 12s`.
+- **Drop order when the width is short: team, duration, rate, tokens, model.**
+  The title truncates once before it vanishes and is left off below about eight
+  cells; **the mode and the context share never drop.**
+- **Why not a title row:** it would cost a permanent row of conversation space
+  for text that rarely changes. The header already carries the name of the
+  thing; a line that moves should carry what moves.
+
+**D49dt — A command's arguments come from the table `/help` prints (2026-11-16).**
+
+`/model `, `/mode `, `/team ` and `/gitignore ` list their accepted words with a
+one-line description each, in the same place and with the same keys as the
+command menu: arrows move, **Tab completes, Enter runs only an exact name or
+choice**. One table feeds the menu, `/help` and the completion, so the three
+cannot disagree about what a command accepts.
+
+**D49du — An approval card says whether it was drawn (2026-11-16).**
+
+The CLI now emits **`approval-card`** on the run bus whenever it asks, with how
+the answer was reached: **`shown`** (a card was drawn), **`session-memory`** (an
+earlier answer in this session covered it) or **`session-approval`**. The record
+can now count the cards a person actually saw — the number that measures prompt
+fatigue — instead of guessing it from the number of tool calls. The GUI hosts
+already had this; the CLI now matches them.
+
+**D49dv — "Stop" stops after the current step; "cancel" is reserved (2026-11-16).**
+
+- **Stop** means: finish the step in flight, then end the run and keep
+  everything. The CLI already says **"stopping after this step"**.
+- The GUIs call the same action **"Cancel"** and should be renamed to stop. A
+  "Cancel" that waits for the current tool call is not a cancel.
+- **Cancel** is reserved for abandoning the run without keeping it.
+- **Pause is not built.** It means stop at a step boundary, keep everything, and
+  continue with Enter. It can never mean suspending a running tool: a tool call
+  once started cannot be frozen, only allowed to finish or be killed.
+
+## Amendment — the 2026-11-16/17 CLI round
+
+The seven decisions above are the round's locked outcomes: setup as a screen
+(D49dp), the key checked first (D49dq), honest windows (D49dr), the header and
+status line split (D49ds), one argument table (D49dt), cards that record
+themselves (D49du), and the stop/pause vocabulary (D49dv). The run hint line
+(`enter queues · esc stops · ctrl+c stops`) is **shipped** (`d0bd8323`) and was
+checked on the built binary. **Pause is the only item in this round still
+unshipped**, and it must not be documented as delivered until it runs.
