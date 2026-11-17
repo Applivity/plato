@@ -203,19 +203,28 @@ try {
     record(!/ · \d+s$/.test(idle), 'the duration leaves after the rate');
   });
 
-  // 120 columns: a long title truncates, everything else stays.
+  // 120 columns: a long title truncates once and stays put.
   await session(120, async (ui) => {
     await waitFor(() => lastStatus(ui.output).includes('0/1M'), 8000, 'the fresh share');
     const long = 'a conversation title that is far longer than this line can show even at one hundred and twenty columns';
     await ui.submit(long);
+    await waitFor(
+      () => (lastStatus(ui.output).split(' · ')[1] ?? '').endsWith('…'),
+      8000,
+      'the truncated title',
+    );
+    const firstTitle = lastStatus(ui.output).split(' · ')[1];
     await waitFor(() => /\b2 turns\b/.test(plain(ui.output)), 20000, 'the run summary');
     const idle = lastStatus(ui.output);
+    const idleTitle = idle.split(' · ')[1];
     notes.push(`120 idle: ${idle}`);
     record(widthOf(idle) <= 120, 'the 120-column line is one row');
-    record(/ · solo · /.test(idle), 'the team stays at 120');
-    record(/ · \d+ t\/s · \d+s$/.test(idle), 'all parts stay at 120');
-    record(idle.includes('… · deepseek'), 'a long title is cut with an ellipsis');
     record(idle.startsWith('mode: edit · '), 'the mode still leads the line');
+    record(idle.includes('/1M ░'), 'the share stays at 120');
+    record(
+      firstTitle !== '' && firstTitle === idleTitle && idleTitle.endsWith('…'),
+      'a long title truncates once and keeps its width',
+    );
   });
 } catch (error) {
   record(false, error.message);

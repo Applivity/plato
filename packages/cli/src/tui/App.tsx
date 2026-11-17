@@ -17,6 +17,7 @@ import {
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { statusLine, tokenRate } from './statusLine.js';
+import { displayWidth } from '../format/terminal.js';
 import { Markdown } from './Markdown.js';
 import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
@@ -586,28 +587,54 @@ function StatusLine({
     ? tokenRate(status.runOutputTokens ?? 0, runMs ?? 0)
     : tokenRate(status.lastRunOutputTokens ?? 0, status.lastRunMs ?? 0);
   const durationMs = running ? runMs : status.lastRunMs;
-  const parts = statusLine(
-    {
-      mode: status.mode,
-      title,
-      model: status.model,
-      team: status.team,
-      usedTokens: status.contextTokens,
-      ...(status.contextWindow === undefined
-        ? {}
-        : {
-            window: status.contextWindow,
-            windowApprox: status.contextWindowApprox === true,
-          }),
-      // The conversation's running totals, including the run in progress.
-      inputTokens: status.inputTokens + (running ? (status.runInputTokens ?? 0) : 0),
-      outputTokens: status.outputTokens + (running ? (status.runOutputTokens ?? 0) : 0),
-      ...(rate === undefined ? {} : { rate }),
-      ...(durationMs === undefined ? {} : { durationMs }),
-      ...(status.contextDue === true ? { contextDue: true } : {}),
-    },
-    columns,
+  const input = {
+    mode: status.mode,
+    title,
+    model: status.model,
+    team: status.team,
+    usedTokens: status.contextTokens,
+    ...(status.contextWindow === undefined
+      ? {}
+      : {
+          window: status.contextWindow,
+          windowApprox: status.contextWindowApprox === true,
+        }),
+    // The conversation's running totals, including the run in progress.
+    inputTokens: status.inputTokens + (running ? (status.runInputTokens ?? 0) : 0),
+    outputTokens: status.outputTokens + (running ? (status.runOutputTokens ?? 0) : 0),
+    ...(rate === undefined ? {} : { rate }),
+    ...(durationMs === undefined ? {} : { durationMs }),
+    ...(status.contextDue === true ? { contextDue: true } : {}),
+  };
+  // The title truncates once, when it first appears, and keeps that width for
+  // the conversation at this terminal width. Growing figures drop other parts
+  // instead of rewriting the title frame by frame. The reserve waits for the
+  // share: before the window resolves the line is incomplete and its room is
+  // not the room the title will have.
+  const elastic = statusLine(input, columns);
+  const reservedRef = useRef<{ columns: number; title: string; width: number } | null>(
+    null,
   );
+  const shareKnown = status.contextWindow !== undefined;
+  if (title.length === 0) {
+    reservedRef.current = null;
+  } else if (shareKnown) {
+    const reserved = reservedRef.current;
+    if (reserved === null || reserved.columns !== columns || reserved.title !== title) {
+      const shown = elastic.find((part) => part.key === 'title')?.text ?? '';
+      reservedRef.current = { columns, title, width: displayWidth(shown) };
+    }
+  }
+  const reserved = reservedRef.current;
+  const pinned =
+    title.length > 0 &&
+    shareKnown &&
+    reserved !== null &&
+    reserved.columns === columns &&
+    reserved.title === title;
+  const parts = pinned
+    ? statusLine({ ...input, titleWidth: reserved.width }, columns)
+    : elastic;
 
   return (
     <Box marginTop={1}>

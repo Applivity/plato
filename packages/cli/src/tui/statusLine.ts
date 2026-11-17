@@ -30,6 +30,12 @@ export interface StatusLineInput {
   durationMs?: number;
   /** The next run would fold at the user's threshold. */
   contextDue?: boolean;
+  /**
+   * A width to keep for the title for this conversation, chosen when the title
+   * first appeared. With it, later token or rate growth drops other parts and
+   * never rewrites the title under the reader's eyes.
+   */
+  titleWidth?: number;
 }
 
 export interface StatusPart {
@@ -125,7 +131,13 @@ export function statusLine(input: StatusLineInput, columns: number): StatusPart[
   const all: StatusPart[] = [{ key: 'mode', text: `mode: ${input.mode}` }];
   const title = input.title.trim();
   if (title.length > 0) {
-    all.push({ key: 'title', text: title });
+    all.push({
+      key: 'title',
+      text:
+        input.titleWidth === undefined
+          ? title
+          : truncateToWidth(title, input.titleWidth),
+    });
   }
   all.push({ key: 'model', text: input.model });
   all.push({ key: 'team', text: input.team });
@@ -154,8 +166,10 @@ export function statusLine(input: StatusLineInput, columns: number): StatusPart[
     return parts;
   }
 
-  // 1. The title gives way first, down to what is still a title.
-  if (title.length > 0) {
+  // 1. An unfixed title gives way first, down to what is still a title. A
+  // fixed one keeps its width: the figures may grow, but the title must not
+  // change while the reader is looking at it.
+  if (input.titleWidth === undefined && title.length > 0) {
     parts = withTitle(parts, title, MIN_TITLE);
     if (widthOf(parts) <= columns) {
       return titleFilled(parts, title, columns);
@@ -169,10 +183,10 @@ export function statusLine(input: StatusLineInput, columns: number): StatusPart[
     }
     parts = parts.filter((part) => part.key !== key);
     if (widthOf(parts) <= columns) {
-      return titleFilled(parts, title, columns);
+      return input.titleWidth === undefined ? titleFilled(parts, title, columns) : parts;
     }
   }
-  return titleFilled(parts, title, columns);
+  return input.titleWidth === undefined ? titleFilled(parts, title, columns) : parts;
 }
 
 function withTitle(parts: StatusPart[], title: string, width: number): StatusPart[] {

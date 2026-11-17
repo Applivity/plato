@@ -122,6 +122,20 @@ describe('the status line', () => {
     expect(keys).not.toContain('model');
   });
 
+  it('keeps a reserved title width when the figures grow', () => {
+    // The full title needs 104 cells at 100. With its width reserved it stays
+    // whole, and the team leaves instead.
+    const pinned = statusLine({ ...FULL, titleWidth: 8 }, 100);
+    expect(pinned.find((part) => part.key === 'title')?.text).toBe('test run');
+    expect(pinned.map((part) => part.key)).not.toContain('team');
+    expect(width(pinned)).toBeLessThanOrEqual(100);
+
+    // A narrower reserved width is kept too, not recalculated.
+    const narrow = statusLine({ ...FULL, titleWidth: 4 }, 100);
+    expect(narrow.find((part) => part.key === 'title')?.text).toBe('tes…');
+    expect(narrow.map((part) => part.key)).toContain('team');
+  });
+
   it('truncates a long title with an ellipsis at 120', () => {
     const parts = statusLine({ ...FULL, title: 'x'.repeat(60) }, 120);
     expect(parts.map((part) => part.key)).toContain('team');
