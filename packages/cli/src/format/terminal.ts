@@ -94,6 +94,28 @@ export function compactTokens(count: number): string {
   return `${thousands}k`;
 }
 
+/** Cuts to `width` cells, ending in `…` when anything was removed. */
+export function truncateToWidth(text: string, width: number): string {
+  if (displayWidth(text) <= width) {
+    return text;
+  }
+  if (width <= 0) {
+    return '';
+  }
+  const room = width - 1;
+  let out = '';
+  let used = 0;
+  for (const ch of text) {
+    const cells = displayWidth(ch);
+    if (used + cells > room) {
+      break;
+    }
+    out += ch;
+    used += cells;
+  }
+  return `${out}…`;
+}
+
 /** The text of a run of spans, without its styles. */
 export function plainText(spans: readonly Span[]): string {
   return spans.map((span) => span.text).join('');

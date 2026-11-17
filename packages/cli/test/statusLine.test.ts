@@ -5,18 +5,12 @@ import {
   shareText,
   statusLine,
   tokenRate,
-  truncateToWidth,
   type StatusLineInput,
 } from '../src/tui/statusLine.js';
 
-/**
- * The line the founder asked for, with every part present. The numbers here
- * are the example's; the share's percentage is rounded from 16k/1M (1.53%),
- * so it reads 2% rather than the example's illustrative 0%.
- */
+/** The line the founder asked for, with every part present. */
 const FULL: StatusLineInput = {
   mode: 'edit',
-  title: 'test run',
   model: 'deepseek:deepseek-v4-pro',
   team: 'solo',
   usedTokens: 16_000,
@@ -66,53 +60,26 @@ describe('the duration and the rate', () => {
   });
 });
 
-describe('cutting a title', () => {
-  it('ends in an ellipsis and counts wide characters as two', () => {
-    expect(truncateToWidth('test run', 8)).toBe('test run');
-    expect(truncateToWidth('test run', 4)).toBe('tes…');
-    expect(truncateToWidth('日本語', 5)).toBe('日本…');
-    expect(truncateToWidth('abc', 1)).toBe('…');
-  });
-});
-
 describe('the status line', () => {
   it('shows every part, in order, when it fits', () => {
     expect(text(statusLine(FULL, 120))).toBe(
-      'mode: edit · test run · deepseek:deepseek-v4-pro · solo · ' +
+      'mode: edit · team: solo · deepseek:deepseek-v4-pro · ' +
         '16k/1M ░░░░░░░░ 2% · ↑5.6k ↓47 · 117 t/s · 12s',
     );
   });
 
-  it('shortens the title before dropping anything', () => {
-    const parts = statusLine(FULL, 100);
-    expect(parts.map((part) => part.key)).toEqual([
-      'mode',
-      'title',
-      'model',
-      'team',
-      'share',
-      'tokens',
-      'rate',
-      'duration',
-    ]);
-    expect(parts.find((part) => part.key === 'title')?.text).toBe('tes…');
-    expect(width(parts)).toBe(100);
+  it('labels the team, solo included', () => {
+    expect(text(statusLine(FULL, 120))).toContain(' · team: solo · ');
   });
 
   it('drops team, duration, rate, tokens, model in that order', () => {
     const at80 = statusLine(FULL, 80);
-    expect(at80.map((part) => part.key)).toEqual([
-      'mode',
-      'title',
-      'model',
-      'share',
-      'tokens',
-    ]);
+    expect(at80.map((part) => part.key)).toEqual(['mode', 'model', 'share', 'tokens', 'rate']);
     expect(width(at80)).toBeLessThanOrEqual(80);
 
-    const at40 = statusLine(FULL, 40);
-    expect(at40.map((part) => part.key)).toEqual(['mode', 'title', 'share']);
-    expect(width(at40)).toBeLessThanOrEqual(40);
+    const at60 = statusLine(FULL, 60);
+    expect(at60.map((part) => part.key)).toEqual(['mode', 'model', 'share']);
+    expect(width(at60)).toBeLessThanOrEqual(60);
   });
 
   it('never drops the mode or the share, even too narrow for them', () => {
@@ -122,35 +89,10 @@ describe('the status line', () => {
     expect(keys).not.toContain('model');
   });
 
-  it('keeps a reserved title width when the figures grow', () => {
-    // The full title needs 104 cells at 100. With its width reserved it stays
-    // whole, and the team leaves instead.
-    const pinned = statusLine({ ...FULL, titleWidth: 8 }, 100);
-    expect(pinned.find((part) => part.key === 'title')?.text).toBe('test run');
-    expect(pinned.map((part) => part.key)).not.toContain('team');
-    expect(width(pinned)).toBeLessThanOrEqual(100);
-
-    // A narrower reserved width is kept too, not recalculated.
-    const narrow = statusLine({ ...FULL, titleWidth: 4 }, 100);
-    expect(narrow.find((part) => part.key === 'title')?.text).toBe('tes…');
-    expect(narrow.map((part) => part.key)).toContain('team');
-  });
-
-  it('truncates a long title with an ellipsis at 120', () => {
-    const parts = statusLine({ ...FULL, title: 'x'.repeat(60) }, 120);
-    expect(parts.map((part) => part.key)).toContain('team');
-    expect(parts.find((part) => part.key === 'title')?.text.endsWith('…')).toBe(true);
-    expect(width(parts)).toBeLessThanOrEqual(120);
-  });
-
-  it('has no title part before the first message', () => {
-    const parts = statusLine({ ...FULL, title: '' }, 120);
-    expect(parts.map((part) => part.key)).not.toContain('title');
-    expect(parts[0]?.text).toBe('mode: edit');
-  });
-
-  it('always shows the team, solo included', () => {
-    expect(text(statusLine(FULL, 120))).toContain(' · solo · ');
+  it('has no title of its own', () => {
+    const line = text(statusLine(FULL, 120));
+    expect(line.startsWith('mode: edit · team: solo')).toBe(true);
+    expect(line).not.toContain('test run');
   });
 
   it('has no cost on the line', () => {

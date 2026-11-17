@@ -18,6 +18,7 @@ import {
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { statusLine, tokenRate } from './statusLine.js';
 import { displayWidth } from '../format/terminal.js';
+import { headerTitle, headerTitleRoom } from './header.js';
 import { Markdown } from './Markdown.js';
 import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
@@ -431,7 +432,9 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
 
   return (
     <Box flexDirection="column">
-      {state.setup ? null : <Header mode={state.status.mode} running={state.running} />}
+      {state.setup ? null : (
+        <Header title={session.title} running={state.running} columns={columns} />
+      )}
       <Static items={state.rows}>
         {(row: Row) => <RowView key={row.id} row={row} columns={columns} />}
       </Static>
@@ -454,7 +457,6 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       {state.setup ? null : (
         <>
           <StatusLine
-            title={session.title}
             status={state.status}
             running={state.running}
             now={now}
@@ -471,15 +473,55 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   );
 }
 
-function Header({ mode, running }: { mode: SessionStatus['mode']; running: boolean }): ReactElement {
+/**
+ * The header is identity: the app, the transport, the busy word, and — right
+ * aligned — the conversation's title. The mode is the status line's job now.
+ * The title's width is fixed when it first appears, so the figures below can
+ * grow without the title changing under the reader.
+ */
+function Header({
+  title,
+  running,
+  columns,
+}: {
+  title: string;
+  running: boolean;
+  columns: number;
+}): ReactElement {
+  const room = headerTitleRoom(columns);
+  const reservedRef = useRef<{ columns: number; title: string; width: number } | null>(
+    null,
+  );
+  if (title.length === 0) {
+    reservedRef.current = null;
+  } else {
+    const reserved = reservedRef.current;
+    if (reserved === null || reserved.columns !== columns || reserved.title !== title) {
+      reservedRef.current = {
+        columns,
+        title,
+        width: displayWidth(headerTitle(title, room)),
+      };
+    }
+  }
+  const reserved = reservedRef.current;
+  const shown =
+    title.length > 0 &&
+    reserved !== null &&
+    reserved.columns === columns &&
+    reserved.title === title
+      ? headerTitle(title, room, reserved.width)
+      : headerTitle(title, room);
   return (
-    <Box marginBottom={1}>
-      <Text color="cyan" bold>
-        Plato
+    <Box marginBottom={1} width={columns} justifyContent="space-between">
+      <Text>
+        <Text color="cyan" bold>
+          Plato
+        </Text>
+        <Text dimColor> · terminal</Text>
+        {running ? <Text dimColor> · working…</Text> : null}
       </Text>
-      <Text dimColor> · terminal · </Text>
-      <Text color={MODE_COLOR[mode]}>{mode}</Text>
-      {running ? <Text dimColor> · working…</Text> : null}
+      {shown.length > 0 ? <Text dimColor>{shown}</Text> : null}
     </Box>
   );
 }
@@ -563,18 +605,16 @@ function LiveAnswer({
 
 /**
  * The status line, fitted to the window. It is one row: the mode and the
- * context share never leave, the title shortens before anything else, and the
- * rest leave in the order the fitter fixes. The line's parts and its fit are
- * pure (`statusLine.ts`); this component only paints them.
+ * context share never leave, and the rest leave in the order the fitter
+ * fixes. The line's parts and its fit are pure (`statusLine.ts`); this
+ * component only paints them.
  */
 function StatusLine({
-  title,
   status,
   running,
   now,
   columns,
 }: {
-  title: string;
   status: SessionStatus;
   running: boolean;
   now: number;
@@ -587,54 +627,27 @@ function StatusLine({
     ? tokenRate(status.runOutputTokens ?? 0, runMs ?? 0)
     : tokenRate(status.lastRunOutputTokens ?? 0, status.lastRunMs ?? 0);
   const durationMs = running ? runMs : status.lastRunMs;
-  const input = {
-    mode: status.mode,
-    title,
-    model: status.model,
-    team: status.team,
-    usedTokens: status.contextTokens,
-    ...(status.contextWindow === undefined
-      ? {}
-      : {
-          window: status.contextWindow,
-          windowApprox: status.contextWindowApprox === true,
-        }),
-    // The conversation's running totals, including the run in progress.
-    inputTokens: status.inputTokens + (running ? (status.runInputTokens ?? 0) : 0),
-    outputTokens: status.outputTokens + (running ? (status.runOutputTokens ?? 0) : 0),
-    ...(rate === undefined ? {} : { rate }),
-    ...(durationMs === undefined ? {} : { durationMs }),
-    ...(status.contextDue === true ? { contextDue: true } : {}),
-  };
-  // The title truncates once, when it first appears, and keeps that width for
-  // the conversation at this terminal width. Growing figures drop other parts
-  // instead of rewriting the title frame by frame. The reserve waits for the
-  // share: before the window resolves the line is incomplete and its room is
-  // not the room the title will have.
-  const elastic = statusLine(input, columns);
-  const reservedRef = useRef<{ columns: number; title: string; width: number } | null>(
-    null,
+  const parts = statusLine(
+    {
+      mode: status.mode,
+      model: status.model,
+      team: status.team,
+      usedTokens: status.contextTokens,
+      ...(status.contextWindow === undefined
+        ? {}
+        : {
+            window: status.contextWindow,
+            windowApprox: status.contextWindowApprox === true,
+          }),
+      // The conversation's running totals, including the run in progress.
+      inputTokens: status.inputTokens + (running ? (status.runInputTokens ?? 0) : 0),
+      outputTokens: status.outputTokens + (running ? (status.runOutputTokens ?? 0) : 0),
+      ...(rate === undefined ? {} : { rate }),
+      ...(durationMs === undefined ? {} : { durationMs }),
+      ...(status.contextDue === true ? { contextDue: true } : {}),
+    },
+    columns,
   );
-  const shareKnown = status.contextWindow !== undefined;
-  if (title.length === 0) {
-    reservedRef.current = null;
-  } else if (shareKnown) {
-    const reserved = reservedRef.current;
-    if (reserved === null || reserved.columns !== columns || reserved.title !== title) {
-      const shown = elastic.find((part) => part.key === 'title')?.text ?? '';
-      reservedRef.current = { columns, title, width: displayWidth(shown) };
-    }
-  }
-  const reserved = reservedRef.current;
-  const pinned =
-    title.length > 0 &&
-    shareKnown &&
-    reserved !== null &&
-    reserved.columns === columns &&
-    reserved.title === title;
-  const parts = pinned
-    ? statusLine({ ...input, titleWidth: reserved.width }, columns)
-    : elastic;
 
   return (
     <Box marginTop={1}>

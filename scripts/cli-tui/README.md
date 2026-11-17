@@ -27,9 +27,10 @@ path, Esc, and a connection that cannot list its models. `node
 scripts/cli-tui/window-drive.mjs` checks the window itself: DeepSeek's
 `context_window` reaches `plato models` and the status line, a cached list with
 no window is refetched, and the fallback is shown as `~131k`. `node
-scripts/cli-tui/status-drive.mjs` checks the redesigned status line at 100,
-80 and 120 columns: the units (`1M`, not `1049k`), the eight-cell bar, the
-title, the team, the running totals, a live rate and the kept last-run figures,
+scripts/cli-tui/status-drive.mjs` checks the header and the status line at 100,
+80 and 120 columns: the title right-aligned in the header and truncating once,
+the fresh empty header, the units (`1M`, not `1049k`), the eight-cell bar, the
+labelled team, the running totals, a live rate and the kept last-run figures,
 and the drop order when the line is short. `node
 scripts/cli-tui/argument-drive.mjs` checks the argument lists under the
 composer: each command's words with one line each, arrows, Tab, Enter on an

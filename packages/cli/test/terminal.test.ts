@@ -5,6 +5,7 @@ import {
   parseMarkdown,
   plainText,
   stripTerminalEscapes,
+  truncateToWidth,
 } from '../src/format/terminal.js';
 
 describe('stripTerminalEscapes', () => {
@@ -153,5 +154,14 @@ describe('compactTokens', () => {
     expect(compactTokens(999_600)).toBe('1M');
     expect(compactTokens(8192)).toBe('8.2k');
     expect(compactTokens(0)).toBe('0');
+  });
+});
+
+describe('truncateToWidth', () => {
+  it('ends in an ellipsis and counts wide characters as two', () => {
+    expect(truncateToWidth('test run', 8)).toBe('test run');
+    expect(truncateToWidth('test run', 4)).toBe('tes…');
+    expect(truncateToWidth('日本語', 5)).toBe('日本…');
+    expect(truncateToWidth('abc', 1)).toBe('…');
   });
 });
