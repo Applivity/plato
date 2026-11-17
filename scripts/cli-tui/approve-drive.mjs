@@ -70,18 +70,25 @@ writeFileSync(
 );
 
 let output = '';
-const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$0"', cli], {
-  cwd: project,
-  env: {
-    ...process.env,
-    TERM: 'xterm-256color',
-    PLATO_CONFIG_DIR: config,
-    PLATO_DATA_DIR: data,
-    PLATO_HOME: home,
+// A fixed width keeps the card's footer on one line, so the wording can be
+// asserted exactly instead of depending on the outer terminal.
+const inner = `stty cols 100; exec node ${JSON.stringify(cli)}`;
+const child = spawn(
+  'sh',
+  ['-c', `cat | script -q /dev/null sh -c ${JSON.stringify(inner)}`],
+  {
+    cwd: project,
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+      PLATO_CONFIG_DIR: config,
+      PLATO_DATA_DIR: data,
+      PLATO_HOME: home,
+    },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
   },
-  stdio: ['pipe', 'pipe', 'pipe'],
-  detached: true,
-});
+);
 child.stdout.on('data', (chunk) => {
   output += chunk.toString();
 });
@@ -148,11 +155,19 @@ try {
   await submit('write one');
   const cardShown = await attempt(() => waitFor(() => plain(output.slice(mark)).includes('Allow write_file?'), 8000, 'the approval card'));
   record(cardShown, 'the approval card is shown');
-  const cardFrame = plain(output.slice(mark));
-  record(
-    cardFrame.includes('Enter answers · No declines and continues · Esc denies and stops'),
-    'the card says what the keys do, including both answers',
+  // The title and the footer are one card but not necessarily one frame; wait
+  // for the footer rather than reading whatever was on screen first.
+  const footer = await attempt(() =>
+    waitFor(
+      () =>
+        plain(output.slice(mark)).includes(
+          'Enter answers · No declines and continues · Esc denies and stops',
+        ),
+      5000,
+      'the card footer',
+    ),
   );
+  record(footer, 'the card says what the keys do, including both answers');
 
   send('\x1b');
   record(

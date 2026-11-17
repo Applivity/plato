@@ -23,12 +23,28 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 const args = process.argv.slice(2);
 const cliIndex = args.indexOf('--cli');
 const cli = resolve(cliIndex >= 0 ? args[cliIndex + 1] : join(here, '../../packages/cli/dist/cli.js'));
-const capturePath = join(here, 'paste-capture.txt');
+// Concurrent runs can keep their captures apart; the default is the evidence
+// file next to this script.
+const capturePath = process.env['PASTE_CAPTURE'] ?? join(here, 'paste-capture.txt');
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /** The frame without its colours and cursor moves, for readable assertions. */
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+
+/** The last frame Ink drew, which is the screen the user is looking at. */
+const lastFrame = (text) => {
+  const start = text.lastIndexOf('\x1b[?2026h');
+  if (start < 0) return plain(text);
+  const end = text.lastIndexOf('\x1b[?2026l');
+  return plain(text.slice(start, end > start ? end : undefined));
+};
+const lastComposer = (text) =>
+  lastFrame(text)
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.startsWith('› '))
+    .at(-1) ?? '';
 
 async function waitFor(test, ms, what) {
   const until = Date.now() + ms;
@@ -92,91 +108,116 @@ const results = [];
 const record = (ok, what) => {
   results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
 };
-const lastUserText = () => {
-  const body = provider.requests.at(-1);
+function userText(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   const user = messages.filter((message) => message?.role === 'user').at(-1);
   return typeof user?.content === 'string' ? user.content : '';
-};
+}
+/** The nth chat request, once it exists. Writes are slow under six-way load. */
+async function requestAt(count) {
+  await waitFor(() => provider.requests.length >= count, 30000, `request ${count}`);
+  return provider.requests[count - 1];
+}
+/** The nth run summary, which means the run has settled before the next step. */
+async function runEnded(count) {
+  await waitFor(
+    () => (plain(output).match(/\b1 turn\b/g) ?? []).length >= count,
+    30000,
+    `run summary ${count}`,
+  );
+}
 
 try {
-  await waitFor(() => output.includes('Type / for commands'), 8000, 'the start screen');
+  await waitFor(() => output.includes('Type / for commands'), 20000, 'the start screen');
 
-  // A. One line plus a trailing break is one line.
-  let mark = output.length;
+  // A. One line plus a trailing break is one line. The assertion waits for the
+  // frame that carries the paste: a fixed sleep lost this under load.
   const oneLine = 'C:\\work\\file.png';
   child.stdin.write(`${oneLine}\n`);
-  await sleep(900);
-  let segment = plain(output.slice(mark));
+  await waitFor(
+    () => lastComposer(output).includes(oneLine),
+    20000,
+    'the one-line paste on screen',
+  );
+  const oneFrame = lastFrame(output);
   record(
-    !segment.includes('[line ') && !segment.includes('[+') && segment.includes('file.png'),
+    !oneFrame.includes('[line ') && !oneFrame.includes('[+') && oneFrame.includes('file.png'),
     'a one-line paste with a trailing break shows no chip',
   );
   record(provider.requests.length === 0, 'no request went out for the one-line paste');
-  // One key per write: a burst of DEL bytes is one chunk, not sixteen keys.
-  for (let index = 0; index < oneLine.length; index += 1) {
+  // One key per write, and each DELETE waits for its own effect: a burst under
+  // load can arrive as one chunk instead of separate keys.
+  for (let left = oneLine.length; left > 0; left -= 1) {
+    const visible = oneLine.slice(0, left);
     child.stdin.write('\x7f');
-    await sleep(35);
+    await waitFor(
+      () => !lastComposer(output).includes(visible),
+      10000,
+      `backspace ${oneLine.length - left + 1}`,
+    );
   }
-  await sleep(400);
+  await waitFor(() => lastComposer(output).trim() === '›', 10000, 'the empty composer');
 
   // B. Two lines plus a trailing break is a two-line block.
-  mark = output.length;
   child.stdin.write('first\nsecond\n');
-  try {
-    await waitFor(() => plain(output.slice(mark)).includes('[line 2 of 2]'), 4000, 'the two-line chip');
-    record(true, 'a two-line paste with a trailing break reads as line 2 of 2');
-  } catch {
-    record(false, 'a two-line paste with a trailing break reads as line 2 of 2');
-  }
+  await waitFor(
+    () => lastFrame(output).includes('[line 2 of 2]'),
+    20000,
+    'the two-line chip',
+  );
+  record(true, 'a two-line paste with a trailing break reads as line 2 of 2');
   record(provider.requests.length === 0, 'no request went out for the two-line paste');
   child.stdin.write('\r');
-  try {
-    await waitFor(() => provider.requests.length === 1, 8000, 'the first run');
-    record(lastUserText() === 'first\nsecond', 'Enter sent exactly two lines, with no trailing break');
-  } catch {
-    record(false, 'Enter sent exactly two lines, with no trailing break');
-  }
-  await sleep(1200);
+  const first = await requestAt(1);
+  record(
+    userText(first) === 'first\nsecond',
+    'Enter sent exactly two lines, with no trailing break',
+  );
+  await runEnded(1);
 
   // C. The chip follows the cursor and the edit, and the body matches the chip.
-  mark = output.length;
   child.stdin.write('A1\nA2\nA3');
-  try {
-    await waitFor(() => plain(output.slice(mark)).includes('[line 3 of 3]'), 4000, 'the three-line chip');
-    record(true, 'the block shows line 3 of 3 at its end');
-  } catch {
-    record(false, 'the block shows line 3 of 3 at its end');
-  }
+  await waitFor(
+    () => lastFrame(output).includes('[line 3 of 3]'),
+    20000,
+    'the three-line chip',
+  );
+  record(true, 'the block shows line 3 of 3 at its end');
+  // A chip does not draw the cursor, so there is no frame to wait on for the
+  // Left itself; the two writes stay in order and the edit is checked below.
   child.stdin.write('\x1b[D');
-  await sleep(150);
+  await sleep(80);
   child.stdin.write('Z');
-  try {
-    await waitFor(() => plain(output.slice(mark)).includes('AZ3 [line 3 of 3]'), 4000, 'the edited line');
-    record(true, 'Left then Z shows the edited line, AZ3');
-  } catch {
-    record(false, 'Left then Z shows the edited line, AZ3');
-  }
+  await waitFor(
+    () => lastFrame(output).includes('AZ3 [line 3 of 3]'),
+    20000,
+    'the edited line',
+  );
+  record(true, 'Left then Z shows the edited line, AZ3');
   record(provider.requests.length === 1, 'nothing was sent while the block was being edited');
   child.stdin.write('\r');
-  try {
-    await waitFor(() => provider.requests.length === 2, 8000, 'the second run');
-    record(lastUserText() === 'A1\nA2\nAZ3', 'the request carries exactly the line the chip showed');
-  } catch {
-    record(false, 'the request carries exactly the line the chip showed');
-  }
-  await sleep(1200);
+  const second = await requestAt(2);
+  record(
+    userText(second) === 'A1\nA2\nAZ3',
+    'the request carries exactly the line the chip showed',
+  );
+  await runEnded(2);
 
   // D. Backspace at the end removes the block whole.
-  mark = output.length;
   child.stdin.write('B1\nB2');
-  await waitFor(() => plain(output.slice(mark)).includes('[line 2 of 2]'), 4000, 'the draft to clear');
-  const beforeBackspace = output.length;
+  await waitFor(
+    () => lastFrame(output).includes('[line 2 of 2]'),
+    20000,
+    'the draft to clear',
+  );
   child.stdin.write('\x7f');
-  await sleep(800);
-  const afterBackspace = plain(output.slice(beforeBackspace));
+  await waitFor(
+    () => !lastFrame(output).includes('[line 2 of 2]'),
+    20000,
+    'the chip to clear',
+  );
   record(
-    afterBackspace.length > 0 && !afterBackspace.includes('[line 2 of 2]'),
+    lastComposer(output).trim() === '›',
     'Backspace at the end removed the block as one unit',
   );
 } catch (error) {
