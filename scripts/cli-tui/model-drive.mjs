@@ -26,6 +26,14 @@ const capturePath = join(here, 'model-capture.txt');
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 
+/** The text of the newest frame Ink drew, so an old row cannot answer for it. */
+function lastFrame(output) {
+  const start = output.lastIndexOf('\x1b[?2026h');
+  if (start < 0) return plain(output);
+  const end = output.lastIndexOf('\x1b[?2026l');
+  return plain(output.slice(start, end > start ? end : undefined));
+}
+
 async function waitFor(test, ms, what) {
   const until = Date.now() + ms;
   while (Date.now() < until) {
@@ -105,9 +113,21 @@ function pty(env, cwd, argv = []) {
   });
   state.child = child;
   state.send = (text) => child.stdin.write(text);
+  // Enter waits until the text is on screen. A fixed pause let the two writes
+  // land in one read under load; Ink then saw a paste, kept the text and
+  // swallowed the Enter, so the command never ran.
   state.line = async (text) => {
+    if (text.length === 0) {
+      state.send('\r');
+      return;
+    }
+    const mark = state.output.length;
     state.send(text);
-    await sleep(150);
+    await waitFor(
+      () => plain(state.output.slice(mark)).includes(text),
+      5000,
+      `the text '${text}' to be on screen`,
+    );
     state.send('\r');
   };
   state.kill = () => {
@@ -120,10 +140,16 @@ function pty(env, cwd, argv = []) {
   return state;
 }
 
-// One Enter: the exact name runs, so the picker opens at once.
+// One Enter: the exact name runs, so the picker opens at once. The Enter waits
+// for the text to be drawn, for the reason given on `state.line`.
 const openPicker = async (ui) => {
+  const mark = ui.output.length;
   ui.send('/model');
-  await sleep(150);
+  await waitFor(
+    () => plain(ui.output.slice(mark)).includes('/model'),
+    4000,
+    'the /model text',
+  );
   ui.send('\r');
 };
 
@@ -212,9 +238,7 @@ try {
     try {
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
       // A partial name is still completed by Enter.
-      ui.send('/mod');
-      await sleep(150);
-      ui.send('\r');
+      await ui.line('/mod');
       record(
         await attempt(() =>
           waitFor(() => plain(ui.output).includes('› /mode '), 4000, 'the completed line'),
@@ -223,14 +247,25 @@ try {
       );
       // That line is filled and waiting. Ctrl+W clears it; the next check is
       // the picker, and Enter on an empty argument now completes a choice.
+      // Wait for the argument menu it opened to close, not for the clock.
       ui.send('\x17');
-      await sleep(250);
+      await waitFor(
+        () => !lastFrame(ui.output).includes('Enter runs an exact choice'),
+        4000,
+        'the cleared line',
+      );
       await openPicker(ui);
       await waitFor(() => plain(ui.output).includes('Add a provider…'), 8000, 'the picker');
       record(plain(ui.output).includes('connA:model-a  (current)'), 'the picker marks the current model');
       const before = providerA.requests.length + providerB.requests.length;
+      const beforeArrow = ui.output.length;
       ui.send('\x1b[B');
-      await sleep(150);
+      // The picker marks the row it will choose; wait for the mark to move.
+      await waitFor(
+        () => plain(ui.output.slice(beforeArrow)).includes('❯ connB:model-b'),
+        4000,
+        'the selection on the second model',
+      );
       ui.send('\r');
       await waitFor(() => plain(ui.output).includes('Model: connB:model-b.'), 5000, 'the new model');
       record(
@@ -292,7 +327,14 @@ try {
           plain(ui.output.slice(beforeList)).includes('custom:model-c'),
           'the new connection is selectable without a restart',
         );
-        await ui.line('3');
+        // The picker starts on the current model, so Enter chooses it. No digit
+        // is typed: a card does not echo one, and a wait needs something to see.
+        await waitFor(
+          () => plain(ui.output.slice(beforeList)).includes('❯ custom:model-c'),
+          4000,
+          'the current model marked',
+        );
+        ui.send('\r');
         await waitFor(() => plain(ui.output).includes('Model: custom:model-c.'), 5000, 'the new model chosen');
         record(true, 'the new model can be chosen');
       }
@@ -300,8 +342,12 @@ try {
       // 4. Esc changes nothing.
       const beforePicker = ui.output.length;
       await openPicker(ui);
+      // `Add a provider…` exists only in the model card. `Esc closes` is also
+      // in the command menu that `/model` draws before Enter, so waiting for
+      // it would return before the picker existed and the next key would be
+      // lost in the composer.
       await waitFor(
-        () => plain(ui.output.slice(beforePicker)).includes('Esc closes'),
+        () => plain(ui.output.slice(beforePicker)).includes('Add a provider…'),
         8000,
         'the picker again',
       );
@@ -330,12 +376,17 @@ try {
         'the session answers a word the same way',
       );
       record(
-        plain(ui.output.slice(beforePicker)).includes('Esc closes'),
+        plain(ui.output.slice(beforePicker)).includes('Add a provider…'),
         'the picker stays open after a refused answer',
       );
       const current = configOf(env).model;
       ui.send('\x1b');
-      await sleep(600);
+      // The card is gone only when a frame without its rows is on screen.
+      await waitFor(
+        () => !lastFrame(ui.output).includes('Add a provider…'),
+        4000,
+        'the picker to close',
+      );
       record(configOf(env).model === current, 'Esc closes the picker and changes nothing');
     } catch (error) {
       record(false, `session picker: ${error.message}`);
