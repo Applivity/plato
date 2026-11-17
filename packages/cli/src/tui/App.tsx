@@ -17,8 +17,14 @@ import {
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { statusLine, tokenRate } from './statusLine.js';
-import { displayWidth } from '../format/terminal.js';
+import { displayWidth, truncateToWidth } from '../format/terminal.js';
 import { headerTitle, headerTitleRoom } from './header.js';
+import {
+  recordHistory,
+  relativeTime,
+  searchHistory,
+  type HistoryEntry,
+} from '../history.js';
 import { Markdown } from './Markdown.js';
 import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
@@ -40,6 +46,25 @@ export interface AppProps {
   session: Session;
   onExit: () => void;
   firstPrompt?: string;
+  /** This workspace's history, oldest first; reverse search reads it. */
+  history?: HistoryEntry[];
+  /** Persists and returns the next history. */
+  remember?: (line: string) => HistoryEntry[];
+  /** The draft to start with, after an external editor or a remount. */
+  draft?: EditorState;
+  /** Receives every edit, so the host keeps the draft across a suspend. */
+  onDraft?: (state: EditorState) => void;
+  /** Opens the draft in the user's editor (Ctrl+G); the host remounts. */
+  editDraft?: () => Promise<void>;
+  /** Rows already on screen before this mount, so a remount does not replay them. */
+  staticFrom?: number;
+}
+
+/** What Ctrl+R is showing: the query, the chosen match, and the draft to go back to. */
+interface SearchState {
+  query: string;
+  at: number;
+  saved: EditorState;
 }
 
 const MODE_COLOR: Record<SessionStatus['mode'], string> = {
@@ -58,11 +83,22 @@ const MODE_MEANING: Record<SessionStatus['mode'], string> = {
 /** Ink's colours ignore NO_COLOR in this build (measured), so the TUI checks it. */
 const COLOURS = process.env.NO_COLOR === undefined;
 
-export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
+export function App({
+  session,
+  onExit,
+  firstPrompt,
+  history = [],
+  remember,
+  draft,
+  onDraft,
+  editDraft,
+  staticFrom = 0,
+}: AppProps): ReactElement {
   const state: ViewState = useSyncExternalStore(session.subscribe, session.getSnapshot);
   const { columns, rows } = useWindowSize();
-  const [editor, setEditor] = useState<EditorState>(EMPTY_EDITOR);
-  const [submitted, setSubmitted] = useState<string[]>([]);
+  const [editor, setEditor] = useState<EditorState>(draft ?? EMPTY_EDITOR);
+  const [entries, setEntries] = useState<HistoryEntry[]>(history);
+  const [search, setSearch] = useState<SearchState | null>(null);
   const [historyAt, setHistoryAt] = useState<number | null>(null);
   const [ctrlC, setCtrlC] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -77,7 +113,22 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
   editorRef.current = editor;
   useEffect(() => {
     session.setEditorProbe(() => editorRef.current.text.length === 0);
+    // A suspended App has no editor to ask; without this the old instance would
+    // answer for a tree that is no longer on screen.
+    return () => session.setEditorProbe(() => true);
   }, [session]);
+  // The host keeps the draft so Ctrl+G can unmount, run the editor, and mount
+  // again with the same text and cursor.
+  useEffect(() => {
+    onDraft?.(editor);
+  }, [editor, onDraft]);
+  // A card owns the keyboard; a search left open underneath it would take the
+  // next Esc as its own.
+  useEffect(() => {
+    if (state.card !== null) {
+      setSearch(null);
+    }
+  }, [state.card]);
 
   const query = slashQuery(editor.text);
   const matches = query === null ? [] : suggest(query);
@@ -107,6 +158,11 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     state.card === null &&
     !state.running &&
     firstPrompt === undefined;
+  // Reverse search: newest first, and the chosen row is clamped as the query
+  // narrows so a shorter result list never points past its end.
+  const hits = search === null ? [] : searchHistory(entries, search.query);
+  const hitAt = search === null ? 0 : Math.min(search.at, Math.max(0, hits.length - 1));
+  const hit = hits[hitAt];
 
   useEffect(() => {
     setChoice(0);
@@ -137,11 +193,16 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     return () => clearInterval(id);
   }, [state.running]);
 
+  const rememberLine = (line: string): void => {
+    setEntries(remember === undefined ? recordHistory(entries, line) : remember(line));
+  };
+
   const submitLine = async (line: string): Promise<void> => {
     setEditor(EMPTY_EDITOR);
     setHistoryAt(null);
+    setSearch(null);
     setMenuDismissedAt(null);
-    setSubmitted((previous) => [...previous, line]);
+    rememberLine(line);
     // A draft block is a message even when its first line starts with a slash:
     // only a single line can be a command.
     if (line.startsWith('/') && !line.includes('\n')) {
@@ -229,6 +290,65 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         if (index <= last) {
           session.cardMove(index - card.selected);
         }
+      }
+      return;
+    }
+
+    // Ctrl+R reverse-searches this workspace's history. The composer keeps the
+    // line it had until Enter takes a match or Esc puts it back.
+    if (search !== null) {
+      const step = (delta: number): void => {
+        setSearch({
+          ...search,
+          at: Math.max(0, Math.min(hits.length - 1, hitAt + delta)),
+        });
+      };
+      if (key.escape) {
+        setEditor(search.saved);
+        setSearch(null);
+        return;
+      }
+      if (enter) {
+        if (hit !== undefined) {
+          setEditor(setText(hit.text));
+          setSearch(null);
+          setHistoryAt(null);
+          setMenuDismissedAt(null);
+        }
+        return;
+      }
+      if ((key.ctrl && input === 'r') || key.upArrow) {
+        step(1);
+        return;
+      }
+      if (key.downArrow) {
+        step(-1);
+        return;
+      }
+      if (key.backspace) {
+        setSearch({ query: search.query.slice(0, -1), at: 0, saved: search.saved });
+        return;
+      }
+      if (!key.ctrl && !key.meta && input.length > 0) {
+        const typed = input.replace(/[\r\n]+/g, '');
+        if (typed.length > 0) {
+          setSearch({ query: search.query + typed, at: 0, saved: search.saved });
+        }
+        return;
+      }
+      if (!(key.ctrl && input === 'c')) {
+        return;
+      }
+      // Ctrl+C keeps its usual meaning; the search closes first.
+      setSearch(null);
+    }
+    if (key.ctrl && input === 'r') {
+      setSearch({ query: '', at: 0, saved: editor });
+      return;
+    }
+    if (key.ctrl && input === 'g') {
+      if (editDraft !== undefined) {
+        void editDraft();
       }
       return;
     }
@@ -340,7 +460,7 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
           setEditor(EMPTY_EDITOR);
           setHistoryAt(null);
           setMenuDismissedAt(null);
-          setSubmitted((previous) => [...previous, line]);
+          rememberLine(line);
         } else {
           void submitLine(line);
         }
@@ -360,12 +480,12 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       }
     }
     if (key.upArrow) {
-      if (submitted.length === 0) {
+      if (entries.length === 0) {
         return;
       }
-      const at = historyAt === null ? submitted.length - 1 : Math.max(0, historyAt - 1);
+      const at = historyAt === null ? entries.length - 1 : Math.max(0, historyAt - 1);
       setHistoryAt(at);
-      setEditor(setText(submitted[at] ?? ''));
+      setEditor(setText(entries[at]?.text ?? ''));
       return;
     }
     if (key.downArrow) {
@@ -373,12 +493,12 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         return;
       }
       const at = historyAt + 1;
-      if (at >= submitted.length) {
+      if (at >= entries.length) {
         setHistoryAt(null);
         setEditor(EMPTY_EDITOR);
       } else {
         setHistoryAt(at);
-        setEditor(setText(submitted[at] ?? ''));
+        setEditor(setText(entries[at]?.text ?? ''));
       }
       return;
     }
@@ -430,12 +550,15 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     }
   });
 
+  // A remount after Ctrl+G must not write the transcript into the scrollback a
+  // second time: only rows that appeared since the suspend are new.
+  const staticRows = staticFrom === 0 ? state.rows : state.rows.slice(staticFrom);
   return (
     <Box flexDirection="column">
       {state.setup ? null : (
         <Header title={session.title} running={state.running} columns={columns} />
       )}
-      <Static items={state.rows}>
+      <Static items={staticRows}>
         {(row: Row) => <RowView key={row.id} row={row} columns={columns} />}
       </Static>
       {state.setup ? (
@@ -462,11 +585,19 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
             now={now}
             columns={columns}
           />
-          {nameOpen ? <CommandMenu matches={matches} active={active} /> : null}
-          {argOpen && argument !== null ? (
+          {search === null && nameOpen ? (
+            <CommandMenu matches={matches} active={active} />
+          ) : null}
+          {search === null && argOpen && argument !== null ? (
             <ArgumentMenu menu={argument} active={active} />
           ) : null}
-          <Composer editor={editor} />
+          {search === null ? null : (
+            <SearchLine query={search.query} hit={hit} columns={columns} />
+          )}
+          <Composer
+            editor={editor}
+            running={state.running && state.card === null}
+          />
         </>
       )}
     </Box>
@@ -744,7 +875,47 @@ function ArgumentMenu({
   );
 }
 
-function Composer({ editor }: { editor: EditorState }): ReactElement {
+/**
+ * What Ctrl+R found: the query, the matching line, and how recently that line
+ * was used. It is one row above the composer, which stays visible so the draft
+ * is never hidden by the search.
+ */
+function SearchLine({
+  query,
+  hit,
+  columns,
+}: {
+  query: string;
+  hit: HistoryEntry | undefined;
+  columns: number;
+}): ReactElement {
+  const prefix = `(reverse-i-search)\`${query}': `;
+  if (hit === undefined) {
+    return <Text dimColor>{truncateToWidth(`${prefix}no match`, columns)}</Text>;
+  }
+  const suffix = `  ${relativeTime(hit.at)}`;
+  const room = Math.max(8, columns - displayWidth(prefix) - displayWidth(suffix));
+  const line = `${prefix}${truncateToWidth(hit.text.replace(/\s+/g, ' '), room)}${suffix}`;
+  // One row even at a narrow width: the search never pushes the composer away.
+  return <Text dimColor>{truncateToWidth(line, columns)}</Text>;
+}
+
+/**
+ * The hint names the keys that work in the state the user is in. During a run
+ * Enter queues and both stop keys work; an open card has its own footer, so the
+ * idle hint stays put there.
+ */
+const IDLE_HINT =
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops';
+const RUNNING_HINT = 'enter queues · esc stops · ctrl+c stops';
+
+function Composer({
+  editor,
+  running,
+}: {
+  editor: EditorState;
+  running: boolean;
+}): ReactElement {
   const cursor = editor.text.slice(editor.cursor, editor.cursor + 1);
   // A pasted block stays one line high. It shows the line the cursor is on and
   // its place, so a keystroke or an arrow is never hidden (round 1).
@@ -766,9 +937,7 @@ function Composer({ editor }: { editor: EditorState }): ReactElement {
           </>
         )}
       </Box>
-      <Text dimColor>
-        Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops
-      </Text>
+      <Text dimColor>{running ? RUNNING_HINT : IDLE_HINT}</Text>
     </Box>
   );
 }

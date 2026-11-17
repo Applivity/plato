@@ -35,7 +35,13 @@ and the drop order when the line is short. `node
 scripts/cli-tui/argument-drive.mjs` checks the argument lists under the
 composer: each command's words with one line each, arrows, Tab, Enter on an
 exact choice only, a partial word completed, and a wrong argument reaching the
-command. `--cli <path>` runs the same checks against another build.
+command. `node scripts/cli-tui/history-drive.mjs` checks the composer around a
+run and the two history keys: the idle hint becoming the run's keys and back, a
+card keeping the idle hint, the private per-workspace history file, Ctrl+R
+across two processes (stepping, Enter that fills without sending, Esc that puts
+the line back), Ctrl+G returning edited text with nothing sent, and a missing
+editor's one sentence. `--cli <path>` runs the same checks against another
+build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a
