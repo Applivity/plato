@@ -10,6 +10,8 @@ import { createServer } from 'node:http';
 export function startProvider(options = {}) {
   /** The context window `/models` advertises; absent, Plato falls back. */
   const context = options.context;
+  /** The field carrying it. DeepSeek spells the same number `context_window`. */
+  const windowField = options.windowField ?? 'context_length';
   const port = options.port;
   const modelId = options.model ?? 'paste-model';
   const modelIds = Array.isArray(options.models) ? options.models : [modelId];
@@ -95,7 +97,7 @@ export function startProvider(options = {}) {
           JSON.stringify({
             data: modelIds.map((id) => ({
               id,
-              ...(context === undefined ? {} : { context_length: context }),
+              ...(context === undefined ? {} : { [windowField]: context }),
             })),
           }),
         );
@@ -150,8 +152,12 @@ export function startProvider(options = {}) {
     });
   });
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    // A fixed port can be taken (a real local model server); fail the check
+    // with a sentence instead of an unhandled 'error' event.
+    server.once('error', reject);
     server.listen(port ?? 0, '127.0.0.1', () => {
+      server.off('error', reject);
       const { port } = server.address();
       resolve({
         port,

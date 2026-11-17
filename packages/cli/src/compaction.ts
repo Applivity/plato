@@ -112,12 +112,65 @@ export function summaryInEffect(rows: readonly LogRow[]): boolean {
   return lastSummaryIndex(rows) >= 0;
 }
 
+export interface ContextWindowInfo {
+  window: number;
+  /**
+   * True when the number is core's fallback rather than one the connection or
+   * the user supplied. The status line must say so, so a guess never reads as
+   * a measured fact.
+   */
+  approximate: boolean;
+}
+
 /**
  * The window a fold and a request plan against: what the connection advertised
  * for this model, and core's own 128k assumption when it said nothing. Both
  * hosts resolve it the same way, so the terminal and the desktop chat cannot
  * disagree about when a conversation is full.
+ *
+ * The fallback is returned with `approximate`, because something has to be
+ * assumed to plan a fold and the status line must not present that assumption
+ * as something the endpoint said.
  */
+export async function resolveContextWindowInfo(options: {
+  config: PlatoConfig;
+  model: string;
+  env: Env;
+  fetchImpl?: typeof fetch;
+  now?: number;
+}): Promise<ContextWindowInfo> {
+  const parts = parseModelRef(
+    options.model,
+    options.config.connections.map((connection) => connection.id),
+  );
+  if (parts === null) return { window: DEFAULT_CONTEXT_WINDOW, approximate: true };
+  const connection = options.config.connections.find(
+    (entry) => entry.id === parts.connectionId,
+  );
+  if (connection === undefined) {
+    return { window: DEFAULT_CONTEXT_WINDOW, approximate: true };
+  }
+  // What the user told us when the endpoint advertised no window. This is the
+  // window the fold uses, too, because both ask this function.
+  if (connection.contextWindow !== undefined) {
+    return { window: connection.contextWindow, approximate: false };
+  }
+  try {
+    const pool = await modelPool(connection, {
+      env: options.env,
+      fetchImpl: options.fetchImpl,
+      now: options.now,
+    });
+    const advertised = pool.pool.find((model) => model.id === parts.model)?.maxContext;
+    return advertised === undefined
+      ? { window: DEFAULT_CONTEXT_WINDOW, approximate: true }
+      : { window: advertised, approximate: false };
+  } catch {
+    // A connection that cannot answer is not a failed fold.
+    return { window: DEFAULT_CONTEXT_WINDOW, approximate: true };
+  }
+}
+
 export async function resolveContextWindow(options: {
   config: PlatoConfig;
   model: string;
@@ -125,32 +178,7 @@ export async function resolveContextWindow(options: {
   fetchImpl?: typeof fetch;
   now?: number;
 }): Promise<number> {
-  const parts = parseModelRef(
-    options.model,
-    options.config.connections.map((connection) => connection.id),
-  );
-  if (parts === null) return DEFAULT_CONTEXT_WINDOW;
-  const connection = options.config.connections.find(
-    (entry) => entry.id === parts.connectionId,
-  );
-  if (connection === undefined) return DEFAULT_CONTEXT_WINDOW;
-  // What the user told us when the endpoint advertised no window. This is the
-  // window the fold uses, too, because both ask this function.
-  if (connection.contextWindow !== undefined) return connection.contextWindow;
-  try {
-    const pool = await modelPool(connection, {
-      env: options.env,
-      fetchImpl: options.fetchImpl,
-      now: options.now,
-    });
-    return (
-      pool.pool.find((model) => model.id === parts.model)?.maxContext ??
-      DEFAULT_CONTEXT_WINDOW
-    );
-  } catch {
-    // A connection that cannot answer is not a failed fold.
-    return DEFAULT_CONTEXT_WINDOW;
-  }
+  return (await resolveContextWindowInfo(options)).window;
 }
 
 /** A token count a person can read at a glance. */

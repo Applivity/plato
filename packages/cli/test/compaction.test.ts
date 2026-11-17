@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import {
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';import {
+  DEFAULT_CONTEXT_WINDOW,
   planRequest,
   type ChatProvider,
   type TurnRequest,
@@ -9,6 +12,7 @@ import {
   foldConversation,
   requestHistory,
   resolveContextWindow,
+  resolveContextWindowInfo,
   type ChatRow,
 } from '../src/compaction.js';
 
@@ -177,5 +181,54 @@ describe('the context window', () => {
       }) as unknown as typeof fetch,
     });
     expect(window).toBe(4096);
+  });
+
+  it('says whether the number came from the endpoint or is the fallback', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-cli-window-'));
+    try {
+      const env = {
+        PLATO_DATA_DIR: dir,
+        PLATO_CONFIG_DIR: dir,
+        PLATO_DISABLE_KEYRING: '1',
+      };
+      const config = {
+        connections: [{ id: 'mine', kind: 'openai' as const, baseUrl: 'http://stub/v1' }],
+        model: 'mine:any',
+        team: 'solo' as const,
+        mode: 'edit' as const,
+        reasoning: 'off' as const,
+        compactionThreshold: 0.8,
+        respectGitignore: false,
+      };
+      const advertised = await resolveContextWindowInfo({
+        config,
+        model: 'mine:any',
+        env,
+        fetchImpl: (async () =>
+          new Response(JSON.stringify({ data: [{ id: 'any', context_length: 1_048_576 }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })) as unknown as typeof fetch,
+      });
+      expect(advertised).toEqual({ window: 1_048_576, approximate: false });
+
+      // The same connection offline: the fold still has to plan against a
+      // number, and that number is a guess, so it says so.
+      const fallback = await resolveContextWindowInfo({
+        config,
+        model: 'mine:any',
+        env,
+        now: 2_000_000_000_000,
+        fetchImpl: (async () => {
+          throw new Error('offline');
+        }) as unknown as typeof fetch,
+      });
+      expect(fallback).toEqual({
+        window: DEFAULT_CONTEXT_WINDOW,
+        approximate: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

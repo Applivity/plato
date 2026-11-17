@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -61,6 +61,34 @@ describe('model discovery', () => {
     });
     expect(second.cached).toBe(true);
     expect(modelCalls()).toHaveLength(1);
+  });
+
+  it('refetches a cache entry that says no model has a window', async () => {
+    const env = tempEnv({ PLATO_KEY_STUB: 'sk-test' });
+    const start = 1_000_000;
+    // Written by a parser (or an endpoint) that did not carry the window. It
+    // is well inside the 24-hour TTL; it must still be asked again, because a
+    // cached fallback is the wrong number the user cannot see.
+    writeFileSync(
+      join(env.PLATO_DATA_DIR ?? '', 'models.json'),
+      `${JSON.stringify({
+        stub: { at: start, baseUrl: 'http://stub/v1', pool: [{ id: 'm1' }] },
+      })}\n`,
+    );
+    const { modelCalls, fetchImpl } = stubFetch([
+      { id: 'm1', context_window: 1_048_576 },
+    ]);
+
+    const answer = await modelPool(connection(), {
+      env,
+      keychain: null,
+      fetchImpl,
+      now: start + 60_000,
+    });
+    expect(answer.cached).toBe(false);
+    expect(modelCalls()).toHaveLength(1);
+    expect(answer.pool).toEqual([{ id: 'm1', maxContext: 1_048_576 }]);
+    expect(readModelCache(env)['stub']?.pool[0]?.maxContext).toBe(1_048_576);
   });
 
   it('refetches after the cache expires', async () => {

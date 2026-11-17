@@ -118,7 +118,14 @@ export async function modelPool(
     options.refresh !== true &&
     hit !== undefined &&
     hit.baseUrl === connection.baseUrl &&
-    now - hit.at < CACHE_TTL_MS
+    now - hit.at < CACHE_TTL_MS &&
+    // A list with no window on any entry is not trusted for a day. It may be
+    // what an older parser stored before it read this endpoint's field (core
+    // now reads DeepSeek's `context_window`), and a cached 131k fallback is
+    // exactly the wrong answer the user cannot see. Ask again; a list that
+    // still advertises nothing simply fits the run's own fallback.
+    hit.pool.length > 0 &&
+    hit.pool.every((entry) => entry.maxContext !== undefined)
   ) {
     return { pool: hit.pool, at: hit.at, cached: true };
   }

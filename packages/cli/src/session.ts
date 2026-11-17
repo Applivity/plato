@@ -23,8 +23,9 @@ import {
   foldConversation,
   historyFromRows,
   requestHistory,
-  resolveContextWindow,
+  resolveContextWindowInfo,
   type ChatRow,
+  type ContextWindowInfo,
   type FoldCause,
 } from './compaction.js';
 import { COMMANDS, slashText } from './completion.js';
@@ -120,6 +121,11 @@ export interface SessionStatus {
   contextTokens: number;
   /** The window the fold measures against; absent until it is resolved. */
   contextWindow?: number;
+  /**
+   * True when `contextWindow` is the fallback, not a number the connection or
+   * the user supplied. The line shows it as `~131k`, never as a fact.
+   */
+  contextWindowApprox?: boolean;
   /** True when the next run would fold: the history is at the threshold. */
   contextDue?: boolean;
 }
@@ -223,9 +229,12 @@ export interface ViewState {
 }
 
 /** `/help`, built from the menu's table so the two can never disagree (D49cd). */
+const HELP_WIDTH = Math.max(...COMMANDS.map((command) => slashText(command).length)) + 2;
 export const SESSION_HELP = [
   'Commands',
-  ...COMMANDS.map((command) => `  ${slashText(command).padEnd(24)}${command.summary}`),
+  ...COMMANDS.map(
+    (command) => `  ${slashText(command).padEnd(HELP_WIDTH)}${command.summary}`,
+  ),
 ].join('\n');
 
 function approvalKey(request: ApprovalRequest): string {
@@ -270,7 +279,7 @@ export class Session {
   /** One fold at a time; an idle clock and a run end must not race. */
   private folding = false;
   /** Resolved once per model; a fold and a request must agree on the window. */
-  private window: Promise<number> | null = null;
+  private window: Promise<ContextWindowInfo> | null = null;
   /** "Allow for this session" covers every outside path, read or write. */
   private outsideAllowed = false;
   /** "Stopping after this step." is said once per run, however often asked. */
@@ -356,10 +365,14 @@ export class Session {
     this.scheduleIdleFold();
     // The window is what the fold will use, so the status line reads the same
     // promise. A connection that cannot answer falls back to the fold default.
-    void this.contextWindow()
-      .then((window) => {
+    void this.contextWindowInfo()
+      .then((info) => {
         this.update({
-          status: { ...this.state.status, contextWindow: window },
+          status: {
+            ...this.state.status,
+            contextWindow: info.window,
+            contextWindowApprox: info.approximate,
+          },
         });
         this.refreshUsage();
       })
@@ -801,8 +814,13 @@ export class Session {
 
   /** The window a fold and a request plan against; resolved once per model. */
   private contextWindow(): Promise<number> {
+    return this.contextWindowInfo().then((info) => info.window);
+  }
+
+  /** The same number, with whether the endpoint actually supplied it. */
+  private contextWindowInfo(): Promise<ContextWindowInfo> {
     if (this.base.maxContext !== undefined) {
-      return Promise.resolve(this.base.maxContext);
+      return Promise.resolve({ window: this.base.maxContext, approximate: false });
     }
     if (this.window === null) {
       this.window = this.resolveWindow();
@@ -810,8 +828,8 @@ export class Session {
     return this.window;
   }
 
-  private async resolveWindow(): Promise<number> {
-    return await resolveContextWindow({
+  private async resolveWindow(): Promise<ContextWindowInfo> {
+    return await resolveContextWindowInfo({
       config: this.config,
       model: this.model,
       env: this.base.env,

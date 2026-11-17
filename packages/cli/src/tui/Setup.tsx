@@ -147,7 +147,9 @@ export function SetupScreen({
 
   const afterModel = (chosen: { id: string; maxContext?: number }): void => {
     setModel(chosen.id);
-    if (choice?.custom === true && chosen.maxContext === undefined) {
+    // The question is about the answer, not the provider: any endpoint that
+    // listed the model without a window leaves the fold guessing, so ask.
+    if (chosen.maxContext === undefined) {
       setStep('context');
       return;
     }

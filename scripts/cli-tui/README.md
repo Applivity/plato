@@ -20,10 +20,17 @@ wording, the drop after a fold, and that nothing wraps at 80 or 120 columns.
 `node scripts/cli-tui/setup-drive.mjs` checks setup: the first-run offer, the Ink
 setup screen saving a working connection, a rejected key leaving nothing
 saved, `/model add` drawing no session frame while it runs, and the context
-question for a custom endpoint. `node scripts/cli-tui/model-drive.mjs` checks the
+question when the chosen model advertises no window. `node
+scripts/cli-tui/model-drive.mjs` checks the
 model pickers: the shell command, the in-session picker, the suspend-and-setup
-path, Esc, and a connection that cannot list its models. `--cli <path>` runs the
-same checks against another build.
+path, Esc, and a connection that cannot list its models. `node
+scripts/cli-tui/window-drive.mjs` checks the window itself: DeepSeek's
+`context_window` reaches `plato models` and the status line, a cached list with
+no window is refetched, and the fallback is shown as `~131k`. `node
+scripts/cli-tui/argument-drive.mjs` checks the argument lists under the
+composer: each command's words with one line each, arrows, Tab, Enter on an
+exact choice only, a partial word completed, and a wrong argument reaching the
+command. `--cli <path>` runs the same checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

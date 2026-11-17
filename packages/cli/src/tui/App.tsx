@@ -22,12 +22,15 @@ import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
 import {
   accepted,
+  argumentEnter,
+  argumentMenu,
   enterAction,
   menuWindow,
   slashQuery,
   slashText,
   suggest,
   type SlashCommand,
+  type ArgumentMenu as ArgumentMenuShape,
 } from '../completion.js';
 import { draftChip, liveTail, pastedText, removesWholeDraft } from './composer.js';
 
@@ -76,13 +79,24 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
 
   const query = slashQuery(editor.text);
   const matches = query === null ? [] : suggest(query);
-  const menuOpen =
+  const argument = query === null ? argumentMenu(editor.text) : null;
+  const menuDismissed = menuDismissedAt === editor.text;
+  const nameOpen =
     query !== null &&
     matches.length > 0 &&
     state.card === null &&
     !state.running &&
-    menuDismissedAt !== editor.text;
-  const active = Math.min(choice, Math.max(0, matches.length - 1));
+    !menuDismissed;
+  const argOpen = argument !== null && state.card === null && !state.running && !menuDismissed;
+  const menuRows = nameOpen ? matches.length : argOpen ? (argument?.choices.length ?? 0) : 0;
+  const active = Math.min(choice, Math.max(0, menuRows - 1));
+  // A different list (a narrower name match, another argument word) starts at
+  // its best entry, not at the row from the last one.
+  const menuKey = nameOpen
+    ? `name:${query ?? ''}`
+    : argOpen
+      ? `arg:${argument?.command.name ?? ''}:${argument?.fragment ?? ''}`
+      : null;
   // The banner belongs to the empty conversation only: a first prompt is about
   // to replace it, and a resumed session already has a transcript (D49ce).
   const showWelcome =
@@ -93,9 +107,8 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     firstPrompt === undefined;
 
   useEffect(() => {
-    // A narrower list starts at its best match, not at the row from the last one.
     setChoice(0);
-  }, [query]);
+  }, [menuKey]);
 
   useEffect(() => {
     if (firstPrompt !== undefined && firstPrompt.length > 0) {
@@ -224,7 +237,7 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
     }
     // The command menu owns the arrows, Enter, Tab, and Esc while it is open.
     // Every other key still edits the line, and the menu follows the text.
-    if (menuOpen) {
+    if (nameOpen) {
       const pick = matches[active];
       if (key.upArrow) {
         setChoice(Math.max(0, active - 1));
@@ -253,6 +266,47 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
         }
         setEditor(setText(choice.text));
         return;
+      }
+    }
+    // After the command name, the same keys move through the argument words.
+    // Enter runs only an exact choice; a partial word is completed. A wrong
+    // argument closes the menu and reaches the command, which says its error.
+    if (argOpen && argument !== null) {
+      const pick = argument.choices[active];
+      if (key.upArrow || key.downArrow) {
+        if (argument.choices.length > 0) {
+          setChoice(
+            key.upArrow
+              ? Math.max(0, active - 1)
+              : Math.min(argument.choices.length - 1, active + 1),
+          );
+        }
+        return;
+      }
+      if (key.escape) {
+        setMenuDismissedAt(editor.text);
+        return;
+      }
+      if (key.tab) {
+        if (pick !== undefined) {
+          setEditor(setText(`/${argument.command.name} ${pick.value}`));
+          setMenuDismissedAt(null);
+        }
+        return;
+      }
+      if (enter) {
+        setMenuDismissedAt(null);
+        const outcome = argumentEnter(editor.text, argument, pick);
+        if (outcome !== null) {
+          if (outcome.action === 'run') {
+            void submitLine(outcome.text);
+          } else {
+            setEditor(setText(outcome.text));
+          }
+          return;
+        }
+        // A free-text command has no choice to take: the ordinary Enter below
+        // runs the line as typed.
       }
     }
     if (key.escape) {
@@ -408,7 +462,10 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
             }
             columns={columns}
           />
-          {menuOpen ? <CommandMenu matches={matches} active={active} /> : null}
+          {nameOpen ? <CommandMenu matches={matches} active={active} /> : null}
+          {argOpen && argument !== null ? (
+            <ArgumentMenu menu={argument} active={active} />
+          ) : null}
           <Composer editor={editor} />
         </>
       )}
@@ -546,9 +603,12 @@ function StatusLine({
     parts.push({ key: 'cost', text: `$${status.costUsd.toFixed(4)}`, dim: true, gives: 2 });
   }
   if (status.contextWindow !== undefined) {
+    // A window no one advertised is a guess; `~` says so, and the same rule
+    // applies anywhere else the window is printed.
+    const approx = status.contextWindowApprox === true ? '~' : '';
     parts.push({
       key: 'share',
-      text: `${compactTokens(status.contextTokens)} of ${compactTokens(status.contextWindow)}`,
+      text: `${compactTokens(status.contextTokens)} of ${approx}${compactTokens(status.contextWindow)}`,
       gives: 0,
     });
   }
@@ -614,6 +674,47 @@ function CommandMenu({
       <Text dimColor>
         {matches.length > shown.length ? `${start + 1}–${end} of ${matches.length} · ` : ''}
         ↑↓ move · Enter selects · Tab completes · Esc closes
+      </Text>
+    </Box>
+  );
+}
+
+/**
+ * The words the command's first argument accepts, with one line each, in the
+ * same place and with the same keys as the command menu. A free-text command
+ * shows its own line and no list. The rows are capped, so the composer always
+ * stays on screen.
+ */
+function ArgumentMenu({
+  menu,
+  active,
+}: {
+  menu: ArgumentMenuShape;
+  active: number;
+}): ReactElement {
+  const { start, end } = menuWindow(menu.choices.length, active);
+  const shown = menu.choices.slice(start, end);
+  const width = Math.max(0, ...menu.choices.map((choice) => choice.value.length));
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      {menu.described ? <Text dimColor>{menu.command.summary}</Text> : null}
+      {shown.map((choice, index) => (
+        <Text key={choice.value} color={start + index === active ? 'cyan' : undefined}>
+          {start + index === active ? '❯ ' : '  '}
+          {choice.value.padEnd(width)}
+          <Text dimColor>  {choice.summary}</Text>
+        </Text>
+      ))}
+      {menu.command.takes !== undefined ? (
+        <Text dimColor>a {menu.command.takes} ref is also accepted</Text>
+      ) : null}
+      <Text dimColor>
+        {menu.choices.length > shown.length
+          ? `${start + 1}–${end} of ${menu.choices.length} · `
+          : ''}
+        {menu.choices.length > 0
+          ? '↑↓ move · Enter runs an exact choice · Tab completes · Esc closes'
+          : 'Enter runs · Esc closes'}
       </Text>
     </Box>
   );

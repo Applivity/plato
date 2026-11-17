@@ -221,9 +221,10 @@ try {
         ),
         'a partial name is completed, not run',
       );
-      // That line is the first match; Enter runs it. Then the exact name.
-      ui.send('\r');
-      await sleep(400);
+      // That line is filled and waiting. Ctrl+W clears it; the next check is
+      // the picker, and Enter on an empty argument now completes a choice.
+      ui.send('\x17');
+      await sleep(250);
       await openPicker(ui);
       await waitFor(() => plain(ui.output).includes('Add a provider…'), 8000, 'the picker');
       record(plain(ui.output).includes('connA:model-a  (current)'), 'the picker marks the current model');
@@ -245,58 +246,91 @@ try {
         'the status line shows the chosen model',
       );
 
-      // 3. /model add: the wizard runs inside the session.
+      // 3. /model add: the setup screen runs inside the session.
+      const beforeWizard = ui.output.length;
       await ui.line('/model add');
       const wizard = await attempt(() =>
-        waitFor(() => plain(ui.output).includes('Provider (number or name)'), 8000, 'the wizard'),
+        waitFor(
+          () => plain(ui.output.slice(beforeWizard)).includes('Provider'),
+          8000,
+          'the setup screen',
+        ),
       );
-      record(wizard, '/model add suspends into the setup wizard');
+      record(wizard, '/model add opens the setup screen inside the session');
       if (wizard) {
-        await ui.line('11');
-        await waitFor(() => plain(ui.output).includes('Endpoint URL'), 5000, 'the URL');
+        await ui.line('custom');
+        await waitFor(() => plain(ui.output.slice(beforeWizard)).includes('Endpoint URL'), 5000, 'the URL');
         await ui.line(baseC);
-        await waitFor(() => plain(ui.output).includes('API key'), 5000, 'the key');
+        await waitFor(() => plain(ui.output.slice(beforeWizard)).includes('API key'), 5000, 'the key');
         await ui.line('');
-        await waitFor(() => plain(ui.output).includes('Model (number or id)'), 8000, 'the model');
-        await ui.line('1');
-        await waitFor(() => plain(ui.output).includes('Saved. Using custom:model-c.'), 8000, 'the saved line');
         await waitFor(
-          () => plain(ui.output).includes('Provider setup finished'),
+          () => plain(ui.output.slice(beforeWizard)).includes('✓ key accepted · 1 model'),
+          8000,
+          'the model list',
+        );
+        await ui.line('');
+        await waitFor(
+          () => plain(ui.output.slice(beforeWizard)).includes('Saved. Using custom:model-c.'),
+          8000,
+          'the saved line',
+        );
+        const savedAt = ui.output.indexOf('Saved. Using custom:model-c.', beforeWizard);
+        await waitFor(
+          () => plain(ui.output.slice(savedAt)).includes('Plato · terminal'),
           8000,
           'the session to come back',
         );
         record(true, 'the session returns after setup');
+        const beforeList = ui.output.length;
         await openPicker(ui);
-        await waitFor(() => plain(ui.output).includes('custom:model-c'), 8000, 'the new model in the picker');
-        record(true, 'the new connection is selectable without a restart');
+        await waitFor(
+          () => plain(ui.output.slice(beforeList)).includes('Add a provider…'),
+          8000,
+          'the picker after setup',
+        );
+        record(
+          plain(ui.output.slice(beforeList)).includes('custom:model-c'),
+          'the new connection is selectable without a restart',
+        );
         await ui.line('3');
         await waitFor(() => plain(ui.output).includes('Model: custom:model-c.'), 5000, 'the new model chosen');
         record(true, 'the new model can be chosen');
       }
 
       // 4. Esc changes nothing.
+      const beforePicker = ui.output.length;
       await openPicker(ui);
-      await waitFor(() => plain(ui.output).includes('Esc closes'), 8000, 'the picker again');
+      await waitFor(
+        () => plain(ui.output.slice(beforePicker)).includes('Esc closes'),
+        8000,
+        'the picker again',
+      );
+      const beforeRefusal = ui.output.length;
       ui.send('9');
       record(
         await attempt(() =>
           waitFor(
-            () => plain(ui.output).includes("'9' is not a choice"),
+            () => plain(ui.output.slice(beforeRefusal)).includes("'9' is not a choice"),
             4000,
             'the out-of-range note',
           ),
         ),
         'the session says an out-of-range number is not a choice',
       );
+      const beforeWord = ui.output.length;
       ui.send('abc');
       record(
         await attempt(() =>
-          waitFor(() => plain(ui.output).includes("'abc' is not a choice"), 4000, 'the word note'),
+          waitFor(
+            () => plain(ui.output.slice(beforeWord)).includes("'abc' is not a choice"),
+            4000,
+            'the word note',
+          ),
         ),
         'the session answers a word the same way',
       );
       record(
-        plain(ui.output).includes('Esc closes'),
+        plain(ui.output.slice(beforePicker)).includes('Esc closes'),
         'the picker stays open after a refused answer',
       );
       const current = configOf(env).model;
