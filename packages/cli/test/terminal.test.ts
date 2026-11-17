@@ -146,4 +146,12 @@ describe('compactTokens', () => {
     expect(compactTokens(131_072)).toBe('131k');
     expect(compactTokens(200_000)).toBe('200k');
   });
+
+  it('never writes a window as 1049k', () => {
+    expect(compactTokens(1_048_576)).toBe('1M');
+    expect(compactTokens(1_500_000)).toBe('1.5M');
+    expect(compactTokens(999_600)).toBe('1M');
+    expect(compactTokens(8192)).toBe('8.2k');
+    expect(compactTokens(0)).toBe('0');
+  });
 });

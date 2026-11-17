@@ -75,7 +75,11 @@ function isWide(cp: number): boolean {
   );
 }
 
-/** A token count a status line can read at a glance: 950, 1.3k, 38k, 200k. */
+/**
+ * A token count a status line can read at a glance: 950, 1.3k, 8.2k, 38k,
+ * 131k, 1M, 1.5M. A window and a used figure use the same formatter, so
+ * 1,048,576 is `1M` and never `1049k`.
+ */
 export function compactTokens(count: number): string {
   if (count < 1000) {
     return String(Math.max(0, Math.round(count)));
@@ -83,7 +87,11 @@ export function compactTokens(count: number): string {
   if (count < 10_000) {
     return `${(count / 1000).toFixed(1).replace(/\.0$/, '')}k`;
   }
-  return `${Math.round(count / 1000)}k`;
+  const thousands = Math.round(count / 1000);
+  if (thousands >= 1000) {
+    return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  }
+  return `${thousands}k`;
 }
 
 /** The text of a run of spans, without its styles. */

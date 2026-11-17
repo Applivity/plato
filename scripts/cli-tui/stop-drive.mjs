@@ -67,7 +67,8 @@ writeFileSync(
 );
 
 let output = '';
-const child = spawn('sh', ['-c', 'cat | script -q /dev/null "$0"', cli], {
+const inner = `stty cols 120; exec node ${JSON.stringify(cli)}`;
+const child = spawn('sh', ['-c', `cat | script -q /dev/null sh -c ${JSON.stringify(inner)}`], {
   cwd: project,
   env: {
     ...process.env,
@@ -102,7 +103,7 @@ async function waitRunEnd(mark) {
 }
 
 const secondsIn = (text) => {
-  const matches = [...plain(text).matchAll(/running · [^\n]*? · (\d+)s/g)];
+  const matches = [...plain(text).matchAll(/t\/s · (\d+)s/g)];
   return matches.length === 0 ? null : Number(matches.at(-1)[1]);
 };
 
@@ -118,9 +119,9 @@ try {
   await submit('run the slow command');
   try {
     await waitFor(
-      () => /running · running a command · \d+s/.test(plain(output.slice(mark))),
+      () => /\d+ t\/s · \d+s/.test(plain(output.slice(mark))),
       5000,
-      'the running line with the tool',
+      'the running line with a rate and seconds',
     );
   } catch {
     // Recorded below: the old line says only "running".
@@ -129,7 +130,7 @@ try {
   await sleep(1200);
   const second = secondsIn(output.slice(mark));
   notes.push(`seconds: ${first} then ${second}`);
-  record(first !== null && second !== null && second > first, 'the running line ticks and names the tool');
+  record(first !== null && second !== null && second > first, 'the running line shows a rate and ticks');
   await waitRunEnd(mark);
 
   // B. Esc during a streaming answer is acknowledged at once, and the part

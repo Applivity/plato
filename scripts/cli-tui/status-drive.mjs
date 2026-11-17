@@ -1,0 +1,245 @@
+/**
+ * Drives the built CLI through the redesigned status line.
+ *
+ *   node scripts/cli-tui/status-drive.mjs [--cli path/to/cli.js]
+ *
+ * The same conversation at 100, 80 and 120 columns:
+ *  - at 100: the fresh `0/1M`, the mode hint row, a live rate and duration
+ *    during a run, and the same last-run figures when it stops;
+ *  - at 80: the drop order (team, duration, rate) visible, with the title,
+ *    model, share and tokens kept;
+ *  - at 120: a title longer than the line truncates with `…`.
+ */
+import { spawn } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startProvider } from './fake-provider.mjs';
+
+const here = fileURLToPath(new URL('.', import.meta.url));
+const args = process.argv.slice(2);
+const cliIndex = args.indexOf('--cli');
+const cli = resolve(cliIndex >= 0 ? args[cliIndex + 1] : join(here, '../../packages/cli/dist/cli.js'));
+
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+const HINT = 'Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops';
+
+async function waitFor(test, ms, what) {
+  const until = Date.now() + ms;
+  while (Date.now() < until) {
+    if (test()) return;
+    await sleep(50);
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+async function attempt(run) {
+  try {
+    await run();
+    return true;
+  } catch {
+    return false;
+  }
+}
+const lastFrame = (output) => {
+  const start = output.lastIndexOf('\x1b[?2026h');
+  if (start < 0) return plain(output);
+  const end = output.lastIndexOf('\x1b[?2026l');
+  return plain(output.slice(start, end > start ? end : undefined));
+};
+const statusLines = (output) =>
+  plain(output)
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.startsWith('mode: '));
+const lastStatus = (output) => statusLines(output).at(-1) ?? '';
+const widthOf = (line) => line.length;
+
+const provider = await startProvider({
+  model: 'deepseek-v4-pro',
+  context: 1_048_576,
+});
+const base = `http://127.0.0.1:${provider.port}/v1`;
+const STEPS = [
+  { tool: 'list_dir', args: { path: '.' } },
+  { text: 'The answer is ready.', chunks: 3, chunkMs: 200, holdMs: 1800 },
+];
+
+function freshEnv() {
+  const root = mkdtempSync(join(tmpdir(), 'plato-cli-status-'));
+  const config = join(root, 'config');
+  const data = join(root, 'data');
+  const home = join(root, 'home');
+  const project = join(root, 'project');
+  for (const dir of [config, data, home, project]) mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(config, 'config.json'),
+    `${JSON.stringify(
+      {
+        connections: [{ id: 'deepseek', kind: 'openai', baseUrl: base }],
+        model: 'deepseek:deepseek-v4-pro',
+        team: 'solo',
+        mode: 'edit',
+        reasoning: 'off',
+        compactionThreshold: 0.8,
+        respectGitignore: false,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { root, env: { ...process.env, TERM: 'xterm-256color', PLATO_CONFIG_DIR: config, PLATO_DATA_DIR: data, PLATO_HOME: home } };
+}
+
+function pty(env, cwd, cols) {
+  const state = { output: '' };
+  const inner = `stty cols ${cols}; exec node ${JSON.stringify(cli)}`;
+  const child = spawn('sh', ['-c', `cat | script -q /dev/null sh -c ${JSON.stringify(inner)}`], {
+    cwd,
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
+  });
+  child.stdout.on('data', (chunk) => {
+    state.output += chunk.toString();
+  });
+  child.stderr.on('data', (chunk) => {
+    state.output += chunk.toString();
+  });
+  state.send = (text) => child.stdin.write(text);
+  // The Enter waits for the text to be drawn, so the two cannot arrive as one
+  // paste chunk (a paste keeps the text and swallows the Enter).
+  state.submit = async (text) => {
+    const mark = state.output.length;
+    state.send(text);
+    await waitFor(
+      () => plain(state.output.slice(mark)).includes(text),
+      5000,
+      `the text '${text}' to be on screen`,
+    );
+    state.send('\r');
+  };
+  state.kill = () => {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      child.kill('SIGTERM');
+    }
+  };
+  return state;
+}
+
+const results = [];
+const captures = [];
+const notes = [];
+const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
+
+async function session(cols, run) {
+  const { root, env } = freshEnv();
+  provider.setScript(STEPS.map((step) => ({ ...step })));
+  const ui = pty(env, root, cols);
+  try {
+    await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
+    await run(ui);
+  } catch (error) {
+    record(false, `${cols} columns: ${error.message}`);
+  } finally {
+    captures.push({ name: `${cols} columns`, output: ui.output });
+    ui.kill();
+  }
+}
+
+try {
+  // 100 columns: the whole line, a fresh zero, the hint, a live run.
+  await session(100, async (ui) => {
+    await waitFor(() => lastStatus(ui.output).includes('0/1M'), 8000, 'the fresh share');
+    const fresh = lastStatus(ui.output);
+    record(fresh.includes('mode: edit'), 'the mode says it is a setting');
+    record(fresh.includes(' · solo · '), 'the team is shown, solo included');
+    record(fresh.includes('0/1M ░░░░░░░░ 0%'), 'a fresh conversation shows 0 of 1M');
+    record(fresh.includes('↑0 ↓0'), 'a fresh conversation shows zero session tokens');
+    record(!fresh.includes('$'), 'the cost is not on the status line');
+    await waitFor(() => plain(ui.output).includes(HINT), 5000, 'the hint row');
+    record(true, 'the hint row explains the three modes');
+
+    await ui.submit('test run');
+    const live = await attempt(async () => {
+      await waitFor(() => lastFrame(ui.output).includes('working…'), 10000, 'the running header');
+      await waitFor(
+        () => / · \d+ t\/s · \d+s$/.test(lastStatus(ui.output)),
+        10000,
+        'a live rate and duration',
+      );
+    });
+    record(live, 'a run shows a live rate and duration');
+    if (live) notes.push(`100 live: ${lastStatus(ui.output)}`);
+    await waitFor(() => /\b2 turns\b/.test(plain(ui.output)), 20000, 'the run summary');
+    const idle = lastStatus(ui.output);
+    const parts = idle.split(' · ');
+    record(parts[0] === 'mode: edit' && (parts[1] ?? '').startsWith('test'), 'the title follows the mode');
+    record(/ · solo · /.test(idle), 'the team stays on the line');
+    record(/ · \d+ t\/s · \d+s$/.test(idle), 'the last run keeps its rate and duration');
+    record(/ · ↑\d+[kM]? ↓\d+[kM]? · /.test(idle), 'the session tokens are running totals');
+    notes.push(`100 idle: ${idle}`);
+    record(widthOf(idle) <= 100, 'the 100-column line is one row');
+    record(idle.startsWith('mode: edit · ') && idle.includes('/1M ░'), 'the mode and share never leave');
+  });
+
+  // 80 columns: the drop order, with the title, model, share and tokens kept.
+  await session(80, async (ui) => {
+    await waitFor(() => lastStatus(ui.output).includes('0/1M'), 8000, 'the fresh share');
+    await ui.submit('test run');
+    await waitFor(() => /\b2 turns\b/.test(plain(ui.output)), 20000, 'the run summary');
+    const idle = lastStatus(ui.output);
+    notes.push(`80 idle: ${idle}`);
+    record(widthOf(idle) <= 80, 'the 80-column line is one row');
+    record(idle.startsWith('mode: edit · '), 'the mode stays at 80');
+    record(idle.includes('/1M ░'), 'the share stays at 80');
+    record(idle.includes('· deepseek:deepseek-v4-pro ·'), 'the model stays at 80');
+    record(/ · ↑\d+[kM]? ↓\d+[kM]?$/.test(idle), 'the tokens stay at 80');
+    record(!idle.includes(' · solo · '), 'the team is the first part to leave at 80');
+    record(!idle.includes(' t/s'), 'the rate leaves after the team');
+    record(!/ · \d+s$/.test(idle), 'the duration leaves after the rate');
+  });
+
+  // 120 columns: a long title truncates, everything else stays.
+  await session(120, async (ui) => {
+    await waitFor(() => lastStatus(ui.output).includes('0/1M'), 8000, 'the fresh share');
+    const long = 'a conversation title that is far longer than this line can show even at one hundred and twenty columns';
+    await ui.submit(long);
+    await waitFor(() => /\b2 turns\b/.test(plain(ui.output)), 20000, 'the run summary');
+    const idle = lastStatus(ui.output);
+    notes.push(`120 idle: ${idle}`);
+    record(widthOf(idle) <= 120, 'the 120-column line is one row');
+    record(/ · solo · /.test(idle), 'the team stays at 120');
+    record(/ · \d+ t\/s · \d+s$/.test(idle), 'all parts stay at 120');
+    record(idle.includes('… · deepseek'), 'a long title is cut with an ellipsis');
+    record(idle.startsWith('mode: edit · '), 'the mode still leads the line');
+  });
+} catch (error) {
+  record(false, error.message);
+} finally {
+  await provider.close();
+  for (const width of [100, 80, 120]) {
+    const found = captures.find((capture) => capture.name === `${width} columns`);
+    writeFileSync(
+      join(here, `status-capture-${width}.txt`),
+      [
+        `Plato CLI — status line proof at ${width} columns`,
+        `cli: ${cli}`,
+        '',
+        ...results,
+        '',
+        ...notes,
+        '',
+        found?.output ?? '',
+      ].join('\n'),
+    );
+  }
+}
+
+for (const line of results) console.log(line);
+for (const note of notes) console.log(note);
+console.log(`captures: ${join(here, 'status-capture-{100,80,120}.txt')}`);
+if (results.some((line) => line.startsWith('FAIL'))) process.exitCode = 1;

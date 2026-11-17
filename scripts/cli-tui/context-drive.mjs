@@ -49,19 +49,24 @@ async function attempt(run) {
   }
 }
 
-const tokens = (text) => (text.endsWith('k') ? Math.round(Number.parseFloat(text) * 1000) : Number(text));
-const SHARE = /(\d+(?:\.\d+)?k?) of (\d+(?:\.\d+)?k?)/;
+const tokens = (text) =>
+  text.endsWith('M')
+    ? Math.round(Number.parseFloat(text) * 1_000_000)
+    : text.endsWith('k')
+      ? Math.round(Number.parseFloat(text) * 1000)
+      : Number(text);
+const SHARE = /(\d+(?:\.\d+)?[kM]?)\/(~?)(\d+(?:\.\d+)?[kM]?)/;
 function statusLines() {
   return plain(output)
     .split('\n')
     .map((line) => line.replace(/\r$/, ''))
-    .filter((line) => /^(plan|edit|auto) · /.test(line));
+    .filter((line) => /^mode: (plan|edit|auto) · /.test(line));
 }
 function lastShare() {
   for (const line of statusLines().reverse()) {
     const match = line.match(SHARE);
     if (match !== null) {
-      return { line, used: tokens(match[1] ?? '0'), window: match[2] ?? '' };
+      return { line, used: tokens(match[1] ?? '0'), window: match[3] ?? '' };
     }
   }
   return null;

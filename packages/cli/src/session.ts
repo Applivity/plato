@@ -128,6 +128,17 @@ export interface SessionStatus {
   contextWindowApprox?: boolean;
   /** True when the next run would fold: the history is at the threshold. */
   contextDue?: boolean;
+  /**
+   * The current run's output and input tokens so far, from provider usage
+   * events. The status line divides the output by the run's elapsed time for
+   * a live rate, and adds both to the conversation's running totals.
+   */
+  runOutputTokens?: number;
+  runInputTokens?: number;
+  /** The last completed run's output tokens, for its kept rate. */
+  lastRunOutputTokens?: number;
+  /** The last completed run's wall time, for its kept duration. */
+  lastRunMs?: number;
 }
 
 export interface ApprovalCard {
@@ -297,6 +308,11 @@ export class Session {
   /** The flat pairs the session store and the title read. */
   get history(): { role: 'user' | 'assistant'; text: string }[] {
     return historyFromRows(this.log);
+  }
+
+  /** The conversation's own name, as the session list and registry show it. */
+  get title(): string {
+    return titleFor(this.history);
   }
 
   constructor(options: SessionOptions) {
@@ -633,6 +649,8 @@ export class Session {
         ...this.statusFor(historyTokens(this.log)),
         activity: undefined,
         startedAt: Date.now(),
+        runOutputTokens: 0,
+        runInputTokens: 0,
       },
     });
     this.live?.refresh();
@@ -719,11 +737,20 @@ export class Session {
       this.append('error', message);
     } finally {
       this.controller = null;
+      const startedAt = this.state.status.startedAt;
+      const runMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
+      const runOutput = this.state.status.runOutputTokens;
       this.update({
         running: false,
         streaming: '',
         status: {
           ...this.statusFor(historyTokens(this.log)),
+          // The line keeps the finished run's rate and wall time when it is
+          // idle: the at-a-glance copy of the run summary.
+          ...(runMs === undefined ? {} : { lastRunMs: runMs }),
+          ...(runOutput === undefined ? {} : { lastRunOutputTokens: runOutput }),
+          runOutputTokens: 0,
+          runInputTokens: 0,
           activity: undefined,
           startedAt: undefined,
         },
@@ -1117,6 +1144,15 @@ export class Session {
         this.update({
           streaming: '',
           status: this.statusFor(historyTokens(this.log) + estimateTokens(text)),
+        });
+      },
+      usage: (used) => {
+        this.update({
+          status: {
+            ...this.state.status,
+            runOutputTokens: (this.state.status.runOutputTokens ?? 0) + used.outputTokens,
+            runInputTokens: (this.state.status.runInputTokens ?? 0) + used.inputTokens,
+          },
         });
       },
       tool: (event) => {

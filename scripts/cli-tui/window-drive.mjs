@@ -172,9 +172,9 @@ try {
     const ui = pty(env, root);
     try {
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
-      await waitFor(() => plain(ui.output).includes('0 of 1049k'), 8000, 'the advertised window');
+      await waitFor(() => plain(ui.output).includes('0/1M'), 8000, 'the advertised window');
       record(true, 'a cached entry with no window is refetched and the real window shows');
-      record(!plain(ui.output).includes('0 of ~131k'), 'the fallback is not shown as the window');
+      record(!plain(ui.output).includes('0/~131k'), 'the fallback is not shown as the window');
       const cached = JSON.parse(readFileSync(join(env.PLATO_DATA_DIR, 'models.json'), 'utf8'));
       record(
         cached.deepseek?.pool?.[0]?.maxContext === 1_048_576,
@@ -197,9 +197,9 @@ try {
     const ui = pty(env, root);
     try {
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
-      await waitFor(() => plain(ui.output).includes('0 of ~131k'), 8000, 'the approximate window');
+      await waitFor(() => plain(ui.output).includes('0/~131k'), 8000, 'the approximate window');
       record(true, 'a fallback window is shown as approximate');
-      record(!plain(ui.output).includes('0 of 131k'), 'the fallback never reads as a fact');
+      record(!plain(ui.output).includes('0/131k'), 'the fallback never reads as a fact');
     } catch (error) {
       record(false, `fallback session: ${error.message}`);
     } finally {
@@ -232,9 +232,9 @@ try {
       await waitFor(() => plain(ui.output).includes('Saved. Using lmstudio:lm-model.'), 8000, 'the save');
       await waitFor(() => plain(ui.output).includes('Type / for commands'), 8000, 'the session');
       record(true, 'the chosen window is saved without starting a session early');
-      await waitFor(() => plain(ui.output).includes('0 of 4.1k'), 8000, 'the chosen window');
+      await waitFor(() => plain(ui.output).includes('0/4.1k'), 8000, 'the chosen window');
       record(true, 'the status line shows the chosen window as a known number');
-      record(!plain(ui.output).includes('0 of ~4.1k'), 'a chosen window is not marked approximate');
+      record(!plain(ui.output).includes('0/~4.1k'), 'a chosen window is not marked approximate');
     } catch (error) {
       record(false, `lm studio setup: ${error.message}`);
     } finally {

@@ -16,7 +16,7 @@ import {
   type EditorState,
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
-import { compactTokens } from '../format/terminal.js';
+import { statusLine, tokenRate } from './statusLine.js';
 import { Markdown } from './Markdown.js';
 import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
@@ -453,13 +453,10 @@ export function App({ session, onExit, firstPrompt }: AppProps): ReactElement {
       {state.setup ? null : (
         <>
           <StatusLine
+            title={session.title}
             status={state.status}
             running={state.running}
-            elapsed={
-              state.status.startedAt === undefined
-                ? 0
-                : Math.max(0, Math.floor((now - state.status.startedAt) / 1000))
-            }
+            now={now}
             columns={columns}
           />
           {nameOpen ? <CommandMenu matches={matches} active={active} /> : null}
@@ -563,83 +560,70 @@ function LiveAnswer({
   );
 }
 
-interface StatusPart {
-  key: string;
-  text: string;
-  color?: string;
-  dim?: boolean;
-  /**
-   * How soon this part gives way when the line is too wide for the terminal.
-   * 0 never gives way; the smallest positive number goes first.
-   */
-  gives: number;
-}
-
 /**
- * The status line, fitted to the window. The conversation share and the
- * "summary due" notice never give way; the team, the cost and the model do,
- * in that order, because the share is the number the user needs to see
- * before a fold — and the line must not wrap.
+ * The status line, fitted to the window. It is one row: the mode and the
+ * context share never leave, the title shortens before anything else, and the
+ * rest leave in the order the fitter fixes. The line's parts and its fit are
+ * pure (`statusLine.ts`); this component only paints them.
  */
 function StatusLine({
+  title,
   status,
   running,
-  elapsed,
+  now,
   columns,
 }: {
+  title: string;
   status: SessionStatus;
   running: boolean;
-  elapsed: number;
+  now: number;
   columns: number;
 }): ReactElement {
-  const parts: StatusPart[] = [
-    { key: 'mode', text: status.mode, color: MODE_COLOR[status.mode], gives: 0 },
-    { key: 'model', text: status.model, dim: true, gives: 3 },
-  ];
-  if (status.team !== 'solo') {
-    parts.push({ key: 'team', text: status.team, dim: true, gives: 1 });
-  }
-  if (status.costUsd > 0) {
-    parts.push({ key: 'cost', text: `$${status.costUsd.toFixed(4)}`, dim: true, gives: 2 });
-  }
-  if (status.contextWindow !== undefined) {
-    // A window no one advertised is a guess; `~` says so, and the same rule
-    // applies anywhere else the window is printed.
-    const approx = status.contextWindowApprox === true ? '~' : '';
-    parts.push({
-      key: 'share',
-      text: `${compactTokens(status.contextTokens)} of ${approx}${compactTokens(status.contextWindow)}`,
-      gives: 0,
-    });
-  }
-  if (status.contextDue === true) {
-    parts.push({ key: 'due', text: 'summary due next run', gives: 0 });
-  }
-  if (running) {
-    parts.push({ key: 'running', text: 'running', color: 'cyan', gives: 0 });
-    if (status.activity !== undefined) {
-      parts.push({ key: 'activity', text: status.activity, dim: true, gives: 6 });
-    }
-    parts.push({ key: 'elapsed', text: `${elapsed}s`, dim: true, gives: 5 });
-  }
-
-  const widthOf = (list: StatusPart[]): number =>
-    list.reduce((sum, part) => sum + part.text.length, 0) + Math.max(0, list.length - 1) * 3;
-  let shown = parts;
-  while (widthOf(shown) > columns) {
-    const optional = shown.filter((part) => part.gives > 0);
-    if (optional.length === 0) {
-      break;
-    }
-    const first = optional.reduce((a, b) => (b.gives < a.gives ? b : a));
-    shown = shown.filter((part) => part !== first);
-  }
+  const runMs =
+    status.startedAt === undefined ? undefined : Math.max(0, now - status.startedAt);
+  // Live during a run; when idle, the finished run's own figures stay.
+  const rate = running
+    ? tokenRate(status.runOutputTokens ?? 0, runMs ?? 0)
+    : tokenRate(status.lastRunOutputTokens ?? 0, status.lastRunMs ?? 0);
+  const durationMs = running ? runMs : status.lastRunMs;
+  const parts = statusLine(
+    {
+      mode: status.mode,
+      title,
+      model: status.model,
+      team: status.team,
+      usedTokens: status.contextTokens,
+      ...(status.contextWindow === undefined
+        ? {}
+        : {
+            window: status.contextWindow,
+            windowApprox: status.contextWindowApprox === true,
+          }),
+      // The conversation's running totals, including the run in progress.
+      inputTokens: status.inputTokens + (running ? (status.runInputTokens ?? 0) : 0),
+      outputTokens: status.outputTokens + (running ? (status.runOutputTokens ?? 0) : 0),
+      ...(rate === undefined ? {} : { rate }),
+      ...(durationMs === undefined ? {} : { durationMs }),
+      ...(status.contextDue === true ? { contextDue: true } : {}),
+    },
+    columns,
+  );
 
   return (
     <Box marginTop={1}>
-      {shown.map((part, index) => (
-        <Text key={part.key} color={part.color} dimColor={part.dim}>
-          {index > 0 ? ' \u00b7 ' : ''}
+      {parts.map((part, index) => (
+        <Text
+          key={part.key}
+          color={part.key === 'mode' ? MODE_COLOR[status.mode] : undefined}
+          dimColor={
+            part.key === 'model' ||
+            part.key === 'team' ||
+            part.key === 'tokens' ||
+            part.key === 'rate' ||
+            part.key === 'duration'
+          }
+        >
+          {index > 0 ? ' · ' : ''}
           {part.text}
         </Text>
       ))}
@@ -742,7 +726,9 @@ function Composer({ editor }: { editor: EditorState }): ReactElement {
           </>
         )}
       </Box>
-      <Text dimColor>Shift+Tab mode · /help · Esc interrupt · Ctrl+C twice exits</Text>
+      <Text dimColor>
+        Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops
+      </Text>
     </Box>
   );
 }

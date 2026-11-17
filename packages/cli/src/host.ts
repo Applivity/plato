@@ -85,6 +85,11 @@ export type ApprovalVia = 'shown' | 'session-memory' | 'session-approval';
 export interface RunSink {
   textDelta(textSoFar: string): void;
   textCommitted(text: string): void;
+  /**
+   * Provider usage for one turn of the run, so a host can show a live token
+   * rate. A sink without it shows the rate once the run ends.
+   */
+  usage?(used: { inputTokens: number; outputTokens: number; costUsd: number }): void;
   tool(event: ToolEvent): void;
   approve(request: ApprovalRequest): Promise<boolean>;
   askUser(request: AskRequest): Promise<string[]>;
@@ -406,6 +411,13 @@ export async function executeTask(
   bus.on((event) => {
     if (event.type === 'run-started') {
       currentRunId = event.runId;
+    }
+  });
+  // The live rate on the status line: per-turn provider usage for THIS run.
+  // Observers share the bus, so a different run id is not the worker's usage.
+  bus.on((event) => {
+    if (event.type === 'usage' && event.runId === currentRunId) {
+      sink.usage?.(event);
     }
   });
   const requestMode = sink.requestMode;

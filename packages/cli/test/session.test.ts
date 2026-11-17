@@ -1775,3 +1775,21 @@ describe('conversation parity in the terminal', () => {
     );
   });
 });
+
+describe('the run figures the status line keeps', () => {
+  it('keeps the finished run\'s output tokens and wall time, and clears the live ones', async () => {
+    const env = environment();
+    const root = tempDir('plato-cli-session-figures-');
+    const active = session(root, env, scripted([{ text: 'Hello.' }]), 'auto');
+    await active.submit('hi');
+    await waitUntil(() => !active.getSnapshot().running, 'the run to end');
+    const status = active.getSnapshot().status;
+    // One turn of the scripted provider reports 5 output tokens.
+    expect(status.outputTokens).toBe(5);
+    expect(status.lastRunOutputTokens).toBe(5);
+    expect(status.lastRunMs).toBeGreaterThanOrEqual(0);
+    expect(status.runOutputTokens).toBe(0);
+    expect(status.runInputTokens).toBe(0);
+    expect(active.title).toBe('hi');
+  });
+});
