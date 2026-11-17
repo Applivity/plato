@@ -40,8 +40,13 @@ run and the two history keys: the idle hint becoming the run's keys and back, a
 card keeping the idle hint, the private per-workspace history file, Ctrl+R
 across two processes (stepping, Enter that fills without sending, Esc that puts
 the line back), Ctrl+G returning edited text with nothing sent, and a missing
-editor's one sentence. `--cli <path>` runs the same checks against another
-build.
+editor's one sentence. `node scripts/cli-tui/file-drive.mjs` checks `@`
+completion: the list, filtering, arrows, Tab and Enter, a folder kept open with
+`/`, an email that opens nothing, the ignored paths, and the 50-match cap.
+`node scripts/cli-tui/coldstart-drive.mjs` delays the model list: the status
+line names the step after about a second, once, clears it when the run begins,
+and stays silent when the waits are cached. `--cli <path>` runs the same checks
+against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

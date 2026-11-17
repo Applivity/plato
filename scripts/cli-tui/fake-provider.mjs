@@ -16,6 +16,8 @@ export function startProvider(options = {}) {
   const modelId = options.model ?? 'paste-model';
   const modelIds = Array.isArray(options.models) ? options.models : [modelId];
   const modelsStatus = options.modelsStatus;
+  /** A slow model list, for the cold-start check. */
+  const modelsDelayMs = options.modelsDelayMs ?? 0;
   /** Every chat request, in arrival order. */
   const requests = [];
   /**
@@ -87,20 +89,28 @@ export function startProvider(options = {}) {
     });
     req.on('end', () => {
       if (req.method === 'GET' && req.url?.endsWith('/models')) {
-        if (modelsStatus !== undefined) {
-          res.writeHead(modelsStatus, { 'content-type': 'application/json' });
-          res.end(JSON.stringify({ error: 'the key is not accepted' }));
-          return;
+        const answer = () => {
+          if (res.destroyed || res.writableEnded) return;
+          if (modelsStatus !== undefined) {
+            res.writeHead(modelsStatus, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: 'the key is not accepted' }));
+            return;
+          }
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              data: modelIds.map((id) => ({
+                id,
+                ...(context === undefined ? {} : { [windowField]: context }),
+              })),
+            }),
+          );
+        };
+        if (modelsDelayMs > 0) {
+          setTimeout(answer, modelsDelayMs);
+        } else {
+          answer();
         }
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            data: modelIds.map((id) => ({
-              id,
-              ...(context === undefined ? {} : { [windowField]: context }),
-            })),
-          }),
-        );
         return;
       }
       if (req.method === 'POST' && req.url?.endsWith('/chat/completions')) {

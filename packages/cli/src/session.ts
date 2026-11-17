@@ -139,6 +139,13 @@ export interface SessionStatus {
   lastRunOutputTokens?: number;
   /** The last completed run's wall time, for its kept duration. */
   lastRunMs?: number;
+  /**
+   * The cold-start step the run is waiting on — `checking the model…`,
+   * `starting tools…` — and when it began. The terminal keeps a step quiet
+   * until it has lasted a second.
+   */
+  waiting?: string;
+  waitingSince?: number;
 }
 
 export interface ApprovalCard {
@@ -315,6 +322,16 @@ export class Session {
     return titleFor(this.history);
   }
 
+  /** The workspace the composer completes files from. */
+  get root(): string {
+    return this.base.root;
+  }
+
+  /** The search setting; `@` completion follows the same rule (R2-3). */
+  get respectGitignore(): boolean {
+    return this.config.respectGitignore;
+  }
+
   constructor(options: SessionOptions) {
     this.base = options;
     const stored = options.stored;
@@ -444,6 +461,36 @@ export class Session {
 
   addNotice(text: string): void {
     this.append('notice', text);
+  }
+
+  /**
+   * The cold-start step in progress (R2-4). One phrase at a time; the TUI
+   * renders it only after it has lasted a second, so a quick start says
+   * nothing. Repeating the same step keeps its original clock.
+   */
+  private noteWait(text: string | undefined): void {
+    if (!this.state.running) {
+      return;
+    }
+    if (text === undefined) {
+      if (this.state.status.waiting === undefined) {
+        return;
+      }
+      this.update({
+        status: {
+          ...this.state.status,
+          waiting: undefined,
+          waitingSince: undefined,
+        },
+      });
+      return;
+    }
+    if (this.state.status.waiting === text) {
+      return;
+    }
+    this.update({
+      status: { ...this.state.status, waiting: text, waitingSince: Date.now() },
+    });
   }
 
   get connections(): ConnectionConfig[] {
@@ -658,6 +705,8 @@ export class Session {
     const controller = new RunController();
     this.controller = controller;
 
+    // The first wait is the model list, asked for before the loop is built.
+    this.noteWait('checking the model…');
     const maxContext = await this.contextWindow();
     const contextPlan = requestHistory(
       before,
@@ -753,6 +802,8 @@ export class Session {
           runInputTokens: 0,
           activity: undefined,
           startedAt: undefined,
+          waiting: undefined,
+          waitingSince: undefined,
         },
       });
       this.live?.refresh();
@@ -1199,6 +1250,7 @@ export class Session {
       },
       observer: (event) => this.observeEvent(event),
       requestMode: (request) => this.askModeChange(request),
+      phase: (text) => this.noteWait(text),
     };
   }
 

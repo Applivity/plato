@@ -103,4 +103,16 @@ describe('the status line', () => {
     const line = text(statusLine({ ...FULL, contextDue: true }, 200));
     expect(line).toContain('summary due next run');
   });
+
+  it('names one cold-start step beside the mode, and drops it last', () => {
+    const full = statusLine({ ...FULL, waiting: 'checking the model…' }, 200);
+    expect(text(full)).toBe(
+      'mode: edit · checking the model… · team: solo · deepseek:deepseek-v4-pro · ' +
+        '16k/1M ░░░░░░░░ 2% · ↑5.6k ↓47 · 117 t/s · 12s',
+    );
+    const narrow = statusLine({ ...FULL, waiting: 'checking the model…' }, 60);
+    expect(narrow.map((part) => part.key)).toContain('waiting');
+    expect(narrow.map((part) => part.key)).not.toContain('model');
+    expect((text(narrow).match(/checking the model…/g) ?? []).length).toBe(1);
+  });
 });

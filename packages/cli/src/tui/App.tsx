@@ -1,5 +1,12 @@
 import { Box, Static, Text, useInput, useWindowSize } from 'ink';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactElement } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactElement,
+} from 'react';
 import {
   EMPTY_EDITOR,
   backspace,
@@ -25,6 +32,13 @@ import {
   searchHistory,
   type HistoryEntry,
 } from '../history.js';
+import {
+  fileInsertion,
+  fileMenu,
+  fileToken,
+  workspaceFiles,
+  type FileMenuData,
+} from '../fileCompletion.js';
 import { Markdown } from './Markdown.js';
 import { SetupScreen } from './Setup.js';
 import { Welcome } from './Welcome.js';
@@ -133,6 +147,17 @@ export function App({
   const query = slashQuery(editor.text);
   const matches = query === null ? [] : suggest(query);
   const argument = query === null ? argumentMenu(editor.text) : null;
+  // The workspace is walked once each time a file token opens, not on every
+  // keystroke: typing filters the list already in hand.
+  const atFile = fileToken(editor.text, editor.cursor);
+  const workspacePaths = useMemo(
+    () =>
+      atFile === null || editor.text.startsWith('/')
+        ? []
+        : workspaceFiles(session.root, session.respectGitignore),
+    [session, atFile === null, editor.text.startsWith('/'), session.respectGitignore],
+  );
+  const fileMenuData = atFile === null ? null : fileMenu(workspacePaths, atFile);
   const menuDismissed = menuDismissedAt === editor.text;
   const nameOpen =
     query !== null &&
@@ -141,15 +166,34 @@ export function App({
     !state.running &&
     !menuDismissed;
   const argOpen = argument !== null && state.card === null && !state.running && !menuDismissed;
-  const menuRows = nameOpen ? matches.length : argOpen ? (argument?.choices.length ?? 0) : 0;
+  // `@` completion follows the same rules as the menus: no card, no run, and a
+  // line that is a prompt rather than a slash command.
+  const fileOpen =
+    fileMenuData !== null &&
+    fileMenuData.choices.length > 0 &&
+    state.card === null &&
+    !state.running &&
+    !state.setup &&
+    search === null &&
+    !menuDismissed &&
+    !editor.text.startsWith('/');
+  const menuRows = nameOpen
+    ? matches.length
+    : argOpen
+      ? (argument?.choices.length ?? 0)
+      : fileOpen
+        ? (fileMenuData?.choices.length ?? 0)
+        : 0;
   const active = Math.min(choice, Math.max(0, menuRows - 1));
-  // A different list (a narrower name match, another argument word) starts at
-  // its best entry, not at the row from the last one.
+  // A different list (a narrower name match, another argument word, another
+  // file query) starts at its best entry, not at the row from the last one.
   const menuKey = nameOpen
     ? `name:${query ?? ''}`
     : argOpen
       ? `arg:${argument?.command.name ?? ''}:${argument?.fragment ?? ''}`
-      : null;
+      : fileOpen
+        ? `file:${fileMenuData?.token.query ?? ''}`
+        : null;
   // The banner belongs to the empty conversation only: a first prompt is about
   // to replace it, and a resumed session already has a transcript (D49ce).
   const showWelcome =
@@ -192,6 +236,20 @@ export function App({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [state.running]);
+  // A cold-start step is silent for its first second. Rendering at that
+  // boundary makes the phrase appear after about a second, not at the next
+  // whole-second tick.
+  useEffect(() => {
+    const since = state.status.waitingSince;
+    if (!state.running || state.status.waiting === undefined || since === undefined) {
+      return;
+    }
+    const id = setTimeout(
+      () => setNow(Date.now()),
+      Math.max(0, since + 1000 - Date.now()),
+    );
+    return () => clearTimeout(id);
+  }, [state.running, state.status.waiting, state.status.waitingSince]);
 
   const rememberLine = (line: string): void => {
     setEntries(remember === undefined ? recordHistory(entries, line) : remember(line));
@@ -431,6 +489,32 @@ export function App({
         // runs the line as typed.
       }
     }
+    // `@` completion: a choice is inserted into the line, never sent. A folder
+    // keeps its `/`, so the list stays open on its own contents.
+    if (fileOpen && fileMenuData !== null) {
+      const pick = fileMenuData.choices[active];
+      if (key.upArrow || key.downArrow) {
+        setChoice(
+          key.upArrow
+            ? Math.max(0, active - 1)
+            : Math.min(fileMenuData.choices.length - 1, active + 1),
+        );
+        return;
+      }
+      if (key.escape) {
+        setMenuDismissedAt(editor.text);
+        return;
+      }
+      if ((enter || key.tab) && pick !== undefined) {
+        const inserted = fileInsertion(pick);
+        setEditor({
+          text: `${editor.text.slice(0, fileMenuData.token.start)}${inserted}${editor.text.slice(editor.cursor)}`,
+          cursor: fileMenuData.token.start + inserted.length,
+        });
+        setMenuDismissedAt(null);
+        return;
+      }
+    }
     if (key.escape) {
       if (state.running) {
         session.cancel();
@@ -591,12 +675,16 @@ export function App({
           {search === null && argOpen && argument !== null ? (
             <ArgumentMenu menu={argument} active={active} />
           ) : null}
+          {search === null && fileOpen && fileMenuData !== null ? (
+            <FileMenu menu={fileMenuData} active={active} columns={columns} />
+          ) : null}
           {search === null ? null : (
             <SearchLine query={search.query} hit={hit} columns={columns} />
           )}
           <Composer
             editor={editor}
             running={state.running && state.card === null}
+            columns={columns}
           />
         </>
       )}
@@ -758,6 +846,14 @@ function StatusLine({
     ? tokenRate(status.runOutputTokens ?? 0, runMs ?? 0)
     : tokenRate(status.lastRunOutputTokens ?? 0, status.lastRunMs ?? 0);
   const durationMs = running ? runMs : status.lastRunMs;
+  // One phrase at a time, and only once the step has outlived a second.
+  const waiting =
+    running &&
+    status.waiting !== undefined &&
+    status.waitingSince !== undefined &&
+    now - status.waitingSince >= 1000
+      ? status.waiting
+      : undefined;
   const parts = statusLine(
     {
       mode: status.mode,
@@ -776,6 +872,7 @@ function StatusLine({
       ...(rate === undefined ? {} : { rate }),
       ...(durationMs === undefined ? {} : { durationMs }),
       ...(status.contextDue === true ? { contextDue: true } : {}),
+      ...(waiting === undefined ? {} : { waiting }),
     },
     columns,
   );
@@ -876,6 +973,45 @@ function ArgumentMenu({
 }
 
 /**
+ * The files and folders `@` offers. The selection scrolls in the same window as
+ * the command menus, so the composer keeps its place, and a capped list says
+ * how many matches it is not showing.
+ */
+function FileMenu({
+  menu,
+  active,
+  columns,
+}: {
+  menu: FileMenuData;
+  active: number;
+  columns: number;
+}): ReactElement {
+  const { start, end } = menuWindow(menu.choices.length, active);
+  const shown = menu.choices.slice(start, end);
+  const capped =
+    menu.total > menu.choices.length
+      ? `first ${menu.choices.length} of ${menu.total} match · `
+      : '';
+  const footer =
+    `${capped}${start + 1}–${end} of ${menu.choices.length} · ` +
+    '↑↓ move · Enter inserts · Tab completes · Esc closes';
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      {shown.map((choice, index) => (
+        <Text
+          key={`${choice.kind}:${choice.path}`}
+          color={start + index === active ? 'cyan' : undefined}
+        >
+          {start + index === active ? '❯ ' : '  '}
+          {choice.kind === 'dir' ? `${choice.path}/` : choice.path}
+        </Text>
+      ))}
+      <Text dimColor>{truncateToWidth(footer, columns)}</Text>
+    </Box>
+  );
+}
+
+/**
  * What Ctrl+R found: the query, the matching line, and how recently that line
  * was used. It is one row above the composer, which stays visible so the draft
  * is never hidden by the search.
@@ -906,15 +1042,17 @@ function SearchLine({
  * idle hint stays put there.
  */
 const IDLE_HINT =
-  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops';
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Esc stops';
 const RUNNING_HINT = 'enter queues · esc stops · ctrl+c stops';
 
 function Composer({
   editor,
   running,
+  columns,
 }: {
   editor: EditorState;
   running: boolean;
+  columns: number;
 }): ReactElement {
   const cursor = editor.text.slice(editor.cursor, editor.cursor + 1);
   // A pasted block stays one line high. It shows the line the cursor is on and
@@ -937,7 +1075,7 @@ function Composer({
           </>
         )}
       </Box>
-      <Text dimColor>{running ? RUNNING_HINT : IDLE_HINT}</Text>
+      <Text dimColor>{truncateToWidth(running ? RUNNING_HINT : IDLE_HINT, columns)}</Text>
     </Box>
   );
 }

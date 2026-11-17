@@ -28,6 +28,8 @@ export interface StatusLineInput {
   durationMs?: number;
   /** The next run would fold at the user's threshold. */
   contextDue?: boolean;
+  /** A cold-start step that has lasted long enough to be worth naming. */
+  waiting?: string;
 }
 
 export interface StatusPart {
@@ -38,7 +40,7 @@ export interface StatusPart {
 /** Eight cells is a picture at a glance, not a gauge. */
 const BAR_CELLS = 8;
 /** The order parts leave when the line is too wide. */
-const DROP_ORDER = ['team', 'duration', 'rate', 'tokens', 'model'] as const;
+const DROP_ORDER = ['team', 'duration', 'rate', 'tokens', 'model', 'waiting'] as const;
 
 /**
  * `16k/1M ░░░░░░░░░ 2%`: the used and window figures, a bar of the same
@@ -96,6 +98,9 @@ function widthOf(parts: readonly StatusPart[]): number {
  */
 export function statusLine(input: StatusLineInput, columns: number): StatusPart[] {
   const parts: StatusPart[] = [{ key: 'mode', text: `mode: ${input.mode}` }];
+  if (input.waiting !== undefined) {
+    parts.push({ key: 'waiting', text: input.waiting });
+  }
   parts.push({ key: 'team', text: `team: ${input.team}` });
   parts.push({ key: 'model', text: input.model });
   if (input.window !== undefined) {

@@ -105,6 +105,11 @@ export interface RunSink {
   /** The observer strip and the closing observer line. */
   observer?(event: ObserverEvent): void;
   /**
+   * The cold-start step the run is waiting on, or undefined once the loop
+   * begins. The terminal shows it only after a step has lasted a second.
+   */
+  phase?(text: string | undefined): void;
+  /**
    * The model asked for a mode (D49cb). Draw the card and, on a yes, apply the
    * mode through the session. `current` is the mode in force when the request
    * arrived. The note is the tool result the model reads.
@@ -359,6 +364,9 @@ export async function executeTask(
     );
   }
 
+  // The cold start names the step it is on; the session decides when a step
+  // has lasted long enough to be worth saying.
+  sink.phase?.('checking the model…');
   // Core cannot know a connection's limits; the discovered pool is the only
   // source (D49bf). A failed fetch is not a failed run.
   let advertised: { context?: number; maxOutput?: number } | undefined;
@@ -384,12 +392,14 @@ export async function executeTask(
       ? { effort: config.reasoning }
       : undefined;
 
+  sink.phase?.('reading the vault…');
   const vault = createVault();
   try {
     await seedVault(options.root, vault);
   } catch {
     // A protected file that cannot be read is skipped, never fatal (D49bc).
   }
+  sink.phase?.('starting tools…');
 
   const bus = new AgentBus();
   const writer = new TranscriptWriter(runsDir(options.root, env), {
@@ -459,6 +469,9 @@ export async function executeTask(
     );
   }
   const mcp = await startMcpServers(env, options.mode, (text) => sink.notice(text));
+
+  // The loop is about to start; the run is no longer a cold start.
+  sink.phase?.(undefined);
 
   let result: LoopResult;
   try {

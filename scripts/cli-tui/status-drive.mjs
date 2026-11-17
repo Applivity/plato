@@ -24,7 +24,8 @@ const cli = resolve(cliIndex >= 0 ? args[cliIndex + 1] : join(here, '../../packa
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
-const HINT = 'Shift+Tab mode (plan read-only · edit asks · auto trusted) · /help · Esc stops';
+const HINT =
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Esc stops';
 const LONG = 'a conversation title that is far longer than this line can show even at one hundred and twenty columns';
 
 async function waitFor(test, ms, what) {
