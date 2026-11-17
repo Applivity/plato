@@ -84,10 +84,11 @@ The key goes to the operating system's keychain when one is available. If it is
 not, Plato writes `~/.local/share/plato/auth.json` with mode 0600 and says so.
 The config file never holds a key.
 
-The first screen offers the ten most used providers — Anthropic, OpenAI,
-DeepSeek, OpenRouter, Groq, xAI, Mistral, Gemini, Ollama and LM Studio — then
-`Custom endpoint`, then any other provider. A name Plato does not know asks for
-the wire protocol and the base URL. The **connection** it saves
+The list opens with the ten most used providers — Anthropic, OpenAI, DeepSeek,
+OpenRouter, Groq, xAI, Mistral, Gemini, Ollama and LM Studio — then the
+remaining presets, with `Custom endpoint` last. It is one list: the arrows move
+through it and typing filters it. `Custom endpoint` asks for the wire protocol
+and the base URL. The **connection** it saves
 is what tells Plato where to send requests; pressing Enter at the key prompt
 saves the connection and no key.
 
