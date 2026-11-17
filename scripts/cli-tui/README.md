@@ -45,8 +45,16 @@ completion: the list, filtering, arrows, Tab and Enter, a folder kept open with
 `/`, an email that opens nothing, the ignored paths, and the 50-match cap.
 `node scripts/cli-tui/coldstart-drive.mjs` delays the model list: the status
 line names the step after about a second, once, clears it when the run begins,
-and stays silent when the waits are cached. `--cli <path>` runs the same checks
-against another build.
+and stays silent when the waits are cached. `node
+scripts/cli-tui/resume-drive.mjs` checks `/resume`: two saved conversations with
+their age and size, arrows, Esc that changes nothing, Enter saving the current
+view first and loading the chosen rows, title, model, mode, team and known
+window without a chat request, `/sessions` naming the same list, and a deleted
+file leaving the current conversation intact. `node
+scripts/cli-tui/tools-drive.mjs` checks Ctrl+O on a finished tool row (full
+target, start, duration, outcome, and no invented output), a wrapped code line
+hanging under its indent, a coloured diff, and a real 100-to-60-column resize.
+`--cli <path>` runs the same checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a
@@ -59,3 +67,8 @@ committed.
 Known limit: a single paragraph longer than the live area has no blank line to
 cut at, so its wrapping can shift by one line when the answer lands. Lists, code
 blocks and paragraphs separated by blank lines keep their lines.
+
+Known limit: a committed row is printed once through `<Static>`, so a terminal
+resize cannot reflow it. Only the live area below the committed transcript
+re-measures; the text above keeps the width it was printed at. `tools-drive`
+captures both halves of that fact.

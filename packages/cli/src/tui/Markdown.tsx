@@ -4,6 +4,7 @@ import {
   displayWidth,
   parseMarkdown,
   plainText,
+  wrapToWidth,
   type Align,
   type Block,
   type Span,
@@ -45,7 +46,7 @@ function BlockView({ block, columns }: { block: Block; columns: number }): React
         </Text>
       );
     case 'code':
-      return <CodeBlock block={block} />;
+      return <CodeBlock block={block} columns={columns} />;
     case 'list':
       return (
         <Box flexDirection="column">
@@ -74,15 +75,47 @@ function BlockView({ block, columns }: { block: Block; columns: number }): React
   }
 }
 
-function CodeBlock({ block }: { block: Extract<Block, { kind: 'code' }> }): ReactElement {
-  // Indented, not boxed: the answer already carries a left rule.
+/** A diff is read by its marks; colour that survives a wrapped line. */
+function diffColour(line: string, lang: string): string | undefined {
+  if (!COLOURS || (lang !== 'diff' && lang !== 'patch')) {
+    return undefined;
+  }
+  if (line.startsWith('+')) {
+    return 'green';
+  }
+  if (line.startsWith('-')) {
+    return 'red';
+  }
+  if (line.startsWith('@@')) {
+    return 'cyan';
+  }
+  return undefined;
+}
+
+function CodeBlock({
+  block,
+  columns,
+}: {
+  block: Extract<Block, { kind: 'code' }>;
+  columns: number;
+}): ReactElement {
+  // Indented, not boxed: the answer already carries a left rule. The wrapping
+  // is done here, not by Ink, so a continuation can hang under the code's own
+  // indent instead of starting at column zero.
+  const width = Math.max(8, columns - 2);
   return (
     <Box flexDirection="column" paddingLeft={2}>
       {block.lang.length > 0 ? <Text dimColor>{block.lang}</Text> : null}
-      {block.lines.map((line, index) => (
-        // An empty Text has no height, which would close a gap in the block.
-        <Text key={index}>{line.length > 0 ? line : ' '}</Text>
-      ))}
+      {block.lines.flatMap((line, index) => {
+        const indent = /^\s*/.exec(line)?.[0] ?? '';
+        const pieces = wrapToWidth(line, width, indent);
+        return pieces.map((piece, part) => (
+          // An empty Text has no height, which would close a gap in the block.
+          <Text key={`${index}-${part}`} color={diffColour(line, block.lang)}>
+            {piece.length > 0 ? piece : ' '}
+          </Text>
+        ));
+      })}
     </Box>
   );
 }

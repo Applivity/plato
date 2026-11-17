@@ -94,6 +94,48 @@ export function compactTokens(count: number): string {
   return `${thousands}k`;
 }
 
+/**
+ * Cut text into pieces that fit `width` terminal cells, without a marker: used
+ * where the rest of the text is on the next line, not thrown away.
+ */
+export function chunkToWidth(text: string, width: number): string[] {
+  const limit = Math.max(1, width);
+  const pieces: string[] = [];
+  let current = '';
+  let used = 0;
+  for (const char of text) {
+    const cells = displayWidth(char);
+    if (used > 0 && used + cells > limit) {
+      pieces.push(current);
+      current = '';
+      used = 0;
+    }
+    current += char;
+    used += cells;
+  }
+  if (current.length > 0 || pieces.length === 0) {
+    pieces.push(current);
+  }
+  return pieces;
+}
+
+/**
+ * The same cut with a hanging prefix, so a wrapped line continues under the
+ * text it belongs to (a code block's own indent, a long tool target) rather
+ * than starting at column zero.
+ */
+export function wrapToWidth(text: string, width: number, hanging = ''): string[] {
+  const prefixWidth = Math.min(
+    displayWidth(hanging),
+    Math.max(0, Math.max(1, width) - 1),
+  );
+  const prefix = ' '.repeat(prefixWidth);
+  const room = Math.max(1, width - prefixWidth);
+  return chunkToWidth(text, room).map((piece, index) =>
+    index === 0 ? piece : prefix + piece,
+  );
+}
+
 /** Cuts to `width` cells, ending in `…` when anything was removed. */
 export function truncateToWidth(text: string, width: number): string {
   if (displayWidth(text) <= width) {

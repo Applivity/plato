@@ -23,8 +23,13 @@ import {
   type EditorState,
 } from '../editor.js';
 import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
-import { statusLine, tokenRate } from './statusLine.js';
-import { displayWidth, truncateToWidth } from '../format/terminal.js';
+import { formatDuration, statusLine, tokenRate } from './statusLine.js';
+import {
+  displayWidth,
+  stripTerminalEscapes,
+  truncateToWidth,
+  wrapToWidth,
+} from '../format/terminal.js';
 import { headerTitle, headerTitleRoom } from './header.js';
 import {
   recordHistory,
@@ -113,6 +118,7 @@ export function App({
   const [editor, setEditor] = useState<EditorState>(draft ?? EMPTY_EDITOR);
   const [entries, setEntries] = useState<HistoryEntry[]>(history);
   const [search, setSearch] = useState<SearchState | null>(null);
+  const [toolOpen, setToolOpen] = useState(false);
   const [historyAt, setHistoryAt] = useState<number | null>(null);
   const [ctrlC, setCtrlC] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -141,6 +147,7 @@ export function App({
   useEffect(() => {
     if (state.card !== null) {
       setSearch(null);
+      setToolOpen(false);
     }
   }, [state.card]);
 
@@ -158,6 +165,17 @@ export function App({
     [session, atFile === null, editor.text.startsWith('/'), session.respectGitignore],
   );
   const fileMenuData = atFile === null ? null : fileMenu(workspacePaths, atFile);
+  // The focused row for Ctrl+O is the latest tool row: the run appends its
+  // rows in order, so the last one is the call the user just watched.
+  const toolRow = useMemo(() => {
+    for (let index = state.rows.length - 1; index >= 0; index -= 1) {
+      const row = state.rows[index];
+      if (row !== undefined && row.kind === 'tool') {
+        return row;
+      }
+    }
+    return undefined;
+  }, [state.rows]);
   const menuDismissed = menuDismissedAt === editor.text;
   const nameOpen =
     query !== null &&
@@ -401,6 +419,7 @@ export function App({
       setSearch(null);
     }
     if (key.ctrl && input === 'r') {
+      setToolOpen(false);
       setSearch({ query: '', at: 0, saved: editor });
       return;
     }
@@ -408,6 +427,17 @@ export function App({
       if (editDraft !== undefined) {
         void editDraft();
       }
+      return;
+    }
+    // Ctrl+O opens the latest tool row's detail; the same key closes it.
+    if (key.ctrl && input === 'o') {
+      if (toolRow !== undefined) {
+        setToolOpen((open) => !open);
+      }
+      return;
+    }
+    if (toolOpen && key.escape) {
+      setToolOpen(false);
       return;
     }
 
@@ -642,7 +672,12 @@ export function App({
       {state.setup ? null : (
         <Header title={session.title} running={state.running} columns={columns} />
       )}
-      <Static items={staticRows}>
+      {/*
+        <Static> writes a row once. A terminal resize cannot reflow what is
+        already printed; only the live area below re-measures. This is the
+        documented limit, not a bug to paper over.
+      */}
+      <Static key={session.sessionId} items={staticRows}>
         {(row: Row) => <RowView key={row.id} row={row} columns={columns} />}
       </Static>
       {state.setup ? (
@@ -657,7 +692,9 @@ export function App({
       {state.setup || state.streaming.length === 0 ? null : (
         <LiveAnswer text={state.streaming} columns={columns} rows={rows} />
       )}
-      {state.setup || state.card === null ? null : <CardView card={state.card} />}
+      {state.setup || state.card === null ? null : (
+        <CardView card={state.card} columns={columns} />
+      )}
       {state.setup || state.observers.length === 0 ? null : (
         <ObserverStrip observers={state.observers} />
       )}
@@ -669,6 +706,9 @@ export function App({
             now={now}
             columns={columns}
           />
+          {toolOpen && toolRow !== undefined ? (
+            <ToolDetailPanel row={toolRow} columns={columns} now={now} />
+          ) : null}
           {search === null && nameOpen ? (
             <CommandMenu matches={matches} active={active} />
           ) : null}
@@ -972,6 +1012,74 @@ function ArgumentMenu({
   );
 }
 
+function clockTime(ms: number): string {
+  const date = new Date(ms);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function toolDuration(ms: number): string {
+  return ms < 1000 ? `${Math.max(0, Math.round(ms))}ms` : formatDuration(ms);
+}
+
+/**
+ * Ctrl+O: the focused tool row's detail. Only what the session kept — the full
+ * target, when it began, how long it took, and how it ended. The result of the
+ * call was never stored, so it cannot be shown.
+ */
+function ToolDetailPanel({
+  row,
+  columns,
+  now,
+}: {
+  row: Row;
+  columns: number;
+  now: number;
+}): ReactElement {
+  const detail = row.detail;
+  if (detail === undefined) {
+    return (
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor>Tool detail · Ctrl+O closes</Text>
+        <Text>{truncateToWidth(row.text, columns)}</Text>
+        <Text dimColor>No timing or outcome was recorded for this row.</Text>
+      </Box>
+    );
+  }
+  const target =
+    detail.target === undefined
+      ? []
+      : wrapToWidth(
+          stripTerminalEscapes(detail.target),
+          Math.max(20, columns - 2),
+          '  ',
+        );
+  const start = detail.startedAt ?? detail.requestedAt;
+  const end = detail.endedAt ?? (detail.outcome === 'running' ? now : undefined);
+  const took = start === undefined || end === undefined ? undefined : Math.max(0, end - start);
+  const outcome =
+    detail.reason === undefined ? detail.outcome : `${detail.outcome} (${detail.reason})`;
+  return (
+    <Box marginTop={1} flexDirection="column">
+      <Text dimColor>Tool detail · Ctrl+O closes</Text>
+      <Text>{truncateToWidth(row.text, columns)}</Text>
+      {target.map((line, index) => (
+        <Text key={index} dimColor>
+          {line}
+        </Text>
+      ))}
+      <Text dimColor>
+        {start === undefined ? 'start time not recorded' : `started ${clockTime(start)}`}
+        {took === undefined ? '' : ` · took ${toolDuration(took)}`}
+        {` · outcome: ${outcome}`}
+      </Text>
+      {detail.fromLog ? (
+        <Text dimColor>The saved transcript kept no timing and no output for this row.</Text>
+      ) : null}
+    </Box>
+  );
+}
+
 /**
  * The files and folders `@` offers. The selection scrolls in the same window as
  * the command menus, so the composer keeps its place, and a capped list says
@@ -1110,7 +1218,17 @@ function capLines(text: string, limit: number): string {
   return `${lines.slice(0, limit).join('\n')}\n… ${lines.length - limit} more lines`;
 }
 
-function CardView({ card }: { card: Card }): ReactElement {
+function CardView({
+  card,
+  columns,
+}: {
+  card: Card;
+  columns: number;
+}): ReactElement {
+  const resume =
+    card.kind === 'resume'
+      ? menuWindow(card.choices.length, card.selected)
+      : null;
   return (
     <Box
       flexDirection="column"
@@ -1207,6 +1325,32 @@ function CardView({ card }: { card: Card }): ReactElement {
           ))}
           <OptionList options={card.options} selected={card.selected} />
           <Text dimColor>↑↓ move · Enter picks · Esc closes</Text>
+        </>
+      ) : null}
+
+      {card.kind === 'resume' && resume !== null ? (
+        <>
+          <Text bold>{card.title}</Text>
+          {card.choices
+            .slice(resume.start, resume.end)
+            .map((choice, index) => {
+              const active = resume.start + index === card.selected;
+              return (
+                <Text key={choice.id} color={active ? 'cyan' : undefined}>
+                  {active ? '❯ ' : '  '}
+                  {truncateToWidth(
+                    `${choice.title} · ${choice.meta}`,
+                    Math.max(20, columns - 6),
+                  )}
+                </Text>
+              );
+            })}
+          <Text dimColor>
+            {card.choices.length > 0
+              ? `${resume.start + 1}–${resume.end} of ${card.choices.length} · `
+              : ''}
+            ↑↓ move · Enter switches · Esc closes
+          </Text>
         </>
       ) : null}
 

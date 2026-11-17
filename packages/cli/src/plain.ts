@@ -285,6 +285,11 @@ export async function runPlain(options: PlainOptions): Promise<number> {
             process.stdout.write('Usage: /team solo|duo|academy\n');
           }
           break;
+        case '/resume':
+          process.stdout.write(
+            'Resume is available in the full terminal UI, or start with plato -r <id>.\n',
+          );
+          break;
         case '/sessions': {
           const saved = listSessions(options.root, options.env);
           if (saved.length === 0) {

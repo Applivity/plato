@@ -31,6 +31,27 @@ describe('the terminal Markdown view', () => {
     expect(out).toContain('ts');
   });
 
+  it('hangs a wrapped code line under the code’s own indent', () => {
+    const out = draw(
+      '```js\n    const value = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";\n```',
+      30,
+    );
+    const lines = out.split('\n');
+    // The box pads by two and the code by four, so a continuation begins at
+    // six columns, not at the box's padding.
+    expect(lines.some((line) => line.startsWith('      a'))).toBe(true);
+    expect(lines.some((line) => line.startsWith('  a'))).toBe(false);
+    expect(lines.every((line) => line.length <= 30)).toBe(true);
+  });
+
+  it('keeps the marks of a diff on its own lines', () => {
+    const out = draw('```diff\n-const old = 1;\n+const now = 2;\n@@ hunk\n```');
+    const lines = out.split('\n');
+    expect(lines.some((line) => line.includes('-const old = 1;'))).toBe(true);
+    expect(lines.some((line) => line.includes('+const now = 2;'))).toBe(true);
+    expect(lines.some((line) => line.includes('@@ hunk'))).toBe(true);
+  });
+
   it('draws bullets, quotes and rules', () => {
     const out = draw('- one\n- two\n\n> quoted\n\n---');
     expect(out).toContain('• one');

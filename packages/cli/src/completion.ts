@@ -66,8 +66,9 @@ export const COMMANDS: readonly SlashCommand[] = [
     freeText: true,
   },
   { name: 'new', summary: 'Start a new conversation' },
+  { name: 'resume', summary: 'Open a saved conversation' },
   { name: 'undo', summary: 'Put back the files the last run wrote' },
-  { name: 'sessions', summary: 'List saved sessions' },
+  { name: 'sessions', summary: 'List saved sessions (/resume opens them)' },
   { name: 'help', summary: 'Show this help' },
   { name: 'exit', summary: 'Leave Plato' },
 ];

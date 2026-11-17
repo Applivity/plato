@@ -249,7 +249,7 @@ export function reasonText(reason: RunEndReason): string {
  * string — `write_file`'s other string is the file's content, and `todo_write`'s
  * is the plan. Tools not listed here (ask_user, MCP) are named by what they do.
  */
-function toolTarget(event: ToolEvent): string | null {
+export function toolTarget(event: ToolEvent): string | null {
   const args = event.args;
   if (args === undefined) {
     return null;

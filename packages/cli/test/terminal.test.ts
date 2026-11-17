@@ -6,6 +6,7 @@ import {
   plainText,
   stripTerminalEscapes,
   truncateToWidth,
+  wrapToWidth,
 } from '../src/format/terminal.js';
 
 describe('stripTerminalEscapes', () => {
@@ -154,6 +155,25 @@ describe('compactTokens', () => {
     expect(compactTokens(999_600)).toBe('1M');
     expect(compactTokens(8192)).toBe('8.2k');
     expect(compactTokens(0)).toBe('0');
+  });
+});
+
+describe('wrapToWidth', () => {
+  it('cuts a line without losing a character', () => {
+    expect(wrapToWidth('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij']);
+    expect(wrapToWidth('abc', 10)).toEqual(['abc']);
+    expect(wrapToWidth('', 4)).toEqual(['']);
+  });
+
+  it('hangs each continuation under the given prefix', () => {
+    const lines = wrapToWidth('    abcdefghij', 10, '    ');
+    expect(lines[0]).toBe('    ab');
+    expect(lines.slice(1).every((line) => line.startsWith('    '))).toBe(true);
+    expect(lines.every((line) => displayWidth(line) <= 10)).toBe(true);
+  });
+
+  it('counts a wide character as two cells', () => {
+    expect(wrapToWidth('日本語', 4)).toEqual(['日本', '語']);
   });
 });
 

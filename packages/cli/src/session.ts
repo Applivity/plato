@@ -36,10 +36,13 @@ import { applyUndo, planUndo } from '@applivity/plato-core';
 import {
   createSession,
   listSessions,
+  loadSession,
   saveSession as persistSession,
   titleFor,
   type StoredSession,
 } from './sessions.js';
+import { relativeTime } from './history.js';
+import { compactTokens } from './format/terminal.js';
 import { connectionModels, modelRefs } from './modelList.js';
 import type {
   InboundMessage,
@@ -55,6 +58,7 @@ import {
   reasonText,
   summary,
   toolLine,
+  toolTarget,
   type AskQuestion,
   type AskRequest,
   type ExecuteOptions,
@@ -99,10 +103,41 @@ export interface SessionOptions {
 
 export type RowKind = 'user' | 'assistant' | 'tool' | 'notice' | 'error' | 'inbound';
 
+/**
+ * What Ctrl+O shows for a tool row. Only facts the session has: the row's own
+ * words, the full target (the one-line row shortens it), when it began, how
+ * long it took, and how it ended. Tool output is never stored, so it is never
+ * shown.
+ */
+export interface ToolDetail {
+  tool: string;
+  /** The tool's words, e.g. "running a command". */
+  doing: string;
+  /** The call's target, unabbreviated, when it named one. */
+  target?: string;
+  requestedAt?: number;
+  startedAt?: number;
+  endedAt?: number;
+  /** running, done, failed, refused, or declined. */
+  outcome: string;
+  reason?: string;
+  /** Rebuilt from the saved log: its timing was never stored. */
+  fromLog?: boolean;
+}
+
 export interface Row {
   id: number;
   kind: RowKind;
   text: string;
+  detail?: ToolDetail;
+}
+
+/** A saved conversation as the picker shows it: the name can be long, the id stays. */
+export interface ResumeChoice {
+  id: string;
+  title: string;
+  /** "3m ago · 12 turns · ~34k"; enough to tell two conversations apart. */
+  meta: string;
 }
 
 export interface SessionStatus {
@@ -210,6 +245,16 @@ export interface OutsideCard {
   selected: number;
 }
 
+/** `/resume`: this workspace's saved conversations, ready to switch to. */
+export interface ResumeCard {
+  kind: 'resume';
+  title: string;
+  /** The card machinery moves by `options`; each is a choice's title. */
+  options: string[];
+  selected: number;
+  choices: ResumeChoice[];
+}
+
 export type Card =
   | ApprovalCard
   | QuestionCard
@@ -217,7 +262,8 @@ export type Card =
   | RevealCard
   | ModeCard
   | OutsideCard
-  | ModelCard;
+  | ModelCard
+  | ResumeCard;
 
 /** The model picker: each choice is a `connection:model`, plus one way in. */
 export interface ModelCard {
@@ -263,6 +309,70 @@ function approvalKey(request: ApprovalRequest): string {
   return typeof path === 'string' ? `${request.tool}:${path}` : request.tool;
 }
 
+/** How a tool call ended, in one word, from the event or the saved phase. */
+function toolOutcome(phase: string | undefined, ok: boolean | undefined): string {
+  if (phase === 'done') {
+    return ok === false ? 'failed' : 'done';
+  }
+  if (phase === 'refused' || phase === 'declined') {
+    return phase;
+  }
+  return phase ?? 'done';
+}
+
+/** A saved tool row's detail: what was recorded, and nothing that was not. */
+function toolDetailFromLog(entry: ChatRow): ToolDetail {
+  const tool = entry.tool ?? 'tool';
+  return {
+    tool,
+    doing: toolWords(tool).doing,
+    outcome: toolOutcome(entry.phase, entry.ok),
+    fromLog: true,
+  };
+}
+
+/** The view rows for a log, as both the constructor and `/resume` build them. */
+function rowsFromLog(log: readonly ChatRow[]): Row[] {
+  const rows: Row[] = [];
+  for (const entry of log) {
+    if (entry.k === 'msg' && entry.cls === 'you') {
+      rows.push({ id: rows.length + 1, kind: 'user', text: entry.text ?? '' });
+    } else if (entry.k === 'msg' && entry.cls === 'bot') {
+      rows.push({ id: rows.length + 1, kind: 'assistant', text: entry.text ?? '' });
+    } else if (entry.k === 'msg' && entry.cls === 'in') {
+      rows.push({ id: rows.length + 1, kind: 'inbound', text: entry.text ?? '' });
+    } else if (entry.k === 'tool') {
+      rows.push({
+        id: rows.length + 1,
+        kind: 'tool',
+        text: logToolLine(entry) ?? '',
+        detail: toolDetailFromLog(entry),
+      });
+    }
+  }
+  return rows;
+}
+
+/** The line `/sessions` and `/resume` agree on: name, age, turns, size. */
+function conversationFacts(stored: StoredSession, now = Date.now()): {
+  title: string;
+  meta: string;
+} {
+  const history =
+    stored.history.length > 0 ? stored.history : historyFromRows(stored.log ?? []);
+  const turns = history.filter((entry) => entry.role === 'user').length;
+  const tokens = historyTokens(chatRowsFromHistory(history));
+  const parts = [
+    relativeTime(stored.updatedAt, now),
+    `${turns} ${turns === 1 ? 'turn' : 'turns'}`,
+    `~${compactTokens(tokens)}`,
+  ].filter((part) => part.length > 0);
+  return {
+    title: stored.title || titleFor(history) || '(untitled)',
+    meta: parts.join(' · '),
+  };
+}
+
 export class Session {
   private config: PlatoConfig;
   private readonly base: SessionOptions;
@@ -283,6 +393,8 @@ export class Session {
   private readonly queuedLines: string[] = [];
   /** The task of the current (or last) run, for the registry summary. */
   private lastTask = '';
+  /** The tool call in flight, so Ctrl+O can say when it started and how long it took. */
+  private openTool: { tool: string; requestedAt: number; startedAt?: number } | null = null;
 
   mode: Mode;
   model: string;
@@ -348,18 +460,7 @@ export class Session {
     const fresh = createSession(this.model, this.mode, team);
     this.sessionId = stored?.id ?? fresh.id;
     this.createdAt = stored?.createdAt ?? fresh.createdAt;
-    const rows: Row[] = [];
-    for (const entry of this.log) {
-      if (entry.k === 'msg' && entry.cls === 'you') {
-        rows.push({ id: rows.length + 1, kind: 'user', text: entry.text ?? '' });
-      } else if (entry.k === 'msg' && entry.cls === 'bot') {
-        rows.push({ id: rows.length + 1, kind: 'assistant', text: entry.text ?? '' });
-      } else if (entry.k === 'msg' && entry.cls === 'in') {
-        rows.push({ id: rows.length + 1, kind: 'inbound', text: entry.text ?? '' });
-      } else if (entry.k === 'tool') {
-        rows.push({ id: rows.length + 1, kind: 'tool', text: logToolLine(entry) });
-      }
-    }
+    const rows = rowsFromLog(this.log);
     this.nextRow = rows.length + 1;
     this.state = {
       rows,
@@ -451,11 +552,16 @@ export class Session {
     this.update({ status: this.statusFor(tokens) });
   }
 
-  private append(kind: RowKind, text: string): void {
+  private append(kind: RowKind, text: string, detail?: ToolDetail): void {
     if (text.length === 0) {
       return;
     }
-    this.update({ rows: [...this.state.rows, { id: this.nextRow, kind, text }] });
+    this.update({
+      rows: [
+        ...this.state.rows,
+        { id: this.nextRow, kind, text, ...(detail === undefined ? {} : { detail }) },
+      ],
+    });
     this.nextRow += 1;
   }
 
@@ -872,7 +978,7 @@ export class Session {
     }
   }
 
-  private save(): void {
+  private save(): boolean {
     try {
       persistSession(this.base.root, this.base.env, {
         id: this.sessionId,
@@ -885,8 +991,10 @@ export class Session {
         history: this.history,
         log: this.log,
       });
+      return true;
     } catch (error) {
       this.append('error', `Could not save the session: ${(error as Error).message}`);
+      return false;
     }
   }
 
@@ -1049,6 +1157,149 @@ export class Session {
     return answer?.choice ?? 'deny';
   }
 
+  /**
+   * `/resume`: choose this workspace's saved conversation. Esc changes
+   * nothing. A switch saves the current conversation first, then loads the
+   * chosen one — no model request is made.
+   */
+  private async pickSession(): Promise<void> {
+    const saved = listSessions(this.base.root, this.base.env);
+    if (saved.length === 0) {
+      this.append('notice', 'No saved conversations to resume.');
+      return;
+    }
+    const now = Date.now();
+    const choices: ResumeChoice[] = saved.map((stored) => {
+      const facts = conversationFacts(stored, now);
+      return {
+        id: stored.id,
+        title: `${facts.title}${stored.id === this.sessionId ? ' (now)' : ''}`,
+        meta: facts.meta,
+      };
+    });
+    const index = await this.present<number>({
+      kind: 'resume',
+      title: 'Saved conversations',
+      options: choices.map((choice) => choice.title),
+      selected: 0,
+      choices,
+    });
+    if (index < 0) {
+      return;
+    }
+    const chosen = saved[index];
+    if (chosen === undefined) {
+      return;
+    }
+    if (chosen.id === this.sessionId) {
+      this.append('notice', 'That is this conversation.');
+      return;
+    }
+    // The current conversation is saved before anything is replaced. If it
+    // cannot be saved, the switch does not happen.
+    if (!this.save()) {
+      return;
+    }
+    const loaded = loadSession(this.base.root, this.base.env, chosen.id);
+    if (loaded === null) {
+      this.append(
+        'error',
+        'Could not load that conversation — the file is missing or unreadable. This one is unchanged.',
+      );
+      return;
+    }
+    this.applyStored(loaded);
+  }
+
+  /** A window the config already knows, without asking the connection. */
+  private configuredWindow(model: string): number | undefined {
+    const parts = parseModelRef(
+      model,
+      this.config.connections.map((connection) => connection.id),
+    );
+    if (parts === null) {
+      return undefined;
+    }
+    return this.config.connections.find(
+      (connection) => connection.id === parts.connectionId,
+    )?.contextWindow;
+  }
+
+  /**
+   * Replace this view with a saved conversation: its rows, title, model, mode
+   * and team. Its window is kept only when this session already knows that
+   * model's window, or the config supplies one — a switch must not make a
+   * request.
+   */
+  private applyStored(stored: StoredSession): void {
+    const model = stored.model.length > 0 ? stored.model : this.model;
+    const sameModel = model === this.model;
+    const knownWindow = sameModel
+      ? this.state.status.contextWindow
+      : this.configuredWindow(model);
+    const knownApprox = sameModel ? this.state.status.contextWindowApprox : false;
+
+    this.log = stored.log ?? chatRowsFromHistory(stored.history);
+    // Fresh ids, never reused: `<Static>` writes an item once and remembers
+    // its key, so a loaded conversation must not borrow the ids of the rows
+    // already on screen or it would never be drawn.
+    const rows = rowsFromLog(this.log).map((row) => ({
+      ...row,
+      id: this.nextRow++,
+    }));
+    this.sessionId = stored.id;
+    this.createdAt = stored.createdAt;
+    this.model = model;
+    this.mode = stored.mode;
+    this.config = {
+      ...this.config,
+      model,
+      mode: stored.mode,
+      team: stored.team,
+    };
+    this.window = sameModel ? this.window : null;
+    this.openTool = null;
+    this.outsideAllowed = false;
+    this.modeRequestsThisRun = 0;
+    const tokens = historyTokens(this.log);
+    this.update({
+      rows,
+      streaming: '',
+      card: null,
+      observers: [],
+      status: {
+        model,
+        mode: stored.mode,
+        team: stored.team,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+        turns: 0,
+        contextTokens: tokens,
+        ...(knownWindow === undefined
+          ? {}
+          : {
+              contextWindow: knownWindow,
+              contextWindowApprox: knownApprox === true,
+              ...(shouldAutoCompact(
+                tokens,
+                knownWindow,
+                this.config.compactionThreshold,
+              )
+                ? { contextDue: true }
+                : {}),
+            }),
+      },
+    });
+    this.idleFold.cancel();
+    this.scheduleIdleFold();
+    this.live?.refresh();
+    // The rows above belong to the conversation just left; this line marks
+    // where the loaded one begins.
+    const title = this.title.length > 0 ? this.title : '(untitled)';
+    this.append('notice', `Resumed “${title}”.`);
+  }
+
   async handleCommand(line: string): Promise<'exit' | 'handled'> {
     const trimmed = line.trim();
     const [name = '', ...rest] = trimmed.split(/\s+/);
@@ -1162,17 +1413,24 @@ export class Session {
         this.append('notice', parts.length > 0 ? `Undo: ${parts.join(', ')}.` : 'Nothing to undo.');
         return 'handled';
       }
+      case '/resume':
+        await this.pickSession();
+        return 'handled';
       case '/sessions': {
         const saved = listSessions(this.base.root, this.base.env);
         if (saved.length === 0) {
-          this.append('notice', 'No saved sessions.');
+          this.append('notice', 'No saved conversations.');
         } else {
+          const now = Date.now();
+          const lines = saved.slice(0, 10).map((stored) => {
+            const facts = conversationFacts(stored, now);
+            return `${stored.id}  ${facts.title} · ${facts.meta}`;
+          });
+          // `/resume` draws this same list; saying so keeps the two from
+          // looking like different behaviours.
           this.append(
             'notice',
-            saved
-              .slice(0, 10)
-              .map((session) => `${session.id}  ${session.title || '(untitled)'}`)
-              .join('\n'),
+            ['Saved conversations — /resume opens this same list:', ...lines].join('\n'),
           );
         }
         return 'handled';
@@ -1207,11 +1465,21 @@ export class Session {
         });
       },
       tool: (event) => {
+        const now = Date.now();
         if (event.phase === 'requested') {
+          // The clock starts when the loop asks; execution may begin later,
+          // after an approval card, and `allowed` resets it then.
+          this.openTool = { tool: event.tool, requestedAt: now };
           return;
         }
+        const open = this.openTool?.tool === event.tool ? this.openTool : null;
         // The status line names what the run is doing, in the tool's words.
         if (event.phase === 'allowed') {
+          if (open !== null) {
+            open.startedAt = now;
+          } else {
+            this.openTool = { tool: event.tool, requestedAt: now, startedAt: now };
+          }
           this.update({
             status: { ...this.state.status, activity: toolWords(event.tool).doing },
           });
@@ -1236,7 +1504,31 @@ export class Session {
         }
         const line = toolLine(event);
         if (line !== null) {
-          this.append(event.phase === 'done' && event.ok === false ? 'error' : 'tool', line);
+          const target = toolTarget(event);
+          const terminal =
+            event.phase === 'done' ||
+            event.phase === 'refused' ||
+            event.phase === 'declined';
+          const started = open?.startedAt ?? (event.phase === 'allowed' ? now : undefined);
+          const detail: ToolDetail = {
+            tool: event.tool,
+            doing: toolWords(event.tool).doing,
+            ...(target === null ? {} : { target }),
+            ...(open === null ? {} : { requestedAt: open.requestedAt }),
+            ...(started === undefined ? {} : { startedAt: started }),
+            ...(terminal
+              ? { endedAt: now, outcome: toolOutcome(event.phase, event.ok) }
+              : { outcome: 'running' }),
+            ...(event.reason === undefined ? {} : { reason: event.reason }),
+          };
+          this.append(
+            event.phase === 'done' && event.ok === false ? 'error' : 'tool',
+            line,
+            detail,
+          );
+          if (terminal) {
+            this.openTool = null;
+          }
         }
       },
       approve: (request) => this.askApproval(request),
@@ -1561,7 +1853,7 @@ export class Session {
         ? ''
         : card.kind === 'outside'
           ? 2
-          : card.kind === 'model'
+          : card.kind === 'model' || card.kind === 'resume'
             ? -1
             : 0,
     );
