@@ -241,7 +241,9 @@ function rawUserConnections(): ConnectionConfig[] {
             })
             .filter((e): e is ConnectionPoolEntry => e !== null)
         : undefined;
-      list.push({ id, kind, baseUrl, models, allModels, pool });
+      const pooledAt =
+        typeof row['pooledAt'] === 'number' ? row['pooledAt'] : undefined;
+      list.push({ id, kind, baseUrl, models, allModels, pool, pooledAt });
     }
   }
   return list;
@@ -5200,7 +5202,14 @@ class ChatHost {
       conn.pool !== undefined &&
       conn.pool.length > 0 &&
       conn.pooledAt !== undefined &&
-      Date.now() - conn.pooledAt < POOL_MAX_AGE_MS;
+      Date.now() - conn.pooledAt < POOL_MAX_AGE_MS &&
+      // The same rule the CLI's model cache uses (packages/cli/src/models.ts):
+      // a list with no window on some entry is not trusted for a day. It may
+      // be what an older parser stored before it read this endpoint's field
+      // (core now reads DeepSeek's `context_window`), and a cached 131k
+      // fallback is exactly the wrong answer the user cannot see. Ask again; a
+      // list that still advertises nothing simply fits the run's own fallback.
+      conn.pool.every((entry) => entry.maxContext !== undefined);
     if (fresh) return;
     try {
       const pool = await fetchModelPool({
@@ -5407,7 +5416,7 @@ class ChatHost {
     // there is no per-council worker model any more.
     const ref = this.effectiveModel();
     const parts = splitModelRef(ref);
-    const conn = parts
+    let conn = parts
       ? readConnections().find((c) => c.id === parts.connectionId) ?? null
       : null;
     if (!conn) {
@@ -5443,6 +5452,13 @@ class ChatHost {
     // endpoint must not hold up a run, so failures are swallowed and the
     // fallback stands.
     await this.ensureModelPool(conn, apiKey);
+    // The refresh writes what it fetched to the configuration; `conn` is the
+    // object read BEFORE it. Re-read so THIS run — its limits, its history
+    // budget and the fold that follows it — uses the pool that was just
+    // fetched. Without this a connection whose stored pool predates the reader
+    // would run once more on the fallback it was meant to replace.
+    const currentConnId = conn.id;
+    conn = readConnections().find((c) => c.id === currentConnId) ?? conn;
     const advertised = parts
       ? this.advertisedLimits(conn, parts.model)
       : undefined;

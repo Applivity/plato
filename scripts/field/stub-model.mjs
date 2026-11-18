@@ -58,6 +58,22 @@ const MODELS = (process.env['PLATO_STUB_MODELS'] ?? 'stub-model')
  */
 const CONTEXT = Number(process.env['PLATO_STUB_CONTEXT'] ?? '0');
 
+/**
+ * The field `/models` uses to spell the window. `context_length` is the
+ * OpenRouter spelling; DeepSeek writes `context_window`, and the point of the
+ * M4 case is that a list written that way is read. Kept as one env var so the
+ * rest of every existing case stays byte-identical.
+ */
+const CONTEXT_FIELD =
+  process.env['PLATO_STUB_CONTEXT_FIELD'] ?? 'context_length';
+
+/**
+ * When set, ONLY this model id in the list carries the window; the others
+ * advertise none. One stub process can then serve the "publishes 1M" model and
+ * the "publishes nothing" model side by side, so a single window shows both.
+ */
+const CONTEXT_MODEL = process.env['PLATO_STUB_CONTEXT_MODEL'] ?? '';
+
 /** Cursor into the current script, plus the log of what we were asked. */
 let steps = [];
 let cursor = 0;
@@ -199,7 +215,9 @@ const server = createServer(async (req, res) => {
       data: MODELS.map((id) => ({
         id,
         object: 'model',
-        ...(CONTEXT > 0 ? { context_length: CONTEXT } : {}),
+        ...(CONTEXT > 0 && (CONTEXT_MODEL === '' || CONTEXT_MODEL === id)
+          ? { [CONTEXT_FIELD]: CONTEXT }
+          : {}),
       })),
     });
   }
