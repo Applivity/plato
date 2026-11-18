@@ -45,7 +45,7 @@ const STUB = `http://127.0.0.1:${PORT}`;
 
 const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.31.0.vsix');
 const EXPECTED_SHA =
-  '3b378bf9188b97d1eb1e92e439446c9b0e85eb8abd64da871635f192d692b571';
+  '71a65b01e809ef0513c5ff1f70d96bafd183167af7340e33b1ac214d08310e6b';
 
 try {
   await import('vscode-extension-tester');
@@ -198,7 +198,11 @@ process.env['PLATO_VERIFY_WS'] = WS;
 let code = 1;
 try {
   const { ExTester } = await import('vscode-extension-tester');
-  const tester = new ExTester(STORAGE);
+  // The third argument is the harness's OWN extensions folder. Without it the
+  // test window loads whatever is installed in ~/.vscode/extensions — in this
+  // case Claude Code, whose tab can take the active editor group and leave a
+  // later case typing into a frame with no composer.
+  const tester = new ExTester(STORAGE, undefined, join(STORAGE, 'extensions'));
   await tester.downloadCode(VSCODE_VERSION);
   await tester.downloadChromeDriver(VSCODE_VERSION);
   await tester.installVsix({ vsixFile: VSIX });

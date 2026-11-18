@@ -207,7 +207,10 @@ process.env['PLATO_VERIFY_WS'] = WS;
 let code = 1;
 try {
   const { ExTester } = await import('vscode-extension-tester');
-  const tester = new ExTester(STORAGE);
+  // The third argument is the harness's OWN extensions folder. Without it the
+  // test window loads whatever is installed in ~/.vscode/extensions, and an
+  // unrelated extension's tab can take the active editor group.
+  const tester = new ExTester(STORAGE, undefined, join(STORAGE, 'extensions'));
   await tester.downloadCode(VSCODE_VERSION);
   await tester.downloadChromeDriver(VSCODE_VERSION);
   await tester.installVsix({ vsixFile: VSIX });

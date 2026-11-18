@@ -191,30 +191,23 @@ const snap = (p) => p.evaluate(() => {
   await p.close();
 }
 
-// F. Esc on the run surface: once pauses, twice within 1.5 s stops.
+// F. The controls' words, and Esc on the run surface doing nothing to the run.
 //
-// Everything that already owns Esc keeps it — an open menu, a live card, the
-// Settings page — because the press that closes one of those must not also
-// touch the run. `S({ open: false })` keeps the chat surface on screen; the
-// payload still carries the provider, so the composer can send.
+// A window with buttons does not need the keyboard to duplicate them. Esc in a
+// GUI means close/dismiss/an edit; it must not pause or stop a run. The menu
+// and card checks below prove the parts that DO own Esc still do.
+// `S({ open: false })` keeps the chat surface on screen; the payload still
+// carries the provider, so the composer can send.
 {
   const p = await page(620, S({ open: false }));
-  const state = () => p.evaluate(() => {
-    const bar = document.getElementById('statusbar');
-    return {
-      pp: document.getElementById('pp').textContent,
-      ppTitle: document.getElementById('pp').title,
-      stop: document.getElementById('cx').textContent,
-      stopTitle: document.getElementById('cx').title,
-      posted: window.__posted.slice(),
-      popovers: document.querySelectorAll('.popover.open').length,
-    };
-  });
-  const esc = async () => {
-    await p.evaluate(() => document.getElementById('q').focus());
-    await p.keyboard.press('Escape');
-    await p.waitForTimeout(150);
-  };
+  const state = () => p.evaluate(() => ({
+    pp: document.getElementById('pp').textContent,
+    ppTitle: document.getElementById('pp').title,
+    stop: document.getElementById('cx').textContent,
+    stopTitle: document.getElementById('cx').title,
+    hidden: document.getElementById('pp').hidden,
+    posted: window.__posted.slice(),
+  }));
 
   await send(p, 'a long job');
   const idle = await state();
@@ -224,35 +217,15 @@ const snap = (p) => p.evaluate(() => {
   check('and the pause tooltip is the terminal\'s sentence, word for word',
     idle.ppTitle === 'Pause after the current step. Nothing is lost.', idle);
 
-  await esc();
-  const once = await state();
-  check('one Esc asks to pause',
-    once.pp === 'Pausing…' && once.posted.slice(-1)[0].type === 'pause', once);
-
-  await esc();
-  const twice = await state();
-  check('a second Esc within 1.5 s stops the run',
-    twice.posted.slice(-1)[0].type === 'cancel', twice);
-  checkPageClean(p, 'esc twice');
-  await p.close();
-}
-
-// G. The stop window is 1.5 s, not "any later Esc".
-{
-  const p = await page(620, S({ open: false }));
-  await send(p, 'a long job');
-  const esc = async () => {
-    await p.evaluate(() => document.getElementById('q').focus());
-    await p.keyboard.press('Escape');
-    await p.waitForTimeout(120);
-  };
-  await esc();
-  await p.waitForTimeout(1700);
-  await esc();
-  const posted = await p.evaluate(() => window.__posted.slice());
-  check('a second Esc after the window does not stop the run',
-    posted.every((m) => m.type !== 'cancel'), posted);
-  checkPageClean(p, 'esc too late');
+  await p.evaluate(() => document.getElementById('q').focus());
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(150);
+  const afterEsc = await state();
+  check('Esc on the run surface does not pause or stop the run',
+    afterEsc.posted.every((m) => m.type !== 'pause' && m.type !== 'cancel'), afterEsc);
+  check('and the controls are still the live run\'s controls',
+    afterEsc.hidden === false && afterEsc.pp === 'Pause', afterEsc);
+  checkPageClean(p, 'esc on the run surface');
   await p.close();
 }
 
@@ -307,28 +280,6 @@ const snap = (p) => p.evaluate(() => {
   check('and the run was not paused or stopped behind it',
     after.posted.every((m) => m.type !== 'pause' && m.type !== 'cancel'), after);
   checkPageClean(p, 'esc on a card');
-  await p.close();
-}
-
-// J. Esc on the Settings page belongs to Settings, not to the run.
-{
-  const p = await page(620, S());
-  const post = (x) => p.evaluate((m) => window.dispatchEvent(
-    new MessageEvent('message', { data: m })), x);
-  await send(p, 'a long job');
-  await post(S());
-  await p.waitForTimeout(250);
-  const opened = await p.evaluate(() => document.body.classList.contains('show-settings'));
-  await p.keyboard.press('Escape');
-  await p.waitForTimeout(150);
-  const after = await p.evaluate(() => ({
-    open: document.body.classList.contains('show-settings'),
-    posted: window.__posted.slice(),
-  }));
-  check('the Settings page was open before the press', opened === true, opened);
-  check('Esc on Settings does not pause or stop the run',
-    after.posted.every((m) => m.type !== 'pause' && m.type !== 'cancel'), after);
-  checkPageClean(p, 'esc on settings');
   await p.close();
 }
 

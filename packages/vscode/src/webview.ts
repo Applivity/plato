@@ -4261,8 +4261,6 @@ export function chatHtml(
   // ended before any safe point it claimed a pause that never happened.
   let pauseWanted = false;
   let pauseParked = false;
-  /** The last Esc that asked for a pause, for the second press that stops. */
-  let pauseEscAt = 0;
   function paintPause() {
     pp.textContent = pauseParked ? 'Resume' : (pauseWanted ? 'Pausing\u2026' : 'Pause');
     pp.title = pauseParked
@@ -4282,7 +4280,6 @@ export function chatHtml(
     pauseWanted = false;
     pauseParked = false;
     pauseHoldsStatus = false;
-    pauseEscAt = 0;
     pp.disabled = false;
     cx.disabled = false;
     paintPause();
@@ -4329,47 +4326,6 @@ export function chatHtml(
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
-
-  /**
-   * The terminal's key, on the run surface (D49bm): Esc pauses at the next safe
-   * point, and a second Esc within 1.5 s stops. Everything that owns Esc
-   * already keeps it — a card, an open menu, the pinned context panel, the
-   * Settings and History pages, the title editor, and any field that is not the
-   * composer. Capture phase, so that state is read BEFORE those handlers close
-   * the thing they own; otherwise the press that closed a menu would also pause
-   * the run.
-   */
-  const ESC_STOP_MS = 1500;
-  function runCardOpen() {
-    return Boolean(
-      openQuestionCard || openStuckCard || openUndoCard || openRevealCard ||
-      openOutsideCard || openModeRequestCard || openApprovalCard
-    );
-  }
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.repeat || e.defaultPrevented) { return; }
-    if (!busy) { return; }
-    if (runCardOpen()) { return; }
-    if (document.querySelector('.popover.open')) { return; }
-    if (document.querySelector('.ring-wrap.pinned')) { return; }
-    if (document.body.classList.contains('show-settings') ||
-        document.body.classList.contains('show-history')) { return; }
-    const t = e.target;
-    if (t && t.id === 'chatTitleInput') { return; }
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
-              t.tagName === 'SELECT' || t.isContentEditable) && t.id !== 'q') {
-      return;
-    }
-    e.preventDefault();
-    if (pauseWanted || pauseParked) {
-      // Only the second press of the SAME request stops, so an Esc after
-      // thinking for a while cannot throw away a pause the user asked for.
-      if (Date.now() - pauseEscAt <= ESC_STOP_MS) { cx.click(); }
-      return;
-    }
-    pauseEscAt = Date.now();
-    pp.click();
-  }, true);
 
   // --- D44c: real slash commands + paperclip attachment -------------------
   // The reserved .future-attach slot (D39) hosts the paperclip, far-left of
@@ -4763,6 +4719,15 @@ export function chatHtml(
     }
     const raw = q.value;
     if (!raw.trim()) { return; }
+    // D49bm (desktop): /continue is the terminal's resume key, not a GUI
+    // command. The Resume button is the only way forward, so answer locally
+    // and never send the word to the model — not as a task, and not as
+    // guidance into a parked run.
+    if (raw.trim() === '/continue') {
+      addMsg('sys', 'Plato', 'Press Resume to continue the run.');
+      q.value = '';
+      return;
+    }
     // D44c: a message that starts with a known command runs it NOW (idle or
     // mid-run) instead of sending text — commands are real host actions.
     const lead = leadingCmd(raw);

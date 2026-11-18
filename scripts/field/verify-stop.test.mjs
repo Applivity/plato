@@ -316,58 +316,120 @@ describe('the words and the key — real-window check', function () {
     await field.shot('stop-window-stopped');
   });
 
-  it('Esc once pauses, and Resume finishes the run', async () => {
+  it('Esc does nothing to a run, and still closes a menu', async () => {
     await setScript(PAUSE_STEPS);
-    const before = await field.send('esc once, then resume');
+    const before = await field.send('esc should not touch this run');
     const events = await field.waitRunEnd(before, {
-      tag: 'esc-pause',
+      tag: 'esc-noop',
       timeoutMs: 180000,
       during: async () => {
         await field.waitForRunStart();
         await pressEsc(driver, field);
+        await sleep(500);
+        const afterEsc = await controls(driver, field);
+        assert.equal(afterEsc.pause.text, 'Pause',
+          `Esc asked for a pause: the control reads "${afterEsc.pause.text}"`);
+        assert.doesNotMatch(afterEsc.status || '', /^Paused\b/,
+          'Esc paused the run');
+        say('OK   Esc on the run surface did nothing to the run');
+
+        // A menu still owns Esc: it closes, and the run is untouched.
+        await field.switchToChatFrame();
+        await driver.findElement(By.id('modelBtn')).click();
+        await driver.sleep(300);
+        const open = await driver.executeScript(
+          `return document.querySelectorAll('.popover.open').length;`);
+        assert.ok(open > 0, 'the model menu did not open');
+        // Send the key to the picker's own field, not to the workbench: a
+        // global key action can leak past the webview.
+        const menuInput = await driver.findElement(
+          By.css('.popover[data-trigger="modelBtn"] input'));
+        await menuInput.sendKeys(Key.ESCAPE);
+        await driver.sleep(250);
+        const closed = await driver.executeScript(
+          `return document.querySelectorAll('.popover.open').length;`);
+        assert.equal(closed, 0, 'Esc did not close the model menu');
+        const afterMenu = await controls(driver, field);
+        assert.equal(afterMenu.pause.text, 'Pause',
+          'closing the menu also touched the run');
+        say('OK   Esc closed the model menu and left the run alone');
+        await field.shot('stop-window-esc-noop');
+      },
+    });
+    const ended = events.find((e) => e.type === 'run-completed');
+    assert.ok(ended, 'the run wrote no run-completed event');
+    assert.equal(ended.reason, 'complete',
+      `Esc changed the run: it ended as "${ended.reason}"`);
+    say('OK   the run finished normally after Esc');
+  });
+
+  it('Enter while parked steers without resuming, and /continue answers locally', async () => {
+    await setScript(PAUSE_STEPS);
+    const before = await field.send('pause here, then steer me');
+    let requestsBefore = 0;
+    const events = await field.waitRunEnd(before, {
+      tag: 'parked-guidance',
+      timeoutMs: 180000,
+      during: async () => {
+        await field.waitForRunStart();
+        const clicked = await field.pause();
+        assert.equal(clicked.label, 'Pausing…');
         const parked = await field.waitForPauseLabel('Resume', 30000);
-        assert.equal(parked.label, 'Resume', 'one Esc did not park the run');
-        const paused = await controls(driver, field);
-        assert.match(paused.status || '', /^Paused\b/);
-        assert.equal(paused.dotAnim, 'none');
-        say(`OK   one Esc paused the run: "${paused.status}"`);
+        assert.equal(parked.label, 'Resume', 'the run never parked');
+
+        // Bare /continue is the terminal's word, not a GUI command: one local
+        // line, and the parked run is untouched.
+        requestsBefore = (await stubLog()).log.length;
+        const q = await driver.findElement(By.id('q'));
+        await q.click();
+        await q.sendKeys('/continue', Key.ENTER);
+        await driver.sleep(400);
+        const afterContinue = await controls(driver, field);
+        assert.equal(afterContinue.pause.text, 'Resume',
+          '/continue resumed the run instead of answering locally');
+        assert.equal((await stubLog()).log.length, requestsBefore,
+          '/continue was sent to the model');
+        const logText = await field.logText();
+        assert.ok(logText.includes('Press Resume to continue the run.'),
+          'the /continue answer is not on screen');
+        say('OK   /continue answered locally and did not reach the model');
+
+        // Enter in the guide box steers the parked run; it must not release it.
+        await q.clear();
+        await q.click();
+        await q.sendKeys('keep the answer short', Key.ENTER);
+        await driver.sleep(500);
+        const afterGuide = await controls(driver, field);
+        assert.equal(afterGuide.pause.text, 'Resume',
+          'typing guidance released the parked run');
+        assert.match(afterGuide.status || '', /^Paused\b/,
+          'the run left the paused state when guidance was typed');
+        await field.switchToChatFrame();
+        assert.ok((await field.logText()).includes('[guide] keep the answer short'),
+          'the guidance is not shown in the conversation');
+        say('OK   Enter added guidance and left the run parked');
+
         const cleared = await dismissToasts(driver, field);
         say(`   toasts: ${JSON.stringify(cleared)}`);
-        await field.shot('stop-window-esc-paused');
+        await field.shot('stop-window-parked-guidance');
         await field.pause(); // Resume
       },
     });
     const ended = events.find((e) => e.type === 'run-completed');
-    assert.ok(ended, 'the Esc-paused run wrote no run-completed event');
-    assert.equal(ended.reason, 'complete', 'the Esc-paused run did not finish after Resume');
-    say('OK   Esc once paused, Resume finished');
-  });
-
-  it('Esc twice within 1.5 s stops the run and keeps the conversation', async () => {
-    await setScript([
-      { delayMs: 8000, calls: [{ tool: 'read_file', args: { path: 'notes2.txt' } }] },
-      { text: 'This should not run either.' },
-    ]);
-    const prompt = 'esc twice should stop this one';
-    const before = await field.send(prompt);
-    const events = await field.waitRunEnd(before, {
-      tag: 'esc-stop',
-      timeoutMs: 90000,
-      during: async () => {
-        await field.waitForRunStart();
-        await pressEsc(driver, field);
-        await sleep(250);
-        await pressEsc(driver, field);
-      },
-    });
-    const ended = events.find((e) => e.type === 'run-completed');
-    assert.ok(ended, 'the Esc-stopped run wrote no run-completed event');
-    assert.equal(ended.reason, 'cancelled', `Esc twice ended the run as "${ended.reason}", not cancelled`);
-    await field.switchToChatFrame();
-    const text = await field.logText();
-    assert.ok(text.includes(prompt), 'the user message is not in the conversation after Esc twice');
-    say('OK   Esc twice stopped the run, and the conversation stayed');
-    await field.shot('stop-window-esc-stopped');
+    assert.ok(ended, 'the resumed run wrote no run-completed event');
+    assert.equal(ended.reason, 'complete', 'the run did not finish after Resume');
+    const turns = await agentTurns();
+    assert.equal(turns.length, 3,
+      `the resumed run made ${turns.length} agent turns, not the 3 scripted ones`);
+    const guided = turns.some((t) =>
+      (t.userTexts || []).some((u) => String(u).includes('[observer guidance] keep the answer short')));
+    assert.ok(guided, 'the guidance never reached the model');
+    const sawContinue = turns.some((t) =>
+      (t.userTexts || []).some((u) => String(u).includes('/continue')));
+    assert.equal(sawContinue, false, '/continue reached the model');
+    assert.equal((turns[turns.length - 1].toolResults || []).length, 2,
+      'a tool call was replayed after Resume');
+    say('OK   Resume landed the guidance in one run: 3 agent turns, 2 tool results, no /continue');
   });
 
   it('pauses while a final answer is arriving, and Resume lands it', async () => {
@@ -405,6 +467,49 @@ describe('the words and the key — real-window check', function () {
     assert.ok(text.includes('The final answer is here.'),
       'the held answer did not land after Resume');
     say('OK   pause during a final answer: held, resumed, and the answer landed');
+  });
+
+  it('Esc still dismisses the inline key row', async () => {
+    // The GUI's dismissible field. A chat card is answered by its buttons and
+    // has never taken Esc; the key row is the thing Esc closes.
+    await field.switchToChatFrame();
+    const opened = await field.openSettings();
+    assert.equal(opened, true, 'Plato settings did not open');
+    // A collapsed section is not interactable. Open them all, the way the
+    // render suites do, before touching the provider card's key row.
+    await driver.executeScript(`
+      for (const d of document.querySelectorAll('#sbody details')) { d.open = true; }
+      return true;
+    `);
+    await driver.sleep(250);
+    const pressed = await driver.executeScript(`
+      const b = [...document.querySelectorAll('#sbody .conn button')]
+        .find((x) => (x.textContent || '').trim() === 'Set key');
+      if (!b) return false;
+      b.click();
+      return true;
+    `);
+    assert.equal(pressed, true, 'the provider card has no "Set key" control');
+    await driver.sleep(300);
+    const shown = await driver.executeScript(`
+      const row = document.querySelector('#sbody .keyrow');
+      return row ? row.hidden === false : false;
+    `);
+    assert.equal(shown, true, 'the key row did not open');
+    const input = await driver.findElement(By.css('#sbody .keyinput'));
+    await driver.executeScript(
+      'arguments[0].scrollIntoView({ block: "center" }); arguments[0].focus();', input);
+    await driver.sleep(200);
+    await input.sendKeys(Key.ESCAPE);
+    await driver.sleep(300);
+    const hidden = await driver.executeScript(`
+      const row = document.querySelector('#sbody .keyrow');
+      return row ? row.hidden : true;
+    `);
+    assert.equal(hidden, true, 'Esc did not dismiss the key row');
+    await driver.executeScript(`document.getElementById('sback').click(); return true;`);
+    await driver.sleep(300);
+    say('OK   Esc still dismisses the inline key row');
   });
 
   it('leaves no error notification on the window', async () => {
