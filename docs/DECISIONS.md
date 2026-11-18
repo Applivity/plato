@@ -8246,3 +8246,65 @@ one run late. The run now **re-reads its connection by id after the refresh**;
 its limits, its history budget and the fold that follows all use the pool that
 was just fetched. The stale window was never shown to the user as an error — it
 was simply absent, which is why it survived.
+
+## The pause round — 2026-11-18
+
+**D49dz — Typing during a run steers it (2026-11-18).**
+
+In all three variants, a message typed while a run is going goes to the running
+model at its next safe point. **Deferring is explicit: `/queue <text>`.** This
+replaces the terminal's hold-until-next-run behaviour, which was the one gesture
+that meant "later" in the terminal and "now" in the desktop windows; one
+gesture cannot honestly mean both.
+
+**D49ea — Enter never resumes a run (2026-11-18).**
+
+In every state **Enter sends what is in the composer**. While a run is parked it
+steers, and the run stays parked. The terminal resumes with **`/continue`**; the
+windows resume with the **Resume** button. Enter is the send key everywhere
+else, and one key cannot mean "send" and "continue a held run" by hidden state.
+
+**D49eb — `/continue [text]` is the terminal's resume (2026-11-18).**
+
+`/resume` already means switching conversations and **may not be reused**.
+`/continue` with nothing paused says **"Nothing is paused."**; after a stop it
+says the run is over. **`/continue <text>`** sends the text as guidance and then
+resumes.
+
+**D49ec — There is no run-Esc in the windows (2026-11-18).**
+
+The buttons do pause and stop. **Esc keeps only its interface meanings** — close
+a menu, dismiss the key row, cancel a title edit — and **never touches a run**.
+Esc was implemented (`4925f4e8`) and removed (`640d3dd2`) inside this same round
+at the founder's direction; **both commits stand in the history rather than
+being tidied away.**
+
+**D49ed — The run-stop control is "Stop" (2026-11-18).**
+
+The tooltips are **"Pause after the current step. Nothing is lost."** and
+**"Stop the task. The conversation stays."** A parked run states that **the
+pause does not survive closing the window.** Only controls that mean
+stop-the-task were renamed; dismiss-type Cancels keep their word.
+
+**D49ee — A command typed during a run acts at once, or answers (2026-11-18).**
+
+A command typed while a run is going is **not queued**. A whitelist acts at
+once — **`/help`, `/queue`, `/sessions`, `/compact`, and a paused `/continue`**;
+everything else answers **"Finish or stop the run first."** Without the guard,
+`/undo` would restore files under a live run.
+
+**D49ef — Alt+Enter is a new line in the terminal (2026-11-18).**
+
+**Alt+Enter** inserts a new line and is advertised. **Shift+Enter** is accepted
+where the terminal reports it and is **never advertised**. The GUI keeps
+Shift+Enter.
+
+### Corrections recorded with this round
+
+- **`/queue` existed in the desktop and not in the terminal**; the terminal had
+  only the internal queueing that Enter used. It is now a command in the
+  terminal too (D49dz).
+- **Desktop pause has existed since August (D49bm); the terminal was the gap.**
+  Earlier wording that called pause unshipped was true of the terminal only.
+- **A GUI card never dismissed on Esc.** Cards have only ever answered by their
+  buttons. Any earlier statement to the contrary was wrong.
