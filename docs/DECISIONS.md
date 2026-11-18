@@ -8195,9 +8195,12 @@ already had this; the CLI now matches them.
 - The GUIs call the same action **"Cancel"** and should be renamed to stop. A
   "Cancel" that waits for the current tool call is not a cancel.
 - **Cancel** is reserved for abandoning the run without keeping it.
-- **Pause is not built.** It means stop at a step boundary, keep everything, and
-  continue with Enter. It can never mean suspending a running tool: a tool call
-  once started cannot be frozen, only allowed to finish or be killed.
+- **Pause exists in the desktop windows and not in the terminal.** The GUI hosts
+  have had it since M2 (2026-08-24): the `#pp` button that goes Pause → Pausing…
+  → Resume, `pauseParked` in the shared webview, and `onPark` in core. In the
+  terminal it is not built. It means stop at a step boundary, keep everything,
+  and continue with Enter. It can never mean suspending a running tool: a tool
+  call once started cannot be frozen, only allowed to finish or be killed.
 
 ## Amendment — the 2026-11-16/17 CLI round
 
@@ -8206,8 +8209,13 @@ The seven decisions above are the round's locked outcomes: setup as a screen
 status line split (D49ds), one argument table (D49dt), cards that record
 themselves (D49du), and the stop/pause vocabulary (D49dv). The run hint line
 (`enter queues · esc stops · ctrl+c stops`) is **shipped** (`d0bd8323`) and was
-checked on the built binary. **Pause is the only item in this round still
-unshipped**, and it must not be documented as delivered until it runs. **Open after the desktop window release of 2026-11-18: pause has not been started (D49dv), and the GUIs still say "Cancel" where the action is stop.**
+checked on the built binary. **The terminal has no pause yet** — the only item
+in this round still unshipped **in the CLI** — and it must not be documented as
+delivered until it runs. **The desktop windows have had pause since August
+(M2)**; any earlier wording that said pause was unshipped was true of the
+terminal and wrong as a statement about the product. **Open after the desktop
+window release of 2026-11-18: the terminal's pause (D49dv), and the GUIs still
+say "Cancel" where the action is stop.**
 
 **D49dw — A cached model list is trusted for a day only if every entry knows its window (2026-11-18).**
 
