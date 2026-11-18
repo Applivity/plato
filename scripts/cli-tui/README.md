@@ -54,7 +54,16 @@ file leaving the current conversation intact. `node
 scripts/cli-tui/tools-drive.mjs` checks Ctrl+O on a finished tool row (full
 target, start, duration, outcome, and no invented output), a wrapped code line
 hanging under its indent, a coloured diff, and a real 100-to-60-column resize.
-`--cli <path>` runs the same checks against another build.
+`node scripts/cli-tui/pause-drive.mjs` checks pause: Esc during a stream holds
+the screen where the user stopped it and changes the hint, Enter continues the
+same answer, a second Esc stops and the conversation survives, a pause asked
+for during a tool lands after the tool wrote its whole file, a pause asked for
+while the model call is out does not swallow the approval card, Ctrl+C stops a
+parked run, the parked hint is whole at 80 and 120 columns, and `/help` names
+the keys and says a paused run does not survive the process exiting. Its
+typed-while-paused checks are marked PROVISIONAL: the founder has not settled
+whether such a line is sent at once, held for Resume, or shown as an unsent
+chip. `--cli <path>` runs the same checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

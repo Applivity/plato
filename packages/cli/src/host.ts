@@ -156,6 +156,13 @@ export interface ExecuteOptions {
   provider?: ChatProvider;
   /** Injected by the scripted runs; builds a real philosopher otherwise. */
   observerProvider?: (spec: ObserverSpec) => ChatProvider | null;
+  /**
+   * D49bm (terminal): the worker's model call is in flight, and then what it
+   * returned. The terminal uses the pair to time a pause: a pause pressed while
+   * a response may need an approval card must not park before that card. The
+   * card is the user's decision; the pause lands after it.
+   */
+  onModelCall?: (phase: 'start' | 'end', hasToolUse?: boolean) => void;
   /** D49cq: live sessions this run may list and message, or reply to. */
   sessions?: {
     list: () => Promise<SessionPeer[]>;
@@ -512,18 +519,39 @@ export async function executeTask(
               return answer !== 'deny';
             },
           }),
-      provider:
-        options.provider ??
-        createProvider(connection.kind, {
-          apiKey: key?.key ?? '',
-          baseUrl: connection.baseUrl,
-          fetchImpl: options.fetchImpl,
-        }),
+      provider: (() => {
+        const base =
+          options.provider ??
+          createProvider(connection.kind, {
+            apiKey: key?.key ?? '',
+            baseUrl: connection.baseUrl,
+            fetchImpl: options.fetchImpl,
+          });
+        if (options.onModelCall === undefined) {
+          return base;
+        }
+        const onModelCall = options.onModelCall;
+        return {
+          id: base.id,
+          completeTurn: async (request: Parameters<typeof base.completeTurn>[0]) => {
+            onModelCall('start');
+            const response = await base.completeTurn(request);
+            onModelCall(
+              'end',
+              response.content.some((block) => block.type === 'tool_use'),
+            );
+            return response;
+          },
+        };
+      })(),
       model: ref,
       ...(advertised === undefined ? {} : { advertised }),
       ...(reasoning === undefined ? {} : { reasoning }),
       bus,
       controller,
+      // D49bm (terminal): Esc pauses even while the closing answer streams, so
+      // the run parks before that answer lands and Enter can continue it.
+      pauseFinalAnswer: true,
       onText: (text) => sink.textCommitted(text),
       onTextDelta: (textSoFar) => sink.textDelta(textSoFar),
       onToolEvent: (event) => sink.tool(event),

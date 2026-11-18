@@ -48,7 +48,7 @@ const WORDMARK = [
   '██     ██████ ██   ██   ██   ██████',
 ];
 
-const TIPS = 'Type / for commands · Shift+Tab switches mode · Esc interrupts';
+const TIPS = 'Type / for commands · Shift+Tab switches mode · Esc pauses a run';
 
 /**
  * Ink's own colours ignore NO_COLOR here (measured; the rest of the TUI has the

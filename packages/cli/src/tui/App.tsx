@@ -546,8 +546,11 @@ export function App({
       }
     }
     if (key.escape) {
+      // A card, a menu, or the tool panel has already taken Esc above; only a
+      // press the run itself hears reaches here. The first asks for a pause,
+      // the next press stops.
       if (state.running) {
-        session.cancel();
+        session.escapeDuringRun();
       }
       return;
     }
@@ -566,6 +569,20 @@ export function App({
     }
     if (enter) {
       const line = editor.text.trim();
+      if (state.running && state.pause !== 'none') {
+        // Paused: Enter on an empty line continues; text is new direction for
+        // this same run, not a line queued for the next one.
+        if (line.length > 0) {
+          session.guideAndResume(line);
+          setEditor(EMPTY_EDITOR);
+          setHistoryAt(null);
+          setMenuDismissedAt(null);
+          rememberLine(line);
+        } else {
+          session.resumeRun();
+        }
+        return;
+      }
       if (line.length > 0) {
         if (state.running) {
           // The line is held and runs when this run ends; the composer keeps
@@ -724,6 +741,7 @@ export function App({
           <Composer
             editor={editor}
             running={state.running && state.card === null}
+            pause={state.pause}
             columns={columns}
           />
         </>
@@ -1149,17 +1167,27 @@ function SearchLine({
  * Enter queues and both stop keys work; an open card has its own footer, so the
  * idle hint stays put there.
  */
+// Idle, Esc has nothing to stop, so the hint does not name it. Naming a
+// stopping key here was the old meaning surviving after the running hint moved
+// to "esc pauses" — and a hint that cannot be true is the defect this round is
+// about. The keys below are the ones that do something right now.
 const IDLE_HINT =
-  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Esc stops';
-const RUNNING_HINT = 'enter queues · esc stops · ctrl+c stops';
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
+const RUNNING_HINT = 'enter queues · esc pauses · ctrl+c stops';
+/** The pause is asked for but the run has not reached a safe point yet. */
+const PAUSING_HINT = 'pausing — esc stops';
+/** The run is really waiting. Enter continues; Esc stops. */
+const PAUSED_HINT = 'paused — enter continues · esc stops';
 
 function Composer({
   editor,
   running,
+  pause,
   columns,
 }: {
   editor: EditorState;
   running: boolean;
+  pause: ViewState['pause'];
   columns: number;
 }): ReactElement {
   const cursor = editor.text.slice(editor.cursor, editor.cursor + 1);
@@ -1183,7 +1211,18 @@ function Composer({
           </>
         )}
       </Box>
-      <Text dimColor>{truncateToWidth(running ? RUNNING_HINT : IDLE_HINT, columns)}</Text>
+      <Text dimColor>
+        {truncateToWidth(
+          !running
+            ? IDLE_HINT
+            : pause === 'parked'
+              ? PAUSED_HINT
+              : pause === 'requested'
+                ? PAUSING_HINT
+                : RUNNING_HINT,
+          columns,
+        )}
+      </Text>
     </Box>
   );
 }

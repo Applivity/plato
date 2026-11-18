@@ -288,17 +288,32 @@ export interface ViewState {
   status: SessionStatus;
   observers: ObserverView[];
   running: boolean;
+  /**
+   * D49bm (terminal): `requested` is Esc heard and the pause asked for;
+   * `parked` is the run actually waiting at a safe point. They are different
+   * facts, and the hint line must not claim the second while only the first is
+   * true — a tool already running cannot be stopped mid-write.
+   */
+  pause: 'none' | 'requested' | 'parked';
   /** The setup screen has the terminal until it finishes. */
   setup: boolean;
 }
 
 /** `/help`, built from the menu's table so the two can never disagree (D49cd). */
 const HELP_WIDTH = Math.max(...COMMANDS.map((command) => slashText(command).length)) + 2;
+const KEY_WIDTH = 10;
 export const SESSION_HELP = [
   'Commands',
   ...COMMANDS.map(
     (command) => `  ${slashText(command).padEnd(HELP_WIDTH)}${command.summary}`,
   ),
+  '',
+  'Keys',
+  `  ${'Esc'.padEnd(KEY_WIDTH)}pause the run; press Esc again to stop it`,
+  `  ${'Enter'.padEnd(KEY_WIDTH)}while paused, continue; with text, send it and continue`,
+  `  ${'Ctrl+C'.padEnd(KEY_WIDTH)}stop the run`,
+  '',
+  'A paused run does not survive Plato exiting.',
 ].join('\n');
 
 function approvalKey(request: ApprovalRequest): string {
@@ -380,6 +395,17 @@ export class Session {
   private readonly listeners = new Set<() => void>();
   private pending: ((value: unknown) => void) | null = null;
   private controller: RunController | null = null;
+  /**
+   * D49bm (terminal): the pause state the hint line reads. A pause request
+   * holds the streamed text back so the screen stops advancing at once; the
+   * held text lands when the run resumes or ends, never twice.
+   */
+  private pause: 'none' | 'requested' | 'parked' = 'none';
+  private heldStreaming: string | null = null;
+  /** The worker's model call is in flight; a pause waits for its answer type. */
+  private modelCallInFlight = false;
+  /** The paused response has tool calls; apply the pause after the card's gate. */
+  private pauseAfterToolEvent = false;
   private readonly remembered = new Set<string>();
   private modeRequestsThisRun = 0;
   private nextRow = 1;
@@ -478,6 +504,7 @@ export class Session {
       },
       observers: [],
       running: false,
+      pause: 'none',
       setup: false,
     };
     this.idleFold = new IdleFold({
@@ -794,9 +821,14 @@ export class Session {
     }
     this.lastTask = task;
     this.stopNoticed = false;
+    this.pause = 'none';
+    this.heldStreaming = null;
+    this.modelCallInFlight = false;
+    this.pauseAfterToolEvent = false;
     this.update({
       running: true,
       streaming: '',
+      pause: 'none',
       observers: [],
       status: {
         ...this.statusFor(historyTokens(this.log)),
@@ -808,7 +840,11 @@ export class Session {
     });
     this.live?.refresh();
     this.modeRequestsThisRun = 0;
-    const controller = new RunController();
+    const controller = new RunController({
+      // `onPark` is the loop's own account of the run, and the only one that
+      // can say "parked" honestly: a request is not a park.
+      onPark: (parked) => this.handlePark(parked),
+    });
     this.controller = controller;
 
     // The first wait is the model list, asked for before the loop is built.
@@ -847,6 +883,7 @@ export class Session {
       now: this.base.now,
       provider: this.base.provider,
       observerProvider: this.base.observerProvider,
+      onModelCall: (phase, hasToolUse) => this.noteModelCall(phase, hasToolUse),
       ...(this.live === undefined
         ? {}
         : {
@@ -892,12 +929,19 @@ export class Session {
       this.append('error', message);
     } finally {
       this.controller = null;
+      // The pause is live process state only; when the run is over there is
+      // nothing left to park or resume.
+      this.pause = 'none';
+      this.heldStreaming = null;
+      this.modelCallInFlight = false;
+      this.pauseAfterToolEvent = false;
       const startedAt = this.state.status.startedAt;
       const runMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
       const runOutput = this.state.status.runOutputTokens;
       this.update({
         running: false,
         streaming: '',
+        pause: 'none',
         status: {
           ...this.statusFor(historyTokens(this.log)),
           // The line keeps the finished run's rate and wall time when it is
@@ -934,11 +978,126 @@ export class Session {
       );
     }
     // A stop that will wait for a long tool must say so at once, and only once.
-    if (card === null && this.state.running && !this.stopNoticed) {
+    // A run parked at a gate has nothing left to finish, so it stops now.
+    if (card === null && this.state.running && !this.stopNoticed && this.pause !== 'parked') {
       this.stopNoticed = true;
       this.append('notice', 'Stopping after this step.');
     }
+    // Text held back by the pause has arrived; a stop must not also swallow it.
+    this.flushHeld();
+    this.pause = 'none';
+    this.pauseAfterToolEvent = false;
+    this.update({ pause: 'none' });
     this.controller?.cancel();
+  }
+
+  /**
+   * Esc with no card and no menu in the way. The first press asks for a pause;
+   * a press that finds a pause already asked for (or landed) stops the run,
+   * which is what the hint line says it does. Ctrl+C always stops.
+   */
+  escapeDuringRun(): void {
+    if (!this.state.running) {
+      return;
+    }
+    if (this.pause !== 'none') {
+      this.cancel();
+      return;
+    }
+    this.requestPause();
+  }
+
+  /** Asks the loop to park at its next safe point. Never touches a card. */
+  private requestPause(): void {
+    if (!this.state.running || this.state.card !== null) {
+      return;
+    }
+    this.pause = 'requested';
+    this.update({ pause: 'requested' });
+    // A model call in flight may be about to raise an approval card. Pausing
+    // now would park at the between-tools gate, BEFORE that card, and hold back
+    // the one thing the run is waiting on. The response tells us whether a card
+    // is coming; a pause during a tool can land at once.
+    if (!this.modelCallInFlight) {
+      this.controller?.pause();
+    }
+  }
+
+  /**
+   * The model call's edges. A response with no tools is followed by the
+   * final-answer gate, so the pause lands there. A response with tools is
+   * followed by the between-tools gate and then the card; the pause waits for
+   * the tool event, which core emits after that gate, so the card still opens
+   * and the pause lands after it is answered.
+   */
+  private noteModelCall(phase: 'start' | 'end', hasToolUse?: boolean): void {
+    if (phase === 'start') {
+      this.modelCallInFlight = true;
+      return;
+    }
+    this.modelCallInFlight = false;
+    if (this.pause !== 'requested' || this.controller === null) {
+      return;
+    }
+    if (hasToolUse === true) {
+      this.pauseAfterToolEvent = true;
+      return;
+    }
+    this.controller.pause();
+  }
+
+  /**
+   * The loop's account of the run. `true` means it is really waiting; `false`
+   * means it is running again (or never parked). A request is not a park.
+   */
+  private handlePark(parked: boolean): void {
+    if (this.controller === null) {
+      return;
+    }
+    this.pause = parked ? 'parked' : 'none';
+    this.update({ pause: this.pause });
+  }
+
+  /** Enter on an empty composer while paused: continue the same run. */
+  resumeRun(): void {
+    if (!this.state.running || this.pause === 'none') {
+      return;
+    }
+    this.controller?.resume();
+    this.pause = 'none';
+    this.pauseAfterToolEvent = false;
+    this.update({ pause: 'none' });
+    this.flushHeld();
+  }
+
+  /**
+   * Enter with text while paused: the text is new direction for the SAME run,
+   * so the model reads it as guidance and the run continues from here.
+   */
+  guideAndResume(text: string): void {
+    const line = text.trim();
+    if (!this.state.running || this.pause === 'none' || line.length === 0) {
+      return;
+    }
+    this.controller?.sendGuidance(line);
+    this.append('user', line);
+    this.resumeRun();
+  }
+
+  /**
+   * Puts the text that arrived while the screen was held back on screen. The
+   * loop has already received it; this is the view catching up, once.
+   */
+  private flushHeld(): void {
+    const held = this.heldStreaming;
+    this.heldStreaming = null;
+    if (held === null || held.length <= this.state.streaming.length) {
+      return;
+    }
+    this.update({
+      streaming: held,
+      status: this.statusFor(historyTokens(this.log) + estimateTokens(held)),
+    });
   }
 
   cycleMode(): void {
@@ -1443,12 +1602,21 @@ export class Session {
 
   private sink(): RunSink {
     return {
-      textDelta: (soFar) =>
+      textDelta: (soFar) => {
+        // A pause holds the screen where the user stopped it. The text keeps
+        // arriving in the background and lands once, on resume or on stop —
+        // this is a pause of the run's surface, not a claim about the socket.
+        if (this.pause !== 'none') {
+          this.heldStreaming = soFar;
+          return;
+        }
         this.update({
           streaming: soFar,
           status: this.statusFor(historyTokens(this.log) + estimateTokens(soFar)),
-        }),
+        });
+      },
       textCommitted: (text) => {
+        this.heldStreaming = null;
         this.append('assistant', text);
         this.update({
           streaming: '',
@@ -1465,6 +1633,13 @@ export class Session {
         });
       },
       tool: (event) => {
+        // A pause that was held for a possible approval card lands here: the
+        // loop has already passed the gate for this call, so the card (if any)
+        // opens first and the pause parks at the next boundary.
+        if (this.pauseAfterToolEvent) {
+          this.pauseAfterToolEvent = false;
+          this.controller?.pause();
+        }
         const now = Date.now();
         if (event.phase === 'requested') {
           // The clock starts when the loop asks; execution may begin later,

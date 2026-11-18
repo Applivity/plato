@@ -168,7 +168,7 @@ try {
     'the two queued lines ran in order, each with the exact text',
   );
 
-  // B. Esc stops the run; the queued line still runs.
+  // B. Esc pauses, a second Esc stops; the queued line still runs.
   mark = output.length;
   await submit('stop me');
   await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-TWO-START'), 10000, 'the second slow run'));
@@ -182,6 +182,8 @@ try {
     ),
   );
   send('\x1b');
+  await sleep(120);
+  send('\x1b');
   const stopped = await attempt(() =>
     waitFor(
       () => plain(output.slice(mark)).includes('Run ended: cancelled.'),
@@ -189,7 +191,7 @@ try {
       'the stopped run',
     ),
   );
-  record(stopped, 'Esc during a run still stops it');
+  record(stopped, 'Esc then Esc again during a run still stops it');
   const afterStop = await attempt(() =>
     waitFor(() => provider.requests.length >= 5, 15000, 'the queued line after the stop'),
   );

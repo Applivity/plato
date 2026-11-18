@@ -23,7 +23,9 @@ export function startProvider(options = {}) {
   /**
    * The answers to play, one per agent turn. A step is
    * `{ text, chunks, chunkMs }` for text, or `{ tool, args }` for a call.
-   * No script, or a script that has run out, answers with a fixed sentence.
+   * `delayMs` holds the answer back so a check can press Esc while the call
+   * is still out. No script, or a script that has run out, answers with a
+   * fixed sentence.
    */
   let script = [];
   let cursor = 0;
@@ -40,6 +42,7 @@ export function startProvider(options = {}) {
   };
 
   const play = async (res, step) => {
+    if (res.destroyed || res.writableEnded) return;
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     const chunk = (value) => res.write(`data: ${JSON.stringify(value)}\n\n`);
     if (step.tool !== undefined) {
@@ -152,9 +155,15 @@ export function startProvider(options = {}) {
           );
           return;
         }
-        const step = script[cursor];
+        const step = script[cursor] ?? { text: 'Paste received.' };
         cursor += 1;
-        void play(res, step ?? { text: 'Paste received.' });
+        // `delayMs` holds the answer back. A check uses it to press Esc while
+        // the model call is still out, before any card or tool can appear.
+        if (typeof step.delayMs === 'number' && step.delayMs > 0) {
+          setTimeout(() => void play(res, step), step.delayMs);
+        } else {
+          void play(res, step);
+        }
         return;
       }
       res.writeHead(404);

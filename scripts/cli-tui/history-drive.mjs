@@ -37,8 +37,8 @@ const cli = resolve(cliIndex >= 0 ? args[cliIndex + 1] : join(here, '../../packa
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 const IDLE_HINT =
-  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Esc stops';
-const RUNNING_HINT = 'enter queues · esc stops · ctrl+c stops';
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
+const RUNNING_HINT = 'enter queues · esc pauses · ctrl+c stops';
 const ALPHA = 'history probe alpha from the previous process';
 const BETA = 'history probe beta from the previous process';
 const EDITOR_ERROR =
@@ -209,6 +209,17 @@ try {
   await session('process one', baseEnv, async (ui) => {
     await waitFor(() => plain(ui.output).includes(IDLE_HINT), 8000, 'the idle hint');
     record(true, 'idle shows the three modes and /help');
+    // Idle, Esc does nothing. A hint that says it stops would be advertising an
+    // action that cannot happen — the exact defect the run hint was fixed for.
+    const idleLine =
+      lastFrame(ui.output)
+        .split('\n')
+        .find((line) => line.startsWith('Shift+Tab mode')) ?? '';
+    record(!/esc stops/i.test(idleLine), 'the idle hint does not advertise a stop');
+    record(
+      idleLine.includes('@ files') && idleLine.includes('/help'),
+      'the idle hint still names the keys that work at idle',
+    );
 
     provider.setScript([SLOW]);
     await ui.submit(ALPHA);
