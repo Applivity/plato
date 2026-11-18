@@ -285,6 +285,13 @@ export class RunController {
     }
   }
 
+  /**
+   * D49bm: a park is LIVE PROCESS STATE, nothing more. The wait is an `await`
+   * inside the loop; no record, plan position or transcript flag is written, so
+   * a paused run does not survive the process. It cannot be resumed after a
+   * restart and the UI must not present Pause as a saved state — on exit the run
+   * is simply over, with no `run-completed` event.
+   */
   pause(): void {
     this.paused = true;
   }

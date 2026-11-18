@@ -562,6 +562,16 @@ export interface LoopOptions {
   onStuckNudge?: (note: string) => void;
   /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
   controller?: RunController;
+  /**
+   * D49bm (terminal): a pause requested while the FINAL answer streams must
+   * park before that answer lands, so Enter can continue it and Esc can still
+   * stop it. Without a gate the run simply ends, and a pause pressed mid-answer
+   * would have been claimed and never honoured. The desktop pair keeps its old
+   * rule (no gate left, no park) and does not set this, so only the terminal
+   * changes. Guidance typed while parked here continues the SAME run as a fresh
+   * model turn rather than being dropped with the closing answer.
+   */
+  pauseFinalAnswer?: boolean;
   /** Bound provider adapter (D25b). Replaces the old apiKey field. */
   provider: ChatProvider;
   /**
@@ -969,7 +979,25 @@ async function runLoop(
       reason = 'cancelled';
       break;
     }
-    pendingGuidance.push(...ctrl.drainGuidance());
+    // D24b: guidance queued at this boundary belongs in the request this turn
+    // is about to send, exactly once. It used to be parked in `pendingGuidance`,
+    // which is flushed only after a tool round — so a note typed between turns
+    // arrived a turn late, and a run whose next turn was its final answer
+    // dropped it entirely. Parking makes that the ordinary case: the user stops
+    // the run, types, resumes. Append it to the user turn already in hand; the
+    // loop only reaches here with a user turn last unless the run is ending.
+    const turnGuidance = ctrl.drainGuidance();
+    if (turnGuidance.length > 0) {
+      const blocks = turnGuidance.map(
+        (g): CanonicalContent => ({ type: 'text', text: `[observer guidance] ${g}` }),
+      );
+      const last = messages[messages.length - 1];
+      if (last?.role === 'user') {
+        last.content.push(...blocks);
+      } else {
+        messages.push({ role: 'user', content: blocks });
+      }
+    }
     bus.emit({ type: 'turn-started', runId, turn });
 
     // D37: emit the live context estimate before this turn goes out so
@@ -1156,6 +1184,33 @@ async function runLoop(
       throw e;
     }
 
+    const toolUses = res.content.filter(
+      (b): b is Extract<CanonicalContent, { type: 'tool_use' }> =>
+        b.type === 'tool_use',
+    );
+    // A turn with no tool call is the last thing this run may do. Pause HERE,
+    // before the answer is committed, or a pause during a streamed answer would
+    // arrive after the answer had already landed — and the run would end with
+    // the pause never honoured. A turn WITH tool calls is different: the cards
+    // and tools that follow are its safe points, and pausing before them would
+    // hold back a card the user must answer. New direction typed while parked
+    // here is a fresh turn in the SAME run, not a lost note.
+    //
+    // Stop (not resume) at this gate still records the answer. The tokens were
+    // spent and the model did produce it; "stop" means no further turn, not
+    // "pretend the last one never happened". So the break waits until after the
+    // commit below, and the run ends as cancelled with its text intact.
+    let cancelledOnFinalAnswer = false;
+    let pausedGuidance: string[] = [];
+    if (opts.pauseFinalAnswer === true && toolUses.length === 0) {
+      if (!(await ctrl.gate())) {
+        cancelledOnFinalAnswer = true;
+      } else {
+        pausedGuidance = ctrl.drainGuidance();
+        if (pausedGuidance.length > 0) stuck.reset();
+      }
+    }
+
     const used = {
       inputTokens: res.usage.inputTokens,
       outputTokens: res.usage.outputTokens,
@@ -1184,11 +1239,6 @@ async function runLoop(
 
     messages.push({ role: 'assistant', content: res.content });
 
-    const toolUses = res.content.filter(
-      (b): b is Extract<CanonicalContent, { type: 'tool_use' }> =>
-        b.type === 'tool_use',
-    );
-
     // A turn's text follows whatever the last turn said, and a turning point
     // ("I'll read the file." then, a turn later, the answer) is a new
     // paragraph. Without the break the accumulated text reads as one sentence
@@ -1216,6 +1266,25 @@ async function runLoop(
     resuming = false;
 
     if (toolUses.length === 0) {
+      // Stop at the final-answer gate: the answer is committed by now, so the
+      // run ends here carrying what the model actually said.
+      if (cancelledOnFinalAnswer) {
+        reason = 'cancelled';
+        break;
+      }
+      // A note typed while parked on this final answer is new direction, so the
+      // run gets another turn instead of ending with the note undelivered. The
+      // assistant text above is already in `messages`; this is an ordinary user
+      // turn after it, in the SAME run.
+      if (pausedGuidance.length > 0) {
+        messages.push({
+          role: 'user',
+          content: pausedGuidance.map(
+            (g): CanonicalContent => ({ type: 'text', text: `[observer guidance] ${g}` }),
+          ),
+        });
+        continue;
+      }
       const truncated = res.stopReason === 'max_tokens';
       // Auto-continue (D25f follow-up): an answer cut by the output cap is a
       // truncated reply, NOT a completion. Ask the model to resume exactly
