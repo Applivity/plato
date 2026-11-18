@@ -8148,8 +8148,8 @@ asked for there when the endpoint does not supply one.
 
 - Core now reads **`context_window`** from a provider's model list. **DeepSeek
   publishes 1,048,576**, and the CLI had fallen back to 131k, so every DeepSeek
-  session summarised far too late. Discovery is shared, so **all three hosts
-  get the real number**.
+  session summarised far too early: a 1M model was being folded as if it held
+  131k. Discovery is shared, so **all three hosts get the real number**.
 - When the endpoint does not advertise a window, **setup asks for it**, for
   every provider.
 - **A fallback is shown with a tilde (`~131k`); a known number is exact (`1M`).**
@@ -8207,4 +8207,34 @@ status line split (D49ds), one argument table (D49dt), cards that record
 themselves (D49du), and the stop/pause vocabulary (D49dv). The run hint line
 (`enter queues · esc stops · ctrl+c stops`) is **shipped** (`d0bd8323`) and was
 checked on the built binary. **Pause is the only item in this round still
-unshipped**, and it must not be documented as delivered until it runs.
+unshipped**, and it must not be documented as delivered until it runs. **Open after the desktop window release of 2026-11-18: pause has not been started (D49dv), and the GUIs still say "Cancel" where the action is stop.**
+
+**D49dw — A cached model list is trusted for a day only if every entry knows its window (2026-11-18).**
+
+The desktop hosts keep a stored model list so a run need not wait on discovery.
+The list is fresh only when it is **under 24 hours old AND every entry carries a
+window**. An entry with no window may be what an older parser stored before core
+read the endpoint's field, and the cached 131k fallback is exactly the wrong
+answer because the user cannot see it.
+
+- **This is the CLI's rule, not a second one.** `packages/cli/src/models.ts` has
+  shipped it since 2026-11-17; the desktop pool now applies the same test rather
+  than inventing a new marker or a cache version. One rule, two hosts.
+- A refreshed list that still advertises nothing is a true answer: the run fits
+  its own fallback, shown as approximate (D49dr).
+
+**D49dx — A stored timestamp that is written must also be read (2026-11-18).**
+
+The user's pooled connections carry `pooledAt`. It had only ever been written,
+so **the 24-hour expiry never applied**: a list stored months earlier was served
+forever and the fix above was never reached. The reader now parses `pooledAt`,
+and the age test uses it.
+
+**D49dy — The run that refreshes the pool uses the refreshed pool (2026-11-18).**
+
+`ensureModelPool` writes what it fetches to the configuration, but the run held
+the connection object it had read **before** the refresh, so the window arrived
+one run late. The run now **re-reads its connection by id after the refresh**;
+its limits, its history budget and the fold that follows all use the pool that
+was just fetched. The stale window was never shown to the user as an error — it
+was simply absent, which is why it survived.
