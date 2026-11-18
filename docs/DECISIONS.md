@@ -8308,3 +8308,26 @@ Shift+Enter.
   Earlier wording that called pause unshipped was true of the terminal only.
 - **A GUI card never dismissed on Esc.** Cards have only ever answered by their
   buttons. Any earlier statement to the contrary was wrong.
+
+**D49eg — A window belongs to the model, not to the conversation (2026-11-18).**
+
+A window is a property of the model. Before any conversation exists there is
+still a right answer for it.
+
+- **Settings and the chat refresh a stored model list that carries no window.**
+  The providers page had read "context unknown" for a model whose endpoint
+  publishes 1,048,576, because the list came from the cache and nothing had
+  asked the endpoint.
+- **The host posts an idle context with the model's window and zero totals**, so
+  the CONTEXT popover shows the model's `max` before the first run instead of
+  `--`.
+- The conversation does not make the window true; it only fills the used part.
+
+**D49eh — A failed refresh says it could not check (2026-11-18).**
+
+If the model list cannot be fetched, **the window is not reported as "context
+unknown."** That wording is a claim about the model, and a request that failed is
+a fact about the network. The failure says **it could not check**, and the refresh
+retries: the settings path gets a longer timeout and one retry, so a cold first
+fetch that aborts on the first attempt still resolves. **A guess or a failure
+must never be dressed as a fact about the model.**
