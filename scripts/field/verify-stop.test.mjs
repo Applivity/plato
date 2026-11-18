@@ -228,6 +228,62 @@ describe('the words and the key — real-window check', function () {
     await field.enter();
   });
 
+  it('fills the window before any run: Settings and the idle context panel', async () => {
+    // Nothing has run in this window, and the stored pool has no window. The
+    // user opens Settings; the host must fetch the window quietly, and the
+    // context panel must know what the model holds before a run measures it.
+    await field.switchToChatFrame();
+    const opened = await field.openSettings();
+    assert.equal(opened, true, 'Plato settings did not open');
+
+    const deadline = Date.now() + 20000;
+    let sub = '';
+    while (Date.now() < deadline) {
+      sub = await driver.executeScript(`
+        const row = [...document.querySelectorAll('#sbody .conn .mopt')]
+          .find((r) => ((r.querySelector('.mopt-name') || {}).textContent || '').trim() === 'stub-model');
+        return row ? ((row.querySelector('.mopt-sub') || {}).textContent || '').trim() : '';
+      `);
+      if (sub === '1M context') break;
+      await sleep(250);
+    }
+    assert.equal(sub, '1M context',
+      `the provider list did not fill its window before a run: ${JSON.stringify(sub)}`);
+    say(`OK   Settings filled the window without a run: ${sub}`);
+
+    await driver.executeScript(`document.getElementById('sback').click(); return true;`);
+    await driver.sleep(400);
+
+    await field.switchToChatFrame();
+    const idleDeadline = Date.now() + 10000;
+    let idle = {};
+    while (Date.now() < idleDeadline) {
+      idle = await driver.executeScript(`
+        return {
+          max: (document.getElementById('ctxb-max') || {}).textContent || '',
+          total: (document.getElementById('ctxb-total') || {}).textContent || '',
+          last: (document.getElementById('ctxb-last') || {}).textContent || '',
+          unknown: document.getElementById('contextRing').classList.contains('unknown'),
+        };
+      `);
+      if (idle.max === '1M' && idle.total === '0') break;
+      await sleep(250);
+    }
+    assert.equal(idle.max, '1M', 'the idle context panel does not know the model window');
+    assert.equal(idle.total, '0', 'the idle context panel invents a total');
+    assert.equal(idle.last, '--', 'the idle context panel invents a last request');
+    assert.equal(idle.unknown, false, 'the ring still says the window is unknown');
+    assert.equal(field.transcripts().length, 0, 'a run happened before the idle proof');
+    say(`OK   idle context: max ${idle.max}, total ${idle.total}, last ${idle.last}, no run`);
+
+    // Pin the panel so the screenshot shows the numbers the user sees.
+    await driver.executeScript(`document.querySelector('.ring-wrap').click(); return true;`);
+    await driver.sleep(300);
+    await field.shot('stop-window-idle-context');
+    await driver.executeScript(`document.querySelector('.ring-wrap').click(); return true;`);
+    await driver.sleep(200);
+  });
+
   it('pauses at a safe point, says so, resumes, and does not replay a call', async () => {
     await setScript(PAUSE_STEPS);
     const before = await field.send('read both notes');

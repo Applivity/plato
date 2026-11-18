@@ -2360,6 +2360,10 @@ class ChatHost {
             queue: this.queue,
             queueHeld: this.queueHeld,
           });
+          // Opening the chat is the other moment a stored list can be missing
+          // its windows. Refresh after the restore so the page is on screen
+          // first; a success posts the model state again with the numbers.
+          this.refreshStaleModelWindows();
         }
       },
     );
@@ -3956,6 +3960,72 @@ class ChatHost {
       ...(flash ? { flash } : {}),
     });
     this.postModelState();
+    if (open) { this.refreshStaleModelWindows(); }
+  }
+
+  /**
+   * The context panel with no run behind it.
+   *
+   * A window is a fact about the MODEL, not about a conversation: before the
+   * first run the ring and its popover must still say what the chosen model can
+   * hold. The totals are zero because nothing has been sent; `max` comes from
+   * the same pool `ensureModelPool` fills. A model that publishes nothing keeps
+   * `null` — the page draws `--` rather than inventing the compaction fallback.
+   *
+   * Only an empty conversation gets this. Posting zeros over a finished run
+   * would erase the numbers that run measured.
+   */
+  private postIdleContext(): void {
+    if (this.running || this.runInFlight) return;
+    // A notice alone is not a conversation. The user's task or the model's
+    // reply is what proves a run has measured something.
+    if (this.log.some((e) =>
+      e.k === 'msg' && (e.cls === 'you' || e.cls === 'bot'))) return;
+    const parts = splitModelRef(this.effectiveModel());
+    const conn = parts
+      ? readConnections().find((c) => c.id === parts.connectionId)
+      : undefined;
+    const advertised =
+      conn && parts ? this.advertisedLimits(conn, parts.model) : undefined;
+    void this.panel.webview.postMessage({
+      type: 'context',
+      runId: '',
+      turn: 0,
+      maxContext: resolveMaxContext(advertised?.context),
+      total: 0,
+      system: 0,
+      user: 0,
+      assistant: 0,
+      tool: 0,
+    });
+  }
+
+  /**
+   * A stored model list written before the reader knew an endpoint's window
+   * field can hold no window at all. `ensureModelPool` refreshes that list when
+   * a run starts, but a user who has just connected is looking at Settings
+   * before any run — and "context unknown" about a model whose window is one
+   * request away is exactly the wrong first impression. Opening Settings is
+   * that moment.
+   *
+   * The rule is not restated here: each connection is offered to
+   * `ensureModelPool`, so the TTL and the "every entry carries a window" test
+   * stay in one place. A successful refresh posts the settings again, which
+   * fills the open page in; a failed one is as silent as a failed run refresh.
+   */
+  private refreshStaleModelWindows(): void {
+    for (const conn of readConnections()) {
+      void (async () => {
+        let apiKey = await this.ctx.secrets.get(
+          `plato.providers.${conn.id}.apiKey`,
+        );
+        if (!apiKey && conn.id === 'anthropic') {
+          apiKey = await this.ctx.secrets.get(LEGACY_KEY);
+        }
+        if (!apiKey) return;
+        await this.ensureModelPool(conn, apiKey);
+      })();
+    }
   }
 
   /** True when the effective model supports reasoning (D28 phase 2). */
@@ -4168,6 +4238,9 @@ class ChatHost {
       // D37: live context UI state.
       compaction: this.compactionState(),
     });
+    // A model change, a settings refresh, or a first load must leave the ring
+    // knowing what the model can hold even though no run has measured anything.
+    this.postIdleContext();
   }
 
   /**

@@ -43,9 +43,9 @@ const VSCODE_VERSION = '1.136.0';
 const PORT = '4703';
 const STUB = `http://127.0.0.1:${PORT}`;
 
-const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.31.0.vsix');
+const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.31.1.vsix');
 const EXPECTED_SHA =
-  '71a65b01e809ef0513c5ff1f70d96bafd183167af7340e33b1ac214d08310e6b';
+  'b9e6715388a6bc16cb0f7be26e802bf0b73cc1b6769054bcfa4606971e1a3926';
 
 try {
   await import('vscode-extension-tester');
@@ -152,9 +152,12 @@ const settings = JSON.parse(
 settings['plato.connections'][0].baseUrl = `${STUB}/v1`;
 settings['plato.connections'][0].models = ['stub-model'];
 settings['plato.model'] = 'stub:stub-model';
-// No stored pool: the first run fetches the list, which is the ordinary path.
-delete settings['plato.connections'][0].pool;
-delete settings['plato.connections'][0].pooledAt;
+// What an older reader left behind: a list fetched minutes ago with no window
+// on its model. Opening the chat or Settings must refresh it quietly, before
+// any run, so the provider list and the idle context panel are not left saying
+// "context unknown" about a number the endpoint will answer in a second.
+settings['plato.connections'][0].pool = [{ id: 'stub-model' }];
+settings['plato.connections'][0].pooledAt = Date.now();
 const SETTINGS = resolve(ROOT, 'tmp', 'field', 'settings-stop.json');
 writeFileSync(SETTINGS, JSON.stringify(settings, null, 2) + '\n', 'utf8');
 
@@ -166,6 +169,9 @@ const stub = spawn(
       ...process.env,
       PLATO_STUB_PORT: PORT,
       PLATO_STUB_MODELS: 'stub-model',
+      // DeepSeek's spelling, so this proves the reader the release cares about.
+      PLATO_STUB_CONTEXT: '1048576',
+      PLATO_STUB_CONTEXT_FIELD: 'context_window',
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   },
