@@ -458,4 +458,51 @@ describe('pausing on the final answer (pauseFinalAnswer)', () => {
     expect(shown).toContain('the answer');
     expect(p.requests).toHaveLength(1);
   });
+
+  it('with the flag on and no pause, the run is indistinguishable from the flag off', async () => {
+    // The flag is on in both shipping hosts, so a change to the gate that
+    // alters an ORDINARY run would reach every user unnoticed. Run one scripted
+    // turn pair twice — flag off, then flag on — and require the two runs to be
+    // the same run: same events in the same order, same outcome.
+    const script = (): TurnResponse[] => [
+      toolTurn([write('c1', 'a.txt', 'body')], 'working'),
+      answerTurn('finished'),
+    ];
+    async function once(pauseFinalAnswer: boolean) {
+      // A fresh root per run, so neither run can inherit a file or a directory
+      // state the other created.
+      const root = tempDir();
+      const bus = new AgentBus();
+      const events: AgentEvent[] = [];
+      bus.on((e) => events.push(e));
+      const controller = new RunController();
+      const p = recording(script());
+      const r = await runAgentLoop({
+        root,
+        task: 'answer me',
+        getMode: () => 'auto' as const,
+        approve: () => Promise.resolve(true),
+        model: 'anthropic:claude-3-5-haiku-latest',
+        provider: p,
+        bus,
+        controller,
+        pauseFinalAnswer,
+      });
+      // The run id is minted per run; everything else must match.
+      const seen = events.map((e) => {
+        const copy = { ...e } as Record<string, unknown>;
+        delete copy['runId'];
+        return copy;
+      });
+      return { seen, r };
+    }
+    const off = await once(false);
+    const on = await once(true);
+    // A comparison of two empty lists would pass and prove nothing.
+    expect(off.seen.length).toBeGreaterThan(5);
+    expect(on.seen).toEqual(off.seen);
+    expect(on.r.reason).toBe(off.r.reason);
+    expect(on.r.turns).toBe(off.r.turns);
+    expect(on.r.finalText).toBe(off.r.finalText);
+  });
 });
