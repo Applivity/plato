@@ -1211,12 +1211,37 @@ function SearchLine({
 // to "esc pauses" — and a hint that cannot be true is the defect this round is
 // about. The keys below are the ones that do something right now.
 const IDLE_HINT =
-  'Shift+Tab mode (plan · edit · auto) · @ files · /help · Alt+Enter newline';
-const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
+/**
+ * Alt+Enter earns its place only once there is a draft: a newline key has no
+ * use in an empty box. At 80 columns the full idle hint plus it would exceed
+ * the line, so the two lesser keys give way to the explanations and the key a
+ * draft actually needs.
+ */
+const IDLE_DRAFT_HINT =
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · Alt+Enter newline';
+const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops';
+const RUNNING_DRAFT_HINT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 /** The pause is asked for but the run has not reached a safe point yet. */
-const PAUSING_HINT = 'pausing — enter steers · /continue resumes · esc stops';
-/** The run is really waiting. Enter steers; `/continue` resumes; Esc stops. */
-const PAUSED_HINT = 'paused — enter steers · /continue resumes · esc stops';
+const PAUSING_HINT = 'pausing — enter steers · /continue resumes · esc esc stops';
+const PAUSING_DRAFT_HINT = `${PAUSING_HINT} · alt+enter newline`;
+/** The run is really waiting. Enter steers; `/continue` resumes; Esc Esc stops. */
+const PAUSED_HINT = 'paused — enter steers · /continue resumes · esc esc stops';
+const PAUSED_DRAFT_HINT = `${PAUSED_HINT} · alt+enter newline`;
+
+/** The hint for the state the user is in, and only the keys that work in it. */
+function hintFor(running: boolean, pause: ViewState['pause'], hasDraft: boolean): string {
+  if (!running) {
+    return hasDraft ? IDLE_DRAFT_HINT : IDLE_HINT;
+  }
+  if (pause === 'parked') {
+    return hasDraft ? PAUSED_DRAFT_HINT : PAUSED_HINT;
+  }
+  if (pause === 'requested') {
+    return hasDraft ? PAUSING_DRAFT_HINT : PAUSING_HINT;
+  }
+  return hasDraft ? RUNNING_DRAFT_HINT : RUNNING_HINT;
+}
 
 function Composer({
   editor,
@@ -1251,16 +1276,7 @@ function Composer({
         )}
       </Box>
       <Text dimColor>
-        {truncateToWidth(
-          !running
-            ? IDLE_HINT
-            : pause === 'parked'
-              ? PAUSED_HINT
-              : pause === 'requested'
-                ? PAUSING_HINT
-                : RUNNING_HINT,
-          columns,
-        )}
+        {truncateToWidth(hintFor(running, pause, editor.text.length > 0), columns)}
       </Text>
     </Box>
   );

@@ -302,6 +302,8 @@ export interface ViewState {
 /** `/help`, built from the menu's table so the two can never disagree (D49cd). */
 const HELP_WIDTH = Math.max(...COMMANDS.map((command) => slashText(command).length)) + 2;
 const KEY_WIDTH = 10;
+/** How long the first Esc of a paused run waits for its partner. */
+const ESC_STOP_MS = 1500;
 /**
  * Commands that may act while a run is live. A WHITELIST, not a blacklist: a
  * command added later is refused by default. The old queue-then-run path hid
@@ -317,7 +319,7 @@ export const SESSION_HELP = [
   ),
   '',
   'Keys',
-  `  ${'Esc'.padEnd(KEY_WIDTH)}pause the run; press Esc again to stop it`,
+  `  ${'Esc'.padEnd(KEY_WIDTH)}pause the run; Esc Esc stops a paused run`,
   `  ${'Enter'.padEnd(KEY_WIDTH)}steer the run; /queue <text> waits for the next run`,
   `  ${'/continue'.padEnd(KEY_WIDTH)}resume a paused run; with text, send it and resume`,
   `  ${'Alt+Enter'.padEnd(KEY_WIDTH)}start a new line in the composer`,
@@ -418,6 +420,8 @@ export class Session {
   private pauseAfterToolEvent = false;
   /** The last run ended on Stop, so `/continue` must not pretend to resume it. */
   private lastRunStopped = false;
+  /** When the first Esc of a paused pair was pressed; 0 means no pair open. */
+  private escStopAt = 0;
   private readonly remembered = new Set<string>();
   private modeRequestsThisRun = 0;
   private nextRow = 1;
@@ -837,6 +841,7 @@ export class Session {
     this.heldStreaming = null;
     this.modelCallInFlight = false;
     this.pauseAfterToolEvent = false;
+    this.escStopAt = 0;
     this.lastRunStopped = false;
     this.update({
       running: true,
@@ -951,6 +956,7 @@ export class Session {
       this.heldStreaming = null;
       this.modelCallInFlight = false;
       this.pauseAfterToolEvent = false;
+      this.escStopAt = 0;
       const startedAt = this.state.status.startedAt;
       const runMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
       const runOutput = this.state.status.runOutputTokens;
@@ -1002,24 +1008,38 @@ export class Session {
     // Text held back by the pause has arrived; a stop must not also swallow it.
     this.flushHeld();
     this.pause = 'none';
+    this.escStopAt = 0;
     this.pauseAfterToolEvent = false;
     this.update({ pause: 'none' });
     this.controller?.cancel();
   }
 
   /**
-   * Esc with no card and no menu in the way. The first press asks for a pause;
-   * a press that finds a pause already asked for (or landed) stops the run,
-   * which is what the hint line says it does. Ctrl+C always stops.
+   * Esc with no card and no menu in the way. While the run is going, one press
+   * asks for the pause. While a pause is requested or parked, one press does
+   * NOTHING; a second press inside the window stops, and a press after the
+   * window is a new first press. Ctrl+C always stops in one press.
    */
   escapeDuringRun(): void {
     if (!this.state.running) {
       return;
     }
     if (this.pause !== 'none') {
-      this.cancel();
+      const now = Date.now();
+      if (this.escStopAt !== 0 && now - this.escStopAt <= ESC_STOP_MS) {
+        this.escStopAt = 0;
+        this.cancel();
+        return;
+      }
+      this.escStopAt = now;
       return;
     }
+    // A stop already in flight is not a run state to pause. Without this a
+    // third quick Esc could claim a pause on the run that is ending.
+    if (this.controller === null || this.controller.signal.aborted) {
+      return;
+    }
+    this.escStopAt = 0;
     this.requestPause();
   }
 
@@ -1029,6 +1049,9 @@ export class Session {
       return;
     }
     this.pause = 'requested';
+    // The Esc that asked for the pause is not the first press of the paused
+    // pair; the next press while paused starts that pair.
+    this.escStopAt = 0;
     this.update({ pause: 'requested' });
     // A model call in flight may be about to raise an approval card. Pausing
     // now would park at the between-tools gate, BEFORE that card, and hold back
@@ -1083,6 +1106,7 @@ export class Session {
     }
     this.controller?.resume();
     this.pause = 'none';
+    this.escStopAt = 0;
     this.pauseAfterToolEvent = false;
     this.update({ pause: 'none' });
     this.flushHeld();

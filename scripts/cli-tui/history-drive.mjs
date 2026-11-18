@@ -37,8 +37,8 @@ const cli = resolve(cliIndex >= 0 ? args[cliIndex + 1] : join(here, '../../packa
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
 const IDLE_HINT =
-  'Shift+Tab mode (plan · edit · auto) · @ files · /help · Alt+Enter newline';
-const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
+const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops';
 const ALPHA = 'history probe alpha from the previous process';
 const BETA = 'history probe beta from the previous process';
 const EDITOR_ERROR =

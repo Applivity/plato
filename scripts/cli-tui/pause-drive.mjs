@@ -149,9 +149,9 @@ const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
 const notes = [];
 
 const main = launch();
-const PAUSING = 'pausing — enter steers · /continue resumes · esc stops';
-const PAUSED = 'paused — enter steers · /continue resumes · esc stops';
-const RUNNING = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
+const PAUSING = 'pausing — enter steers · /continue resumes · esc esc stops';
+const PAUSED = 'paused — enter steers · /continue resumes · esc esc stops';
+const RUNNING_DRAFT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 
 try {
   await main.wait((out) => out.includes('Type / for commands'), 20000, 'the start screen');
@@ -168,12 +168,13 @@ try {
       main.frame()
         .split('\n')
         .find((line) => line.startsWith('Shift+Tab mode')) ?? '';
-    record(!/esc stops/i.test(idleLine), 'the idle hint does not advertise a stop');
+    record(!/\bstops\b/i.test(idleLine), 'the idle hint does not advertise a stop');
     record(
-      idleLine.includes('@ files') &&
+      idleLine.includes('plan read-only') &&
+        idleLine.includes('@ files') &&
         idleLine.includes('/help') &&
-        idleLine.includes('Alt+Enter newline'),
-      'the idle hint names the keys that work when idle, including Alt+Enter',
+        !idleLine.includes('Alt+Enter'),
+      'the idle hint explains the modes and does not advertise Alt+Enter for an empty box',
     );
   }
   {
@@ -207,7 +208,7 @@ try {
       'Alt+Enter starts a new line in the composer',
     );
     const frame = main.frame();
-    record(frame.includes(RUNNING), 'Alt+Enter does not pause the running run');
+    record(frame.includes(RUNNING_DRAFT), 'Alt+Enter does not pause the running run');
     record(
       !frame.includes(PAUSING) && !frame.includes(PAUSED),
       'Alt+Enter is not read as Escape',
@@ -247,7 +248,7 @@ try {
     main.send('\x1b');
     record(
       await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSING), 5000, 'the pausing hint')),
-      'Esc during a stream says "pausing — enter steers · /continue resumes · esc stops"',
+      'Esc during a stream says "pausing — enter steers · /continue resumes · esc esc stops"',
     );
     const pendingFrame = main.frame();
     record(!pendingFrame.includes(PAUSED), 'the parked hint is not claimed before the run really parks');
@@ -255,8 +256,18 @@ try {
     record(!main.frame().includes('A20'), 'the stream stops advancing while the pause is pending');
     record(
       await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the paused hint')),
-      'the hint says "paused — enter steers · /continue resumes · esc stops" once the run parks',
+      'the hint says "paused — enter steers · /continue resumes · esc esc stops" once the run parks',
     );
+    // One Esc while parked does nothing: it opens the pair, it does not stop.
+    const oneEscMark = main.output.length;
+    main.send('\x1b');
+    await sleep(400);
+    record(main.frame().includes(PAUSED), 'one Esc while parked leaves the run parked');
+    record(
+      !plain(main.output.slice(oneEscMark)).includes('Run ended: cancelled.'),
+      'one Esc while parked stops nothing',
+    );
+    record(provider.requests.length === before + 1, 'that Esc sent nothing');
     // Enter no longer resumes. It must do nothing on an empty composer.
     main.send('\r');
     await sleep(350);
@@ -276,18 +287,32 @@ try {
     record(provider.requests.length === before + 1, 'resuming asked the model nothing new');
   }
 
-  // B. A second Esc stops; the conversation survives.
+  // B. Two Escs inside the window stop; the conversation survives.
   {
     const long = Array.from({ length: 60 }, (_, i) => `B${String(i).padStart(2, '0')}`).join(' ');
     provider.setScript([{ text: long, chunks: 60, chunkMs: 100 }]);
     await main.submit('stream the second answer');
     await main.wait((out) => out.includes('B05'), 20000, 'the second stream to start');
-    main.send('\x1b');
-    await sleep(120);
-    main.send('\x1b');
+    main.send('\x1b'); // asks for the pause
+    await main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the parked run');
+    const firstOfPair = main.output.length;
+    main.send('\x1b'); // first press of the paused pair: nothing
+    await sleep(300);
+    record(main.frame().includes(PAUSED), 'the first Esc of a paused pair does nothing');
+    record(
+      !plain(main.output.slice(firstOfPair)).includes('Run ended: cancelled.'),
+      'the first Esc of a paused pair stops nothing',
+    );
+    main.send('\x1b'); // second press inside the window: stop
+    main.send('\x1b'); // a third press while the run is ending: nothing
     record(
       await attempt(() => main.wait((out) => out.includes('Run ended: cancelled.'), 15000, 'the stopped run')),
-      'a second Esc stops the run',
+      'two Escs inside the window stop the run',
+    );
+    await sleep(400);
+    record(
+      !lastFrame(main.output).includes(PAUSING),
+      'a third Esc after the stop claims no new pause',
     );
     await main.wait((out) => /\b\d+ turns?\b/.test(plain(out)), 15000, 'the run summary');
     const stoppedMark = main.output.length;
@@ -317,6 +342,132 @@ try {
       'the conversation survives the stop and the next run carries it',
     );
     await main.wait((out) => out.includes('still here'), 15000, 'the next answer');
+  }
+
+  // B2. A second Esc after the window is a new first press: it stops nothing.
+  {
+    const long = Array.from({ length: 60 }, (_, i) => `D${String(i).padStart(2, '0')}`).join(' ');
+    provider.setScript([{ text: long, chunks: 60, chunkMs: 100 }]);
+    const mark = main.output.length;
+    await main.submit('stream for the late second press');
+    await main.wait((out) => out.includes('D05'), 20000, 'the late-press stream');
+    main.send('\x1b');
+    await main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the parked run for the late press');
+    const pairMark = main.output.length;
+    main.send('\x1b');
+    await sleep(1700);
+    main.send('\x1b');
+    await sleep(400);
+    record(main.frame().includes(PAUSED), 'a second Esc after the window leaves the run parked');
+    record(
+      !plain(main.output.slice(pairMark)).includes('Run ended: cancelled.'),
+      'a second Esc after the window stops nothing',
+    );
+    await main.submit('/continue');
+    record(
+      await attempt(() =>
+        main.wait(
+          (out) => /\b1 turn\b/.test(plain(out.slice(mark))),
+          20000,
+          'the resumed run after the late press',
+        ),
+      ),
+      'the run is still resumable after the late second press',
+    );
+  }
+
+  // B3. One Esc while the pause is still landing does nothing.
+  {
+    const long = Array.from({ length: 60 }, (_, i) => `F${String(i).padStart(2, '0')}`).join(' ');
+    provider.setScript([{ text: long, chunks: 60, chunkMs: 100 }]);
+    const mark = main.output.length;
+    await main.submit('stream for the pausing press');
+    await main.wait((out) => out.includes('F05'), 20000, 'the pausing stream');
+    main.send('\x1b');
+    await main.wait((out) => lastFrame(out).includes(PAUSING), 5000, 'the pausing hint');
+    const pairMark = main.output.length;
+    main.send('\x1b');
+    await sleep(400);
+    record(
+      main.frame().includes(PAUSING) || main.frame().includes(PAUSED),
+      'one Esc while pausing leaves the pause in place',
+    );
+    record(
+      !plain(main.output.slice(pairMark)).includes('Run ended: cancelled.'),
+      'one Esc while pausing stops nothing',
+    );
+    await main.submit('/continue');
+    record(
+      await attempt(() =>
+        main.wait(
+          (out) => /\b1 turn\b/.test(plain(out.slice(mark))),
+          20000,
+          'the resumed pausing run',
+        ),
+      ),
+      'the pausing run is still resumable',
+    );
+  }
+
+  // B4. A half-pair, a long wait, then /continue: it resumes, and the stale
+  // half-pair cannot turn the next run's single Esc while parked into a stop.
+  {
+    const long = Array.from({ length: 60 }, (_, i) => `G${String(i).padStart(2, '0')}`).join(' ');
+    provider.setScript([{ text: long, chunks: 60, chunkMs: 100 }]);
+    const mark = main.output.length;
+    // The previous run's summary is printed just before `running` goes false;
+    // wait for the idle hint so this submit cannot fall into that window.
+    await main.wait(
+      (out) => lastFrame(out).includes('Shift+Tab mode'),
+      5000,
+      'the idle composer before the half-pair run',
+    );
+    await main.submit('stream for the half-pair');
+    await main.wait((out) => out.includes('G05'), 20000, 'the half-pair stream');
+    main.send('\x1b');
+    await main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the parked half-pair run');
+    main.send('\x1b'); // first of the pair, then a wait longer than the window
+    await sleep(1700);
+    await main.submit('/continue');
+    record(
+      await attempt(() =>
+        main.wait(
+          (out) => /\b1 turn\b/.test(plain(out.slice(mark))),
+          30000,
+          'the resumed half-pair run',
+        ),
+      ),
+      'a half-pair, a long wait and /continue still resume the run',
+    );
+
+    const next = Array.from({ length: 60 }, (_, i) => `H${String(i).padStart(2, '0')}`).join(' ');
+    provider.setScript([{ text: next, chunks: 60, chunkMs: 100 }]);
+    const nextMark = main.output.length;
+    await main.wait(
+      (out) => lastFrame(out).includes('Shift+Tab mode'),
+      5000,
+      'the idle composer before the next run',
+    );
+    await main.submit('next run after the half-pair');
+    await main.wait((out) => out.includes('H05'), 20000, 'the next run');
+    main.send('\x1b');
+    await main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the next run to park');
+    main.send('\x1b'); // one press while parked: must do nothing
+    await sleep(400);
+    record(
+      main.frame().includes(PAUSED),
+      'one Esc on the run after a half-pair does nothing',
+    );
+    record(
+      !plain(main.output.slice(nextMark)).includes('Run ended: cancelled.'),
+      'the stale half-pair did not turn that single Esc into a stop',
+    );
+    await main.submit('/continue');
+    await main.wait(
+      (out) => /\b1 turn\b/.test(plain(out.slice(nextMark))),
+      30000,
+      'the next run to finish',
+    );
   }
 
   // C. Pause during a slow tool: it finishes whole; guidance at the park lands.
@@ -465,7 +616,7 @@ try {
     await main.wait((out) => out.slice(mark).includes('Keys'), 10000, '/help');
     const help = plain(main.output.slice(mark));
     record(
-      help.includes('pause the run; press Esc again to stop it') &&
+      help.includes('pause the run; Esc Esc stops a paused run') &&
         help.includes('steer the run; /queue <text> waits for the next run') &&
         help.includes('resume a paused run; with text, send it and resume') &&
         help.includes('start a new line in the composer') &&
@@ -476,7 +627,7 @@ try {
       help.includes('A paused run does not survive Plato exiting.'),
       '/help says a paused run does not survive the process exiting',
     );
-    record(help.includes('esc pauses') === false, '/help does not repeat a stale "esc stops" line for a running run');
+    record(help.includes('esc pauses') === false, '/help does not repeat a stale running-hint line');
   }
 
   main.kill();

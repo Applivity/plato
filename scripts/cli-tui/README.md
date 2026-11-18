@@ -58,15 +58,20 @@ hanging under its indent, a coloured diff, and a real 100-to-60-column resize.
 `node scripts/cli-tui/pause-drive.mjs` checks pause: Esc during a stream holds
 the screen where the user stopped it and changes the hint, Enter on an empty
 composer does nothing, text typed while paused is held as guidance and delivered
-when `/continue` resumes, a second Esc stops and the conversation survives, a
-pause asked for during a tool lands after the tool wrote its whole file, a pause
-asked for while the model call is out does not swallow the approval card,
-`/continue <text>` sends the text before it resumes, Ctrl+C stops a parked run,
-`/continue` with nothing paused says so (from idle, during an unpaused run, and
-after a stop where it says the run is over), the parked hint is whole at 80 and
-120 columns, Alt+Enter adds a line and
+when `/continue` resumes, a pause asked for during a tool lands after the tool
+wrote its whole file, a pause asked for while the model call is out does not
+swallow the approval card, one Esc while parked (or pausing) does nothing, two
+Escs inside 1.5 s stop and the conversation survives, a second Esc after that
+window stops nothing, `/continue <text>` sends the text before it resumes,
+Ctrl+C stops a parked run in one press, `/continue` with nothing paused says so
+(from idle, during an unpaused run, and after a stop where it says the run is
+over), the parked hint says `esc esc stops` and is whole at 80 and 120 columns,
+Alt+Enter adds a line and
 does not pause, and `/help` names the keys and says a paused run does not survive
-the process exiting. `node scripts/cli-tui/command-drive.mjs` checks commands
+the process exiting. `node scripts/cli-tui/hint-drive.mjs` checks every hint
+state at 80 and 120 columns: an empty box never advertises Alt+Enter, a draft
+does, the idle hint keeps the mode explanations, and every hint is one whole
+line with nothing wrapped or truncated. `node scripts/cli-tui/command-drive.mjs` checks commands
 typed during a live run: `/help`, `/sessions` and `/compact` act, `/continue`
 acts only when a pause is in effect, and every other command (`/undo`, `/resume`,
 `/model`, `/mode`, `/team`, `/gitignore`, `/new`, `/exit`) is refused with one

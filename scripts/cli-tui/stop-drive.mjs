@@ -4,9 +4,9 @@
  *   node scripts/cli-tui/stop-drive.mjs [--cli path/to/cli.js]
  *
  * A. A three-second tool: the status line names it and its seconds increase.
- * B. Esc twice while an answer streams: the first asks for a pause, the
- *    second stops; the stop is acknowledged at once, the part that arrived
- *    stays, and the run summary follows.
+ * B. Esc while an answer streams asks for a pause; Esc Esc while paused stops.
+ *    The stop is acknowledged at once, the part that arrived stays, and the
+ *    run summary follows.
  * C. Idle: no clock interval runs, so a second of silence draws nothing.
  */
 import { spawn } from 'node:child_process';
@@ -141,6 +141,9 @@ try {
   await submit('write the slow answer');
   await waitFor(() => plain(output.slice(mark)).includes('SLOW-ANSWER-START'), 8000, 'the answer to start');
   const stoppedAt = Date.now();
+  // One Esc asks for the pause; a paused run stops on the next two presses.
+  send('\x1b');
+  await sleep(120);
   send('\x1b');
   await sleep(120);
   send('\x1b');

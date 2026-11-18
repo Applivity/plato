@@ -214,6 +214,10 @@ try {
   await attempt(() =>
     waitFor(() => plain(output.slice(mark)).includes('Queued: after the stop'), 4000, 'the queued line for the stop'),
   );
+  // The first Esc asks for the pause; while it is in effect, one Esc opens the
+  // stop pair and the next one inside 1.5 s stops.
+  send('\x1b');
+  await sleep(120);
   send('\x1b');
   await sleep(120);
   send('\x1b');
@@ -221,7 +225,7 @@ try {
     await attempt(() =>
       waitFor(() => plain(output.slice(mark)).includes('Run ended: cancelled.'), 10000, 'the stopped run'),
     ),
-    'Esc then Esc again during a run still stops it',
+    'Esc, then Esc Esc while paused stops the run',
   );
   record(
     await attempt(() => waitFor(() => provider.requests.length >= beforeStop + 2, 15000, 'the queued line after the stop')),
