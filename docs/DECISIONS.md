@@ -8327,7 +8327,11 @@ still a right answer for it.
 
 If the model list cannot be fetched, **the window is not reported as "context
 unknown."** That wording is a claim about the model, and a request that failed is
-a fact about the network. The failure says **it could not check**, and the refresh
-retries: the settings path gets a longer timeout and one retry, so a cold first
-fetch that aborts on the first attempt still resolves. **A guess or a failure
-must never be dressed as a fact about the model.**
+a fact about the network. A failed check reads **"could not check — Refresh
+models to retry"**.
+
+- **The budget belongs to the caller.** A run start gets **5 seconds and no
+  retry**; Settings and the chat get **15 seconds and one retry**, because a
+  cold first fetch may abort once and a person is waiting on a page they opened.
+- **A guess or a failure must never be dressed as a fact about the model.**
+  Never "context unknown" for something the endpoint never answered.
