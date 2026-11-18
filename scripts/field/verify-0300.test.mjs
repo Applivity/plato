@@ -64,29 +64,95 @@ async function setScript(steps) {
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }
 
+/**
+ * The first quick-input field whose step matches `want`, ready to type into.
+ *
+ * A sleep is not a wait: the palette is in the DOM before it accepts keystrokes,
+ * and the old fixed sleeps typed into a box that existed but was not yet
+ * interactable. This polls the field's DISPLAYED and ENABLED state, and also
+ * reads the step's own words, so the key is not typed into the connection
+ * picker when the next step has not arrived yet.
+ */
+async function quickInput(driver, want, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const widget = await driver.executeScript(`
+      const w = document.querySelector('.quick-input-widget');
+      return w ? String(w.textContent || '') : '';
+    `).catch(() => '');
+    for (const el of await driver.findElements(By.css('.quick-input-box input'))) {
+      try {
+        if (!(await el.isDisplayed()) || !(await el.isEnabled())) continue;
+        const desc = widget + ' ' + ((await el.getAttribute('placeholder')) || '');
+        last = desc.replace(/\s+/g, ' ').trim().slice(0, 140);
+        if (want.test(desc)) return el;
+      } catch {
+        /* the palette rebuilt under us; look again */
+      }
+    }
+    await driver.sleep(200);
+  }
+  throw new Error(
+    `the quick-input step ${want} never became interactable within ${timeoutMs}ms (last: ${JSON.stringify(last)})`,
+  );
+}
+
+/** Types into the field, re-finding it if the palette was still settling. */
+async function sendWithRetry(driver, el, keys, want, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      await el.sendKeys(keys);
+      return;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!/interact|stale|not reachable/i.test(msg)) throw e;
+      last = e;
+      await driver.sleep(250);
+      el = await quickInput(driver, want, 3000);
+    }
+  }
+  throw new Error(`the ${want} field never accepted input within ${timeoutMs}ms (${last?.message ?? ''})`);
+}
+
+/**
+ * Runs a command through the workbench, retrying while the palette is still
+ * becoming interactive. The tester's own executeCommand types into the quick
+ * input at once; on a freshly launched window that input can exist but not yet
+ * accept keystrokes, which is the flake this replaces.
+ */
+async function runCommand(driver, title, timeoutMs = 45000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      await new Workbench().executeCommand(title);
+      return;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!/interact|stale|not reachable|waiting until|timeout/i.test(msg)) throw e;
+      last = e;
+      await driver.actions().sendKeys(Key.ESCAPE).perform().catch(() => {});
+      await driver.sleep(500);
+    }
+  }
+  throw new Error(
+    `the command "${title}" never ran within ${timeoutMs}ms (last: ${last?.message ?? ''})`,
+  );
+}
+
 /** Sets the API key through the product's own command (the stub ignores it). */
 async function setApiKey(driver) {
-  await new Workbench().executeCommand('Plato: Set API Key');
-  await driver.sleep(800);
-  const picks = await driver.findElements(By.css('.quick-input-list .monaco-list-row'));
-  if (picks.length > 0) {
-    const box = await driver.findElement(By.css('.quick-input-box input'));
-    await box.sendKeys('stub');
-    await driver.sleep(400);
-    await box.sendKeys(Key.ENTER);
-    await driver.sleep(600);
-  }
-  const deadline = Date.now() + 20000;
-  let input = null;
-  while (input === null && Date.now() < deadline) {
-    for (const box of await driver.findElements(By.css('.quick-input-box input'))) {
-      if (await box.isDisplayed().catch(() => false)) { input = box; break; }
-    }
-    if (input === null) await driver.sleep(200);
-  }
-  if (input === null) throw new Error('the API key prompt never appeared');
-  await input.sendKeys('sk-stub-not-a-real-key');
-  await input.sendKeys(Key.ENTER);
+  await runCommand(driver, 'Plato: Set API Key');
+  const pick = await quickInput(driver, /which connection is this key for/i);
+  await sendWithRetry(driver, pick, 'stub', /which connection is this key for/i);
+  await driver.sleep(250);
+  await sendWithRetry(driver, pick, Key.ENTER, /which connection is this key for/i);
+  const key = await quickInput(driver, /API key/i);
+  await sendWithRetry(driver, key, 'sk-stub-not-a-real-key', /API key/i);
+  await sendWithRetry(driver, key, Key.ENTER, /API key/i);
   await driver.sleep(600);
 }
 
@@ -203,7 +269,7 @@ describe('0.30.0 real-window check — the advertised context window', function 
 
   before(async () => {
     driver = VSBrowser.instance.driver;
-    await new Workbench().executeCommand('Plato: Open Chat');
+    await runCommand(driver, 'Plato: Open Chat');
     await driver.sleep(3000);
     await setApiKey(driver);
     try {
