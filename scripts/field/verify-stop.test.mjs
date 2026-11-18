@@ -45,6 +45,16 @@ async function setScript(steps) {
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }
 
+/** How many of the next /models requests the stub should refuse. */
+async function setModelsFail(count) {
+  const res = await fetch(`${STUB}/__models-fail`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ count }),
+  });
+  if (!res.ok) throw new Error(`stub refused the failure control: ${res.status}`);
+}
+
 async function stubLog() {
   const res = await fetch(`${STUB}/__log`);
   return await res.json();
@@ -228,17 +238,52 @@ describe('the words and the key — real-window check', function () {
     await field.enter();
   });
 
-  it('fills the window before any run: Settings and the idle context panel', async () => {
-    // Nothing has run in this window, and the stored pool has no window. The
-    // user opens Settings; the host must fetch the window quietly, and the
-    // context panel must know what the model holds before a run measures it.
+  it('says it could not check, then recovers without a manual Refresh', async () => {
+    // The stub starts refusing every /models answer (the launcher sets the
+    // initial count), so the quiet check fails here. The page must say that it
+    // COULD NOT CHECK — not that the model publishes no window.
+    await setModelsFail(4);
     await field.switchToChatFrame();
     const opened = await field.openSettings();
     assert.equal(opened, true, 'Plato settings did not open');
 
-    const deadline = Date.now() + 20000;
+    const failDeadline = Date.now() + 30000;
+    let failedLine = '';
+    while (Date.now() < failDeadline) {
+      failedLine = await driver.executeScript(`
+        const row = [...document.querySelectorAll('#sbody .conn .mopt')]
+          .find((r) => ((r.querySelector('.mopt-name') || {}).textContent || '').trim() === 'stub-model');
+        return row ? ((row.querySelector('.mopt-sub') || {}).textContent || '').trim() : '';
+      `);
+      if (/could not check/i.test(failedLine)) break;
+      await sleep(250);
+    }
+    assert.match(failedLine, /could not check/i,
+      `a failed check does not say so: ${JSON.stringify(failedLine)}`);
+    assert.match(failedLine, /Refresh models/i,
+      `the failure line does not name the way to retry: ${JSON.stringify(failedLine)}`);
+    assert.notEqual(failedLine, 'context unknown',
+      '"could not check" wore the words of "the provider publishes nothing"');
+    say(`OK   a failed check says so: ${failedLine}`);
+
+    await driver.executeScript(`
+      for (const d of document.querySelectorAll('#sbody details')) { d.open = true; }
+      return true;
+    `);
+    await driver.sleep(250);
+    await field.shot('stop-window-check-failed');
+
+    // The endpoint answers again. Closing and reopening the page asks again,
+    // with no Refresh press, and the same list fills in.
+    await setModelsFail(0);
+    await driver.executeScript(`document.getElementById('sback').click(); return true;`);
+    await driver.sleep(400);
+    await field.switchToChatFrame();
+    const reopened = await field.openSettings();
+    assert.equal(reopened, true, 'Plato settings did not reopen');
+    const okDeadline = Date.now() + 30000;
     let sub = '';
-    while (Date.now() < deadline) {
+    while (Date.now() < okDeadline) {
       sub = await driver.executeScript(`
         const row = [...document.querySelectorAll('#sbody .conn .mopt')]
           .find((r) => ((r.querySelector('.mopt-name') || {}).textContent || '').trim() === 'stub-model');
@@ -248,12 +293,19 @@ describe('the words and the key — real-window check', function () {
       await sleep(250);
     }
     assert.equal(sub, '1M context',
-      `the provider list did not fill its window before a run: ${JSON.stringify(sub)}`);
-    say(`OK   Settings filled the window without a run: ${sub}`);
+      `the same list did not recover on the next open: ${JSON.stringify(sub)}`);
+    say(`OK   the next open recovered without a Refresh press: ${sub}`);
+    await driver.executeScript(`
+      for (const d of document.querySelectorAll('#sbody details')) { d.open = true; }
+      return true;
+    `);
+    await driver.sleep(250);
+    await field.shot('stop-window-check-recovered');
 
+    // The idle context panel now knows the window: max from the model, zero
+    // totals, and no invented last request. No run has happened.
     await driver.executeScript(`document.getElementById('sback').click(); return true;`);
     await driver.sleep(400);
-
     await field.switchToChatFrame();
     const idleDeadline = Date.now() + 10000;
     let idle = {};

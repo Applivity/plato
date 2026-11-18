@@ -3165,8 +3165,14 @@ export function chatHtml(
           const text = el('span', 'mopt-text');
           text.appendChild(el('span', 'mopt-name', key));
           const ctxN = fmtCtx(ctxMap[key]);
+          // Two absences, two sentences. "context unknown" is a fact the
+          // provider told us; "could not check" is a fact about the network,
+          // and it names the control that asks again.
           text.appendChild(el('span', 'mopt-sub',
-            ctxN ? ctxN + ' context' : 'context unknown'));
+            ctxN ? ctxN + ' context'
+              : c.ctxError === true
+                ? 'could not check — Refresh models to retry'
+                : 'context unknown'));
           row.appendChild(text);
           box.appendChild(row);
         }

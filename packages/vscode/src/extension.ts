@@ -1363,6 +1363,14 @@ class ChatHost {
   private pendingPause = false;
   private pendingCancel = false;
   /**
+   * The quiet page refresh could not ask (offline, refused, no answer), so the
+   * host never learned what these connections' models can hold. That is NOT the
+   * same fact as a provider that answered with no window: the Settings list
+   * says "could not check" for these and "context unknown" only for the latter.
+   * A successful check removes the connection again.
+   */
+  private poolCheckErrors = new Set<string>();
+  /**
    * D49bo: messages to send as the next task, in order. Deliberately in memory
    * only: a reload kills the run too, and a restored non-empty queue would
    * either sit there forever or start a run nobody asked for the moment the
@@ -3893,6 +3901,10 @@ class ChatHost {
         baseUrl: c.baseUrl ?? '',
         models: offered,
         ctx,
+        // "We could not ask" is not "the provider published nothing". The
+        // page has different words for each; only the former is a check that
+        // failed, and only the latter is a fact about the model.
+        ctxError: this.poolCheckErrors.has(c.id),
         keyStatus,
         builtin: !userRaw.has(c.id),
       });
@@ -4022,8 +4034,24 @@ class ChatHost {
         if (!apiKey && conn.id === 'anthropic') {
           apiKey = await this.ctx.secrets.get(LEGACY_KEY);
         }
-        if (!apiKey) return;
-        await this.ensureModelPool(conn, apiKey);
+        if (!apiKey) {
+          // Nothing to ask with. The provider card already says the key is
+          // missing; a "could not check" left over from before is not useful.
+          if (this.poolCheckErrors.delete(conn.id)) void this.sendSettings();
+          return;
+        }
+        const hadError = this.poolCheckErrors.has(conn.id);
+        const outcome = await this.ensureModelPool(conn, apiKey, {
+          // A page the user is looking at gets a longer leash than a run start,
+          // and one more try after a pause. Nothing is waiting on this.
+          timeoutMs: 15000,
+          retries: 1,
+          retryPauseMs: 1000,
+        });
+        if (outcome === 'failed') this.poolCheckErrors.add(conn.id);
+        else this.poolCheckErrors.delete(conn.id);
+        // 'fresh' with no earlier error has nothing to repaint.
+        if (outcome !== 'fresh' || hadError) void this.sendSettings();
       })();
     }
   }
@@ -5270,7 +5298,15 @@ class ChatHost {
   private async ensureModelPool(
     conn: ConnectionConfig,
     apiKey: string,
-  ): Promise<void> {
+    options: { timeoutMs?: number; retries?: number; retryPauseMs?: number } = {},
+  ): Promise<'fresh' | 'ok' | 'failed'> {
+    // The budget belongs to the CALLER. A run start keeps 5 s with no retry:
+    // a slow discovery must never hold up the work, and the fallback is right.
+    // A page the user is looking at is different — Settings and the chat open
+    // pass 15 s and one retry, because filling that page is the point.
+    const timeoutMs = options.timeoutMs ?? 5000;
+    const retries = options.retries ?? 0;
+    const retryPauseMs = options.retryPauseMs ?? 1000;
     const fresh =
       conn.pool !== undefined &&
       conn.pool.length > 0 &&
@@ -5283,38 +5319,43 @@ class ChatHost {
       // fallback is exactly the wrong answer the user cannot see. Ask again; a
       // list that still advertises nothing simply fits the run's own fallback.
       conn.pool.every((entry) => entry.maxContext !== undefined);
-    if (fresh) return;
-    try {
-      const pool = await fetchModelPool({
-        kind: conn.kind,
-        apiKey,
-        baseUrl:
-          conn.kind === 'openai'
-            ? conn.baseUrl ?? 'https://api.openai.com/v1'
-            : conn.baseUrl ?? undefined,
-        // A discovery refresh is a nicety, never a reason to stall a run.
-        fetchImpl: (url, init) =>
-          fetch(url, { ...init, signal: AbortSignal.timeout(5000) }),
-      });
-      if (pool.length === 0) return;
-      const user = rawUserConnections();
-      const entry = user.find((u) => u.id === conn.id);
-      if (!entry) return;
-      entry.pool = pool.map((p) => {
-        const e: ConnectionPoolEntry = { id: p.id };
-        if (p.maxContext !== undefined) e.maxContext = p.maxContext;
-        if (p.maxOutput !== undefined) e.maxOutput = p.maxOutput;
-        return e;
-      });
-      entry.pooledAt = Date.now();
-      await vscode.workspace
-        .getConfiguration('plato')
-        .update('connections', user, vscode.ConfigurationTarget.Global);
-      void this.sendSettings();
-    } catch {
-      // Offline, refused, or an endpoint that does not answer /models. The
-      // capped-and-conservative fallback is what runs next, which is fine.
+    if (fresh) return 'fresh';
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const pool = await fetchModelPool({
+          kind: conn.kind,
+          apiKey,
+          baseUrl:
+            conn.kind === 'openai'
+              ? conn.baseUrl ?? 'https://api.openai.com/v1'
+              : conn.baseUrl ?? undefined,
+          fetchImpl: (url, init) =>
+            fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
+        });
+        if (pool.length === 0) return 'failed';
+        const user = rawUserConnections();
+        const entry = user.find((u) => u.id === conn.id);
+        if (!entry) return 'failed';
+        entry.pool = pool.map((p) => {
+          const e: ConnectionPoolEntry = { id: p.id };
+          if (p.maxContext !== undefined) e.maxContext = p.maxContext;
+          if (p.maxOutput !== undefined) e.maxOutput = p.maxOutput;
+          return e;
+        });
+        entry.pooledAt = Date.now();
+        await vscode.workspace
+          .getConfiguration('plato')
+          .update('connections', user, vscode.ConfigurationTarget.Global);
+        return 'ok';
+      } catch {
+        // Offline, refused, or an endpoint that does not answer /models. One
+        // retry may be asked for by the quiet page refresh; a run never does.
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, retryPauseMs));
+        }
+      }
     }
+    return 'failed';
   }
 
   /**
@@ -5524,7 +5565,13 @@ class ChatHost {
     // conversation after a few files. Best-effort and short: a slow or offline
     // endpoint must not hold up a run, so failures are swallowed and the
     // fallback stands.
-    await this.ensureModelPool(conn, apiKey);
+    const poolOutcome = await this.ensureModelPool(conn, apiKey);
+    // The run-start budget is the default: 5 s, one attempt. A discovery
+    // refresh is a nicety, never a reason to hold up the work.
+    if (poolOutcome !== 'failed') {
+      const hadError = this.poolCheckErrors.delete(conn.id);
+      if (poolOutcome === 'ok' || hadError) void this.sendSettings();
+    }
     // The refresh writes what it fetched to the configuration; `conn` is the
     // object read BEFORE it. Re-read so THIS run — its limits, its history
     // budget and the fold that follows it — uses the pool that was just

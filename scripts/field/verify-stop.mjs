@@ -43,9 +43,9 @@ const VSCODE_VERSION = '1.136.0';
 const PORT = '4703';
 const STUB = `http://127.0.0.1:${PORT}`;
 
-const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.31.1.vsix');
+const VSIX = resolve(ROOT, 'packages', 'vscode', 'plato-0.31.2.vsix');
 const EXPECTED_SHA =
-  'b9e6715388a6bc16cb0f7be26e802bf0b73cc1b6769054bcfa4606971e1a3926';
+  '22831a3c3ee8bf54a790f8b28e93aed9080f5d442ab8e41129d7c727383c8600';
 
 try {
   await import('vscode-extension-tester');
@@ -172,6 +172,11 @@ const stub = spawn(
       // DeepSeek's spelling, so this proves the reader the release cares about.
       PLATO_STUB_CONTEXT: '1048576',
       PLATO_STUB_CONTEXT_FIELD: 'context_window',
+      // The FIRST window after install must be able to fail. The chat-open
+      // refresh and the Settings-open refresh each get two attempts, so the
+      // stub starts refusing every model-list request; the test clears this
+      // through /__models-fail to prove recovery.
+      PLATO_STUB_MODELS_FAIL: '6',
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   },

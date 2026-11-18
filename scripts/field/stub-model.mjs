@@ -91,6 +91,15 @@ let observerCursor = 0;
 let log = [];
 /** D49bo: how long `/models` is held before it answers. See `/__script`. */
 let modelsDelayMs = 0;
+/**
+ * How many of the next `/models` requests answer 500. A fetch that fails is a
+ * different fact from a provider that publishes no window, and the page must
+ * say so; this is the control that makes the failure reachable on purpose.
+ */
+let modelsFail = Math.max(
+  0,
+  Number(process.env['PLATO_STUB_MODELS_FAIL'] ?? '0') || 0,
+);
 /** 'prompt' derives the title from the request; 'fixed' answers "Field test run". */
 let titleMode = 'fixed';
 
@@ -188,6 +197,11 @@ const server = createServer(async (req, res) => {
     log = [];
     return json(res, 200, { ok: true, steps: steps.length });
   }
+  if (url === '/__models-fail' && req.method === 'POST') {
+    const body = await readBody(req);
+    modelsFail = Math.max(0, Number(body.count) || 0);
+    return json(res, 200, { ok: true, modelsFail });
+  }
   if (url === '/__reset' && req.method === 'POST') {
     steps = [];
     cursor = 0;
@@ -204,6 +218,10 @@ const server = createServer(async (req, res) => {
   // The model list a human would see in Settings → Providers. Not used by the
   // runs, but its absence makes the panel look broken if anyone opens it.
   if (url.endsWith('/models')) {
+    if (modelsFail > 0) {
+      modelsFail -= 1;
+      return json(res, 500, { error: 'the model list is unavailable' });
+    }
     // D49bo: the host asks for this while preparing a run, so a stall here is a
     // stall BEFORE the run is `running`. That is the window a control press can
     // arrive in, and the only way to enter it on purpose.
