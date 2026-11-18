@@ -15,7 +15,7 @@ import {
  *
  * 1. A queued run starts in the HOST, so the page never saw an `ask`. The host
  *    now sends `queue-run`; the page must show the task and the same run UI a
- *    user's send shows, or Pause and Cancel stay hidden for the whole run.
+ *    user's send shows, or Pause and Stop stay hidden for the whole run.
  * 2. A cancel must CLOSE the approval card. Its buttons used to stay live after
  *    the run was gone, so a click answered a dead run.
  * 3. A fold re-renders the conversation from the log. A rebuilt approval card
@@ -41,8 +41,10 @@ const card = (tool, args) => ({
 
 const runUi = (p) => p.evaluate(() => ({
   pauseHidden: document.getElementById('pp').hidden,
-  cancelHidden: document.getElementById('cx').hidden,
+  stopHidden: document.getElementById('cx').hidden,
   pauseLabel: document.getElementById('pp').textContent,
+  stopLabel: document.getElementById('cx').textContent,
+  stopTitle: document.getElementById('cx').title,
   placeholder: document.getElementById('q').placeholder,
   status: document.getElementById('statusbar')?.textContent ?? '',
   lastUser: [...document.querySelectorAll('#log .msg.you')].slice(-1).map((e) => e.textContent)[0] ?? '',
@@ -57,7 +59,11 @@ const runUi = (p) => p.evaluate(() => ({
   const ui = await runUi(p);
   check('a queued run shows its message as the user\'s', ui.lastUser.includes('Queued follow-up message'), ui.lastUser);
   check('a queued run shows Pause', ui.pauseHidden === false, ui);
-  check('a queued run shows Cancel', ui.cancelHidden === false, ui);
+  check('a queued run shows Stop', ui.stopHidden === false, ui);
+  check('and the run-stop control is labelled Stop, not Cancel',
+    ui.stopLabel === 'Stop', ui);
+  check('and its tooltip says what it does and what survives',
+    ui.stopTitle === 'Stop the task. The conversation stays.', ui);
   check('and the composer becomes the guide box', /Guide Plato mid-run/.test(ui.placeholder), ui.placeholder);
   check('and the status says Plato is working', /thinking/i.test(ui.status), ui.status);
 
@@ -69,7 +75,7 @@ const runUi = (p) => p.evaluate(() => ({
   await p.evaluate(() => document.getElementById('cx').click());
   await p.waitForTimeout(120);
   const afterCancel = await p.evaluate(() => window.__posted.slice(-1)[0] ?? null);
-  check('Cancel during a queued run posts a cancel', afterCancel && afterCancel.type === 'cancel', afterCancel);
+  check('Stop during a queued run posts a cancel', afterCancel && afterCancel.type === 'cancel', afterCancel);
   checkPageClean(p, 'queued run');
   await p.close();
 }

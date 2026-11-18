@@ -1066,6 +1066,8 @@ export function chatHtml(
   #statusbar.done { color:var(--vscode-testing-iconPassed, #73c991); }
   #statusbar.done .pdot { animation:none;
                background:var(--vscode-testing-iconPassed, #73c991); }
+  /* D49bm: a parked run is not working, so the busy dot must not pulse. */
+  #statusbar.paused .pdot { animation:none; opacity:.45; }
   #statusbar .sbtn { margin-left:auto; font-style:normal; font-size:11px;
                padding:2px 10px; border-radius:4px; cursor:pointer; border:none;
                background:var(--vscode-button-secondaryBackground,#3a3d41);
@@ -1261,7 +1263,7 @@ export function chatHtml(
              background:transparent; color:var(--pl-muted); cursor:pointer; }
   .bar-btn:hover { color:var(--vscode-editor-foreground);
                    border-color:var(--vscode-focusBorder, #6a6a6a); }
-  /* Cancel is destructive - red text. */
+  /* Stop is destructive - red text. */
   #cx.bar-btn { color:var(--vscode-testing-iconFailed, #f14c4c); }
   #cx.bar-btn:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
                       border-color:rgba(241,76,76,.35); }
@@ -1533,8 +1535,8 @@ export function chatHtml(
     <!-- D49bm: the label and title are set by paintPause(), never by the click.
          A button that flipped itself on the click claimed the run was paused
          while only the REQUEST had been recorded. -->
-    <button id="pp" class="bar-btn" title="Pause at the next safe point" hidden>Pause</button>
-    <button id="cx" class="bar-btn" title="Stop after the current tool call" hidden>Cancel</button>
+    <button id="pp" class="bar-btn" title="Pause after the current step. Nothing is lost." hidden>Pause</button>
+    <button id="cx" class="bar-btn" title="Stop the task. The conversation stays." hidden>Stop</button>
     <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
       <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="mode-btn-label" id="modeBtnLabel">act</span>
@@ -1592,6 +1594,12 @@ export function chatHtml(
   let busy = false;
   let streaming = false;
   let runT0 = 0;
+  // True while the run is parked. The pause owns the status line: a streamed
+  // fragment can still be in flight behind the park, and repainting "writing"
+  // over "Paused" would claim the run moved when it did not.
+  let pauseHoldsStatus = false;
+  const PAUSED_STATUS =
+    'Paused — the pause does not survive closing this window.';
   // D49aq: the question card currently on screen, so the host can take it away
   // when the run is cancelled. Null when no card is open. No backticks here.
   let openQuestionCard = null;
@@ -1740,7 +1748,8 @@ export function chatHtml(
   function setStatus(text) {
     const bar = ensureStatusBar();
     if (!bar || !statusTextEl) return;
-    bar.classList.remove('done');
+    if (pauseHoldsStatus && text !== PAUSED_STATUS) return;
+    bar.classList.remove('done', 'paused');
     statusTextEl.textContent = text;
   }
   function clearStatus() {
@@ -4252,11 +4261,13 @@ export function chatHtml(
   // ended before any safe point it claimed a pause that never happened.
   let pauseWanted = false;
   let pauseParked = false;
+  /** The last Esc that asked for a pause, for the second press that stops. */
+  let pauseEscAt = 0;
   function paintPause() {
     pp.textContent = pauseParked ? 'Resume' : (pauseWanted ? 'Pausing\u2026' : 'Pause');
     pp.title = pauseParked
       ? 'Continue the run'
-      : (pauseWanted ? 'Click to cancel the pause' : 'Pause at the next safe point');
+      : (pauseWanted ? 'Click to cancel the pause' : 'Pause after the current step. Nothing is lost.');
   }
   // Unified footer (D29d): while busy, the main input IS the guide box.
   const GUIDE_PLACEHOLDER =
@@ -4270,6 +4281,8 @@ export function chatHtml(
     // finished run must not leave a stale label for the next one to show.
     pauseWanted = false;
     pauseParked = false;
+    pauseHoldsStatus = false;
+    pauseEscAt = 0;
     pp.disabled = false;
     cx.disabled = false;
     paintPause();
@@ -4299,10 +4312,14 @@ export function chatHtml(
   /** D49bm: the host's account of the RUN, which is the only account there is. */
   function setPauseState(parked) {
     pauseParked = Boolean(parked);
+    pauseHoldsStatus = pauseParked;
     // The status line is the other half of the claim. It said "writing" while
     // the run sat still, so "paused" has to be said there too, not only on a
-    // button the eye can miss.
-    setStatus(pauseParked ? 'Paused' : 'Plato is thinking');
+    // button the eye can miss. It also carries the fact a pause costs if the
+    // window closes, where a person reads the state rather than in a tooltip.
+    setStatus(pauseParked ? PAUSED_STATUS : 'Plato is thinking');
+    const bar = document.getElementById('statusbar');
+    if (bar) { bar.classList.toggle('paused', pauseParked); }
     paintPause();
   }
   cx.addEventListener('click', () => {
@@ -4312,6 +4329,47 @@ export function chatHtml(
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
+
+  /**
+   * The terminal's key, on the run surface (D49bm): Esc pauses at the next safe
+   * point, and a second Esc within 1.5 s stops. Everything that owns Esc
+   * already keeps it — a card, an open menu, the pinned context panel, the
+   * Settings and History pages, the title editor, and any field that is not the
+   * composer. Capture phase, so that state is read BEFORE those handlers close
+   * the thing they own; otherwise the press that closed a menu would also pause
+   * the run.
+   */
+  const ESC_STOP_MS = 1500;
+  function runCardOpen() {
+    return Boolean(
+      openQuestionCard || openStuckCard || openUndoCard || openRevealCard ||
+      openOutsideCard || openModeRequestCard || openApprovalCard
+    );
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.repeat || e.defaultPrevented) { return; }
+    if (!busy) { return; }
+    if (runCardOpen()) { return; }
+    if (document.querySelector('.popover.open')) { return; }
+    if (document.querySelector('.ring-wrap.pinned')) { return; }
+    if (document.body.classList.contains('show-settings') ||
+        document.body.classList.contains('show-history')) { return; }
+    const t = e.target;
+    if (t && t.id === 'chatTitleInput') { return; }
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
+              t.tagName === 'SELECT' || t.isContentEditable) && t.id !== 'q') {
+      return;
+    }
+    e.preventDefault();
+    if (pauseWanted || pauseParked) {
+      // Only the second press of the SAME request stops, so an Esc after
+      // thinking for a while cannot throw away a pause the user asked for.
+      if (Date.now() - pauseEscAt <= ESC_STOP_MS) { cx.click(); }
+      return;
+    }
+    pauseEscAt = Date.now();
+    pp.click();
+  }, true);
 
   // --- D44c: real slash commands + paperclip attachment -------------------
   // The reserved .future-attach slot (D39) hosts the paperclip, far-left of
@@ -4960,7 +5018,7 @@ export function chatHtml(
       case 'queue': renderQueue(m.items, m.held); break;
       // D49cg: the host started a queued run. It never saw an ask, so this is
       // the only chance to show the message and set the run UI. Without it the
-      // Pause and Cancel controls stayed hidden for the whole queued run.
+      // Pause and Stop controls stayed hidden for the whole queued run.
       case 'queue-run':
         addMsg('you', 'You', String(m.text || ''));
         busy = true;

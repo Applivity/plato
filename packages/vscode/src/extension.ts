@@ -5952,6 +5952,11 @@ class ChatHost {
         requestMode: (req) => this.requestMode(req),
         bus,
         controller: this.controller,
+        // D49bm (desktop): Esc and Pause also work while the closing answer is
+        // streaming, so the run parks before that answer lands and Resume can
+        // continue it. Off by default in core, so a run nobody pauses is
+        // unchanged; the terminal sets the same flag (packages/cli/src/host.ts).
+        pauseFinalAnswer: true,
         askUser: async (req) => {
           const answer = await this.askUser(req);
           return answer;
