@@ -1,13 +1,16 @@
 /**
- * Drives the built CLI in a real terminal and proves a line typed during a run
- * is held and runs next.
+ * Drives the built CLI in a real terminal through steering and the queue.
  *
  *   node scripts/cli-tui/queue-drive.mjs [--cli path/to/cli.js]
  *
- * A. Text typed during a slow run is visible in the composer; Enter queues it;
- *    the provider receives nothing until the run ends; two lines run in order.
- * B. Esc still stops the run, and the queued line still runs afterwards.
- * C. A queued `/help` prints help and sends nothing to the model.
+ * The founder's interaction model:
+ *   A. Enter during a run STEERS it. The provider gets the text as observer
+ *      guidance at the next safe point; nothing is held for later.
+ *   B. `/queue <text>` is the way to defer. It sends nothing during the run
+ *      and runs as its own run with the exact text afterwards.
+ *   C. `/queue /help` runs the command after the run and sends nothing.
+ *   D. Esc twice stops the run; a queued line still runs afterwards.
+ *   E. Bare `/queue` says what to write and starts nothing.
  */
 import { spawn } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -101,6 +104,7 @@ const userText = (index) => {
   const last = messages.filter((message) => message?.role === 'user').at(-1);
   return typeof last?.content === 'string' ? last.content : '';
 };
+const requestBody = (index) => JSON.stringify(provider.requests[index]?.messages ?? []);
 async function attempt(run) {
   try {
     await run();
@@ -118,105 +122,128 @@ async function waitRunEnd(mark) {
 try {
   await waitFor(() => output.includes('Type / for commands'), 8000, 'the start screen');
 
+  // A. Enter during a run steers it.
   provider.setScript([
     { text: SLOW('SLOW-ONE-START'), chunks: 8, chunkMs: 400 },
-    { text: 'Reply one.' },
-    { text: 'Reply two.' },
-    { text: SLOW('SLOW-TWO-START'), chunks: 8, chunkMs: 400 },
-    { text: 'Reply three.' },
-    { text: SLOW('SLOW-THREE-START'), chunks: 8, chunkMs: 400 },
+    { text: 'Reply to the steer.' },
   ]);
-
-  // A. Two lines typed and queued during the first run.
   let mark = output.length;
   await submit('first task');
   await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-ONE-START'), 10000, 'the slow run'));
-
-  const typedAt = output.length;
-  await type('first queued line');
-  record(
-    plain(output.slice(typedAt)).includes('› first queued line'),
-    'text typed during a run is visible in the composer',
-  );
+  await type('steer this way');
   send('\r');
-  const firstRow = await attempt(() =>
-    waitFor(
-      () => plain(output.slice(mark)).includes('Queued: first queued line'),
-      4000,
-      'the queued row',
-    ),
-  );
-  record(firstRow, 'Enter during a run shows the queued row');
-  record(provider.requests.length === 1, 'the queued line sent nothing to the model during the run');
-
-  await type('second queued line');
-  send('\r');
-  const secondRow = await attempt(() =>
-    waitFor(
-      () => plain(output.slice(mark)).includes('Queued: second queued line'),
-      4000,
-      'the second queued row',
-    ),
-  );
-  record(secondRow, 'a second queued line shows its own row');
-  record(provider.requests.length === 1, 'the second queued line sent nothing either');
-
-  await attempt(() => waitFor(() => provider.requests.length === 3, 20000, 'both queued runs'));
-  await sleep(800);
   record(
-    userText(1) === 'first queued line' && userText(2) === 'second queued line',
-    'the two queued lines ran in order, each with the exact text',
+    await attempt(() =>
+      waitFor(() => plain(output.slice(mark)).includes('› steer this way'), 4000, 'the steering row'),
+    ),
+    'Enter during a run shows the line as the user\'s direction',
   );
+  record(provider.requests.length === 1, 'the steered line sent nothing yet');
+  record(
+    await attempt(() => waitFor(() => provider.requests.length >= 2, 15000, 'the steered request')),
+    'the steered line reaches the model at the next safe point',
+  );
+  record(
+    requestBody(1).includes('[observer guidance] steer this way'),
+    'the steered text arrives as observer guidance',
+  );
+  record(
+    await attempt(() => waitFor(() => plain(output.slice(mark)).includes('Reply to the steer.'), 15000, 'the steered answer')),
+    'the same run continues and answers the steer',
+  );
+  await waitRunEnd(mark);
 
-  // B. Esc pauses, a second Esc stops; the queued line still runs.
+  // B. /queue defers a line to the next run.
+  provider.setScript([
+    { text: SLOW('SLOW-TWO-START'), chunks: 8, chunkMs: 400 },
+    { text: 'Reply after the queue.' },
+  ]);
   mark = output.length;
-  await submit('stop me');
+  const beforeQueue = provider.requests.length;
+  await submit('second task');
   await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-TWO-START'), 10000, 'the second slow run'));
-  await type('after the stop');
-  send('\r');
-  await attempt(() =>
-    waitFor(
-      () => plain(output.slice(mark)).includes('Queued: after the stop'),
-      4000,
-      'the queued line for the stopped run',
+  await submit('/queue queued later');
+  record(
+    await attempt(() =>
+      waitFor(() => plain(output.slice(mark)).includes('Queued: queued later'), 4000, 'the queued row'),
     ),
+    '/queue during a run shows the queued row',
+  );
+  record(provider.requests.length === beforeQueue + 1, '/queue sent nothing during the run');
+  await waitRunEnd(mark);
+  record(
+    await attempt(() => waitFor(() => provider.requests.length >= beforeQueue + 2, 15000, 'the queued run')),
+    'the queued line runs when the run ends',
+  );
+  record(userText(beforeQueue + 1) === 'queued later', 'the queued run carries the exact text');
+  record(
+    await attempt(() => waitFor(() => plain(output.slice(mark)).includes('Reply after the queue.'), 15000, 'the queued answer')),
+    'the queued run gets its own answer',
+  );
+
+  // C. /queue /help runs the command after the run, with no model request.
+  provider.setScript([{ text: SLOW('SLOW-THREE-START'), chunks: 8, chunkMs: 400 }]);
+  mark = output.length;
+  const beforeCommand = provider.requests.length;
+  await submit('third task');
+  await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-THREE-START'), 10000, 'the third slow run'));
+  await submit('/queue /help');
+  record(
+    await attempt(() =>
+      waitFor(() => plain(output.slice(mark)).includes('Queued: /help'), 4000, 'the queued command row'),
+    ),
+    '/queue /help shows the queued command row',
+  );
+  await waitRunEnd(mark);
+  record(
+    await attempt(() => waitFor(() => plain(output.slice(mark)).includes('Commands'), 5000, 'the help text')),
+    'the queued /help prints help after the run',
+  );
+  record(provider.requests.length === beforeCommand + 1, 'the queued /help sends nothing to the model');
+
+  // D. Esc twice stops the run; a queued line still runs afterwards.
+  provider.setScript([
+    { text: SLOW('SLOW-FOUR-START'), chunks: 8, chunkMs: 400 },
+    { text: 'Reply after the stop.' },
+  ]);
+  mark = output.length;
+  const beforeStop = provider.requests.length;
+  await submit('stop me');
+  await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-FOUR-START'), 10000, 'the stopped run'));
+  await submit('/queue after the stop');
+  await attempt(() =>
+    waitFor(() => plain(output.slice(mark)).includes('Queued: after the stop'), 4000, 'the queued line for the stop'),
   );
   send('\x1b');
   await sleep(120);
   send('\x1b');
-  const stopped = await attempt(() =>
-    waitFor(
-      () => plain(output.slice(mark)).includes('Run ended: cancelled.'),
-      10000,
-      'the stopped run',
+  record(
+    await attempt(() =>
+      waitFor(() => plain(output.slice(mark)).includes('Run ended: cancelled.'), 10000, 'the stopped run'),
     ),
+    'Esc then Esc again during a run still stops it',
   );
-  record(stopped, 'Esc then Esc again during a run still stops it');
-  const afterStop = await attempt(() =>
-    waitFor(() => provider.requests.length >= 5, 15000, 'the queued line after the stop'),
+  record(
+    await attempt(() => waitFor(() => provider.requests.length >= beforeStop + 2, 15000, 'the queued line after the stop')),
+    'a queued line still runs after a stop',
   );
-  record(afterStop && userText(4) === 'after the stop', 'a queued line still runs after a stop');
+  record(userText(beforeStop + 1) === 'after the stop', 'the queued line after the stop carries the exact text');
+  record(
+    await attempt(() => waitFor(() => plain(output.slice(mark)).includes('Reply after the stop.'), 15000, 'the queued answer after the stop')),
+    'the queued run answers after the stop',
+  );
 
-  // C. A queued command runs as a command.
-  await sleep(1000);
-  mark = output.length;
-  await submit('third task');
-  await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-THREE-START'), 10000, 'the third slow run'));
-  await type('/help');
-  send('\r');
-  const helpRow = await attempt(() =>
-    waitFor(
-      () => plain(output.slice(mark)).includes('Queued: /help'),
-      4000,
-      'the queued help row',
+  // E. Bare /queue says what to write and starts nothing.
+  await sleep(600);
+  const beforeBare = provider.requests.length;
+  await submit('/queue');
+  record(
+    await attempt(() =>
+      waitFor(() => plain(output).includes('Nothing queued; write /queue <text>.'), 5000, 'the bare /queue answer'),
     ),
+    'bare /queue says what to write',
   );
-  await attempt(() => waitRunEnd(mark));
-  const helped = await attempt(() =>
-    waitFor(() => plain(output.slice(mark)).includes('Commands'), 5000, 'the help text'),
-  );
-  record(helped && helpRow, 'a queued /help prints help');
-  record(provider.requests.length === 6, 'a queued /help sends nothing to the model');
+  record(provider.requests.length === beforeBare, 'bare /queue starts no run');
 } catch (error) {
   record(false, error.message);
 } finally {
@@ -229,7 +256,7 @@ try {
   writeFileSync(
     capturePath,
     [
-      'Plato CLI — queued line proof',
+      'Plato CLI — steering and queue proof',
       `cli: ${cli}`,
       '',
       ...results,

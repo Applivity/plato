@@ -8,9 +8,10 @@ uses the same setup to check streaming: the answer is drawn by its final
 renderer while it arrives and does not reflow when it lands. `node
 scripts/cli-tui/stop-drive.mjs` checks a long tool and a stop: the running line
 names the tool and ticks, the stop is acknowledged at once, and the part of the
-answer that arrived is kept. `node scripts/cli-tui/queue-drive.mjs` checks a
-line typed during a run: the composer stays live, Enter queues it, and queued
-lines and commands run in order when the run ends. `node
+answer that arrived is kept. `node scripts/cli-tui/queue-drive.mjs` checks
+steering and the queue: Enter during a run sends the line as guidance at the
+next safe point, `/queue <text>` waits for the next run, a queued command runs
+after the run, and a queued line survives a stop. `node
 scripts/cli-tui/approve-drive.mjs` checks the approval card: its hint, Esc that
 denies and stops in one press, No that continues, the session answer, and the
 decisions read back from the run records, including whether each card was drawn
@@ -55,15 +56,23 @@ scripts/cli-tui/tools-drive.mjs` checks Ctrl+O on a finished tool row (full
 target, start, duration, outcome, and no invented output), a wrapped code line
 hanging under its indent, a coloured diff, and a real 100-to-60-column resize.
 `node scripts/cli-tui/pause-drive.mjs` checks pause: Esc during a stream holds
-the screen where the user stopped it and changes the hint, Enter continues the
-same answer, a second Esc stops and the conversation survives, a pause asked
-for during a tool lands after the tool wrote its whole file, a pause asked for
-while the model call is out does not swallow the approval card, Ctrl+C stops a
-parked run, the parked hint is whole at 80 and 120 columns, and `/help` names
-the keys and says a paused run does not survive the process exiting. Its
-typed-while-paused checks are marked PROVISIONAL: the founder has not settled
-whether such a line is sent at once, held for Resume, or shown as an unsent
-chip. `--cli <path>` runs the same checks against another build.
+the screen where the user stopped it and changes the hint, Enter on an empty
+composer does nothing, text typed while paused is held as guidance and delivered
+when `/continue` resumes, a second Esc stops and the conversation survives, a
+pause asked for during a tool lands after the tool wrote its whole file, a pause
+asked for while the model call is out does not swallow the approval card,
+`/continue <text>` sends the text before it resumes, Ctrl+C stops a parked run,
+`/continue` with nothing paused says so (from idle, during an unpaused run, and
+after a stop where it says the run is over), the parked hint is whole at 80 and
+120 columns, Alt+Enter adds a line and
+does not pause, and `/help` names the keys and says a paused run does not survive
+the process exiting. `node scripts/cli-tui/command-drive.mjs` checks commands
+typed during a live run: `/help`, `/sessions` and `/compact` act, `/continue`
+acts only when a pause is in effect, and every other command (`/undo`, `/resume`,
+`/model`, `/mode`, `/team`, `/gitignore`, `/new`, `/exit`) is refused with one
+line, is not queued, and changes nothing — the mid-run `/undo` leaves its file
+untouched and the earlier conversation intact. `--cli <path>` runs the same
+checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written
 next to the driver. The capture holds the frames and the request bodies: a

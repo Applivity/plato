@@ -251,7 +251,13 @@ try {
     );
     record(true, '/compact shows its one-line description after the space');
     record(
-      plain(ui.output).includes('Enter runs · Esc closes'),
+      await attempt(() =>
+        waitFor(
+          () => plain(ui.output).includes('Enter runs · Esc closes'),
+          3000,
+          'the free-text footer',
+        ),
+      ),
       '/compact offers no word list',
     );
     const before = plain(ui.output).length;

@@ -302,6 +302,14 @@ export interface ViewState {
 /** `/help`, built from the menu's table so the two can never disagree (D49cd). */
 const HELP_WIDTH = Math.max(...COMMANDS.map((command) => slashText(command).length)) + 2;
 const KEY_WIDTH = 10;
+/**
+ * Commands that may act while a run is live. A WHITELIST, not a blacklist: a
+ * command added later is refused by default. The old queue-then-run path hid
+ * this class of problem by deferring everything, which made `/undo` safe by
+ * accident — it must not put files back while the run is writing them, and
+ * `/resume` must not switch the conversation out from under the run.
+ */
+const RUN_SAFE_COMMANDS = new Set(['/help', '/queue', '/sessions', '/compact']);
 export const SESSION_HELP = [
   'Commands',
   ...COMMANDS.map(
@@ -310,7 +318,9 @@ export const SESSION_HELP = [
   '',
   'Keys',
   `  ${'Esc'.padEnd(KEY_WIDTH)}pause the run; press Esc again to stop it`,
-  `  ${'Enter'.padEnd(KEY_WIDTH)}while paused, continue; with text, send it and continue`,
+  `  ${'Enter'.padEnd(KEY_WIDTH)}steer the run; /queue <text> waits for the next run`,
+  `  ${'/continue'.padEnd(KEY_WIDTH)}resume a paused run; with text, send it and resume`,
+  `  ${'Alt+Enter'.padEnd(KEY_WIDTH)}start a new line in the composer`,
   `  ${'Ctrl+C'.padEnd(KEY_WIDTH)}stop the run`,
   '',
   'A paused run does not survive Plato exiting.',
@@ -406,6 +416,8 @@ export class Session {
   private modelCallInFlight = false;
   /** The paused response has tool calls; apply the pause after the card's gate. */
   private pauseAfterToolEvent = false;
+  /** The last run ended on Stop, so `/continue` must not pretend to resume it. */
+  private lastRunStopped = false;
   private readonly remembered = new Set<string>();
   private modeRequestsThisRun = 0;
   private nextRow = 1;
@@ -825,6 +837,7 @@ export class Session {
     this.heldStreaming = null;
     this.modelCallInFlight = false;
     this.pauseAfterToolEvent = false;
+    this.lastRunStopped = false;
     this.update({
       running: true,
       streaming: '',
@@ -900,6 +913,9 @@ export class Session {
 
     try {
       const result = await executeTask(options, this.sink(), controller);
+      // `/continue` reads this after the run: a stopped run is over, and saying
+      // so is kinder than claiming a pause that no longer exists.
+      this.lastRunStopped = result.reason === 'cancelled';
       this.log.push({ k: 'msg', cls: 'bot', text: result.finalText });
       this.update({
         status: {
@@ -1058,8 +1074,10 @@ export class Session {
     this.update({ pause: this.pause });
   }
 
-  /** Enter on an empty composer while paused: continue the same run. */
-  resumeRun(): void {
+  /**
+   * Resumes a parked run. Only `/continue` reaches this; Enter never does.
+   */
+  private resumeRun(): void {
     if (!this.state.running || this.pause === 'none') {
       return;
     }
@@ -1071,16 +1089,48 @@ export class Session {
   }
 
   /**
-   * Enter with text while paused: the text is new direction for the SAME run,
-   * so the model reads it as guidance and the run continues from here.
+   * A line typed while a run is going: it steers THIS run, whether the run is
+   * running or parked. The controller holds it until the loop's next safe point;
+   * a parked run therefore keeps it until `/continue` resumes. It never starts a
+   * run and never resumes one — `/queue <text>` defers, `/continue` resumes.
    */
-  guideAndResume(text: string): void {
+  guide(text: string): void {
     const line = text.trim();
-    if (!this.state.running || this.pause === 'none' || line.length === 0) {
+    if (!this.state.running || line.length === 0 || this.controller === null) {
       return;
     }
-    this.controller?.sendGuidance(line);
+    this.controller.sendGuidance(line);
     this.append('user', line);
+  }
+
+  /**
+   * `/continue` — the terminal's resume command, and never a way to start a
+   * run. Bare, it resumes; with text it sends that text as guidance FIRST, so
+   * the model reads it before it takes another step. Idle, it says what is
+   * true: nothing is paused, or the last run was stopped and is over.
+   */
+  continueRun(text = ''): void {
+    const line = text.trim();
+    if (!this.state.running) {
+      this.append(
+        'notice',
+        this.lastRunStopped
+          ? 'The last run was stopped; there is nothing to continue.'
+          : 'Nothing is paused.',
+      );
+      return;
+    }
+    // A requested pause that has not landed is still a pause the user can take
+    // back, so `/continue` cancels it rather than saying it does not exist.
+    if (this.pause === 'none') {
+      this.append('notice', 'Nothing is paused.');
+      return;
+    }
+    if (line.length > 0) {
+      // Send first, then resume: the loop drains the note at the gate it wakes
+      // from, so the model reads it before it takes another step.
+      this.guide(line);
+    }
     this.resumeRun();
   }
 
@@ -1463,6 +1513,17 @@ export class Session {
     const trimmed = line.trim();
     const [name = '', ...rest] = trimmed.split(/\s+/);
     const argument = rest.join(' ');
+    // A command typed while the run is live may only act if it is on the safe
+    // list. `/continue` is the resume command and is meaningful only when a
+    // pause is in effect; with no pause it would change a run that is going.
+    if (this.state.running) {
+      const allowed =
+        RUN_SAFE_COMMANDS.has(name) || (name === '/continue' && this.pause !== 'none');
+      if (!allowed) {
+        this.append('notice', 'Finish or stop the run first.');
+        return 'handled';
+      }
+    }
     switch (name) {
       case '/help':
         this.append('notice', SESSION_HELP);
@@ -1470,6 +1531,17 @@ export class Session {
       case '/exit':
       case '/quit':
         return 'exit';
+      case '/continue':
+        this.continueRun(argument);
+        return 'handled';
+      case '/queue': {
+        if (argument.trim().length === 0) {
+          this.append('notice', 'Nothing queued; write /queue <text>.');
+          return 'handled';
+        }
+        this.queueLine(argument);
+        return 'handled';
+      }
       case '/mode': {
         if (argument !== 'plan' && argument !== 'edit' && argument !== 'auto') {
           this.append('error', 'Usage: /mode plan|edit|auto');

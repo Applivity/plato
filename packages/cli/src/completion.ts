@@ -66,6 +66,16 @@ export const COMMANDS: readonly SlashCommand[] = [
     freeText: true,
   },
   { name: 'new', summary: 'Start a new conversation' },
+  {
+    name: 'continue',
+    summary: 'Resume a paused run (/continue <text> steers it)',
+    freeText: true,
+  },
+  {
+    name: 'queue',
+    summary: 'Run this line when the current run ends',
+    freeText: true,
+  },
   { name: 'resume', summary: 'Open a saved conversation' },
   { name: 'undo', summary: 'Put back the files the last run wrote' },
   { name: 'sessions', summary: 'List saved sessions (/resume opens them)' },

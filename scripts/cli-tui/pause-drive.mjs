@@ -8,15 +8,15 @@
  *      Enter lets the same answer finish.
  *   B. A second Esc stops the run, and the conversation survives the stop.
  *   C. A pause asked for while a tool runs lands after it: the file is whole,
- *      and text typed at the park becomes direction the model actually reads.
+ *      and text typed at the park is HELD as guidance and delivered when
+ *      /continue resumes — Enter does not resume.
  *   D. A pause asked for while the model call is out does not swallow the
- *      approval card; the pause lands after the card is answered.
+ *      approval card; the pause lands after the card is answered, and
+ *      /continue <text> sends that text before it resumes.
  *   E. Ctrl+C while parked stops the run.
  *   F. The parked hint is one line at 80 and 120 columns.
  *   G. /help says what the keys do and that a paused run does not survive exit.
- *
- * C's guidance assertions are the one behaviour the founder has not settled.
- * They are labelled PROVISIONAL so no one reads them as decided.
+ *   H. Alt+Enter starts a new line and is not read as Escape.
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -147,43 +147,107 @@ function launch({ cols = 100 } = {}) {
 const results = [];
 const record = (ok, what) => results.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
 const notes = [];
-const provisional = [];
-const recordProvisional = (ok, what) => {
-  provisional.push(`${ok ? 'PASS' : 'FAIL'}  ${what}`);
-  record(ok, `PROVISIONAL  ${what}`);
-};
 
 const main = launch();
-const PAUSING = 'pausing — esc stops';
-const PAUSED = 'paused — enter continues · esc stops';
-const RUNNING = 'enter queues · esc pauses · ctrl+c stops';
+const PAUSING = 'pausing — enter steers · /continue resumes · esc stops';
+const PAUSED = 'paused — enter steers · /continue resumes · esc stops';
+const RUNNING = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 
 try {
   await main.wait((out) => out.includes('Type / for commands'), 20000, 'the start screen');
   {
     // Before any run: Esc has nothing to stop, so the hint must not say it does.
+    // Wait for the chat frame that carries the hint; the welcome screen does
+    // not have it, and reading too early made this pass vacuously once.
+    await main.wait(
+      (out) => lastFrame(out).split('\n').some((line) => line.startsWith('Shift+Tab mode')),
+      5000,
+      'the idle hint row',
+    );
     const idleLine =
       main.frame()
         .split('\n')
         .find((line) => line.startsWith('Shift+Tab mode')) ?? '';
     record(!/esc stops/i.test(idleLine), 'the idle hint does not advertise a stop');
     record(
-      idleLine.includes('@ files') && idleLine.includes('/help'),
-      'the idle hint names the keys that work when idle',
+      idleLine.includes('@ files') &&
+        idleLine.includes('/help') &&
+        idleLine.includes('Alt+Enter newline'),
+      'the idle hint names the keys that work when idle, including Alt+Enter',
+    );
+  }
+  {
+    // `/continue` from idle must say so and must not start a run.
+    const before = provider.requests.length;
+    await main.submit('/continue');
+    record(
+      await attempt(() => main.wait((out) => out.includes('Nothing is paused.'), 5000, 'the idle answer')),
+      '/continue from idle says "Nothing is paused."',
+    );
+    record(provider.requests.length === before, '/continue from idle starts no run');
+  }
+  {
+    // Alt+Enter is return-with-meta to the parser, not escape. If it were read
+    // as Escape it would pause the run; the hint proves which one happened.
+    const long = Array.from({ length: 60 }, (_, i) => `N${String(i).padStart(2, '0')}`).join(' ');
+    provider.setScript([{ text: long, chunks: 60, chunkMs: 120 }]);
+    const before = provider.requests.length;
+    const mark = main.output.length;
+    await main.submit('alt enter check');
+    await main.wait((out) => out.includes('N03'), 20000, 'the alt-enter stream');
+    main.send('line one');
+    await sleep(120);
+    main.send('\x1b\r');
+    await sleep(120);
+    main.send('line two');
+    record(
+      await attempt(() =>
+        main.wait((out) => lastFrame(out).includes('[line 2 of 2]'), 5000, 'the two-line draft'),
+      ),
+      'Alt+Enter starts a new line in the composer',
+    );
+    const frame = main.frame();
+    record(frame.includes(RUNNING), 'Alt+Enter does not pause the running run');
+    record(
+      !frame.includes(PAUSING) && !frame.includes(PAUSED),
+      'Alt+Enter is not read as Escape',
+    );
+    record(provider.requests.length === before + 1, 'Alt+Enter sent nothing');
+    main.send('\x7f');
+    record(
+      await attempt(() =>
+        main.wait((out) => !lastFrame(out).includes('[line 2 of 2]'), 5000, 'the draft to clear'),
+      ),
+      'the two-line draft clears as one unit',
+    );
+    await main.wait(
+      (out) => /\b1 turn\b/.test(plain(out.slice(mark))),
+      20000,
+      'the alt-enter run to end',
     );
   }
 
-  // A. A long answer pauses where it is; Enter lets it finish.
+  // A. A long answer pauses where it is; /continue lets it finish.
   {
     const long = Array.from({ length: 40 }, (_, i) => `A${String(i).padStart(2, '0')}`).join(' ');
     provider.setScript([{ text: long, chunks: 40, chunkMs: 80 }]);
     const before = provider.requests.length;
     await main.submit('stream the long answer');
     await main.wait((out) => out.includes('A05'), 20000, 'the answer to start streaming');
+    // With no pause in effect, `/continue` is not on the run's safe list: a
+    // command must not change a run that is going.
+    await main.submit('/continue');
+    record(
+      await attempt(() =>
+        main.wait((out) => out.includes('Finish or stop the run first.'), 5000, 'the mid-run refusal'),
+      ),
+      '/continue during an unpaused run is refused',
+    );
+    record(provider.requests.length === before + 1, '/continue did not start or stop the run');
     main.send('\x1b');
     record(
       await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSING), 5000, 'the pausing hint')),
-      'Esc during a stream says "pausing — esc stops"',
+      'Esc during a stream says "pausing — enter steers · /continue resumes · esc stops"',
     );
     const pendingFrame = main.frame();
     record(!pendingFrame.includes(PAUSED), 'the parked hint is not claimed before the run really parks');
@@ -191,9 +255,14 @@ try {
     record(!main.frame().includes('A20'), 'the stream stops advancing while the pause is pending');
     record(
       await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the paused hint')),
-      'the hint says "paused — enter continues · esc stops" once the run parks',
+      'the hint says "paused — enter steers · /continue resumes · esc stops" once the run parks',
     );
+    // Enter no longer resumes. It must do nothing on an empty composer.
     main.send('\r');
+    await sleep(350);
+    record(main.frame().includes(PAUSED), 'Enter on an empty composer while paused does nothing');
+    record(provider.requests.length === before + 1, 'that Enter sent nothing');
+    await main.submit('/continue');
     record(
       await attempt(() =>
         main.wait(
@@ -202,7 +271,7 @@ try {
           'the answer to finish',
         ),
       ),
-      'Enter continues the same run and the answer completes',
+      '/continue resumes the same run and the answer completes',
     );
     record(provider.requests.length === before + 1, 'resuming asked the model nothing new');
   }
@@ -220,7 +289,24 @@ try {
       await attempt(() => main.wait((out) => out.includes('Run ended: cancelled.'), 15000, 'the stopped run')),
       'a second Esc stops the run',
     );
-    main.wait((out) => /\b\d+ turns?\b/.test(plain(out)), 15000, 'the run summary').catch(() => {});
+    await main.wait((out) => /\b\d+ turns?\b/.test(plain(out)), 15000, 'the run summary');
+    const stoppedMark = main.output.length;
+    const stoppedRequests = provider.requests.length;
+    await main.submit('/continue');
+    record(
+      await attempt(() =>
+        main.wait(
+          (out) =>
+            plain(out.slice(stoppedMark)).includes(
+              'The last run was stopped; there is nothing to continue.',
+            ),
+          5000,
+          'the stopped-run answer',
+        ),
+      ),
+      '/continue after a stop says the run is over',
+    );
+    record(provider.requests.length === stoppedRequests, 'that /continue starts no run');
     const before = provider.requests.length;
     provider.setScript([{ text: 'still here' }]);
     await main.submit('is the conversation still here');
@@ -261,16 +347,20 @@ try {
     main.send('use the green one');
     await sleep(250);
     main.send('\r');
+    await sleep(350);
+    record(
+      main.frame().includes(PAUSED),
+      'Enter with text while paused holds the guidance and does not resume',
+    );
+    record(plain(main.output).includes('› use the green one'), 'the held guidance is visible in the run');
+    record(provider.requests.length === before + 1, 'held guidance sends nothing while paused');
+    await main.submit('/continue');
     // `before` is the slow command's request; the guided answer is the next.
     await main.wait(() => provider.requests.length >= before + 2, 20000, 'the guided request');
     const body = JSON.stringify(provider.requests[before + 1].messages);
-    recordProvisional(
+    record(
       body.includes('[observer guidance] use the green one'),
-      'text typed while paused reaches the model as guidance',
-    );
-    recordProvisional(
-      plain(main.output).includes('› use the green one'),
-      'the guidance typed while paused is visible in the run',
+      'the held guidance reaches the model when /continue resumes',
     );
     record(
       await attempt(() => main.wait((out) => out.includes('after guidance'), 20000, 'the run to continue')),
@@ -284,7 +374,7 @@ try {
   {
     provider.setScript([
       { tool: 'write_file', args: { path: 'card.txt', content: 'card' }, delayMs: 1500 },
-      { text: 'after the card' },
+      { text: 'after the second note' },
     ]);
     const before = provider.requests.length;
     await main.submit('write card.txt');
@@ -309,6 +399,19 @@ try {
       record(
         await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the pause after the card')),
         'the pause lands after the card is answered',
+      );
+      // `/continue <text>` sends the text first, then resumes: the very next
+      // request must carry it, and the run must continue to the next answer.
+      await main.submit('/continue keep going');
+      await main.wait(() => provider.requests.length >= before + 2, 20000, 'the request after /continue with text');
+      const guided = JSON.stringify(provider.requests[before + 1].messages);
+      record(
+        guided.includes('[observer guidance] keep going'),
+        '/continue <text> sends the text as guidance before it resumes',
+      );
+      record(
+        await attempt(() => main.wait((out) => out.includes('after the second note'), 20000, 'the resumed answer')),
+        '/continue <text> resumes the run and the answer lands',
       );
     } else {
       record(
@@ -363,9 +466,11 @@ try {
     const help = plain(main.output.slice(mark));
     record(
       help.includes('pause the run; press Esc again to stop it') &&
-        help.includes('while paused, continue; with text, send it and continue') &&
+        help.includes('steer the run; /queue <text> waits for the next run') &&
+        help.includes('resume a paused run; with text, send it and resume') &&
+        help.includes('start a new line in the composer') &&
         help.includes('stop the run'),
-      '/help says what Esc, Enter and Ctrl+C do',
+      '/help says what Esc, Enter, /continue, Alt+Enter and Ctrl+C do',
     );
     record(
       help.includes('A paused run does not survive Plato exiting.'),
@@ -389,7 +494,7 @@ try {
       proc.send('\x1b');
       await proc.wait((out) => lastFrame(out).includes(PAUSED), 15000, 'the parked hint');
       const frame = proc.frame();
-      const line = frame.split('\n').find((entry) => entry.includes('paused — enter continues'));
+      const line = frame.split('\n').find((entry) => entry.includes('paused — enter steers'));
       record(line !== undefined && line.includes(PAUSED), `the parked hint is whole at ${cols} columns`);
       record(!/…\s*$/.test(line ?? '…'), `the parked hint is not truncated at ${cols} columns`);
     } finally {
@@ -417,8 +522,6 @@ try {
       ...results,
       '',
       ...notes,
-      '',
-      'PROVISIONAL checks are the typed-while-paused behaviour the founder has not settled.',
       '',
       '--- terminal capture ---',
       main.output,

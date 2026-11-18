@@ -290,6 +290,24 @@ export function App({
     await session.submit(line);
   };
 
+  /**
+   * A slash command typed while a run is going (or paused) runs at once. It is
+   * a control, not direction for the model: `/queue` must queue, `/continue`
+   * must resume, and steering them to the model would do neither.
+   */
+  const runCommand = (line: string): void => {
+    setEditor(EMPTY_EDITOR);
+    setHistoryAt(null);
+    setSearch(null);
+    setMenuDismissedAt(null);
+    rememberLine(line);
+    void session.handleCommand(line).then((outcome) => {
+      if (outcome === 'exit') {
+        onExit();
+      }
+    });
+  };
+
   useInput((input, key) => {
     // The setup screen owns the keyboard while it is up.
     if (state.setup) {
@@ -305,6 +323,11 @@ export function App({
       }
       if (key.downArrow) {
         session.cardMove(1);
+        return;
+      }
+      // Alt+Enter (or Shift+Enter) is a composer key; a card has no multi-line
+      // field, so it must not answer the card by accident.
+      if (enter && (key.meta || key.shift)) {
         return;
       }
       if (enter) {
@@ -417,6 +440,15 @@ export function App({
       }
       // Ctrl+C keeps its usual meaning; the search closes first.
       setSearch(null);
+    }
+    // Alt+Enter starts a new line in the composer. The parser reports it as
+    // return with `meta`, not as escape, so it cannot trip the pause. Shift+
+    // Enter is accepted where the terminal reports it; it is never advertised,
+    // because most terminals cannot send it.
+    if (enter && (key.meta || key.shift)) {
+      setEditor(insertText(editor, '\n'));
+      setMenuDismissedAt(editor.text);
+      return;
     }
     if (key.ctrl && input === 'r') {
       setToolOpen(false);
@@ -569,29 +601,36 @@ export function App({
     }
     if (enter) {
       const line = editor.text.trim();
+      // Only a single line can be a command; a draft block is always a message.
+      const command = line.startsWith('/') && !line.includes('\n');
       if (state.running && state.pause !== 'none') {
-        // Paused: Enter on an empty line continues; text is new direction for
-        // this same run, not a line queued for the next one.
-        if (line.length > 0) {
-          session.guideAndResume(line);
+        // Paused: a command acts now (/continue resumes), while text is HELD
+        // as guidance for the parked run. Enter never resumes, and an empty
+        // Enter does nothing at all.
+        if (command) {
+          runCommand(line);
+        } else if (line.length > 0) {
+          session.guide(line);
           setEditor(EMPTY_EDITOR);
           setHistoryAt(null);
           setMenuDismissedAt(null);
           rememberLine(line);
-        } else {
-          session.resumeRun();
         }
         return;
       }
       if (line.length > 0) {
         if (state.running) {
-          // The line is held and runs when this run ends; the composer keeps
-          // whatever the user writes next.
-          session.queueLine(line);
-          setEditor(EMPTY_EDITOR);
-          setHistoryAt(null);
-          setMenuDismissedAt(null);
-          rememberLine(line);
+          // A command acts now; Enter on anything else steers THIS run.
+          // `/queue <text>` is the way to wait for the next one.
+          if (command) {
+            runCommand(line);
+          } else {
+            session.guide(line);
+            setEditor(EMPTY_EDITOR);
+            setHistoryAt(null);
+            setMenuDismissedAt(null);
+            rememberLine(line);
+          }
         } else {
           void submitLine(line);
         }
@@ -1172,12 +1211,12 @@ function SearchLine({
 // to "esc pauses" — and a hint that cannot be true is the defect this round is
 // about. The keys below are the ones that do something right now.
 const IDLE_HINT =
-  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
-const RUNNING_HINT = 'enter queues · esc pauses · ctrl+c stops';
+  'Shift+Tab mode (plan · edit · auto) · @ files · /help · Alt+Enter newline';
+const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 /** The pause is asked for but the run has not reached a safe point yet. */
-const PAUSING_HINT = 'pausing — esc stops';
-/** The run is really waiting. Enter continues; Esc stops. */
-const PAUSED_HINT = 'paused — enter continues · esc stops';
+const PAUSING_HINT = 'pausing — enter steers · /continue resumes · esc stops';
+/** The run is really waiting. Enter steers; `/continue` resumes; Esc stops. */
+const PAUSED_HINT = 'paused — enter steers · /continue resumes · esc stops';
 
 function Composer({
   editor,
