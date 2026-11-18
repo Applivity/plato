@@ -67,16 +67,18 @@ Ctrl+C stops a parked run in one press, `/continue` with nothing paused says so
 (from idle, during an unpaused run, and after a stop where it says the run is
 over), the parked hint says `esc esc stops` and is whole at 80 and 120 columns,
 Alt+Enter adds a line and
-does not pause, and `/help` names the keys and says a paused run does not survive
-the process exiting. `node scripts/cli-tui/hint-drive.mjs` checks every hint
+does not pause, the guidance is saved in the conversation as the user's words,
+and `/help` names the keys and says a paused run does not survive the process
+exiting. `node scripts/cli-tui/hint-drive.mjs` checks every hint
 state at 80 and 120 columns: an empty box never advertises Alt+Enter, a draft
 does, the idle hint keeps the mode explanations, and every hint is one whole
 line with nothing wrapped or truncated. `node scripts/cli-tui/command-drive.mjs` checks commands
 typed during a live run: `/help`, `/sessions` and `/compact` act, `/continue`
 acts only when a pause is in effect, and every other command (`/undo`, `/resume`,
 `/model`, `/mode`, `/team`, `/gitignore`, `/new`, `/exit`) is refused with one
-line, is not queued, and changes nothing — the mid-run `/undo` leaves its file
-untouched and the earlier conversation intact. `--cli <path>` runs the same
+line, stays in the composer so it can be sent after the run, is not queued, and
+changes nothing — the mid-run `/undo` leaves its file untouched and the earlier
+conversation intact. `--cli <path>` runs the same
 checks against another build.
 
 A pass means every line printed says PASS and `paste-capture.txt` is written

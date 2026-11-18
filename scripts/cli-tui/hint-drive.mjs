@@ -71,6 +71,8 @@ const captures = [];
 const IDLE = 'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help';
 const IDLE_DRAFT =
   'Shift+Tab mode (plan read-only · edit asks · auto trusted) · Alt+Enter newline';
+const IDLE_DRAFT_WIDE =
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Alt+Enter newline';
 const RUNNING = 'enter steers · esc pauses · ctrl+c stops';
 const RUNNING_DRAFT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 const PAUSED = 'paused — enter steers · /continue resumes · esc esc stops';
@@ -168,9 +170,16 @@ async function drive(cols) {
     // Idle, empty.
     await check(proc, cols, 'idle, empty box', IDLE, false);
 
-    // Idle, draft.
+    // Idle, draft. Only 80 needs the concession; 100+ keeps @ files and /help.
     proc.send('x');
-    await check(proc, cols, 'idle, draft', IDLE_DRAFT, true);
+    const draftHint = cols >= 100 ? IDLE_DRAFT_WIDE : IDLE_DRAFT;
+    await check(proc, cols, 'idle, draft', draftHint, true);
+    if (cols >= 100) {
+      record(
+        hintLine(proc.output).includes('@ files') && hintLine(proc.output).includes('/help'),
+        `the idle draft hint keeps @ files and /help at ${cols} columns`,
+      );
+    }
     proc.send('\x7f');
     await attempt(() => proc.waitHint(IDLE, 'the idle hint after clearing'));
 

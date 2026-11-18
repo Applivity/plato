@@ -137,6 +137,15 @@ const submitCommand = async (text) => {
 };
 const refusalCount = (mark) =>
   (plain(output.slice(mark)).match(/Finish or stop the run first\./g) ?? []).length;
+/** A refused line stays put; clear it a character at a time for the next one. */
+async function clearComposer() {
+  const line = lastComposer(output).replace(/^› /, '');
+  for (let left = line.length; left > 0; left -= 1) {
+    send('\x7f');
+    await sleep(20);
+  }
+  await waitFor(() => lastComposer(output).trim() === '›', 5000, 'the empty composer');
+}
 
 async function waitRunEnd(mark) {
   await waitFor(() => /\b\d+ turns?\b/.test(plain(output.slice(mark))), 30000, 'the run summary');
@@ -207,6 +216,11 @@ try {
       ),
       `${command} is refused with one line during a run`,
     );
+    record(
+      lastComposer(output).includes(command),
+      `${command} stays in the composer after the refusal`,
+    );
+    await clearComposer();
   }
   record(refusalCount(mark) === refused.length, 'each refused command shows exactly one line');
 

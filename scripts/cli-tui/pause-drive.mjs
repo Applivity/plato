@@ -19,7 +19,14 @@
  *   H. Alt+Enter starts a new line and is not read as Escape.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +49,13 @@ const lastFrame = (text) => {
   return plain(text.slice(start, end > start ? end : undefined));
 };
 
+const lastComposer = (text) =>
+  lastFrame(text)
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.startsWith('› '))
+    .at(-1) ?? '';
+
 async function waitFor(test, ms, what) {
   const until = Date.now() + ms;
   while (Date.now() < until) {
@@ -50,12 +64,50 @@ async function waitFor(test, ms, what) {
   }
   throw new Error(`timed out waiting for ${what}`);
 }
+
+/** A refused command stays in the composer; clear it before the next key. */
+async function clearComposer(proc) {
+  const line = lastComposer(proc.output).replace(/^› /, '');
+  for (let left = line.length; left > 0; left -= 1) {
+    proc.send('\x7f');
+    await sleep(20);
+  }
+  await waitFor(
+    () => lastComposer(proc.output).trim() === '›',
+    5000,
+    'the empty composer',
+  );
+}
 async function attempt(run) {
   try {
     await run();
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * The saved conversation's rows, read from the session store on disk. The
+ * store may not have been written yet when this is first called, so the caller
+ * polls it rather than reading once: the session is persisted at each run end
+ * (`Session.save` → `persistSession`, synchronous), not on exit.
+ */
+function latestSavedLog() {
+  try {
+    const base = join(main.dirs.home, 'sessions');
+    const files = readdirSync(base, { recursive: true })
+      .map((name) => String(name))
+      .filter((name) => name.endsWith('.json'))
+      .sort();
+    const file = files.at(-1);
+    if (file === undefined) {
+      return [];
+    }
+    const stored = JSON.parse(readFileSync(join(base, file), 'utf8'));
+    return Array.isArray(stored.log) ? stored.log : [];
+  } catch {
+    return [];
   }
 }
 
@@ -245,6 +297,13 @@ try {
       '/continue during an unpaused run is refused',
     );
     record(provider.requests.length === before + 1, '/continue did not start or stop the run');
+    // A refused command is not eaten: `/continue` is still in the composer.
+    // Clear it so the pause and the empty-Enter check start from an empty box.
+    record(
+      lastComposer(main.output).includes('/continue'),
+      'the refused /continue stays in the composer',
+    );
+    await clearComposer(main);
     main.send('\x1b');
     record(
       await attempt(() => main.wait((out) => lastFrame(out).includes(PAUSING), 5000, 'the pausing hint')),
@@ -477,6 +536,7 @@ try {
       { text: 'after guidance' },
     ]);
     const before = provider.requests.length;
+    const cMark = main.output.length;
     await main.submit('run the slow command');
     await main.wait((out) => out.includes('Allow shell?'), 20000, 'the shell card');
     main.send('2');
@@ -516,6 +576,28 @@ try {
     record(
       await attempt(() => main.wait((out) => out.includes('after guidance'), 20000, 'the run to continue')),
       'the run continues in the same process after the guidance',
+    );
+    await main.wait(
+      (out) => /\b\d+ turns?\b/.test(plain(out.slice(cMark))),
+      20000,
+      'the guided run to end',
+    );
+    record(
+      await attempt(() =>
+        waitFor(
+          () =>
+            latestSavedLog().some(
+              (row) => row?.k === 'msg' && row?.cls === 'you' && row?.text === 'use the green one',
+            ),
+          10000,
+          'the saved guidance row',
+        ),
+      ),
+      "the saved conversation carries the guidance as the user's words",
+    );
+    notes.push(
+      'session persistence: every save happens at a run end (Session.save → persistSession, synchronous). ' +
+        'A process killed mid-run keeps the previous run-end snapshot only; the in-progress task, guidance and partial answer are not on disk.',
     );
   }
 

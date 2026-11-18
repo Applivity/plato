@@ -1125,6 +1125,10 @@ export class Session {
     }
     this.controller.sendGuidance(line);
     this.append('user', line);
+    // The saved conversation carries the user's words, not only the answer they
+    // caused. The row is the same one the screen draws; a resumed conversation
+    // shows it, and every later request replays it as the user's direction.
+    this.log.push({ k: 'msg', cls: 'you', text: line });
   }
 
   /**
@@ -1533,7 +1537,7 @@ export class Session {
     this.append('notice', `Resumed “${title}”.`);
   }
 
-  async handleCommand(line: string): Promise<'exit' | 'handled'> {
+  async handleCommand(line: string): Promise<'exit' | 'handled' | 'refused'> {
     const trimmed = line.trim();
     const [name = '', ...rest] = trimmed.split(/\s+/);
     const argument = rest.join(' ');
@@ -1545,7 +1549,7 @@ export class Session {
         RUN_SAFE_COMMANDS.has(name) || (name === '/continue' && this.pause !== 'none');
       if (!allowed) {
         this.append('notice', 'Finish or stop the run first.');
-        return 'handled';
+        return 'refused';
       }
     }
     switch (name) {

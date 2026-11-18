@@ -296,16 +296,34 @@ export function App({
    * must resume, and steering them to the model would do neither.
    */
   const runCommand = (line: string): void => {
-    setEditor(EMPTY_EDITOR);
-    setHistoryAt(null);
-    setSearch(null);
-    setMenuDismissedAt(null);
-    rememberLine(line);
     void session.handleCommand(line).then((outcome) => {
       if (outcome === 'exit') {
         onExit();
+        return;
       }
+      // A refused command is not eaten: the line stays where it was typed, so
+      // it can be sent once the run is over. It is not queued.
+      if (outcome === 'refused') {
+        return;
+      }
+      setEditor(EMPTY_EDITOR);
+      setHistoryAt(null);
+      setSearch(null);
+      setMenuDismissedAt(null);
+      rememberLine(line);
     });
+  };
+
+  /**
+   * A choice taken from the menu: during a run it goes through the same guard
+   * as a typed command, so a refusal leaves the line in the composer.
+   */
+  const runOrSubmit = (line: string): void => {
+    if (state.running) {
+      runCommand(line);
+    } else {
+      void submitLine(line);
+    }
   };
 
   useInput((input, key) => {
@@ -503,7 +521,7 @@ export function App({
         const choice = enterAction(editor.text, pick);
         setMenuDismissedAt(null);
         if (choice.action === 'run') {
-          void submitLine(choice.text);
+          runOrSubmit(choice.text);
           return;
         }
         setEditor(setText(choice.text));
@@ -541,7 +559,7 @@ export function App({
         const outcome = argumentEnter(editor.text, argument, pick);
         if (outcome !== null) {
           if (outcome.action === 'run') {
-            void submitLine(outcome.text);
+            runOrSubmit(outcome.text);
           } else {
             setEditor(setText(outcome.text));
           }
@@ -1220,6 +1238,9 @@ const IDLE_HINT =
  */
 const IDLE_DRAFT_HINT =
   'Shift+Tab mode (plan read-only · edit asks · auto trusted) · Alt+Enter newline';
+/** 100+ columns fit the two lesser keys back in beside the draft suffix. */
+const IDLE_DRAFT_WIDE_HINT =
+  'Shift+Tab mode (plan read-only · edit asks · auto trusted) · @ files · /help · Alt+Enter newline';
 const RUNNING_HINT = 'enter steers · esc pauses · ctrl+c stops';
 const RUNNING_DRAFT_HINT = 'enter steers · esc pauses · ctrl+c stops · alt+enter newline';
 /** The pause is asked for but the run has not reached a safe point yet. */
@@ -1230,9 +1251,17 @@ const PAUSED_HINT = 'paused — enter steers · /continue resumes · esc esc sto
 const PAUSED_DRAFT_HINT = `${PAUSED_HINT} · alt+enter newline`;
 
 /** The hint for the state the user is in, and only the keys that work in it. */
-function hintFor(running: boolean, pause: ViewState['pause'], hasDraft: boolean): string {
+function hintFor(
+  running: boolean,
+  pause: ViewState['pause'],
+  hasDraft: boolean,
+  columns: number,
+): string {
   if (!running) {
-    return hasDraft ? IDLE_DRAFT_HINT : IDLE_HINT;
+    if (!hasDraft) {
+      return IDLE_HINT;
+    }
+    return columns >= 100 ? IDLE_DRAFT_WIDE_HINT : IDLE_DRAFT_HINT;
   }
   if (pause === 'parked') {
     return hasDraft ? PAUSED_DRAFT_HINT : PAUSED_HINT;
@@ -1276,7 +1305,10 @@ function Composer({
         )}
       </Box>
       <Text dimColor>
-        {truncateToWidth(hintFor(running, pause, editor.text.length > 0), columns)}
+        {truncateToWidth(
+          hintFor(running, pause, editor.text.length > 0, columns),
+          columns,
+        )}
       </Text>
     </Box>
   );
