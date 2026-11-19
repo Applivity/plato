@@ -37,9 +37,17 @@ const core = await import('../../packages/core/dist/src/index.js');
 const TOOL_WORDS_MSG = { type: 'tool-words', words: core.toolWordsForView() };
 const html = () => readFileSync(join(TMP_DIR, 'wv.html'), 'utf8');
 
+// --banner draws the 3:1 X profile banner instead of the 1200 x 630 card.
+// Same composition, re-laid-out: every text pixel inside the central
+// 1200 x 400 that a phone crops to, and nothing in the bottom-left where
+// the avatar circle sits. It is a SEPARATE file on purpose — assets/og.png
+// is also the site's social card and index.html declares its geometry.
+const BANNER = process.argv.includes('--banner');
+
 const OUT = (() => {
   const i = process.argv.indexOf('--out');
-  return i >= 0 ? process.argv[i + 1] : join(TMP_DIR, 'og', 'og.png');
+  if (i >= 0) return process.argv[i + 1];
+  return join(TMP_DIR, 'og', BANNER ? 'x-banner.png' : 'og.png');
 })();
 const WORK = join(TMP_DIR, 'og');
 mkdirSync(WORK, { recursive: true });
@@ -103,7 +111,10 @@ const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
 ), msg);
 
 const panel = await (async () => {
-  const ctx = await browser.newContext({ viewport: { width: 780, height: 488 }, deviceScaleFactor: 2 });
+  const ctx = await browser.newContext({
+    viewport: BANNER ? { width: 660, height: 400 } : { width: 780, height: 488 },
+    deviceScaleFactor: 2,
+  });
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(String(e.message)));
@@ -160,6 +171,31 @@ const panel = await (async () => {
 // --- the card --------------------------------------------------------------
 const panelB64 = execFileSync('base64', ['-i', panel], { encoding: 'utf8' }).replace(/\s+/g, '');
 
+// Geometry for the two layouts. The card's numbers are the shipped ones and
+// must not move; the banner's keep every text pixel inside x 150-1350,
+// y 50-450 and leave the bottom-left clear for the avatar circle.
+const L = BANNER
+  ? {
+      W: 1500, H: 500,
+      glow: 'radial-gradient(900px 620px at 0% 0%, #112027 0%, rgba(12,17,19,0) 66%)',
+      brand: { left: 170, top: 54, img: 34, font: 24 },
+      headline: { left: 168, top: 124, size: 44, line: 48 },
+      sub: { left: 170, top: 350, width: 400, size: 17, line: 24 },
+      panel: { left: 690, top: 50, w: 660, h: 400 },
+      foot: null,
+      url: true,
+    }
+  : {
+      W: 1200, H: 630,
+      glow: 'radial-gradient(700px 520px at 0% 0%, #112027 0%, rgba(12,17,19,0) 66%)',
+      brand: { left: 56, top: 52, img: 38, font: 26 },
+      headline: { left: 57, top: 136, size: 56, line: 60 },
+      sub: { left: 60, top: 396, width: 452, size: 19.5, line: 27 },
+      panel: { left: 519, top: 128, w: 598, h: 374 },
+      foot: { left: 60, top: 548 },
+      url: false,
+    };
+
 const CARD = `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -169,36 +205,42 @@ const CARD = `<!doctype html>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    width: 1200px; height: 630px; overflow: hidden; position: relative;
+    width: ${L.W}px; height: ${L.H}px; overflow: hidden; position: relative;
     background: #0C1113; color: #EEF1F0;
     font-family: "IBM Plex Sans", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  .glow {
-    position: absolute; inset: 0;
-    background: radial-gradient(700px 520px at 0% 0%, #112027 0%, rgba(12,17,19,0) 66%);
+  .glow { position: absolute; inset: 0; background: ${L.glow}; }
+  .brand {
+    position: absolute; left: ${L.brand.left}px; top: ${L.brand.top}px;
+    display: flex; align-items: center; gap: 12px;
   }
-  .brand { position: absolute; left: 56px; top: 52px; display: flex; align-items: center; gap: 12px; }
-  .brand img { width: 38px; height: 38px; display: block; }
-  .brand span { font-family: "Newsreader", Georgia, serif; font-size: 26px; letter-spacing: -0.01em; }
+  .brand img { width: ${L.brand.img}px; height: ${L.brand.img}px; display: block; }
+  .brand span { font-family: "Newsreader", Georgia, serif; font-size: ${L.brand.font}px; letter-spacing: -0.01em; }
+  .brand .url {
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px;
+    color: #7E8F92; letter-spacing: 0; margin-left: 6px;
+  }
   .headline {
-    position: absolute; left: 57px; top: 136px;
+    position: absolute; left: ${L.headline.left}px; top: ${L.headline.top}px;
     font-family: "Newsreader", Georgia, serif; font-weight: 400;
-    font-size: 56px; line-height: 60px; letter-spacing: -0.022em;
+    font-size: ${L.headline.size}px; line-height: ${L.headline.line}px; letter-spacing: -0.022em;
   }
   .headline em { font-style: italic; color: #3FC1D4; }
   .sub {
-    position: absolute; left: 60px; top: 396px; width: 452px;
-    font-size: 19.5px; line-height: 27px; color: #B9C6C8;
+    position: absolute; left: ${L.sub.left}px; top: ${L.sub.top}px; width: ${L.sub.width}px;
+    font-size: ${L.sub.size}px; line-height: ${L.sub.line}px; color: #B9C6C8;
   }
   .panel {
-    position: absolute; left: 519px; top: 128px; width: 598px; height: 374px;
+    position: absolute; left: ${L.panel.left}px; top: ${L.panel.top}px;
+    width: ${L.panel.w}px; height: ${L.panel.h}px;
     border-radius: 7px; overflow: hidden;
     box-shadow: 0 30px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.05);
   }
-  .panel img { display: block; width: 598px; height: 374px; }
+  .panel img { display: block; width: ${L.panel.w}px; height: ${L.panel.h}px; }
   .foot {
-    position: absolute; left: 60px; top: 548px; display: flex; align-items: center;
+    position: absolute; left: ${L.foot ? L.foot.left : 0}px; top: ${L.foot ? L.foot.top : 0}px;
+    display: flex; align-items: center;
     gap: 10px; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 13px;
     color: #7E8F92;
   }
@@ -210,14 +252,20 @@ const CARD = `<!doctype html>
 </style></head>
 <body>
   <div class="glow"></div>
-  <div class="brand"><img src="data:image/svg+xml;base64,${Buffer.from(await readFile(OWL)).toString('base64')}"><span>Plato</span></div>
+  <div class="brand"><img src="data:image/svg+xml;base64,${Buffer.from(await readFile(OWL)).toString('base64')}"><span>Plato</span>${
+    L.url ? `<span class="url">${SITE}</span>` : ''
+  }</div>
   <div class="headline">Plato does the<br>work.<br><em>Philosophers</em> keep it<br>honest.</div>
   <div class="sub">A second reader goes over every step as it happens and can interrupt, pause, or stop the run.</div>
   <div class="panel"><img src="data:image/png;base64,${panelB64}"></div>
-  <div class="foot"><span class="pill">${SITE}</span><span class="sep">·</span><span>By Applivity</span><span class="sep">·</span><span>${HOSTS}</span></div>
+  ${
+    L.foot
+      ? `<div class="foot"><span class="pill">${SITE}</span><span class="sep">·</span><span>By Applivity</span><span class="sep">·</span><span>${HOSTS}</span></div>`
+      : ''
+  }
 </body></html>`;
 
-const ctx = await browser.newContext({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 2 });
+const ctx = await browser.newContext({ viewport: { width: L.W, height: L.H }, deviceScaleFactor: 2 });
 const page = await ctx.newPage();
 await page.setContent(CARD, { waitUntil: 'networkidle' });
 await page.evaluate(() => document.fonts.ready);
@@ -229,16 +277,17 @@ const fonts = await page.evaluate(() => ({
 if (!fonts.serif || !fonts.sans || !fonts.mono) {
   throw new Error('web fonts did not load: ' + JSON.stringify(fonts));
 }
-const big = join(WORK, 'og@2x.png');
+const big = join(WORK, BANNER ? 'x-banner@2x.png' : 'og@2x.png');
 await page.screenshot({ path: big });
 await browser.close();
 
-// Supersample to the exact size the OG tags declare.
+// Supersample to the exact size the OG tags (or X) declare.
 mkdirSync(dirname(OUT), { recursive: true });
-execFileSync('sips', ['-z', '630', '1200', big, '--out', OUT], { stdio: 'ignore' });
+execFileSync('sips', ['-z', String(L.H), String(L.W), big, '--out', OUT], { stdio: 'ignore' });
 const dims = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', OUT], { encoding: 'utf8' });
-if (!/pixelWidth: 1200/.test(dims) || !/pixelHeight: 630/.test(dims)) {
+if (!new RegExp(`pixelWidth: ${L.W}`).test(dims) || !new RegExp(`pixelHeight: ${L.H}`).test(dims)) {
   throw new Error('wrong size: ' + dims);
 }
-console.log('wrote', OUT);
-console.log('footer:', `${SITE} · By Applivity · ${HOSTS}`);
+console.log('wrote', OUT, `${L.W}x${L.H}`);
+if (L.foot) console.log('footer:', `${SITE} · By Applivity · ${HOSTS}`);
+else console.log('banner: text inside x 150-1350, y 50-450; bottom-left clear');
