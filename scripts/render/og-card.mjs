@@ -111,10 +111,11 @@ const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
 ), msg);
 
 const panel = await (async () => {
-  const ctx = await browser.newContext({
-    viewport: BANNER ? { width: 660, height: 400 } : { width: 780, height: 488 },
-    deviceScaleFactor: 2,
-  });
+  // The panel is always CAPTURED at 780x488, whatever the layout: that is the
+  // height at which the whole exchange fits, including the philosopher's
+  // guidance. The banner only DISPLAYS it smaller, so it must not re-capture
+  // at its own size or the guidance falls below the fold.
+  const ctx = await browser.newContext({ viewport: { width: 780, height: 488 }, deviceScaleFactor: 2 });
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(String(e.message)));
@@ -181,7 +182,8 @@ const L = BANNER
       brand: { left: 170, top: 54, img: 34, font: 24 },
       headline: { left: 168, top: 124, size: 44, line: 48 },
       sub: { left: 170, top: 350, width: 400, size: 17, line: 24 },
-      panel: { left: 690, top: 50, w: 660, h: 400 },
+      // 640x400 keeps the capture's 780x488 aspect and sits inside x<=1350.
+      panel: { left: 700, top: 50, w: 640, h: 400 },
       foot: null,
       url: true,
     }
