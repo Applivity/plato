@@ -8336,3 +8336,32 @@ models to retry"**.
   cold first fetch may abort once and a person is waiting on a page they opened.
 - **A guess or a failure must never be dressed as a fact about the model.**
   Never "context unknown" for something the endpoint never answered.
+
+**D49ei — The assistant publishes npm and GitHub; the Marketplaces stay manual (2026-11-19).**
+
+There are four public surfaces. Two are automated and two are not, and the split is
+a decision rather than an unfinished job. `docs/RELEASING.md` holds the operating
+record.
+
+- **npm and GitHub releases run from `scripts/release/release.mjs`**, with a dry run
+  by default and `--go` to publish. It reads the version from **inside** the
+  artifact, refuses a version the surface already serves, and reads the surface back
+  afterwards.
+- **The assistant runs it. The founder does not.** He asked for automation to stop
+  doing release steps by hand; printing a finished command for him to paste is the
+  same step in a different costume.
+- **A version ships only when he names it or approves it**, and every publish
+  reports the file, its size and its hash on both sides.
+- **The Marketplaces stay a manual upload.** Every extension publish so far has been
+  a browser upload, so there is no Azure DevOps organization and no token. Creating
+  a new organization now requires **an active Azure subscription** (Microsoft's
+  *Create an organization* page, updated 2026-11-03; existing organizations are
+  unaffected), and his subscription belongs to a different account he does not want
+  to explain upstream. He decided against creating an Azure identity.
+- **The two Marketplace verbs are written but unused.** They need a keychain token
+  under `plato.release.marketplace` and stop cleanly without one. They are kept
+  because they would work unchanged the day a token exists — not because they are
+  on the current path.
+- **No new credential was created.** npm and GitHub use what was already on the
+  machine, and no token passes through a chat message, the repository, or an
+  evidence file.
