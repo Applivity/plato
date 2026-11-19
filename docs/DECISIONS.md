@@ -8215,7 +8215,8 @@ delivered until it runs. **The desktop windows have had pause since August
 (M2)**; any earlier wording that said pause was unshipped was true of the
 terminal and wrong as a statement about the product. **Open after the desktop
 window release of 2026-11-18: the terminal's pause (D49dv), and the GUIs still
-say "Cancel" where the action is stop.**
+say "Cancel" where the action is stop.** **Status updated 2026-11-19: both are
+closed — the terminal's pause shipped in CLI 0.5.0, and the windows say Stop.**
 
 **D49dw — A cached model list is trusted for a day only if every entry knows its window (2026-11-18).**
 
