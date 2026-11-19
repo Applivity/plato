@@ -27,6 +27,18 @@ const capturePath = join(here, 'queue-capture.txt');
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const plain = (text) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '');
+const lastFrame = (text) => {
+  const start = text.lastIndexOf('\x1b[?2026h');
+  if (start < 0) return plain(text);
+  const end = text.lastIndexOf('\x1b[?2026l');
+  return plain(text.slice(start, end > start ? end : undefined));
+};
+const lastComposer = (text) =>
+  lastFrame(text)
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter((line) => line.startsWith('› '))
+    .at(-1) ?? '';
 
 async function waitFor(test, ms, what) {
   const until = Date.now() + ms;
@@ -94,9 +106,23 @@ const type = async (text) => {
   send(text);
   await sleep(120);
 };
-const submit = async (text) => {
-  await type(text);
+/**
+ * Wait for the line to be DRAWN before pressing Enter. A text and its Enter
+ * that arrive in one input chunk are a paste by design: the trailing newline
+ * ends the paste and does not send it, so the line stays as a draft. The
+ * fixed sleep this replaced lost an Enter that way once, right after a run
+ * ended, and the check then read as a product fault.
+ */
+const waitForLine = (text) =>
+  waitFor(() => lastComposer(output).includes(text), 5000, `the composer to show ${text}`);
+const enterAfter = async (text) => {
+  await waitForLine(text);
+  await sleep(80);
   send('\r');
+};
+const submit = async (text) => {
+  send(text);
+  await enterAfter(text);
 };
 const userText = (index) => {
   const body = provider.requests[index];
@@ -131,7 +157,7 @@ try {
   await submit('first task');
   await attempt(() => waitFor(() => plain(output.slice(mark)).includes('SLOW-ONE-START'), 10000, 'the slow run'));
   await type('steer this way');
-  send('\r');
+  await enterAfter('steer this way');
   record(
     await attempt(() =>
       waitFor(() => plain(output.slice(mark)).includes('› steer this way'), 4000, 'the steering row'),
