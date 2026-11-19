@@ -10,8 +10,27 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
-**Pre-release.** This is `0.3.0`. The core of the agent is the same code the
-extension has shipped, but the terminal host is new.
+**0.5.1** updates this README to the current release; no code changed.
+
+**0.5.0** adds pause and steering to the terminal. Esc pauses a run at a safe
+point: a tool that is already running finishes, an approval card still opens,
+and the text holds where you stopped it. Typing during a run steers it: Enter
+sends the line, and the run receives it at its next safe point. `/continue`
+resumes a paused run; `/continue <text>` sends the text and then resumes. Enter
+alone never resumes. `/queue <text>` keeps a line for the next run instead.
+Alt+Enter starts a new line in the composer. During a run only `/help`,
+`/queue`, `/sessions`, `/compact` and `/continue` (while paused) act; every
+other command is refused with one line, "Finish or stop the run first.", and
+stays in the composer, so you can send it after the run. Two Esc presses within
+about 1.5 s stop a paused run; a later press does nothing. Ctrl+C stops in one
+press. A paused run does not survive Plato exiting.
+
+**0.4.0** makes setup one screen, with the key checked before anything is saved,
+and reads the context window the provider publishes, so a 1M model no longer
+shows as 131k. A command's arguments come from one table, and the status line
+is denser. It also adds `/resume`, the full tool row behind Ctrl+O, `@`
+completion, the cold-start line, prompt history with Ctrl+R, and Ctrl+G to
+bring a line back from an editor.
 
 **0.3.0** brings long conversations to the terminal. `/compact` folds the older
 messages into a summary, and so does the history when it reaches your compaction
@@ -127,13 +146,16 @@ In the interactive terminal:
 | Key | Action |
 |---|---|
 | `Shift+Tab` | switch `plan`, `edit`, `auto` |
-| `Enter` | send |
-| `Esc` | stop after the current step |
-| `Ctrl+C` twice | exit |
+| `Enter` | send; during a run, steer it |
+| `Alt+Enter` | start a new line in the composer |
+| `Esc` | pause the run |
+| `Esc` `Esc` | stop a paused run |
+| `Ctrl+C` | stop the run; at the prompt, press twice to exit |
 | `↑` / `↓` | prompt history |
 
-Slash commands: `/mode`, `/model`, `/team`, `/gitignore`, `/compact`, `/undo`,
-`/new`, `/sessions`, `/help`, `/exit`.
+Slash commands: `/mode`, `/model`, `/team`, `/gitignore`, `/compact`,
+`/continue`, `/queue`, `/resume`, `/undo`, `/new`, `/sessions`, `/help`,
+`/exit`.
 
 Type `/` to list them. Typing after the slash filters the list, `↑`/`↓` move,
 `Tab` fills the command in, and `Enter` runs a command that takes no
@@ -142,6 +164,26 @@ arguments. A long list scrolls; it never covers the conversation.
 A command that takes a word lists its words: after `/mode `, `/model `,
 `/team ` or `/gitignore `, each choice appears with one line on what it does.
 `Tab` completes and `Enter` accepts only a word from the list.
+
+### While a run is live
+
+A line typed during a run steers it: Enter sends the line, and the run receives
+it at its next safe point. No second run starts. `/queue <text>` keeps the line
+for the next run instead; a queued line survives a stop.
+
+Esc pauses. A tool that is already running finishes, an approval card still
+opens, and the text holds where you stopped it. At the prompt, `/continue`
+resumes, and `/continue <text>` sends the text and then resumes. Enter alone
+never resumes. Two Esc presses within about 1.5 s stop a paused run; a later
+press does nothing. Ctrl+C stops in one press. An approval card takes Esc first:
+there it denies the action and stops the run.
+
+While a run is live, only `/help`, `/queue`, `/sessions`, `/compact` and
+`/continue` (when a pause is in effect) act. Any other command is refused with
+one line — "Finish or stop the run first." — and stays in the composer, so you
+can send it after the run. It is not queued.
+
+A paused run does not survive Plato exiting.
 
 ### The header and the status line
 
@@ -297,7 +339,7 @@ Plan-mode session asks before it sends.
 |---|---|
 | `plato auth login\|status\|list\|logout` | Manage connections and keys |
 | `plato models [connection] [--refresh]` | List the models a connection offers |
-| `plato model [name]` | Show the model in use, or switch to another |
+| `plato model [connection:model]` | Show the model in use, or switch to another |
 | `plato sessions list\|export\|delete` | Manage saved conversations |
 | `plato config [get\|set] [key] [value]` | Show or change a setting |
 | `plato doctor` | Check the config, keys, keychain, model limits, writes, and the last run |
@@ -318,7 +360,8 @@ Plan-mode session asks before it sends.
 | `~/.plato/DUO.yaml`, `ACADEMY.yaml` | Teams |
 
 `PLATO_CONFIG_DIR`, `PLATO_DATA_DIR`, and `PLATO_HOME` override the first three
-roots.
+roots. On Windows, the config and data roots above are `%APPDATA%\Plato` and
+`%LOCALAPPDATA%\Plato`.
 
 ## Privacy and safety
 
