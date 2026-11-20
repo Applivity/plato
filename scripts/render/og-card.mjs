@@ -58,12 +58,16 @@ const HOSTS = 'VS Code, Visual Studio & the terminal';
 // pairs. Vendor icons are not an option — Microsoft's brand page forbids using
 // or redrawing the VS Code mark to promote another product — so these three are
 // drawn from scratch as line marks on one 16-unit grid, one stroke weight, one
-// corner radius, all in currentColor. Each suggests a host without depicting
-// any product: a split pane with a text cursor, a window with a raised tab and
-// a docked side pane, and a prompt caret with a block cursor.
+// corner radius. Each suggests a host without depicting any product: a split
+// pane with a text cursor, a window with a raised tab and a docked side pane,
+// and a prompt caret with a block cursor. Each mark carries one accent, taken
+// from the banner's own palette; labels stay neutral so the eye goes mark, then
+// word. The terminal accent is the site's pale ice, not a third saturated hue,
+// so the row reads as a set and not as a warning light.
 const HOST_MARKS = [
   {
     label: 'VS Code',
+    accent: '#3FC1D4',
     marks: '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>'
       + '<path d="M8.5 2.5v11"/>'
       + '<path d="M3.9 5.4h1.6M3.9 10.6h1.6M4.7 5.4v5.2"/>',
@@ -72,13 +76,15 @@ const HOST_MARKS = [
     // The raised tab is the silhouette: an editor pane and an IDE differ at
     // small size by outline, not by interior lines, which turn to mush.
     label: 'Visual Studio',
+    accent: '#D9A441',
     marks: '<rect x="0.5" y="3" width="15" height="10.5" rx="1.4"/>'
       + '<path d="M9.8 3V1.4h4.2V3M9.8 3v10.5"/>',
   },
   {
     label: 'terminal',
+    accent: '#CFE9EC',
     marks: '<path d="M3 4.6 6.8 8 3 11.4"/>'
-      + '<path d="M9.2 10.2h3.6" style="stroke-width:2.2"/>',
+      + '<path d="M9.2 10.2h3.6" style="stroke-width:2"/>',
   },
 ];
 const SITE = 'plato.applivity.com';
@@ -208,13 +214,13 @@ const L = BANNER
       glow: 'radial-gradient(900px 620px at 0% 0%, #112027 0%, rgba(12,17,19,0) 66%)',
       brand: { left: 170, top: 54, img: 34, font: 24 },
       headline: { left: 168, top: 124, size: 44, line: 48 },
-      sub: { left: 170, top: 350, width: 400, size: 17, line: 24 },
-      // The host row: above the sub-headline, inside x 150-1350, y 50-450.
-      // It reads as a detail line under the headline, and that is high enough
-      // that the avatar circle on the profile page, which owns the bottom-left
-      // corner, cannot reach it; checked against a mobile crop.
-      // `glyph` is the markup box of each drawn mark, `size` the label type.
-      hosts: { left: 170, top: 320, size: 15, glyph: 16 },
+      // The banner has no sub-headline: the headline makes the claim and the
+      // panel shows the interruption. The card keeps its own (below).
+      sub: null,
+      // The host row is the banner's third visual element, so it is built at
+      // display size. Its width is bounded on the right by the chat panel at
+      // x 700: a row that ran past that would be painted under it.
+      hosts: { left: 170, top: 319, size: 23, glyph: 40, gap: 8, dot: 8 },
       // 640x400 keeps the capture's 780x488 aspect and sits inside x<=1350.
       panel: { left: 700, top: 50, w: 640, h: 400 },
       foot: null,
@@ -264,8 +270,8 @@ const CARD = `<!doctype html>
   }
   .headline em { font-style: italic; color: #3FC1D4; }
   .sub {
-    position: absolute; left: ${L.sub.left}px; top: ${L.sub.top}px; width: ${L.sub.width}px;
-    font-size: ${L.sub.size}px; line-height: ${L.sub.line}px; color: #B9C6C8;
+    position: absolute; left: ${L.sub ? L.sub.left : 0}px; top: ${L.sub ? L.sub.top : 0}px; width: ${L.sub ? L.sub.width : 0}px;
+    font-size: ${L.sub ? L.sub.size : 0}px; line-height: ${L.sub ? L.sub.line : 0}px; color: #B9C6C8;
   }
   .panel {
     position: absolute; left: ${L.panel.left}px; top: ${L.panel.top}px;
@@ -294,11 +300,11 @@ const CARD = `<!doctype html>
   .hosts .host { display: inline-flex; align-items: center; white-space: nowrap; }
   .hosts svg {
     width: ${L.hosts ? L.hosts.glyph : 0}px; height: ${L.hosts ? L.hosts.glyph : 0}px;
-    margin-right: 7px; display: block;
-    fill: none; stroke: currentColor; stroke-width: 1.5;
+    margin-right: ${L.hosts ? L.hosts.gap : 0}px; display: block;
+    fill: none; stroke: currentColor; stroke-width: 1.2;
     stroke-linecap: round; stroke-linejoin: round;
   }
-  .hosts .dot { color: #3FC1D4; padding: 0 8px; }
+  .hosts .dot { color: #3FC1D4; padding: 0 ${L.hosts ? L.hosts.dot : 0}px; }
 </style></head>
 <body>
   <div class="glow"></div>
@@ -306,8 +312,8 @@ const CARD = `<!doctype html>
     L.url ? `<span class="url">${SITE}</span>` : ''
   }</div>
   <div class="headline">Plato does the<br>work.<br><em>Philosophers</em> keep it<br>honest.</div>
-  <div class="sub">A second reader goes over every step as it happens and can interrupt, pause, or stop the run.</div>
-  <div class="hosts">${HOST_MARKS.map((h) => `<span class="host"><svg viewBox="0 0 16 16" aria-hidden="true">${h.marks}</svg>${h.label}</span>`).join('<span class="dot">·</span>')}</div>
+  ${L.sub ? '<div class="sub">A second reader goes over every step as it happens and can interrupt, pause, or stop the run.</div>' : ''}
+  <div class="hosts">${HOST_MARKS.map((h) => `<span class="host"><svg viewBox="0 0 16 16" aria-hidden="true" style="color:${h.accent}">${h.marks}</svg>${h.label}</span>`).join('<span class="dot">·</span>')}</div>
   <div class="panel"><img src="data:image/png;base64,${panelB64}"></div>
   ${
     L.foot
