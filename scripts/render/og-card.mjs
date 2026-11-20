@@ -54,12 +54,33 @@ mkdirSync(WORK, { recursive: true });
 
 // The one string that goes stale. Change the hosts here, re-run, done.
 const HOSTS = 'VS Code, Visual Studio & the terminal';
-// The banner's own host line. Vendor icons are not an option: Microsoft's brand
-// page forbids using or redrawing the VS Code mark to promote another product,
-// so the hosts are named in our type instead. Middle dot because this is a
-// graphic list, not prose — the site's eyebrow says "and" and the card footer
-// says "&", and those are sentences, so they stay as they are.
-const HOST_NAMES = ['VS Code', 'Visual Studio', 'terminal'];
+// The banner's own host row: a glyph and its word per host, middle dots between
+// pairs. Vendor icons are not an option — Microsoft's brand page forbids using
+// or redrawing the VS Code mark to promote another product — so these three are
+// drawn from scratch as line marks on one 16-unit grid, one stroke weight, one
+// corner radius, all in currentColor. Each suggests a host without depicting
+// any product: a split pane with a text cursor, a window with a raised tab and
+// a docked side pane, and a prompt caret with a block cursor.
+const HOST_MARKS = [
+  {
+    label: 'VS Code',
+    marks: '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>'
+      + '<path d="M8.5 2.5v11"/>'
+      + '<path d="M3.9 5.4h1.6M3.9 10.6h1.6M4.7 5.4v5.2"/>',
+  },
+  {
+    // The raised tab is the silhouette: an editor pane and an IDE differ at
+    // small size by outline, not by interior lines, which turn to mush.
+    label: 'Visual Studio',
+    marks: '<rect x="0.5" y="3" width="15" height="10.5" rx="1.4"/>'
+      + '<path d="M9.8 3V1.4h4.2V3M9.8 3v10.5"/>',
+  },
+  {
+    label: 'terminal',
+    marks: '<path d="M3 4.6 6.8 8 3 11.4"/>'
+      + '<path d="M9.2 10.2h3.6" style="stroke-width:2.2"/>',
+  },
+];
 const SITE = 'plato.applivity.com';
 // The mark: the website's tile when its working tree is beside this repo,
 // otherwise the extension's own source mark. Override with PLATO_OG_OWL.
@@ -188,11 +209,12 @@ const L = BANNER
       brand: { left: 170, top: 54, img: 34, font: 24 },
       headline: { left: 168, top: 124, size: 44, line: 48 },
       sub: { left: 170, top: 350, width: 400, size: 17, line: 24 },
-      // The host line: above the sub-headline, inside x 150-1350, y 50-450.
+      // The host row: above the sub-headline, inside x 150-1350, y 50-450.
       // It reads as a detail line under the headline, and that is high enough
       // that the avatar circle on the profile page, which owns the bottom-left
       // corner, cannot reach it; checked against a mobile crop.
-      hosts: { left: 170, top: 326, size: 14 },
+      // `glyph` is the markup box of each drawn mark, `size` the label type.
+      hosts: { left: 170, top: 320, size: 15, glyph: 16 },
       // 640x400 keeps the capture's 780x488 aspect and sits inside x<=1350.
       panel: { left: 700, top: 50, w: 640, h: 400 },
       foot: null,
@@ -267,7 +289,14 @@ const CARD = `<!doctype html>
     position: absolute; left: ${L.hosts ? L.hosts.left : 0}px; top: ${L.hosts ? L.hosts.top : 0}px;
     font-family: "IBM Plex Sans", system-ui, sans-serif;
     font-size: ${L.hosts ? L.hosts.size : 0}px; line-height: 1; letter-spacing: .015em; color: #A9B8BB;
-    display: ${L.hosts ? 'block' : 'none'};
+    display: ${L.hosts ? 'flex' : 'none'}; align-items: center;
+  }
+  .hosts .host { display: inline-flex; align-items: center; white-space: nowrap; }
+  .hosts svg {
+    width: ${L.hosts ? L.hosts.glyph : 0}px; height: ${L.hosts ? L.hosts.glyph : 0}px;
+    margin-right: 7px; display: block;
+    fill: none; stroke: currentColor; stroke-width: 1.5;
+    stroke-linecap: round; stroke-linejoin: round;
   }
   .hosts .dot { color: #3FC1D4; padding: 0 8px; }
 </style></head>
@@ -278,7 +307,7 @@ const CARD = `<!doctype html>
   }</div>
   <div class="headline">Plato does the<br>work.<br><em>Philosophers</em> keep it<br>honest.</div>
   <div class="sub">A second reader goes over every step as it happens and can interrupt, pause, or stop the run.</div>
-  <div class="hosts">${HOST_NAMES.join('<span class="dot">·</span>')}</div>
+  <div class="hosts">${HOST_MARKS.map((h) => `<span class="host"><svg viewBox="0 0 16 16" aria-hidden="true">${h.marks}</svg>${h.label}</span>`).join('<span class="dot">·</span>')}</div>
   <div class="panel"><img src="data:image/png;base64,${panelB64}"></div>
   ${
     L.foot
@@ -312,4 +341,4 @@ if (!new RegExp(`pixelWidth: ${L.W}`).test(dims) || !new RegExp(`pixelHeight: ${
 }
 console.log('wrote', OUT, `${L.W}x${L.H}`);
 if (L.foot) console.log('footer:', `${SITE} · By Applivity · ${HOSTS}`);
-else console.log('banner: hosts line at', HOST_NAMES.join(' · '), `(${L.hosts.left},${L.hosts.top})`);
+else console.log('banner: host row', HOST_MARKS.map((h) => h.label).join(' · '), `(${L.hosts.left},${L.hosts.top})`);
