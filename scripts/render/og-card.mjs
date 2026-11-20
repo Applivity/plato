@@ -54,6 +54,12 @@ mkdirSync(WORK, { recursive: true });
 
 // The one string that goes stale. Change the hosts here, re-run, done.
 const HOSTS = 'VS Code, Visual Studio & the terminal';
+// The banner's own host line. Vendor icons are not an option: Microsoft's brand
+// page forbids using or redrawing the VS Code mark to promote another product,
+// so the hosts are named in our type instead. Middle dot because this is a
+// graphic list, not prose — the site's eyebrow says "and" and the card footer
+// says "&", and those are sentences, so they stay as they are.
+const HOST_NAMES = ['VS Code', 'Visual Studio', 'terminal'];
 const SITE = 'plato.applivity.com';
 // The mark: the website's tile when its working tree is beside this repo,
 // otherwise the extension's own source mark. Override with PLATO_OG_OWL.
@@ -182,6 +188,11 @@ const L = BANNER
       brand: { left: 170, top: 54, img: 34, font: 24 },
       headline: { left: 168, top: 124, size: 44, line: 48 },
       sub: { left: 170, top: 350, width: 400, size: 17, line: 24 },
+      // The host line: above the sub-headline, inside x 150-1350, y 50-450.
+      // It reads as a detail line under the headline, and that is high enough
+      // that the avatar circle on the profile page, which owns the bottom-left
+      // corner, cannot reach it; checked against a mobile crop.
+      hosts: { left: 170, top: 326, size: 14 },
       // 640x400 keeps the capture's 780x488 aspect and sits inside x<=1350.
       panel: { left: 700, top: 50, w: 640, h: 400 },
       foot: null,
@@ -195,6 +206,7 @@ const L = BANNER
       sub: { left: 60, top: 396, width: 452, size: 19.5, line: 27 },
       panel: { left: 519, top: 128, w: 598, h: 374 },
       foot: { left: 60, top: 548 },
+      hosts: null,
       url: false,
     };
 
@@ -251,6 +263,13 @@ const CARD = `<!doctype html>
     font-size: 12.5px; letter-spacing: .01em;
   }
   .sep { color: #4A5A5E; }
+  .hosts {
+    position: absolute; left: ${L.hosts ? L.hosts.left : 0}px; top: ${L.hosts ? L.hosts.top : 0}px;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    font-size: ${L.hosts ? L.hosts.size : 0}px; line-height: 1; letter-spacing: .015em; color: #A9B8BB;
+    display: ${L.hosts ? 'block' : 'none'};
+  }
+  .hosts .dot { color: #3FC1D4; padding: 0 8px; }
 </style></head>
 <body>
   <div class="glow"></div>
@@ -259,6 +278,7 @@ const CARD = `<!doctype html>
   }</div>
   <div class="headline">Plato does the<br>work.<br><em>Philosophers</em> keep it<br>honest.</div>
   <div class="sub">A second reader goes over every step as it happens and can interrupt, pause, or stop the run.</div>
+  <div class="hosts">${HOST_NAMES.join('<span class="dot">·</span>')}</div>
   <div class="panel"><img src="data:image/png;base64,${panelB64}"></div>
   ${
     L.foot
@@ -292,4 +312,4 @@ if (!new RegExp(`pixelWidth: ${L.W}`).test(dims) || !new RegExp(`pixelHeight: ${
 }
 console.log('wrote', OUT, `${L.W}x${L.H}`);
 if (L.foot) console.log('footer:', `${SITE} · By Applivity · ${HOSTS}`);
-else console.log('banner: text inside x 150-1350, y 50-450; bottom-left clear');
+else console.log('banner: hosts line at', HOST_NAMES.join(' · '), `(${L.hosts.left},${L.hosts.top})`);
