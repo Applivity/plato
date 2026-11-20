@@ -60,14 +60,15 @@ const HOSTS = 'VS Code, Visual Studio & the terminal';
 // drawn from scratch as line marks on one 16-unit grid, one stroke weight, one
 // corner radius. Each suggests a host without depicting any product: a split
 // pane with a text cursor, a window with a raised tab and a docked side pane,
-// and a prompt caret with a block cursor. Each mark carries one accent, taken
-// from the banner's own palette; labels stay neutral so the eye goes mark, then
-// word. The terminal accent is the site's pale ice, not a third saturated hue,
-// so the row reads as a set and not as a warning light.
+// and a prompt caret with a block cursor. Each mark carries one accent, so a
+// developer decodes the three hosts before reading a word; labels stay neutral
+// so the eye goes mark, then word. The hues read blue, violet and green, but
+// none is a vendor's published value: each sits a step off the brand hex, so no
+// pixel matches a documented colour of any of the three products.
 const HOST_MARKS = [
   {
     label: 'VS Code',
-    accent: '#3FC1D4',
+    accent: '#2F8FD6',
     marks: '<rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/>'
       + '<path d="M8.5 2.5v11"/>'
       + '<path d="M3.9 5.4h1.6M3.9 10.6h1.6M4.7 5.4v5.2"/>',
@@ -76,13 +77,13 @@ const HOST_MARKS = [
     // The raised tab is the silhouette: an editor pane and an IDE differ at
     // small size by outline, not by interior lines, which turn to mush.
     label: 'Visual Studio',
-    accent: '#D9A441',
+    accent: '#8B6FD4',
     marks: '<rect x="0.5" y="3" width="15" height="10.5" rx="1.4"/>'
       + '<path d="M9.8 3V1.4h4.2V3M9.8 3v10.5"/>',
   },
   {
     label: 'terminal',
-    accent: '#CFE9EC',
+    accent: '#4ADE80',
     marks: '<path d="M3 4.6 6.8 8 3 11.4"/>'
       + '<path d="M9.2 10.2h3.6" style="stroke-width:2"/>',
   },
