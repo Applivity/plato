@@ -285,7 +285,11 @@ export class AcpAgent {
           root: session.cwd,
           task,
           mode: config.mode,
-          config,
+          // Solo, whatever the config says. ACP has no update type for a
+          // philosopher, so Duo or Academy here would watch the run invisibly:
+          // their pause, cancel and steer could only reach the editor user as a
+          // stderr line, with no control to answer them.
+          config: { ...config, team: 'solo' },
           env: this.env,
           ...(session.history.length === 0 ? {} : { history: session.history }),
         },

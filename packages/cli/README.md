@@ -353,6 +353,10 @@ editor offers a terminal sign-in, which runs `plato auth login`. One process
 serves one conversation. Standard output carries protocol messages only; logs
 and errors go to standard error.
 
+Plato runs Solo in this mode. Duo and Academy add philosophers that observe the
+run, and only the terminal and the VS Code and Visual Studio extensions can
+show them and let you answer them.
+
 ### Other Plato sessions
 
 Sessions running on this machine can see each other and exchange one message.

@@ -5,6 +5,7 @@ import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatProvider, TurnRequest, TurnResponse } from '@applivity/plato-core';
 import { AcpAgent, runAcp, type AcpOptions } from '../src/acp/agent.js';
+import { loadConfig } from '../src/config.js';
 import type { Env } from '../src/paths.js';
 import { run } from '../src/cli.js';
 import { executeTask } from '../src/host.js';
@@ -141,7 +142,7 @@ function start(env: Env, options: AcpOptions = {}, onMessage?: (m: Record<string
 }
 
 /** A config directory plus the three homes, so no test reads the real ones. */
-function isolatedEnv(withConnection: boolean): Env {
+function isolatedEnv(withConnection: boolean, extra: Record<string, unknown> = {}): Env {
   const config = tempDir('plato-acp-config-');
   if (withConnection) {
     writeFileSync(
@@ -150,6 +151,7 @@ function isolatedEnv(withConnection: boolean): Env {
         connections: [{ id: 'test', kind: 'openai', baseUrl: 'http://127.0.0.1:9/v1' }],
         model: 'test:fake-model',
         mode: 'edit',
+        ...extra,
       }),
     );
   }
@@ -375,6 +377,32 @@ describe('ACP v1 framing and handshake (W1)', () => {
     expect(statuses).toEqual(['in_progress', 'completed']);
     // The tool really ran, in the session's cwd.
     expect(readFileSync(join(root, 'made.txt'), 'utf8')).toBe('from acp');
+  });
+
+  it('runs Solo even when the config says duo, so no observer starts invisibly', async () => {
+    const root = workspace();
+    const teams: string[] = [];
+    const real = fakeExecute([answer('done')]);
+    const env = isolatedEnv(true, { team: 'duo' });
+    // The fixture must load as duo, or the assertion below would pass on a
+    // setting the loader ignored.
+    expect(loadConfig(env).team).toBe('duo');
+    const { feed, client, done } = start(env, {
+      execute: async (options, sink, controller) => {
+        teams.push(options.config.team);
+        return await real(options, sink, controller);
+      },
+    });
+    const sessionId = await openSession({ feed, client, done }, root);
+    prompt(feed, sessionId, 'hello');
+    await client.waitFor((message) => message['id'] === 3);
+    feed.end();
+    await done;
+
+    expect(teams).toEqual(['solo']);
+    // A duo run logs '[name] watching — ref', or why the watcher could not
+    // start, to stderr. The editor user has no way to see or answer it.
+    expect(client.errors).toBe('');
   });
 
   it('publishes todo_write as a plan update', async () => {

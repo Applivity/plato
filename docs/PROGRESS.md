@@ -414,6 +414,17 @@ One combined workstream, per founder decision 2026-08-25:
   license is now decided (Apache-2.0, D49bv); the trademark sweep remains.** See
   HANDOFF → "The publish gate".
 
+- **Philosophers inside an editor — RECORDED, NOT BUILT (2026-11-24).** ACP mode forces Solo
+  because the protocol has no notice type and no pause control: a philosopher's words, a pause or
+  a cancel could only be invisible to the user, or shown as the model's own writing. **The founder
+  asked whether philosophers can live inside an editor, and asked for research with evidence, not
+  a build.** The bar before anything is built: **two independent ACP clients must each show a
+  philosopher's words attributed to something other than the model, and offer a control the user
+  can answer** — one client is not enough. The most promising existing channel is
+  `session/request_permission`, which already carries a prompt and options and which clients render
+  as answerable; if it proves usable, no protocol change is needed. **Plato R&D owns the research;
+  nothing is built.**
+
 ## Change log (newest first)
 | Date | Commit | Area | Summary | Verified by |
 |---|---|---|---|---|

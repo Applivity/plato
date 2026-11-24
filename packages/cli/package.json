@@ -5,7 +5,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "An AI coding agent for the terminal that shows its work, lets you steer mid-run, and stops at a safe point.",
+  "description": "An AI coding agent for the terminal that shows its work, lets you steer mid-run, and stops at a safe point — plan, edit or auto, and Solo, Duo or Academy.",
   "author": {
     "name": "Applivity",
     "url": "https://plato.applivity.com"

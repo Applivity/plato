@@ -8445,3 +8445,34 @@ Marketplace already serves.
 - **One cosmetic gap, recorded and not repaired:** the extension README still
   links to the Microsoft Marketplace listing, so on a fork that link opens the
   Microsoft site.
+
+## Distribution — ACP mode runs Solo (2026-11-24)
+
+**D49em — ACP mode runs Solo, whatever the configuration says (2026-11-24).**
+
+An editor that starts Plato as an agent gets the single agent. The adapter
+overrides `team` to `solo` at the run boundary and changes nothing else:
+`executeTask`, the config loader and core are untouched. A run reached through
+the adapter is Solo even when the configuration says Duo or Academy.
+
+- **Why the rule exists.** `executeTask` builds the observers from
+  `config.team` (`packages/cli/src/host.ts:449`), and the ACP adapter passes the
+  whole config through. The adapter's sink defines no observer callback, so a
+  Duo or Academy configuration would start philosophers whose guidance, pause
+  and cancel could reach the editor user only as a line on standard error —
+  there is no panel and no control to answer them, and their words would read as
+  the model's own.
+- **What it is not.** The other hosts do not change: the terminal and the VS
+  Code and Visual Studio extensions keep all three arrangements. The extension
+  code does not reference ACP at all, and the adapter is loaded by the CLI entry
+  and called only from the `--acp` branch of `cli.ts`.
+- **The copy follows the rule.** The packaged README names where Duo and
+  Academy run, `--help` says `--acp` runs Solo, the welcome screen carries one
+  hint line, and the ACP registry description gains the same sentence **only
+  when the release that enforces Solo is published** — never before, because the
+  listing must not describe behaviour the published package lacks.
+- **Rejected for now, recorded in the backlog.** Presenting a philosopher
+  through `session/request_permission`, which already carries a question and
+  answerable options. It is recorded with an evidence bar: two independent ACP
+  clients must each show the words attributed to something other than the model
+  and offer a control the user can answer. Plato R&D owns it; nothing is built.

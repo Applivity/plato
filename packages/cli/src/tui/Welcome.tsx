@@ -51,6 +51,13 @@ const WORDMARK = [
 const TIPS = 'Type / for commands · Shift+Tab switches mode · Esc pauses a run';
 
 /**
+ * Under the tips, not inside them: the tips shrink with the window, this must
+ * not — and it is hidden entirely in the narrowest layout rather than cut to
+ * three rows on a screen that exists to keep the prompt in view.
+ */
+const READY = 'Solo by default — /team duo or /team academy adds philosophers.';
+
+/**
  * Ink's own colours ignore NO_COLOR here (measured; the rest of the TUI has the
  * same gap), so this screen checks it itself. Bold and dim are size, not paint,
  * and are left alone.
@@ -153,6 +160,7 @@ export function Welcome(): ReactElement {
         <Tagline />
         <Text dimColor>{cwd}</Text>
         <Text dimColor>{tips}</Text>
+        <Text dimColor>{READY}</Text>
       </Box>
     );
   }
@@ -174,6 +182,7 @@ export function Welcome(): ReactElement {
           owl, the name, and the way in are what the screen is for. */}
       {rows < 27 ? null : <Text dimColor>{cwd}</Text>}
       <Text dimColor>{tips}</Text>
+      <Text dimColor>{READY}</Text>
     </Box>
   );
 }

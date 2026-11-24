@@ -37,6 +37,8 @@ Usage
   plato -r <id>          Resume a saved session
   plato --plain          Interactive session without Ink
   plato --acp            Speak the Agent Client Protocol over stdio
+                         --acp runs Solo; duo and academy run in the
+                         terminal and the editor extensions.
   plato <command>
 
 Run
