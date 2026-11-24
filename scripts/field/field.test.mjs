@@ -307,44 +307,120 @@ function headsSeen(log) {
 }
 
 /**
+ * Runs a command through the workbench, retrying while the palette is still
+ * becoming interactive. The tester's own `executeCommand` types into the quick
+ * input at once; on a freshly launched window that input can exist but not yet
+ * accept keystrokes — the same flake that failed `setApiKey` with
+ * ElementNotInteractableError. Retry the whole command, not the keystroke.
+ */
+async function runCommand(driver, title, timeoutMs = 45000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      await new Workbench().executeCommand(title);
+      return;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!/interact|stale|not reachable|waiting until|timeout/i.test(msg)) throw e;
+      last = e;
+      await driver.actions().sendKeys(Key.ESCAPE).perform().catch(() => {});
+      await driver.sleep(500);
+    }
+  }
+  throw new Error(`the command "${title}" never ran within ${timeoutMs}ms (last: ${last?.message ?? ''})`);
+}
+
+/**
+ * The first quick-input field whose step matches `want`, ready to receive keys.
+ *
+ * A sleep is not a wait: the palette is in the DOM before it accepts keystrokes.
+ * Poll the field's DISPLAYED and ENABLED state, and read the widget's own words,
+ * so a key is not typed into the connection picker when the next step has not
+ * arrived yet. The element is re-located on every poll: the palette closes and
+ * reopens between the picker and the prompt, and a handle held across that gap
+ * is stale.
+ */
+async function quickInput(driver, want, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = '';
+  while (Date.now() < deadline) {
+    const widget = await driver.executeScript(`
+      const w = document.querySelector('.quick-input-widget');
+      return w ? String(w.textContent || '') : '';
+    `).catch(() => '');
+    for (const el of await driver.findElements(By.css('.quick-input-box input'))) {
+      try {
+        if (!(await el.isDisplayed()) || !(await el.isEnabled())) continue;
+        const full = (widget + ' ' + ((await el.getAttribute('placeholder')) || ''))
+          .replace(/\s+/g, ' ')
+          .trim();
+        // Test the FULL text: the widget's textContent begins with injected CSS,
+        // so a description sliced to 140 characters can hide the prompt.
+        last = full.slice(0, 140);
+        if (want.test(full)) return { el, desc: full };
+      } catch {
+        /* the palette rebuilt under us; look again */
+      }
+    }
+    await driver.sleep(200);
+  }
+  throw new Error(
+    `the quick-input step ${want} never became interactable within ${timeoutMs}ms (last: ${JSON.stringify(last)})`,
+  );
+}
+
+/**
+ * Types into the field, re-finding it if the palette was still settling.
+ * The retry is the whole step — locate, verify, send — not the send alone: the
+ * element that failed may no longer be the one on screen.
+ */
+async function sendWithRetry(driver, el, keys, want, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      await el.sendKeys(keys);
+      return;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!/interact|stale|not reachable/i.test(msg)) throw e;
+      last = e;
+      await driver.sleep(250);
+      el = (await quickInput(driver, want, 3000)).el;
+    }
+  }
+  throw new Error(`the ${want} field never accepted input within ${timeoutMs}ms (${last?.message ?? ''})`);
+}
+
+/**
  * The API key, set the way a person sets it: through the product's own command.
  * The stub ignores the value, so a throwaway string is correct here — the point
  * is that the host refuses to run at all without SOMETHING stored.
  */
 async function setApiKey(driver, key) {
-  await new Workbench().executeCommand('Plato: Set API Key');
-  await driver.sleep(800);
-  // With one connection configured the picker may be skipped entirely; if a
-  // quick pick IS showing, filter to the stub connection and take it.
-  const picks = await driver.findElements(By.css('.quick-input-list .monaco-list-row'));
-  if (picks.length > 0) {
-    const box = await driver.findElement(By.css('.quick-input-box input'));
-    await box.sendKeys('stub');
-    await driver.sleep(400);
-    await box.sendKeys(Key.ENTER);
-    await driver.sleep(600);
+  await runCommand(driver, 'Plato: Set API Key');
+
+  // With one connection configured the picker may be skipped entirely. Wait
+  // for whichever step the command actually opened; never assume the picker.
+  // The key step is matched on its full prompt text, not just "API key": the
+  // command palette that launched this command also contains "Set API Key", and
+  // a loose match would type the key into the command list.
+  const PICKER = /which connection is this key for/i;
+  const KEY = /API key \(stored/i;
+  const first = await quickInput(driver, /which connection is this key for|API key \(stored/i);
+  let input = first.el;
+  if (PICKER.test(first.desc)) {
+    await sendWithRetry(driver, first.el, 'stub', PICKER);
+    await driver.sleep(250);
+    await sendWithRetry(driver, first.el, Key.ENTER, PICKER);
+    await driver.sleep(250);
+    input = (await quickInput(driver, KEY)).el;
   }
-  // Wait for a VISIBLE key box. The palette can close and reopen between the
-  // picker and the prompt, and an element located in the gap is not
-  // interactable — the failure seen as "element not interactable" on a fresh
-  // browser, which told the case nothing about Plato.
-  const deadline = Date.now() + 20000;
-  let input = null;
-  while (input === null && Date.now() < deadline) {
-    const boxes = await driver.findElements(By.css('.quick-input-box input'));
-    for (const box of boxes) {
-      if (await box.isDisplayed().catch(() => false)) {
-        input = box;
-        break;
-      }
-    }
-    if (input === null) await driver.sleep(200);
-  }
-  if (input === null) throw new Error('the API key prompt never appeared');
-  await input.sendKeys(key);
-  await input.sendKeys(Key.ENTER);
+  await sendWithRetry(driver, input, key, KEY);
+  await sendWithRetry(driver, input, Key.ENTER, KEY);
   await driver.sleep(600);
-  console.log(`  api key set for the stub connection`);
+  console.log('  api key set for the stub connection');
 }
 
 describe('Plato field tests — real VS Code', function () {
@@ -363,7 +439,7 @@ describe('Plato field tests — real VS Code', function () {
     // a case that seeds one — including a case that fails half way through.
     backupHomeMcp();
     driver = VSBrowser.instance.driver;
-    await new Workbench().executeCommand('Plato: Open Chat');
+    await runCommand(driver, 'Plato: Open Chat');
     await driver.sleep(3000);
 
     // The key is set from the workbench, so this happens BEFORE entering the
@@ -592,11 +668,11 @@ describe('Plato field tests — real VS Code', function () {
                 if (ui.dot !== 'none') {
                   notes.push(`PAUSE: the busy dot still pulses while parked (${ui.dot})`);
                 }
-                // Resume so the answer lands; a correct park must never hang the case.
-                const released = await field.pause();
-                if (released.label !== 'Pause') {
-                  notes.push(`PAUSE: Resume left the control reading "${released.label}"`);
-                }
+                // Resume so the answer lands; a correct park must never hang the
+                // case. Do NOT read the control again: the final answer lands at
+                // once, the run completes, and the control is hidden — an empty
+                // label at that point is correct, not a failure.
+                await field.pause();
               }
             } else if (run.during === 'pauseTooLate') {
               await field.waitForRunStart();

@@ -834,22 +834,29 @@ const RULES = {
     },
   ],
 
-  // 25 — D49bm's other half. The pause was asked for while the model was writing
-  // its final answer, and a turn that calls no tools ends the run — so the loop
-  // never reached a safe point to stop at. What must NOT happen is silence.
+  // 25 — D49bm. The pause is asked for while the model is writing its final
+  // answer. The loop now checks the pause at a safe point BEFORE a turn with no
+  // tool calls is committed (pauseFinalAnswer), so the run parks instead of
+  // ending and letting the request vanish. The answer is not thrown away:
+  // Resume lands it. These mirror case 24's record checks.
   25: (a) => [
     {
-      name: 'the record does NOT claim the run paused',
-      ok: !a.notices.some((t) => /paused at a safe point/.test(t)),
+      name: 'the record says the run stopped at a safe point',
+      ok: a.notices.some((t) => /paused at a safe point/.test(t)),
       detail: a.notices.join(' · ') || 'no notices',
     },
     {
-      name: 'and it says the run finished before the pause took effect',
-      ok: a.notices.some((t) => /finished before the pause took effect/.test(t)),
+      name: 'and that it continued, so a paused run is not left looking stopped',
+      ok: a.notices.some((t) => /Plato resumed/.test(t)),
       detail: a.notices.join(' · ') || 'no notices',
     },
     {
-      name: 'the run finished on its own',
+      name: 'the run did NOT report the pause as too late',
+      ok: !a.notices.some((t) => /finished before the pause took effect/.test(t)),
+      detail: a.notices.join(' · ') || 'no notices',
+    },
+    {
+      name: 'the run finished normally after the release',
       ok: a.completed.length === 1 && a.completed[0].reason === 'complete',
       detail: JSON.stringify(a.completed[0] ?? null),
     },
