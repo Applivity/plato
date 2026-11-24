@@ -426,7 +426,12 @@ One combined workstream, per founder decision 2026-08-25:
   control.** A separate philosopher agent is not a viable shape either, because an ACP session
   isolates one agent from another, so it could not observe Plato's run; the only viable shape is
   inside Plato's own agent, surfaced through elicitation (v1) or a subject-less permission request
-  (v2, Preview).
+  (v2, Preview). **The two-client bar was then closed by measurement, 2026-11-24, and it fails for
+  the form design.** In `formulahendry.acp-client` 0.2.0 (VS Code, throwaway profile) a throwaway
+  agent's `elicitation/create` is answered `-32601 Method not found`, a `notice` update is accepted
+  and never rendered, and `session/request_permission` renders and returns the chosen option; the
+  same client advertises no `session.notices`. The same client ran published Plato 0.5.3 end to end.
+  Only a permission card can carry a philosopher's question in both editors. Deferral stands.
 
 ## Change log (newest first)
 | Date | Commit | Area | Summary | Verified by |
