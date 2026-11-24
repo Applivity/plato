@@ -1302,9 +1302,10 @@ before any of it is trusted:**
 ## Verification loop (every change)
 
 1. `pnpm exec tsc -b --force` — clean
-2. `pnpm -r test` — the unit tests. **Current: 878 in `packages/core` across 47 files
-   and 159 in `packages/cli` across 15 files** (verified 2026-10-21). This is the only
-   place in this file that carries the count; update it here when it moves.
+2. `pnpm -r test` — the unit tests. **Current: 1,088 in `packages/core` across 54 files
+   (1,087 passed, 1 skipped) and 379 in `packages/cli` across 32 files** (verified
+   2026-11-24). This is the only place in this file that carries the count; update it
+   here when it moves.
 3. `pnpm run render` — the real-DOM render suites. **Current: 24 suites / 700
    assertions** (verified 2026-10-19), or `render:fast` to reuse the bundle. Add an
    assertion here for any UI defect you fix, and prove it falsifiable.
