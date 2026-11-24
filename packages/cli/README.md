@@ -10,6 +10,10 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
+**0.5.2** adds `--acp`: Plato speaks version 1 of the Agent Client Protocol, so
+an editor can run it as an agent. See [Use Plato from an
+editor](#use-plato-from-an-editor-agent-client-protocol).
+
 **0.5.1** updates this README to the current release; no code changed.
 
 **0.5.0** adds pause and steering to the terminal. Esc pauses a run at a safe
@@ -323,6 +327,31 @@ failure, refusal, or cancel, and `2` for a usage error.
 
 Without a terminal, an approval is refused and the model is told why. The run
 does not hang. `--mode auto` is the unattended mode.
+
+### Use Plato from an editor (Agent Client Protocol)
+
+```sh
+plato --acp
+```
+
+Plato speaks version 1 of the Agent Client Protocol over standard input and
+output. An editor that supports the protocol can start Plato as an agent and
+show the conversation in its own panel. Zed is one such editor.
+
+To add Plato to Zed by hand, put this in Zed's settings file. The agent then
+appears under Settings, AI, External Agents, and in the agent panel's new-thread
+list.
+
+```json
+"agent_servers": {
+  "Plato": { "type": "custom", "command": "plato", "args": ["--acp"], "env": {} }
+}
+```
+
+Plato uses a saved connection in this mode. If no connection is saved, the
+editor offers a terminal sign-in, which runs `plato auth login`. One process
+serves one conversation. Standard output carries protocol messages only; logs
+and errors go to standard error.
 
 ### Other Plato sessions
 
