@@ -8476,3 +8476,5 @@ the adapter is Solo even when the configuration says Duo or Academy.
   answerable options. It is recorded with an evidence bar: two independent ACP
   clients must each show the words attributed to something other than the model
   and offer a control the user can answer. Plato R&D owns it; nothing is built.
+  **Researched 2026-11-24 in Zed 1.29.3: the two-client bar was not met, and the
+  recommendation to defer was accepted.**

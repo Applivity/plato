@@ -414,16 +414,19 @@ One combined workstream, per founder decision 2026-08-25:
   license is now decided (Apache-2.0, D49bv); the trademark sweep remains.** See
   HANDOFF → "The publish gate".
 
-- **Philosophers inside an editor — RECORDED, NOT BUILT (2026-11-24).** ACP mode forces Solo
-  because the protocol has no notice type and no pause control: a philosopher's words, a pause or
-  a cancel could only be invisible to the user, or shown as the model's own writing. **The founder
-  asked whether philosophers can live inside an editor, and asked for research with evidence, not
-  a build.** The bar before anything is built: **two independent ACP clients must each show a
-  philosopher's words attributed to something other than the model, and offer a control the user
-  can answer** — one client is not enough. The most promising existing channel is
-  `session/request_permission`, which already carries a prompt and options and which clients render
-  as answerable; if it proves usable, no protocol change is needed. **Plato R&D owns the research;
-  nothing is built.**
+- **Philosophers inside an editor — RESEARCHED 2026-11-24 (Zed 1.29.3), DEFERRED.** ACP mode
+  forces Solo because the protocol has no notice type and no pause control: a philosopher's words,
+  a pause or a cancel could only be invisible to the user, or shown as the model's own writing.
+  **The founder asked for research with evidence, not a build, and it is done:** the permission
+  channel is answerable but renders as a tool card, and its option kinds force "pause" and "keep
+  going" into allow/reject meanings they do not have; the only update type that is not the model
+  speaking is `notice`, which must never carry a user action; **`elicitation/create` renders as an
+  identified form card and is the promising channel.** **The bar is not met — only one ACP client
+  is installed here, and two independent clients must each show the words and an answerable
+  control.** A separate philosopher agent is not a viable shape either, because an ACP session
+  isolates one agent from another, so it could not observe Plato's run; the only viable shape is
+  inside Plato's own agent, surfaced through elicitation (v1) or a subject-less permission request
+  (v2, Preview).
 
 ## Change log (newest first)
 | Date | Commit | Area | Summary | Verified by |
