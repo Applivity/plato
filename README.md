@@ -19,6 +19,9 @@ Plato is an AI coding agent for VS Code, Visual Studio and the terminal. It
 plans in the open, takes your direction mid-run, and asks before it changes your
 code.
 
+Plato also runs as an agent inside editors that support the Agent Client
+Protocol (`plato --acp`).
+
 Most agents work alone and tell you what happened afterwards. Plato brings
 company: a second reader going over the work while it is happening, named for
 what it looks for. It can interrupt, pause, or stop the run.

@@ -14,6 +14,9 @@ forms, take the wheel mid-run, or stop at a safe point.
 
 Plato cannot change its own mode. When the work needs more room, it asks you.
 
+Solo works alone; Duo adds one philosopher who can read along, speak, pause the
+run or stop it; Academy adds up to five.
+
 Plato is pre-release.
 
 ![The Plato panel in VS Code, mid-run](https://raw.githubusercontent.com/Applivity/plato/main/docs/media/vscode-chat.png)

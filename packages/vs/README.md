@@ -5,7 +5,7 @@ does not hide its work: every step appears as it happens — the files it reads,
 the commands it runs, the change it proposes — so you can follow the plan as it
 forms, take the wheel mid-run, or stop at a safe point.
 
-**Plan, edit, or auto. You hold the switch.**
+**Plan, edit, or auto. Solo, duo, or academy. You hold the switch.**
 
 - **Plan** reads and reasons; it changes nothing.
 - **Edit** asks before it writes a file or runs a command, and remembers your
