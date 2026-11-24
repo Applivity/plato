@@ -964,8 +964,11 @@ are now only in PROGRESS.
   servers are not started there at all; a plan run leaves the panel showing the last run
   that did start them. The tool surface names them `mcp__<server>__<tool>` (double
   underscore) — a single one collided silently because server names may contain it.
-- Git identity: this machine is `ukhan <umair1808@gmail.com>`; commits in this
-  repo use `git -c user.name='plato-dev' -c user.email='plato@local'`.
+- Git identity: commits use `0xukhan <umair@applivity.com>`, set globally on
+  2026-11-24 and again in this repo. It replaces `plato-dev <plato@local>`, a
+  placeholder that was never an account, which is why GitHub credited none of the
+  commits made with it. The new address must stay verified at
+  github.com/settings/emails, or new commits are uncredited too.
 
 ## M4 closeout — the stale blueprint clauses, and what closed them
 
