@@ -1008,12 +1008,15 @@ export const CASES = [
   },
   {
     n: 25,
-    title: 'A pause that never lands says so, instead of vanishing',
-    // D49bm's other half, and the case a user actually hits: the model is
-    // writing its final answer, which is exactly when someone reaches for
-    // Pause — and a turn that returns no tool calls ends the run, so the loop
-    // never reaches a safe point to stop at. Before this the button said
-    // "Pausing…", the run ended, and nothing ever explained what happened.
+    title: 'A pause during the final answer holds the run, and Resume lands the answer',
+    // D49bm, the half the shipped build now honours: the model is writing its
+    // final answer, which is exactly when someone reaches for Pause. The loop
+    // checks the pause at a safe point BEFORE a turn with no tool calls is
+    // committed (pauseFinalAnswer), so the request parks instead of vanishing.
+    // The answer is not thrown away: Resume lands it. The 2.5 s hold gives the
+    // driver a window to click; without it the run is over before the click.
+    // `pauseTooLate` stays a distinct mode for a future post-gate race case;
+    // this case does not use it.
     runs: [
       {
         mode: 'auto',
@@ -1022,7 +1025,7 @@ export const CASES = [
           { delayMs: 2500, text: 'It is a review of the demo project, written for the field tests.' },
         ],
         cards: [],
-        during: 'pauseTooLate',
+        during: 'pauseFinalAnswer',
       },
     ],
   },

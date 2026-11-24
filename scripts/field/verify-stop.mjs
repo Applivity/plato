@@ -2,14 +2,16 @@
  * The words and the key — a real-window check of pause, Stop and Esc.
  *
  * This is a focused companion to `run-field.mjs`, not a replacement for it. It
- * installs the ALREADY PACKAGED 0.31.0 vsix (it does not build), uses a
+ * installs the ALREADY PACKAGED 0.31.2 vsix (it does not build), uses a
  * throwaway workspace and a throwaway Plato home, and drives only what this
  * round changed:
  *   - the run-stop control reads Stop, and both tooltips are the terminal's
  *     sentences word for word;
  *   - a paused run says so in the run area, stops the busy dot, and a pause
  *     does not survive closing the window;
- *   - Esc pauses, and a second Esc within 1.5 s stops;
+ *   - Esc does not pause or stop a run, still closes a menu, and leaves an
+ *     approval card standing for its buttons to answer;
+ *   - Enter while a run is parked steers it without releasing it;
  *   - a paused run resumes and finishes without repeating a tool call, and a
  *     stopped run keeps the conversation.
  *

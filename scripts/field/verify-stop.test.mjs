@@ -15,7 +15,9 @@
  *     exactly one request per agent turn, and the last request carries exactly
  *     two tool results, one per file;
  *   - Stop ends the run and leaves the conversation on screen;
- *   - Esc once pauses, and Esc twice within 1.5 s stops.
+ *   - Esc does not pause or stop a run, still closes a menu, and does not
+ *     answer an approval card — the card stays and its buttons decide;
+ *   - Enter while a run is parked steers it and does not release it.
  */
 import assert from 'node:assert/strict';
 
@@ -471,6 +473,65 @@ describe('the words and the key — real-window check', function () {
     say('OK   the run finished normally after Esc');
   });
 
+  it('Esc leaves an approval card standing — the buttons decide', async () => {
+    await field.switchToChatFrame();
+    await field.setMode('edit');
+    await setScript([
+      { calls: [{ tool: 'write_file', args: { path: 'esc-card.txt', content: 'not written\n' } }] },
+      { text: 'The card was denied, so nothing was written.' },
+    ]);
+    const before = await field.send('write a file so i can answer the card');
+
+    // The card comes up and the run waits on it.
+    const deadline = Date.now() + 60000;
+    let info = { kind: null, heading: '' };
+    while (Date.now() < deadline) {
+      info = await field.cardKind();
+      if (info.kind === 'approval') break;
+      await sleep(250);
+    }
+    assert.equal(info.kind, 'approval', 'no approval card appeared');
+    assert.equal(info.tool, 'write_file', `the card is for ${info.tool}, not write_file`);
+
+    // A physical Esc aimed at the card's own Deny button, the way a person who
+    // expects Esc to mean "no" would press it. Send the key TO that button, not
+    // to the top-level page: a key sent outside the webview never reaches the
+    // card, and the test would pass without proving anything. `:not(.answered)`
+    // is load-bearing too — an earlier card stays on screen as a record, and
+    // its Deny button must not be the one this sends the key to.
+    const buttons = await driver.findElements(
+      By.css('.card.approval-card:not(.answered) button'),
+    );
+    let denyButton = null;
+    for (const button of buttons) {
+      if ((await button.getText()).trim() === 'Deny') {
+        denyButton = button;
+        break;
+      }
+    }
+    assert.ok(denyButton, 'the card has no Deny button to focus');
+    await denyButton.sendKeys(Key.ESCAPE);
+    await sleep(500);
+
+    const after = await field.cardKind();
+    assert.equal(after.kind, 'approval', 'Esc answered the card');
+    assert.equal(after.heading, info.heading, 'Esc changed the card on screen');
+    say('OK   Esc left the approval card standing');
+
+    // The buttons still own the decision, and Deny is what ends the wait.
+    await field.decide('deny');
+    const [file] = await field.waitForNewRuns(before, 1);
+    const events = await field.waitRunTerminal(file);
+    const ended = events.find((e) => e.type === 'run-completed');
+    assert.ok(ended, 'the run wrote no run-completed event');
+    assert.equal(ended.reason, 'complete', `the run ended as "${ended.reason}"`);
+    const denied = events.find((e) => e.type === 'tool-event' &&
+      e.tool === 'write_file' && (e.phase === 'denied' || e.phase === 'declined'));
+    assert.ok(denied, 'the Deny click is not in the record');
+    say(`OK   Deny answered the card (${denied.phase}), and the run finished`);
+    await field.shot('stop-window-esc-card');
+  });
+
   it('Enter while parked steers without resuming, and /continue answers locally', async () => {
     await setScript(PAUSE_STEPS);
     const before = await field.send('pause here, then steer me');
@@ -505,8 +566,11 @@ describe('the words and the key — real-window check', function () {
         // Enter in the guide box steers the parked run; it must not release it.
         await q.clear();
         await q.click();
+        const requestsBeforeGuide = (await stubLog()).log.length;
         await q.sendKeys('keep the answer short', Key.ENTER);
         await driver.sleep(500);
+        assert.equal((await stubLog()).log.length, requestsBeforeGuide,
+          'typing guidance sent a request — the parked run moved');
         const afterGuide = await controls(driver, field);
         assert.equal(afterGuide.pause.text, 'Resume',
           'typing guidance released the parked run');

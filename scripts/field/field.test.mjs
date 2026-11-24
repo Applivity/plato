@@ -561,6 +561,43 @@ describe('Plato field tests — real VS Code', function () {
               if (released.label !== 'Pause') {
                 notes.push(`PAUSE: the release left the button reading "${released.label}"`);
               }
+            } else if (run.during === 'pauseFinalAnswer') {
+              await field.waitForRunStart();
+              const clicked = await field.pause();
+              if (clicked.label !== 'Pausing…') {
+                notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}" — a request is not a pause`);
+              }
+              const parked = await field.waitForPauseLabel('Resume');
+              if (parked.label !== 'Resume') {
+                notes.push(`PAUSE: the final-answer pause never parked — the button stayed at "${parked.label}"`);
+              } else {
+                const ui = await field.driver.executeScript(`
+                  const bar = document.getElementById('statusbar');
+                  const dot = bar ? bar.querySelector('.pdot') : null;
+                  return {
+                    status: bar ? (bar.querySelector('.stext') || {}).textContent : null,
+                    paused: bar ? bar.classList.contains('paused') : null,
+                    dot: dot ? getComputedStyle(dot).animationName : null,
+                  };
+                `);
+                notes.push(
+                  `pause-final-answer: parked at "${parked.label}", status "${ui.status}", paused ${ui.paused}, dot ${ui.dot}`,
+                );
+                if (!/^Paused\b/.test(ui.status || '')) {
+                  notes.push('PAUSE: the run area does not say the final-answer pause parked');
+                }
+                if (ui.paused !== true) {
+                  notes.push('PAUSE: the status bar does not carry the paused state');
+                }
+                if (ui.dot !== 'none') {
+                  notes.push(`PAUSE: the busy dot still pulses while parked (${ui.dot})`);
+                }
+                // Resume so the answer lands; a correct park must never hang the case.
+                const released = await field.pause();
+                if (released.label !== 'Pause') {
+                  notes.push(`PAUSE: Resume left the control reading "${released.label}"`);
+                }
+              }
             } else if (run.during === 'pauseTooLate') {
               await field.waitForRunStart();
               const clicked = await field.pause();
@@ -731,13 +768,25 @@ describe('Plato field tests — real VS Code', function () {
           notes.push(`pause: recorded=${events.filter((e) => e.type === 'notice' && /paus/i.test(e.text ?? '')).length} notice(s)`);
         }
         if (c.n === 25) {
-          if (screen.includes('Plato paused at a safe point.')) {
-            notes.push('PAUSE: the run claims it paused, but it never reached a safe point to pause at');
+          if (!screen.includes('Plato paused at a safe point.')) {
+            notes.push('PAUSE: the final-answer pause left no record that it parked');
           }
-          if (!screen.includes('The run finished before the pause took effect.')) {
-            notes.push('PAUSE: the pause was asked for and never landed, and nothing says so — this is the silence the case exists to stop');
+          if (screen.includes('The run finished before the pause took effect.')) {
+            notes.push('PAUSE: the final-answer pause was reported as too late; this build parks here');
           }
-          notes.push('pause-too-late: reported');
+          if (!events.some((e) => e.type === 'notice' && /paused at a safe point/i.test(e.text ?? ''))) {
+            notes.push('PAUSE: the transcript has no record of the park, so the run cannot be read back');
+          }
+          const ended = events.find((e) => e.type === 'run-completed');
+          if (ended === undefined) {
+            notes.push('PAUSE: the resumed final-answer run wrote no run-completed event');
+          } else if (ended.reason !== 'complete') {
+            notes.push(`PAUSE: the resumed final-answer run ended as "${ended.reason}", not complete`);
+          }
+          if (!screen.includes('It is a review of the demo project, written for the field tests.')) {
+            notes.push('PAUSE: the answer did not land after Resume');
+          }
+          notes.push('pause-final-answer: parked, resumed, and the answer landed');
         }
         // D49bo: the queue advancing by itself, and — the sharper half — NOT
         // advancing when the run before it was cancelled.

@@ -10,7 +10,8 @@ clauses that had no witness at all — **18–21 with the undo and masking work*
 with the two halves of D49bc** (a protected file Plato cannot mask is offered
 once, and a command that reaches a protected file indirectly prints no value),
 **24–28 and 33 with the run controls and the provider stream** (pause says only
-what the run is doing, a pause that never lands says so, a queued follow-up runs
+what the run is doing, a pause on the final answer parks and Resume lands the
+answer, a queued follow-up runs
 when the run before it finishes — and does NOT when that run was cancelled — a
 stream the provider cuts is retried rather than reported as a finished run, and
 closing the chat panel stops the run), **and 29 with the MCP path** (a configured
@@ -51,6 +52,47 @@ FIELD_CASES=1,5 node scripts/field/run-field.mjs   # just those
 node scripts/field/verdict.mjs --list         # what runs exist to judge
 node scripts/field/verdict.mjs --case 5 --last 1   # judge a run from its transcript
 ```
+
+## The focused stop/Esc check (2026-11-18)
+
+`verify-stop.mjs` is a companion to `run-field.mjs`, not a replacement. It
+installs the already packaged `packages/vscode/plato-0.31.2.vsix`; it does not
+build. It refuses to run if the file's SHA-256 differs from the one pinned in
+the launcher. It uses a throwaway VS Code window, a throwaway Plato home and
+workspace, and the scripted model on port 4703. It refuses to start while an
+older window that used `storage-stop` is still alive, because that leaves the
+quick input half-live.
+
+It drives the surface that shipped after 2026-11-11:
+
+- the run-stop control reads **Stop** and says "Stop the task. The conversation
+  stays."; Pause says "Pause after the current step. Nothing is lost.";
+- a paused run says so in the run area, the busy dot stops, and the area says
+  the pause does not survive closing the window;
+- Resume finishes the run without replaying a tool call: the stub sees one
+  request per agent turn, and the last request carries one tool result per file;
+- Stop ends the run as `cancelled` and keeps the conversation on screen;
+- Esc on the run surface does nothing to the run; a menu still closes with Esc,
+  and the run finishes normally; Esc also leaves an approval card standing, so
+  the card's own buttons make the decision;
+- bare `/continue` answers locally and does not reach the model; Enter while
+  parked adds guidance, sends no request, and leaves the run parked; Resume
+  lands that guidance in one run, with no `/continue` and no replayed call;
+- a pause during a final answer is held, and Resume lands the answer;
+- the first-window model check can say "could not check", recovers on the next
+  open without a manual Refresh, and the idle context panel knows the window
+  before any run.
+
+Run it:
+
+```sh
+node scripts/field/verify-stop.mjs
+```
+
+It needs the harness dependencies (`cd scripts/field && pnpm install
+--ignore-workspace`), the exact 0.31.2 VSIX on disk, and no leftover harness
+window. It writes screenshots and storage under `tmp/field/*-stop`, and its
+settings to `tmp/field/settings-stop.json`.
 
 ## The run uses a temporary home (D49db, 2026-11-11)
 
@@ -129,7 +171,7 @@ Two rules keep the driver honest:
 | 22 unmaskable file | the reveal card states the cost, and it is drawn **once** in `auto` | both reads complete, and the second raises no card (D49bc) |
 | 23 indirect secret | no card (`auto`) | the `cat .en*` call RUNS — so the masking is the stub's log, not the transcript (D49bc) |
 | 24 pause | the button says `Pausing…` and **not** `Resume` straight after the click, then `Resume` once the run really parked | `Plato paused at a safe point.` and `Plato resumed.` — the pause is in the record, not only on the button (D49bm) |
-| 25 pause too late | the button never claims a pause it did not get | the run completed, and the record says it finished before the pause took effect — **the silence is what fails** (D49bm) |
+| 25 pause on the final answer | the button says Pausing…, then Resume; the run area says Paused and the busy dot stops | the record has the park notice; Resume lands the answer and the run completes (D49bm) |
 | 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, the queue is empty after, and **the queued run began only after the run before it had finished** — checked as OVERLAP, not as a count of runs, because the defect this catches started the queued run *first* (D49bo) |
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |
 | 28 cut stream | the retried answer is on screen, not the half one the cut sent | the transcript records the **retry** the cut provoked, and the run still finished `complete` **on the second step** (D49bp). The stub ends the response with no `finish_reason` and no `[DONE]` — a proxy timeout's shape — so a build that takes the half answer as a finished turn shows no retry and the wrong text |
