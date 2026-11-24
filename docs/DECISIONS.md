@@ -8365,3 +8365,52 @@ record.
 - **No new credential was created.** npm and GitHub use what was already on the
   machine, and no token passes through a chat message, the repository, or an
   evidence file.
+
+## Distribution — the Agent Client Protocol (2026-11-24)
+
+**D49ej — Plato speaks the Agent Client Protocol (2026-11-24).**
+
+An editor that supports the Agent Client Protocol can start the CLI as an agent
+and show the conversation in its own panel. `plato --acp` speaks version 1 over
+standard input and output, one JSON object per line. It answers `initialize`,
+`session/new`, `session/prompt` and `session/cancel`. The work is an addition to
+the CLI package; the VS Code and Visual Studio products do not change.
+
+- **It is a separate mode.** A launch without `--acp` behaves as before.
+- **The framing is written here, not taken from the protocol SDK.** The
+  published SDK entry for version 1 imports its schema library at once and adds
+  about 151 KB to the bundle for four inbound methods; this layer adds about
+  12 KB. The CLI publishes one dependency-free file, and its size is a product
+  property.
+- **One process serves one conversation.** A second prompt while a run is active
+  receives an error that names the reason; it is not queued. The rest of the
+  protocol (`session/load`, `list`, `resume`, `delete`, `close`, modes and config
+  options) is phase 2, recorded and not built.
+- **Standard output carries protocol messages only.** Logs and errors go to
+  standard error, and a closed pipe ends the session without a stack trace.
+- **The protocol layer is checked from outside.** `scripts/acp/run.mjs` is an
+  independent client. It runs twelve cases against the agent and ten cases
+  against agents that are deliberately broken; a broken agent must fail its own
+  case before a pass means anything.
+
+**D49ek — The terminal sign-in method is advertised unconditionally, and its arguments are appended (2026-11-24).**
+
+A registry that lists agents for editors checks one thing at startup: the agent
+must offer at least one sign-in method of type `agent` or `terminal`. Plato is a
+bring-your-own-key product with no account of its own, so its method is the
+terminal one, which runs `plato auth login`.
+
+- **Advertised without a condition.** The registry's own checker announces the
+  capability in the older spelling (`clientCapabilities.terminal` and
+  `_meta["terminal-auth"]`), not the current `clientCapabilities.auth.terminal`.
+  An agent that tests only the current spelling returns no method and fails the
+  check. Plato does not test the capability.
+- **The arguments are appended, not substituted.** The client builds
+  `plato --acp` plus `--login`, so the CLI accepts `plato --acp --login` and
+  starts the same sign-in as `plato auth login`.
+- **This follows the other bring-your-own-key agent in the registry.** OpenCode
+  advertises one terminal method with `args: ["--login"]`, and its documentation
+  says exit status 0 means the sign-in succeeded.
+- **A saved connection removes the sign-in.** Zed does not call `authenticate`
+  when a connection already exists; it opens a session directly. This was
+  recorded from a real Zed 1.29.3 run on 2026-11-24.
