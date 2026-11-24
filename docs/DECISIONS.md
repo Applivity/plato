@@ -8414,3 +8414,34 @@ terminal one, which runs `plato auth login`.
 - **A saved connection removes the sign-in.** Zed does not call `authenticate`
   when a connection already exists; it opens a session directly. This was
   recorded from a real Zed 1.29.3 run on 2026-11-24.
+
+## Distribution — Open VSX (2026-11-24)
+
+**D49el — The VS Code extension publishes to Open VSX as well as the Microsoft Marketplace (2026-11-24).**
+
+Open VSX serves VS Code forks, including VSCodium and Cursor, and
+`applivity.plato` **0.31.2** is uploaded there. The file is the one the Microsoft
+Marketplace already serves.
+
+- **The same bytes ship to both marketplaces.** `ovsx publish` uploads the
+  finished `.vsix` as it is — **170,759 bytes, SHA-256 `22831a3c…`** — and nothing
+  is repackaged. `ovsx publish --packagePath` runs `vsce` again and can produce a
+  different file, so it is not used for a release.
+- **The namespace was claimed, not merely created.** `create-namespace` makes
+  the caller a contributor; ownership comes only from a public claim. Until the
+  claim is granted the namespace has no owner, and no version it publishes is
+  verified. The claim was filed the same day: `EclipseFdn/open-vsx.org#16214`,
+  Option 1.
+- **The age rule applies to the GitHub ID that asks**, not to an organization.
+  The claim form requires the requesting ID to carry twelve months of public
+  history. `0xukhan` dates from 2026-11-02 and fails it, so the request came from
+  the 2011 account `mazharqayyum`; `Applivity` (2022) does not count, because the
+  organization is not the ID making the request. After approval that account adds
+  `0xukhan` as Owner, and each version then shows verified.
+- **A new version stays inactive until the scanners finish.** The public API
+  returns 404 and `ovsx get` says the extension is not found in the meantime. That
+  is the normal path, not a fault. Republishing is never the repair — it answers
+  *"already published, but currently isn't active and therefore not visible."*
+- **One cosmetic gap, recorded and not repaired:** the extension README still
+  links to the Microsoft Marketplace listing, so on a fork that link opens the
+  Microsoft site.
