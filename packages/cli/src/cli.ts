@@ -1,6 +1,7 @@
 import { realpathSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
+import { runAcp } from './acp/agent.js';
 import { runAuth, type AuthContext } from './auth.js';
 import { requestHistory, resolveContextWindow } from './compaction.js';
 import { ConfigError, loadConfig } from './config.js';
@@ -35,6 +36,7 @@ Usage
   plato -c               Continue the latest session
   plato -r <id>          Resume a saved session
   plato --plain          Interactive session without Ink
+  plato --acp            Speak the Agent Client Protocol over stdio
   plato <command>
 
 Run
@@ -253,6 +255,21 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
   if (first === '-v' || first === '--version') {
     io.out(`${VERSION}\n`);
     return 0;
+  }
+  // ACP mode: stdout belongs to the protocol. `--login` is the terminal-auth
+  // method's appended argument (the client runs `plato --acp --login`), and it
+  // must not start the server — the terminal belongs to the setup flow.
+  if (first === '--acp') {
+    if (rest.includes('--login')) {
+      return await runAuth(['login'], {
+        env: process.env,
+        streams: io,
+        input,
+        prompter:
+          io.prompter ?? (stdinIsTty ? createPrompter(process.stdin, process.stderr) : undefined),
+      });
+    }
+    return await runAcp({ input, out: io.out, err: io.err });
   }
 
   // Questions and approvals go to stderr, so stdout carries only the answer.
