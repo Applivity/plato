@@ -92,6 +92,8 @@ export interface AcpOptions {
    * default handler. Tests pass false.
    */
   signals?: boolean;
+  /** Injected by tests; `process.exit` otherwise. */
+  exit?: (code: number) => void;
 }
 
 interface ToolCallState {
@@ -510,29 +512,89 @@ export class AcpAgent {
 /** `plato --acp`: serve until stdin closes. */
 export async function runAcp(io: ConnectionIo, options: AcpOptions = {}): Promise<number> {
   const agent = new AcpAgent(io, options);
-  if (options.signals === false) {
-    await agent.run();
-    return 0;
-  }
-  // A mounted UI's signal handlers are not installed here, so these are ours.
-  // Cancel first, then exit: the client asked for termination, and a protocol
-  // stream cannot carry a farewell it did not ask for.
-  const onSignal = (signal: NodeJS.Signals): void => {
-    io.err(`plato acp: ${signal} — closing\n`);
-    agent.stop();
-    process.exit(signal === 'SIGINT' ? 130 : 143);
+  const exit = options.exit ?? ((code: number): void => process.exit(code));
+  const detach: (() => void)[] = [];
+  const streams = io.streams;
+
+  // A CLOSED PIPE never throws: `process.stdout` emits an asynchronous 'error'
+  // event, and with no listener Node turns it into an uncaught exception and a
+  // stack trace. Watch both streams and end the server quietly instead.
+  const watch = (stream: NodeJS.WritableStream, isOutput: boolean): void => {
+    const onError = (error: Error): void => {
+      agent.stop();
+      if (isOutput) {
+        try {
+          io.err(`plato acp: output closed — ${error.message}\n`);
+        } catch {
+          // stderr is gone too; there is nowhere to say so.
+        }
+      }
+      // Nothing more can reach a stream that failed. If the OTHER stream is
+      // still open, flush it before exiting so the last frame is not cut.
+      exitAfterFlush(isOutput ? null : (streams?.out ?? null), () => exit(1));
+    };
+    stream.once('error', onError);
+    detach.push(() => stream.off('error', onError));
   };
-  const onInt = (): void => onSignal('SIGINT');
-  const onTerm = (): void => onSignal('SIGTERM');
-  process.on('SIGINT', onInt);
-  process.on('SIGTERM', onTerm);
+  if (streams !== undefined) {
+    watch(streams.out, true);
+    watch(streams.err, false);
+  }
+
+  if (options.signals !== false) {
+    // A mounted UI's signal handlers are not installed here, so these are ours.
+    // Cancel first, then exit: the client asked for termination, and a protocol
+    // stream cannot carry a farewell it did not ask for.
+    const onSignal = (signal: NodeJS.Signals): void => {
+      io.err(`plato acp: ${signal} — closing\n`);
+      agent.stop();
+      exitAfterFlush(streams?.out ?? null, () => exit(signal === 'SIGINT' ? 130 : 143));
+    };
+    const onInt = (): void => onSignal('SIGINT');
+    const onTerm = (): void => onSignal('SIGTERM');
+    process.on('SIGINT', onInt);
+    process.on('SIGTERM', onTerm);
+    detach.push(() => {
+      process.off('SIGINT', onInt);
+      process.off('SIGTERM', onTerm);
+    });
+  }
+
   try {
     await agent.run();
   } finally {
-    process.off('SIGINT', onInt);
-    process.off('SIGTERM', onTerm);
+    for (const off of detach) off();
   }
   return 0;
+}
+
+/**
+ * Calls `go` once the frame already queued on `stream` has reached the pipe.
+ * `process.exit` in the same tick would otherwise cut it. The empty write's
+ * callback runs when everything before it has flushed; the timer is the guard
+ * for a stream that never calls back.
+ */
+function exitAfterFlush(stream: NodeJS.WritableStream | null, go: () => void): void {
+  if (stream === null) {
+    go();
+    return;
+  }
+  let done = false;
+  const finish = (): void => {
+    if (done) {
+      return;
+    }
+    done = true;
+    clearTimeout(timer);
+    go();
+  };
+  const timer = setTimeout(finish, 1_000);
+  timer.unref();
+  try {
+    stream.write('', finish);
+  } catch {
+    finish();
+  }
 }
 
 function record(value: unknown): Record<string, unknown> {

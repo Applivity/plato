@@ -1,9 +1,10 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ChatProvider, TurnRequest, TurnResponse } from '@applivity/plato-core';
-import { AcpAgent, type AcpOptions } from '../src/acp/agent.js';
+import { AcpAgent, runAcp, type AcpOptions } from '../src/acp/agent.js';
 import type { Env } from '../src/paths.js';
 import { run } from '../src/cli.js';
 import { executeTask } from '../src/host.js';
@@ -451,6 +452,43 @@ describe('ACP v1 framing and handshake (W1)', () => {
     feed.end();
     await done;
     expect((response['result'] as Record<string, unknown>)['stopReason']).toBe('cancelled');
+  });
+
+  it('a closed stdout pipe ends the server quietly instead of throwing', async () => {
+    // A Writable whose write fails reports the failure the way process.stdout
+    // does: as an asynchronous 'error' event, NOT a thrown exception. With no
+    // listener Node would turn that into an uncaught exception and a stack.
+    const broken = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback(new Error('EPIPE'));
+      },
+    });
+    const sink = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const feed = new Feed();
+    const client = new Client();
+    const exits: number[] = [];
+    const done = runAcp(
+      { input: feed, out: client.out, err: client.err, streams: { out: broken, err: sink } },
+      { env: isolatedEnv(false), signals: false, exit: (code) => exits.push(code) },
+    );
+    feed.send(INITIALIZE);
+    await client.waitFor((message) => message['id'] === 1);
+    broken.destroy(new Error('EPIPE'));
+    // The event is asynchronous; give it a turn.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(exits).toEqual([1]);
+    expect(client.errors).toContain('output closed');
+    // The connection is closed: a request arriving after the pipe died is not
+    // answered, and the reader still drains stdin without throwing.
+    feed.send({ jsonrpc: '2.0', id: 9, method: 'session/new', params: { cwd: workspace(), mcpServers: [] } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(client.messages.some((message) => message['id'] === 9)).toBe(false);
+    feed.end();
+    await done;
   });
 
   it('run() serves --acp, so the flag cannot fall into the unknown-option path', async () => {

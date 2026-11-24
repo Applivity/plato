@@ -55,6 +55,13 @@ export interface ConnectionIo {
   out(text: string): void;
   /** Diagnostics only; never protocol. */
   err(text: string): void;
+  /**
+   * The writables behind `out`/`err`, when they are process streams. A CLOSED
+   * PIPE does not throw: `process.stdout` emits an asynchronous `'error'` event,
+   * and with no listener Node turns that into an uncaught exception and a stack
+   * trace on stderr. `runAcp` watches these streams so that case exits cleanly.
+   */
+  streams?: { out: NodeJS.WritableStream; err: NodeJS.WritableStream };
 }
 
 type RequestHandler = (params: unknown) => unknown | Promise<unknown>;
@@ -193,7 +200,10 @@ export class JsonRpcConnection {
     try {
       this.io.out(`${JSON.stringify(message)}\n`);
     } catch (error) {
-      // A closed pipe is the client going away, not a protocol fault.
+      // This catches only a SYNCHRONOUS failure: a value JSON cannot encode, or
+      // a custom writer that throws. A closed pipe is not one of those — the
+      // stream reports EPIPE as an async 'error' event, and `runAcp` owns that
+      // listener (see ConnectionIo.streams).
       this.io.err(`plato acp: writing failed: ${(error as Error).message}\n`);
       this.shutdown();
     }

@@ -269,7 +269,13 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
           io.prompter ?? (stdinIsTty ? createPrompter(process.stdin, process.stderr) : undefined),
       });
     }
-    return await runAcp({ input, out: io.out, err: io.err });
+    return await runAcp({
+      input,
+      out: io.out,
+      err: io.err,
+      // A closed pipe arrives here as an async 'error' event, not a throw.
+      streams: { out: process.stdout, err: process.stderr },
+    });
   }
 
   // Questions and approvals go to stderr, so stdout carries only the answer.
