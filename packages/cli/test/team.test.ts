@@ -219,6 +219,7 @@ describe('observer actions', () => {
     const controller = new RunController();
     const events: string[] = [];
     const notices: string[] = [];
+    const pauses: string[] = [];
     watchObservers(
       handles,
       { bus, controller, task: 'do the work', resumable },
@@ -230,9 +231,10 @@ describe('observer actions', () => {
               : event.type,
           ),
         notice: (text) => notices.push(text),
+        paused: (text) => pauses.push(text),
       },
     );
-    return { handles, bus, controller, events, notices };
+    return { handles, bus, controller, events, notices, pauses };
   }
 
   it('queues guidance for the next turn', async () => {
@@ -265,21 +267,20 @@ describe('observer actions', () => {
     await gate;
   });
 
-  it('shows the philosopher’s reason with the pause', async () => {
-    const { bus, notices } = await setup({
+  it('gives the philosopher’s reason to the host, not to the run’s notices', async () => {
+    const { bus, notices, pauses } = await setup({
       action: 'pause',
       message: 'The coder is about to write checkout.js, and price rules live in pricing.js.',
     });
     bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
     await delay(10);
 
-    expect(
-      notices.some((note) =>
-        note.includes(
-          'paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
-        ),
-      ),
-    ).toBe(true);
+    // The answer only asks for a pause. The host says it when the park lands,
+    // so it must not arrive here as a notice while the run may still be busy.
+    expect(notices.some((note) => note.includes('paused the run'))).toBe(false);
+    expect(pauses).toEqual([
+      '[Aristotle] paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
+    ]);
   });
 
   it('cancels the run', async () => {

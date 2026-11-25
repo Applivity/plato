@@ -97,6 +97,13 @@ export interface RunSink {
   reveal(protectedPath: string): Promise<boolean>;
   notice(text: string): void;
   /**
+   * A philosopher asked for a pause, with the reason as its line. The host
+   * shows it when the run really parks, not when the answer arrives: until the
+   * loop reaches a safe point the footer still says what the run is doing.
+   * A sink without this has no resumable run, and never receives it.
+   */
+  observerPause?(text: string): void;
+  /**
    * The host hands the sink the way to report an approval ask, so the run
    * record can say whether a card was drawn or an earlier answer settled it.
    * A sink without this keeps the record silent on the question.
@@ -477,6 +484,7 @@ export async function executeTask(
     {
       event: (event) => sink.observer?.(event),
       notice: (text) => sink.notice(text),
+      paused: (text) => sink.observerPause?.(text),
     },
   );
 

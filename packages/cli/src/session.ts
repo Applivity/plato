@@ -414,6 +414,12 @@ export class Session {
    */
   private pause: 'none' | 'requested' | 'parked' = 'none';
   private heldStreaming: string | null = null;
+  /**
+   * The philosopher's pause line, held until the park actually lands. The
+   * answer only asks; the loop may keep working mid-turn, and saying "paused"
+   * before it waits would be a claim the footer contradicts.
+   */
+  private pendingPauseNotice: string | undefined;
   /** The worker's model call is in flight; a pause waits for its answer type. */
   private modelCallInFlight = false;
   /** The paused response has tool calls; apply the pause after the card's gate. */
@@ -838,6 +844,7 @@ export class Session {
     this.lastTask = task;
     this.stopNoticed = false;
     this.pause = 'none';
+    this.pendingPauseNotice = undefined;
     this.heldStreaming = null;
     this.modelCallInFlight = false;
     this.pauseAfterToolEvent = false;
@@ -951,8 +958,10 @@ export class Session {
     } finally {
       this.controller = null;
       // The pause is live process state only; when the run is over there is
-      // nothing left to park or resume.
+      // nothing left to park or resume. A line still waiting for a park that
+      // never came is dropped: the run ended, so no pause happened.
       this.pause = 'none';
+      this.pendingPauseNotice = undefined;
       this.heldStreaming = null;
       this.modelCallInFlight = false;
       this.pauseAfterToolEvent = false;
@@ -1095,6 +1104,13 @@ export class Session {
     }
     this.pause = parked ? 'parked' : 'none';
     this.update({ pause: this.pause });
+    if (parked && this.pendingPauseNotice !== undefined) {
+      // The park is real now, so the line is true. One line, once: a resume
+      // and a second park of the same request must not say it again.
+      const text = this.pendingPauseNotice;
+      this.pendingPauseNotice = undefined;
+      this.append('notice', text);
+    }
   }
 
   /**
@@ -1812,6 +1828,9 @@ export class Session {
       reveal: (rel) => this.askReveal(rel),
       outsidePath: (card) => this.askOutsidePath(card),
       notice: (text) => this.append('notice', text),
+      observerPause: (text) => {
+        this.pendingPauseNotice = text;
+      },
       bindApprovalCards: (emit) => {
         this.reportApprovalCard = emit;
       },

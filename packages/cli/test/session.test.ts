@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -930,6 +930,95 @@ describe('Duo', () => {
         (row) => row.text.includes('observer') && row.text.includes('intervention'),
       ),
     ).toBe(true);
+  });
+
+  it('says the philosopher paused only once the run really parks', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'a.txt'), 'hello');
+    const env = environment();
+    const home = env['PLATO_HOME'] as string;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, 'DUO.yaml'),
+      [
+        'philosopher:',
+        '  persona: aristotle',
+        '  name: Aristotle',
+        '  pause: true',
+        '  cancel: false',
+        '  maxInterventions: 3',
+      ].join('\n'),
+    );
+    let turn = 0;
+    let releaseTurn = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    const worker: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        turn += 1;
+        // Turn two is in flight while the philosopher answers, and the pause
+        // cannot land until the run next reaches a safe point.
+        if (turn === 2) {
+          await held;
+        }
+        return {
+          content: [
+            { type: 'tool_use', id: `call-${turn}`, name: 'read_file', input: { path: 'a.txt' } },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'tool_use',
+        };
+      },
+    };
+    const observer: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: '{"action":"pause","message":"price rules live in pricing.js."}',
+            },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const active = new Session({
+      root,
+      config: { ...config('auto'), team: 'duo' },
+      env,
+      provider: worker,
+      observerProvider: () => observer,
+      fetchImpl: offline,
+    });
+
+    const run = active.submit('read the file');
+    // The philosopher has answered, but the run is still working: nothing is
+    // parked yet, so saying "paused" here would be a claim that is not true.
+    await waitUntil(
+      () => active.getSnapshot().observers.some((entry) => entry.last === 'paused the run'),
+      'the philosopher to answer',
+    );
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter((row) => row.text.includes('paused the run')),
+    ).toEqual([]);
+
+    releaseTurn();
+    await waitUntil(() => active.getSnapshot().pause === 'parked', 'the run to park');
+    const lines = active
+      .getSnapshot()
+      .rows.filter((row) => row.text.includes('paused the run'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.text).toContain('price rules live in pricing.js');
+
+    active.cancel();
+    await run;
   });
 
   it('runs Solo without an observer strip', async () => {

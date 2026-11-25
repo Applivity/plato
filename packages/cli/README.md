@@ -10,6 +10,15 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
+**0.5.4** makes the run's own account the true one. When a philosopher pauses
+the run, its one-sentence reason appears when the run actually pauses at a safe
+point, not when the check answers; if the run ends before it pauses, the line is
+not shown. A note you type while paused shows as your own line and reaches the
+worker as `[user guidance]`, which the prompt says outranks the task as first
+given; a philosopher's note stays `[observer guidance]`. The philosopher's check
+has room for 2,500 output tokens instead of 300, and a check that uses its
+allowance before it answers says so, and the run continues.
+
 **0.5.2** adds `--acp`: Plato speaks version 1 of the Agent Client Protocol, so
 an editor can run it as an agent. See [Use Plato from an
 editor](#use-plato-from-an-editor-agent-client-protocol).

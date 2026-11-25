@@ -188,6 +188,13 @@ export type ObserverEvent =
 export interface ObserverHooks {
   event(event: ObserverEvent): void;
   notice(text: string): void;
+  /**
+   * The philosopher asked for a pause, and this is the line to show. It is not
+   * a notice: the answer only asks, and the loop may work for a while before it
+   * reaches a safe point. The host holds the line and shows it when the run
+   * really parks — a request is not a park.
+   */
+  paused(text: string): void;
 }
 
 export interface WatchObserverOptions {
@@ -338,7 +345,7 @@ export function watchObservers(
             } else {
               interventionsUsed += 1;
               options.controller.pause();
-              hooks.notice(head);
+              hooks.paused(head);
               hooks.event({
                 type: 'state',
                 name: handle.name,
