@@ -8661,3 +8661,13 @@ Three faults came out of the demo round. All three are repaired and committed
 - **Why it was not caught earlier.** The observer tests check the notice's
   text, and the text was right at both moments. None of them held the run open
   between the answer and the park, so none could see the gap.
+- **A gap this round leaves open, stated so it is not mistaken for coverage.**
+  The VS Code host sends the philosopher's line straight to the chat rather than
+  through the bus, because its colour rides on that post and the bus's notices
+  listener sends without one. So the line is drawn but **not written to the
+  run's record**, while the safe-point line is. Checked on the demo run:
+  `~/.plato/runs/43289ad3/2026-11-25T15-38-06-223Z-mwwafle4vde1.jsonl` has no
+  "paused the run" entry and does have "Plato paused at a safe point…". The CLI
+  is unaffected — its line goes through `append`. A future round can carry the
+  colour on the bus notice and close it; it is not a reason to hold this
+  release, because the chat, which is what the user reads, is correct.
