@@ -8502,3 +8502,40 @@ rule on 2026-11-25.
   user there already knows what Plato is.
 - **What it is not.** No rename. Package ids, extension ids, the command name
   and the domain do not change.
+
+## Recorded for R&D — the philosopher before a write (2026-11-25)
+
+**Not a decision. Recorded from the demo round so the option is not lost.**
+
+Observed in a live run on 2026-11-25: the coder said "I will edit
+`src/checkout.js`", wrote the file in the same step, and the philosopher's
+pause arrived only at the next step boundary. The philosopher is consulted on
+`turn-started` (`packages/cli/src/team.ts`, `packages/vscode/src/extension.ts`),
+so it judges what a step did, never what a step is about to do. A pause stops
+the next action; it cannot stop the write already in flight.
+
+**The option.** Consult the philosopher before a write tool is applied. The
+claim "stops a bad edit before it is written" would then hold for every model,
+not only for a model that narrates its plan a step early.
+
+**Ramifications, as understood today:**
+- **Cost.** One extra philosopher call per write. A run with twenty edits goes
+  from roughly twenty checks to forty.
+- **Delay.** Every write waits for the philosopher before the card appears. A
+  slow model slows every edit.
+- **Failure posture.** A provider error or a cut-off reply must fail open: the
+  write proceeds and the run says the check did not happen. A philosopher that
+  can block edits by being unavailable is worse than none.
+- **Two gates.** The permission card is already the human's gate before a
+  write. A philosopher's objection must land on that card, not beside it, or
+  the user answers two questions about one write.
+- **Hosts.** The loop is shared by the terminal, VS Code and Visual Studio. The
+  ACP path runs Solo and does not reach this code.
+- **The risk that decides it.** A philosopher that pauses correct edits is worse
+  than none. Before building, the false-pause rate must be measured on a real
+  run set.
+
+**Why it is not built now.** A pause already stops the run before the next
+action, and a philosopher that judges the request itself can pause before any
+write. The feature waits for evidence that the between-steps review misses real
+edits in practice.
