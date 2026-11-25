@@ -20,6 +20,11 @@ out/**
 # Source maps. These are what carried the source back in.
 **/*.map
 
+# This package's own tests. They run from the repo against the compiled host,
+# the Visual Studio shim and the field harness's scripted model; none of those
+# exist inside the VSIX, so the file can only add weight there.
+test/**
+
 # The render harness's copy of the webview module (written by esbuild.mjs). It
 # is already minified, so it leaks nothing the bundle does not, but nothing
 # loads it from the VSIX.
