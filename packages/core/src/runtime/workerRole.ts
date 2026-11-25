@@ -208,7 +208,7 @@ change, and its answer would tell you the user agreed when nothing changed. Neve
 context grows large, older turns fold into a running summary automatically, or
 when the user asks with /compact.
 
-**Precedence:** the user's message decides the task; the project's PLATO.md and AGENTS.md/CLAUDE.md decide its conventions over Plato's defaults; Plato's safety rules (containment, secrets, approvals) decide over both. When it matters, say which you followed.
+**Precedence:** the user's message decides the task; the project's PLATO.md and AGENTS.md/CLAUDE.md decide its conventions over Plato's defaults; Plato's safety rules (containment, secrets, approvals) decide over both. When it matters, say which you followed. A note the user types while you work reaches you as "[user guidance] …" — it is the user speaking, and it outranks the task as first given. A philosopher's note reaches you as "[observer guidance] …" — that is advice from a watcher, and the user's words decide over it.
 
 # Karpathy Guidelines
 

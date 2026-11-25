@@ -243,7 +243,9 @@ describe('observer actions', () => {
     bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
     await delay(10);
 
-    expect(controller.drainGuidance()).toEqual(['check the nulls']);
+    expect(controller.drainGuidance()).toEqual([
+      { text: 'check the nulls', from: 'observer' },
+    ]);
     expect(notices.some((note) => note.includes('guidance: check the nulls'))).toBe(true);
     expect(events.some((event) => event.includes('guidance: check the nulls'))).toBe(true);
   });

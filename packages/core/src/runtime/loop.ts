@@ -24,6 +24,7 @@ import type { Mode } from './modes.js';
 
 /** D49cq: per-run cap on cross-session messages, the same number as the team cap. */
 const MAX_SESSION_SENDS = 5;
+
 import { secretRefusal } from './modes.js';
 import {
   containmentRefusal,
@@ -39,6 +40,7 @@ import { seedVault } from './seedVault.js';
 import {
   AgentBus,
   RunController,
+  type Guidance,
   type RefusalReason,
   type RunEndReason,
   type ToolPhase,
@@ -70,6 +72,15 @@ import {
 // D45a: the worker system prompt is assembled by `buildWorkerRole` at
 // the top of `runAgentLoop` (override >> PLATO.md default >> AGENTS.md).
 // The baseline-identity text lives in `DEFAULT_PLATO_BODY` (workerRole.ts).
+
+/**
+ * D49ep: the label a note arrives under. The worker is told what each label
+ * means, so the label has to carry who spoke — a correction the user typed is
+ * not a watcher's suggestion.
+ */
+function guidanceBlock(g: Guidance): CanonicalContent {
+  return { type: 'text', text: `[${g.from} guidance] ${g.text}` };
+}
 
 /** D37: clamp a 0..1 threshold into a sane range. */
 function clampThreshold(t: number): number {
@@ -863,7 +874,7 @@ async function runLoop(
   /** D49bz: the user hears about `.gitignore` results once, not once per call. */
   let gitignoreNoted = false;
   let stopAfterTools = false;
-  const pendingGuidance: string[] = [];
+  const pendingGuidance: Guidance[] = [];
   // D49aw: the repetition bound. `stuck.ts` explains why it keys on the call AND
   // the result it produced, and why the user's own declines are invisible to it.
   const stuck = new StuckWatch();
@@ -988,9 +999,7 @@ async function runLoop(
     // loop only reaches here with a user turn last unless the run is ending.
     const turnGuidance = ctrl.drainGuidance();
     if (turnGuidance.length > 0) {
-      const blocks = turnGuidance.map(
-        (g): CanonicalContent => ({ type: 'text', text: `[observer guidance] ${g}` }),
-      );
+      const blocks = turnGuidance.map(guidanceBlock);
       const last = messages[messages.length - 1];
       if (last?.role === 'user') {
         last.content.push(...blocks);
@@ -1201,7 +1210,7 @@ async function runLoop(
     // "pretend the last one never happened". So the break waits until after the
     // commit below, and the run ends as cancelled with its text intact.
     let cancelledOnFinalAnswer = false;
-    let pausedGuidance: string[] = [];
+    let pausedGuidance: Guidance[] = [];
     if (opts.pauseFinalAnswer === true && toolUses.length === 0) {
       if (!(await ctrl.gate())) {
         cancelledOnFinalAnswer = true;
@@ -1279,9 +1288,7 @@ async function runLoop(
       if (pausedGuidance.length > 0) {
         messages.push({
           role: 'user',
-          content: pausedGuidance.map(
-            (g): CanonicalContent => ({ type: 'text', text: `[observer guidance] ${g}` }),
-          ),
+          content: pausedGuidance.map(guidanceBlock),
         });
         continue;
       }
@@ -1907,7 +1914,7 @@ async function runLoop(
     // tool_result and text blocks may share one user message.
     const userContent: (CanonicalContent | ToolResultBlock)[] = [...results, ...toolImages];
     for (const g of pendingGuidance.splice(0)) {
-      userContent.push({ type: 'text', text: `[observer guidance] ${g}` });
+      userContent.push(guidanceBlock(g));
     }
     for (const n of stuckNotes.splice(0)) {
       userContent.push({ type: 'text', text: n });

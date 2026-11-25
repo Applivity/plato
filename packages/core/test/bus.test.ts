@@ -47,8 +47,19 @@ describe('RunController', () => {
     c.sendGuidance('first');
     c.sendGuidance('second');
     c.sendGuidance('   '); // whitespace-only is dropped
-    expect(c.drainGuidance()).toEqual(['first', 'second']);
+    expect(c.drainGuidance()).toEqual([
+      { text: 'first', from: 'observer' },
+      { text: 'second', from: 'observer' },
+    ]);
     expect(c.drainGuidance()).toEqual([]);
+  });
+
+  it('keeps who spoke: a note the user typed is not a watcher note', () => {
+    const c = new RunController();
+    c.sendGuidance('keep price rules in pricing.js', 'user');
+    expect(c.drainGuidance()).toEqual([
+      { text: 'keep price rules in pricing.js', from: 'user' },
+    ]);
   });
 
   it('gate resolves true immediately when idle', async () => {

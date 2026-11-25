@@ -1622,7 +1622,7 @@ class ChatHost {
         // Observer controls (D25f): effective at the loop's safe points.
         if (m.type === 'guidance' && typeof m.text === 'string') {
           if (this.running && m.text.trim().length > 0) {
-            this.controller.sendGuidance(m.text);
+            this.controller.sendGuidance(m.text, 'user');
             this.push({
               k: 'msg',
               cls: 'you',

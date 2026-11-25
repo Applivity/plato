@@ -229,6 +229,36 @@ describe('the pause contract the three hosts depend on (D49bm)', () => {
     expect(second.split('second note')).toHaveLength(2);
   });
 
+  it('labels a note the user typed as the user, not as a watcher', async () => {
+    const root = tempDir();
+    const parked = deferred();
+    const controller = new RunController({
+      onPark: (p) => {
+        if (p) parked.resolve();
+      },
+    });
+    const bus = new AgentBus();
+    let paused = false;
+    bus.on((e) => {
+      if (!paused && e.type === 'tool-event' && e.phase === 'done') {
+        paused = true;
+        controller.pause();
+      }
+    });
+    const p = recording([
+      toolTurn([write('c1', 'one.txt', 'body')]),
+      answerTurn('finished'),
+    ]);
+    const run = loop(root, p, bus, controller);
+    await parked.promise;
+    controller.sendGuidance('keep price rules in pricing.js', 'user');
+    controller.resume();
+    await run;
+    expect(p.requests).toHaveLength(2);
+    const second = JSON.stringify(p.requests[1]!.messages);
+    expect(second).toContain('[user guidance] keep price rules in pricing.js');
+  });
+
   it('delivers guidance queued at a between-tools park in order, once', async () => {
     const root = tempDir();
     const parked = deferred();

@@ -12,6 +12,20 @@ import type { Mode } from './modes.js';
  */
 export type RunEndReason = 'complete' | 'cap' | 'cancelled' | 'stuck';
 
+/**
+ * Who a mid-run note came from (D49ep). A note the user types in the composer
+ * is the user speaking; a note a philosopher sends is advice from a watcher.
+ * The two used to arrive labelled alike, and a coder that reads the label
+ * treated the user's own correction as a watcher's suggestion and kept the
+ * plan it was first given.
+ */
+export type GuidanceFrom = 'user' | 'observer';
+
+export interface Guidance {
+  text: string;
+  from: GuidanceFrom;
+}
+
 export type ToolPhase =
   | 'requested'
   | 'allowed'
@@ -257,7 +271,7 @@ export interface RunControllerOptions {
 }
 
 export class RunController {
-  private guidanceQueue: string[] = [];
+  private guidanceQueue: Guidance[] = [];
   private paused = false;
   private cancelled = false;
   /** D49bm: whether `gate()` is inside its wait right now. */
@@ -279,9 +293,9 @@ export class RunController {
     return this.abort.signal;
   }
 
-  sendGuidance(text: string): void {
+  sendGuidance(text: string, from: GuidanceFrom = 'observer'): void {
     if (text.trim().length > 0) {
-      this.guidanceQueue.push(text);
+      this.guidanceQueue.push({ text, from });
     }
   }
 
@@ -323,7 +337,7 @@ export class RunController {
     return v;
   }
 
-  drainGuidance(): string[] {
+  drainGuidance(): Guidance[] {
     const out = this.guidanceQueue;
     this.guidanceQueue = [];
     return out;

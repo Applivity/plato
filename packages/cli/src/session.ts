@@ -1123,7 +1123,7 @@ export class Session {
     if (!this.state.running || line.length === 0 || this.controller === null) {
       return;
     }
-    this.controller.sendGuidance(line);
+    this.controller.sendGuidance(line, 'user');
     this.append('user', line);
     // The saved conversation carries the user's words, not only the answer they
     // caused. The row is the same one the screen draws; a resumed conversation
