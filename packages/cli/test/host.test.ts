@@ -16,6 +16,7 @@ import {
   type RunSink,
 } from '../src/host.js';
 import type { Prompter } from '../src/prompt.js';
+import type { ObserverSpec } from '../src/team.js';
 
 const dirs: string[] = [];
 
@@ -118,6 +119,8 @@ async function run(
     model?: string;
     task?: string;
     platform?: NodeJS.Platform;
+    team?: PlatoConfig['team'];
+    observerProvider?: (spec: ObserverSpec) => ChatProvider | null;
   },
 ) {
   const io = capture();
@@ -127,12 +130,15 @@ async function run(
     mode: options.mode,
     ...(options.platform === undefined ? {} : { platform: options.platform }),
     outputFormat: options.format ?? 'text',
-    config: config(),
+    config: { ...config(), ...(options.team === undefined ? {} : { team: options.team }) },
     env: options.env,
     io: io.io,
     provider: options.provider,
     fetchImpl: offline,
     ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.observerProvider === undefined
+      ? {}
+      : { observerProvider: options.observerProvider }),
   });
   return { code, out: io.out(), err: io.err() };
 }
@@ -780,6 +786,74 @@ describe('the worker is told about its team', () => {
     );
     expect(workerSystem).toContain('1 philosopher (Aristotle) is watching this run');
     expect(workerSystem).toContain('same Plato process');
+  });
+});
+
+describe('an observer pause in a one-shot run', () => {
+  it('stops cleanly instead of stranding the run', async () => {
+    const root = tempDir('plato-cli-pause-root-');
+    writeFileSync(join(root, 'a.txt'), 'x');
+    const env = environment();
+    const home = env['PLATO_HOME'] as string;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, 'DUO.yaml'),
+      [
+        'philosopher:',
+        '  persona: aristotle',
+        '  name: Aristotle',
+        '  pause: true',
+        '  cancel: false',
+        '  maxInterventions: 3',
+      ].join('\n'),
+    );
+    let calls = 0;
+    const worker: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        calls += 1;
+        // Let the observer's decision land while this turn is in flight.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (calls === 1) {
+          return {
+            content: [
+              { type: 'tool_use', id: 'call-1', name: 'read_file', input: { path: 'a.txt' } },
+            ],
+            usage: { inputTokens: 10, outputTokens: 5 },
+            stopReason: 'tool_use',
+          };
+        }
+        return {
+          content: [{ type: 'text', text: 'Done.' }],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const observer: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: '{"action":"pause"}' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+
+    const result = await run({
+      root,
+      env,
+      mode: 'auto',
+      team: 'duo',
+      provider: worker,
+      observerProvider: () => observer,
+    });
+
+    expect(result.code).toBe(1);
+    expect(result.err).toContain('[Aristotle] paused the run');
+    expect(result.err).toContain('cannot be resumed');
+    expect(result.err).toContain('Run ended: cancelled.');
   });
 });
 

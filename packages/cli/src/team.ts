@@ -190,6 +190,20 @@ export interface ObserverHooks {
   notice(text: string): void;
 }
 
+export interface WatchObserverOptions {
+  bus: AgentBus;
+  controller: RunController;
+  task: string;
+  /**
+   * Whether this host has a control that can resume a parked run. A host with
+   * no such control (`plato -p`, `--plain`) cannot hold a run: an observer's
+   * pause would park it with nothing able to release it, and the process would
+   * end on an unsettled await. There, a pause stops the run at once and says
+   * so. The interactive terminal and both extensions leave this true.
+   */
+  resumable?: boolean;
+}
+
 /** A short hint about which file, command, or pattern a tool call touched. */
 function argHint(args: Record<string, unknown>): string {
   if (typeof args['path'] === 'string') {
@@ -212,10 +226,12 @@ function argHint(args: Record<string, unknown>): string {
  */
 export function watchObservers(
   handles: readonly ObserverHandle[],
-  options: { bus: AgentBus; controller: RunController; task: string },
+  options: WatchObserverOptions,
   hooks: ObserverHooks,
 ): void {
   let interventionsUsed = 0;
+  // One stop notice for the run, however many observers ask to pause.
+  let pauseStopNotified = false;
 
   for (const handle of handles) {
     const digest: DigestEntry[] = [];
@@ -292,16 +308,38 @@ export function watchObservers(
               last: `guidance: ${action.message}`,
             });
           } else if (action.action === 'pause') {
-            interventionsUsed += 1;
-            options.controller.pause();
-            hooks.notice(`[${handle.name}] paused the run`);
-            hooks.event({
-              type: 'state',
-              name: handle.name,
-              hex: handle.hex,
-              state: 'watching',
-              last: 'paused the run',
-            });
+            if (options.resumable === false) {
+              // Nothing in this host can release a park, so holding the run
+              // would strand it. Stop at the next safe point instead, and name
+              // what happened and what the user can do next — once.
+              if (!pauseStopNotified) {
+                pauseStopNotified = true;
+                options.controller.cancel();
+                hooks.notice(
+                  `[${handle.name}] paused the run. This run cannot be resumed, so Plato ` +
+                    'stopped here. To continue, start an interactive session and send the ' +
+                    'task again.',
+                );
+              }
+              hooks.event({
+                type: 'state',
+                name: handle.name,
+                hex: handle.hex,
+                state: 'watching',
+                last: 'paused the run',
+              });
+            } else {
+              interventionsUsed += 1;
+              options.controller.pause();
+              hooks.notice(`[${handle.name}] paused the run`);
+              hooks.event({
+                type: 'state',
+                name: handle.name,
+                hex: handle.hex,
+                state: 'watching',
+                last: 'paused the run',
+              });
+            }
           } else if (action.action === 'cancel') {
             interventionsUsed += 1;
             options.controller.cancel();

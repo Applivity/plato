@@ -214,6 +214,9 @@ export async function runPlain(options: PlainOptions): Promise<number> {
           fetchImpl: options.fetchImpl,
           now: options.now,
           provider: options.provider,
+          // The readline loop reads its next line only after this run returns,
+          // so no control here can resume a park.
+          resumable: false,
           ...(plan.turns.length === 0 ? {} : { history: plan.turns }),
         },
         sink,

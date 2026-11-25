@@ -157,6 +157,12 @@ export interface ExecuteOptions {
   /** Injected by the scripted runs; builds a real philosopher otherwise. */
   observerProvider?: (spec: ObserverSpec) => ChatProvider | null;
   /**
+   * Whether this host has a control that can resume a parked run. `false` for
+   * a host that cannot (`plato -p`, `--plain`): an observer's pause then stops
+   * the run instead of parking it forever. Defaults to true.
+   */
+  resumable?: boolean;
+  /**
    * D49bm (terminal): the worker's model call is in flight, and then what it
    * returned. The terminal uses the pair to time a pause: a pause pressed while
    * a response may need an approval card must not park before that card. The
@@ -462,7 +468,12 @@ export async function executeTask(
   }
   watchObservers(
     handles,
-    { bus, controller, task: options.task },
+    {
+      bus,
+      controller,
+      task: options.task,
+      resumable: options.resumable !== false,
+    },
     {
       event: (event) => sink.observer?.(event),
       notice: (text) => sink.notice(text),
@@ -877,7 +888,13 @@ export async function runTask(options: TaskOptions): Promise<number> {
 
   let result: LoopResult;
   try {
-    result = await executeTask(options, createStreamSink(io, options.outputFormat), controller);
+    // One task and exit: no control in this process can resume a park, so an
+    // observer's pause must stop the run rather than strand it.
+    result = await executeTask(
+      { ...options, resumable: false },
+      createStreamSink(io, options.outputFormat),
+      controller,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     io.err(`plato: ${message}\n`);

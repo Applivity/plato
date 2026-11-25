@@ -195,7 +195,7 @@ describe('observer construction', () => {
 });
 
 describe('observer actions', () => {
-  async function setup(action: object, maxInterventions = 5) {
+  async function setup(action: object, maxInterventions = 5, resumable = true) {
     const { handles } = await createObservers(
       [
         {
@@ -221,7 +221,7 @@ describe('observer actions', () => {
     const notices: string[] = [];
     watchObservers(
       handles,
-      { bus, controller, task: 'do the work' },
+      { bus, controller, task: 'do the work', resumable },
       {
         event: (event) =>
           events.push(
@@ -271,6 +271,20 @@ describe('observer actions', () => {
     await delay(10);
 
     expect(await controller.gate()).toBe(false);
+  });
+
+  it('stops instead of parking when the host cannot resume', async () => {
+    const { bus, controller, notices } = await setup({ action: 'pause' }, 5, false);
+    bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
+    await delay(10);
+
+    const outcome = await Promise.race([
+      controller.gate().then((ok) => (ok ? 'resumed' : 'stopped')),
+      delay(50).then(() => 'parked'),
+    ]);
+    expect(outcome).toBe('stopped');
+    expect(notices.some((note) => note.includes('paused the run'))).toBe(true);
+    expect(notices.some((note) => note.includes('cannot be resumed'))).toBe(true);
   });
 
   it('stops after five interventions across the run', async () => {
