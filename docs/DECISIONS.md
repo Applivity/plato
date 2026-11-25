@@ -8593,3 +8593,25 @@ Three faults came out of the demo round. All three are repaired and committed
   process that never returns.
 - **Scope.** `plato -p --team duo` is an advertised path — the CLI tells a user
   without an interactive terminal to use it — so the case is not rare.
+
+**D49er — A pause says why, and the screen says what to do next.**
+
+- **The fault, as the founder met it.** Watching the demo recording, the run
+  stopped and the window said "[Aristotle] paused the run" and "Plato paused
+  at a safe point." Nothing said why it stopped or what to do to continue. He
+  said he would not have known what was going on, in his own product.
+- **The rule.** The check asks for one plain sentence with a pause or a cancel:
+  what it saw in the run, and what the user should check. That sentence is
+  shown on the notice: "[Aristotle] paused the run — <sentence>". When a model
+  writes none, the notice keeps the plain line rather than a dangling dash.
+  The parked line now names both controls: "Plato paused at a safe point.
+  Resume to continue, or type a note first."
+- **Why the reason comes from the model.** Only the check saw the digest and
+  the step it objected to. The host knows that a pause happened; it cannot say
+  what the philosopher objected to without inventing it.
+- **Why the sentence is cleaned up.** It is user-facing text in a one-row
+  notice, so the shared parser collapses whitespace and cuts it at 240
+  characters. Doing it in the parser is what makes the three hosts agree.
+- **Exposure.** This is the same class as a guidance line, which the product
+  has always shown: the model's own words about masked digest text. The
+  prompt forbids naming a file, command, or secret the digest does not show.
