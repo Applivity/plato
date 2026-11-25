@@ -287,6 +287,19 @@ a product that ignored the Stop button entirely — a check that cannot fail. Th
 case also refuses to pass if no question card was ever detected, and the driver
 treats a DISABLED Stop button as an error rather than a no-op click.
 
+### Coverage gap: no case runs Duo
+
+**Every case runs Solo.** Case 16 configures the observer path, but the run stays
+Solo in the window, so the suite never starts a philosopher. The consequence is
+precise: the philosopher's pause, the reason it carries, and the moment that line
+appears are **outside the reach of this suite**. Cases 24 and 25 do not cover
+them — they check the host's own park notice (`Plato paused at a safe point.`)
+and that the control and the status bar wait for the park. The two strings come
+from different paths.
+
+The philosopher line's timing rests on unit tests alone. Add a Duo case before
+this gap is claimed to be closed.
+
 ## The acceptance test, executed (D49at)
 
 M4's definition of done is **eight clauses**, and `acceptance.mjs` runs them. It
