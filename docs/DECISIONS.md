@@ -8615,3 +8615,49 @@ Three faults came out of the demo round. All three are repaired and committed
 - **Exposure.** This is the same class as a guidance line, which the product
   has always shown: the model's own words about masked digest text. The
   prompt forbids naming a file, command, or secret the digest does not show.
+
+**D49es — A pause request is not a park.**
+
+- **The fault.** The philosopher's answer only asks for a pause. The loop
+  honours it at its next safe point, which can be a whole step later. The hosts
+  posted the pause line when the answer arrived, so the screen said "paused"
+  while the run was still working. In the demo take the line landed about 18 s
+  after the first keystroke and the park about 109 s in — a gap of 91 seconds in
+  which the footer still read "reading a file" and the buttons still offered
+  Pause and Stop.
+- **The rule.** The line that says the run stopped is spoken at the park, not
+  at the answer. A host holds it, and the loop's own park edge releases it. A
+  park that never comes drops the line, because the run ended and no pause
+  happened: showing it then would be a claim about a thing that did not occur.
+- **Where it lives.** The edge already existed. `RunController.onPark` is
+  announced by `gate()` and only by it (D49bm), which is why both hosts already
+  draw their safe-point line there. The philosopher's line joins that edge: the
+  terminal holds it in the session and posts it from the park callback, the
+  shared run sink carries it as an optional `observerPause`, and the VS Code
+  host — which Visual Studio bundles unchanged — posts it from `onPark`, once,
+  with its reason and its colour unchanged.
+- **What it is not.** The pause itself is not delayed. `controller.pause()` is
+  still called when the answer arrives, so the run still stops at the first
+  safe point rather than the second. Only the sentence moves.
+- **The one exception, and why.** A host with no control that can release a
+  park (`plato -p`, `--plain`) stops the run instead (D49eq). There the line is
+  spoken at once, because the stop is the park: waiting for a park that can
+  never happen would say nothing at all.
+- **The proof, demonstrated in both hosts.** Both tests were run red, then
+  green. Against the old code, `packages/vscode/test/pause-notice.test.mjs`
+  measures the pause line **2004 ms before the park** and fails; with the line
+  moved it passes, and finds the line once, with its reason and its colour
+  unchanged, before the safe-point line, so the chat reads the reason and then
+  what to do next. `packages/cli/test/session.test.ts` holds the worker mid-turn
+  while the philosopher answers, fails against the old code in the terminal, and
+  passes when the line moves to the park. The demo take supplies the timing:
+  about 18 s for the answer, about 109 s for the park.
+- **A second fault on the same edge: the closing line was drawn twice.** When a
+  pause was asked for and the run ended before it was honoured, "The run
+  finished before the pause took effect." was emitted on the bus and then sent
+  again, so the chat drew it twice. It now goes through the bus alone: the
+  notices listener both records the line and sends it, so one emit is one
+  drawing.
+- **Why it was not caught earlier.** The observer tests check the notice's
+  text, and the text was right at both moments. None of them held the run open
+  between the answer and the park, so none could see the gap.
