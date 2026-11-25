@@ -357,7 +357,11 @@ export function watchObservers(
           } else if (action.action === 'cancel') {
             interventionsUsed += 1;
             options.controller.cancel();
-            hooks.notice(`[${handle.name}] cancelled the run`);
+            const why =
+              action.message === undefined
+                ? ''
+                : ` — ${action.message.replace(/[.!?]+$/, '')}`;
+            hooks.notice(`[${handle.name}] cancelled the run${why}.`);
             hooks.event({
               type: 'state',
               name: handle.name,

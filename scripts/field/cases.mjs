@@ -26,6 +26,35 @@ const FAKE_MCP_SERVER = join(import.meta.dirname, 'fake-mcp.mjs');
 export const DATE_HELPER = 'app/src/main/java/com/localgsa/hcad/utilities/DateHelper.java';
 
 /**
+ * Case 42's three scripted philosopher answers. Exported so `verdict.mjs` can
+ * look for the SAME sentence in the run record that the spec looks for on
+ * screen — the two witnesses must be asked about one fact, not two paraphrases.
+ *
+ * None ends in a full stop: the host strips trailing punctuation before it
+ * appends its own, so a period here would be silently dropped and the string
+ * the record holds would differ from the one a reader searches for.
+ */
+export const OBSERVER_PAUSE_REASON = 'The coder has not checked where the date helper is used';
+export const OBSERVER_GUIDANCE = 'Check where ISO8601 is used before summarising the helper';
+export const OBSERVER_CANCEL_REASON = 'The coder was about to rename a constant other files use';
+
+/**
+ * Case 42's Duo config, seeded into the throwaway PLATO_HOME. Duo's built-in
+ * philosopher may guide but may NOT pause or cancel — both tiers are off by
+ * default, and a disabled verb is degraded to noop. The harness grants all
+ * three here, which is what makes a scripted pause and cancel reach the run;
+ * without the file the actions would be counted as degraded and never happen.
+ */
+export const OBSERVER_DUO_YAML = [
+  'philosopher:',
+  '  persona: aristotle',
+  '  pause: true',
+  '  cancel: true',
+  '  maxInterventions: 5',
+  '',
+].join('\n');
+
+/**
  * D49ca: the file cases 34 and 35 write. A scratch name, not a source file, so
  * a write that is allowed is observable without coupling the case to a line an
  * earlier case may already have changed. The launcher removes it after a run.
@@ -602,14 +631,15 @@ export const CASES = [
   {
     n: 16,
     title: 'The observer path is live in Duo, and its work is reported',
-    // D49at CLAUSE 4, and the gap the decision entry names as unautomated: no
-    // harness case ran a Duo or Academy team, so the observer's liveness was
-    // verified by hand or not at all.
+    // D49at CLAUSE 4. The clause does not require an intervention: an observer
+    // that correctly stays quiet must pass, and requiring one would measure
+    // chattiness. What is asserted is that the path RAN and that its work is
+    // REPORTED.
     //
-    // **The clause does NOT require an intervention.** An observer that
-    // correctly stays quiet must pass — requiring an intervention would measure
-    // chattiness and push the product toward a noisy philosopher. What is
-    // asserted is that the path RAN and that its work is REPORTED.
+    // The comment here used to say no harness case ran a Duo or Academy team.
+    // That was true when written and is not any more: this case runs a Duo
+    // team. What was never exercised is a philosopher's DECISION — this case
+    // scripts no action, so the observer always noops. Case 42 is that gap.
     //
     // The script is read-only work, so no card is involved and the case is
     // about the team rather than about a gate. The observer's own model call
@@ -1335,6 +1365,94 @@ export const CASES = [
         ],
         cards: [],
         modeAnswers: ['deny'],
+      },
+    ],
+  },
+  {
+    n: 42,
+    title: 'A scripted philosopher pauses, guides, and cancels a real Duo run',
+    // Case 16 runs a Duo team but scripts NO philosopher action, so the suite
+    // proved the observer's liveness and never its decisions. The three
+    // actions here take different paths from the host's own controls (cases
+    // 10, 24, 25): the philosopher acts INSIDE the run, at a turn boundary,
+    // and its one sentence is the only account the user gets of why.
+    //
+    // Three runs, because the actions end differently and only the ending can
+    // tell them apart: guidance must leave the run to finish normally, a pause
+    // PARKS it until Resume and must then finish, and a cancel stops it. One
+    // run cannot witness "guidance continues to a normal end" and "cancel ends
+    // the run" at the same time.
+    //
+    // Every run seeds a Duo config that grants pause and cancel: the built-in
+    // philosopher may guide only, and the other two verbs degrade to noop.
+    // The observer's own model call carries no tools, so the stub plays it
+    // from its separate `observers` script and the agent's steps do not shift.
+    //
+    // The delays are load-bearing. A scripted run is over in microseconds, so
+    // without them the run would finish before the philosopher's answer could
+    // reach it — and a pause that arrives after the run has ended is neither a
+    // proof of the pause nor a failure of it.
+    runs: [
+      {
+        // GUIDANCE. The philosopher speaks once at the start of turn 2; the
+        // run must then carry on to an ordinary completion, which is the
+        // difference between steering and stopping.
+        mode: 'edit',
+        orchestration: 'duo',
+        seedHome: { 'DUO.yaml': OBSERVER_DUO_YAML },
+        prompt: 'Read DateHelper.java and tell me what it does.',
+        steps: [
+          { calls: [{ tool: 'read_file', args: { path: DATE_HELPER } }] },
+          { delayMs: 2500, calls: [{ tool: 'read_file', args: { path: VIEW_MODEL } }] },
+          { text: 'DateHelper formats and parses the app date formats.' },
+        ],
+        cards: [],
+        observers: [{ action: 'guidance', message: OBSERVER_GUIDANCE }],
+      },
+      {
+        // PAUSE. The stub holds turn 2 long enough for the philosopher's pause
+        // to be recorded; the loop honours it at the next safe point, which is
+        // the gate before the tool call. `during: 'observerPause'` reads the
+        // reason line, the safe-point line, the footer and the Resume control
+        // while the run is parked, then resumes it.
+        mode: 'edit',
+        orchestration: 'duo',
+        seedHome: { 'DUO.yaml': OBSERVER_DUO_YAML },
+        prompt: 'Read DateHelper.java and summarise how it formats dates.',
+        steps: [
+          { calls: [{ tool: 'read_file', args: { path: DATE_HELPER } }] },
+          { delayMs: 3000, calls: [{ tool: 'read_file', args: { path: VIEW_MODEL } }] },
+          { text: 'DateHelper formats and parses the app date formats.' },
+        ],
+        cards: [],
+        observers: [{ action: 'pause', message: OBSERVER_PAUSE_REASON }],
+        during: 'observerPause',
+      },
+      {
+        // CANCEL. The write in turn 2 is what the philosopher stops. It never
+        // executes: the cancel is set at the turn boundary, before that turn's
+        // tool gate. `cards: []` is therefore part of the assertion — a cancel
+        // that arrived too late would let the write ask, and the unexpected
+        // card would be named by the harness.
+        mode: 'edit',
+        orchestration: 'duo',
+        seedHome: { 'DUO.yaml': OBSERVER_DUO_YAML },
+        prompt: 'Read DateHelper.java, then rename the ISO8601 constant and update its uses.',
+        steps: [
+          { calls: [{ tool: 'read_file', args: { path: DATE_HELPER } }] },
+          {
+            delayMs: 3000,
+            calls: [
+              {
+                tool: 'apply_diff',
+                args: { path: DATE_HELPER, diffs: [{ search: ISO_DECL, replace: ISO_DECL_RENAMED }] },
+              },
+            ],
+          },
+          { text: 'Renamed it.' },
+        ],
+        cards: [],
+        observers: [{ action: 'cancel', message: OBSERVER_CANCEL_REASON }],
       },
     ],
   },

@@ -1645,6 +1645,20 @@ class ChatHost {
           this.pauseRequested = false;
           // A click before the run started takes the request back with it.
           this.pendingPause = false;
+          // The park's instruction is "tell Plato what to do differently, then
+          // press Resume", so the composer's words travel with the click. Send
+          // them first: the loop drains the note at the gate it wakes from, as
+          // the CLI's /continue <text> does.
+          const note = typeof m.note === 'string' ? m.note.trim() : '';
+          if (this.running && note.length > 0) {
+            this.controller.sendGuidance(note, 'user');
+            this.push({
+              k: 'msg',
+              cls: 'you',
+              who: 'You',
+              text: `[guide] ${note}`,
+            });
+          }
           if (this.running) this.controller.resume();
           return;
         }
@@ -5774,7 +5788,15 @@ class ChatHost {
     // the run was not. Each answer is held here and spoken by `onPark` below,
     // where the run has actually stopped. A run that ends before it parks ends
     // this function, and the held line with it.
-    const heldPauseNotices: { text: string; meta: { color: string } }[] = [];
+    const heldPauseNotices: {
+      text: string;
+      meta: { color: string };
+      // The parked screen's own copy of the sentence and its speaker: raw,
+      // without the bracket prefix or the line's full stop, so the composer
+      // can be filled with exactly what the philosopher asked for.
+      note?: string;
+      by?: string;
+    }[] = [];
     let interventionsUsed = 0; // hard cap 5 per run across members (D31d)
     for (const spec of obsSpecs) {
       const oParts = splitModelRef(spec.ref);
@@ -5874,20 +5896,30 @@ class ChatHost {
                 if (a.action === 'guidance') {
                   interventionsUsed += 1;
                   this.controller.sendGuidance(a.message);
-                  this.send('notice', `[${name}] guidance: ${a.message}`, noticeMeta);
+                  // The notice goes on the bus, like the pause and cancel lines,
+                  // so the run record keeps it and the chat log can restore it
+                  // after a reload. A guidance is immediate — it is not a park.
+                  bus.emit({
+                    type: 'notice',
+                    runId: this.currentRunId,
+                    text: `[${name}] guidance: ${a.message}`,
+                    color: noticeMeta.color,
+                  });
                 } else if (a.action === 'pause') {
                   interventionsUsed += 1;
                   // The philosopher's one sentence is the only account the user
                   // gets of WHY the run stopped, so it rides on the notice. A
                   // model that wrote none gets the plain line, not a dumb dash.
-                  const why =
+                  const reason =
                     a.message === undefined
-                      ? ''
-                      : ` — ${a.message.replace(/[.!?]+$/, '')}`;
+                      ? undefined
+                      : a.message.replace(/[.!?]+$/, '');
+                  const why = reason === undefined ? '' : ` — ${reason}`;
                   this.controller.pause();
                   heldPauseNotices.push({
                     text: `[${name}] paused the run${why}.`,
                     meta: noticeMeta,
+                    ...(reason === undefined ? {} : { note: reason, by: name }),
                   });
                 } else if (a.action === 'cancel') {
                   interventionsUsed += 1;
@@ -5902,7 +5934,14 @@ class ChatHost {
                     a.message === undefined
                       ? ''
                       : ` — ${a.message.replace(/[.!?]+$/, '')}`;
-                  this.send('notice', `[${name}] cancelled the run${why}.`, noticeMeta);
+                  // On the bus, so the cancel reason is in the run record too.
+                  // It is immediate — the run is already stopping.
+                  bus.emit({
+                    type: 'notice',
+                    runId: this.currentRunId,
+                    text: `[${name}] cancelled the run${why}.`,
+                    color: noticeMeta.color,
+                  });
                 }
               })
               .catch(() => undefined)
@@ -5926,13 +5965,24 @@ class ChatHost {
         if (parked) this.pauseEverParked = true;
         // The pause the run has now honoured was asked for by a philosopher:
         // speak its line here, once, and before the safe-point line below, so
-        // the chat reads the reason and then what to do next. Sent, not
-        // bus-emitted, exactly as it was before the move: the notices listener
-        // sends every bus notice already, and sending it both ways would draw
-        // it twice. The colour rides on the post the way it always has.
+        // the chat reads the reason and then what to do next. It goes on the
+        // bus now, so the run record keeps it too; the `notice` listener below
+        // is the one that both records it (via the transcript) and sends it
+        // (D49bz). The colour rides the event, so the record and the screen
+        // carry the same line once (D47f). A run with several held answers
+        // takes the last one's note for the parked composer.
+        let note: string | undefined;
+        let by: string | undefined;
         if (parked) {
           for (const held of heldPauseNotices.splice(0)) {
-            this.send('notice', held.text, held.meta);
+            bus.emit({
+              type: 'notice',
+              runId: this.currentRunId,
+              text: held.text,
+              color: held.meta.color,
+            });
+            note = held.note;
+            by = held.by;
           }
         }
         const line = parked
@@ -5943,7 +5993,10 @@ class ChatHost {
         // drew every pause and resume twice — visible in the real window as two
         // "Plato paused at a safe point." rows.
         bus.emit({ type: 'notice', runId: this.currentRunId, text: line });
-        this.send('pause-state', { parked });
+        this.send(
+          'pause-state',
+          parked && note !== undefined ? { parked, note, by } : { parked },
+        );
       },
     });
     this.running = true;
@@ -6007,7 +6060,9 @@ class ChatHost {
         // after a reload. `context-compacted` above has always done both; this is
         // the same two lines, for every other notice the loop raises.
         this.push({ k: 'msg', cls: 'sys', who: 'Plato', text: e.text });
-        this.send('notice', e.text);
+        // D47f: a colour that rode the event (a philosopher's line) keeps the
+        // same tag on screen and in the record.
+        this.send('notice', e.text, e.color ? { color: e.color } : undefined);
       }
     });
     // Chronological reply segmentation (founder UX feedback): the reply was

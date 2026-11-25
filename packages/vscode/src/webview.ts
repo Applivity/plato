@@ -1267,6 +1267,11 @@ export function chatHtml(
   #cx.bar-btn { color:var(--vscode-testing-iconFailed, #f14c4c); }
   #cx.bar-btn:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
                       border-color:rgba(241,76,76,.35); }
+  /* the parked note offer sits beside Resume/Stop. Kept quiet — an
+     offer, not a second Resume — and bounded so a long name cannot push the
+     send control off the bar. */
+  #noteOffer.note-offer { max-width:220px; overflow:hidden;
+                          text-overflow:ellipsis; white-space:nowrap; }
   /* D39: mode picker trigger. Color hints at the active mode. */
   #modeBtn { display:inline-flex; align-items:center; gap:6px;
              background:transparent; border:1px solid transparent;
@@ -1537,6 +1542,9 @@ export function chatHtml(
          while only the REQUEST had been recorded. -->
     <button id="pp" class="bar-btn" title="Pause after the current step. Nothing is lost." hidden>Pause</button>
     <button id="cx" class="bar-btn" title="Stop the task. The conversation stays." hidden>Stop</button>
+    <!-- offered only while a philosopher's park is on screen and the
+         composer is empty; clicking fills the composer with the note. -->
+    <button id="noteOffer" class="bar-btn note-offer" type="button" hidden></button>
     <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
       <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
       <span class="mode-btn-label" id="modeBtnLabel">act</span>
@@ -4259,6 +4267,7 @@ export function chatHtml(
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
+  const noteOffer = document.getElementById('noteOffer');
   // D49bm: two different facts, and only one of them is knowable here.
   // pauseWanted is what the user asked for; pauseParked is what the RUN is
   // doing, and it is set only by the host, because only the loop knows when it
@@ -4267,6 +4276,10 @@ export function chatHtml(
   // ended before any safe point it claimed a pause that never happened.
   let pauseWanted = false;
   let pauseParked = false;
+  // the philosopher's own sentence and name, set only while a park they
+  // asked for is on screen. Empty means no note: the user's own pause, or none.
+  let pauseNote = '';
+  let pauseNoteBy = '';
   function paintPause() {
     pp.textContent = pauseParked ? 'Resume' : (pauseWanted ? 'Pausing\u2026' : 'Pause');
     pp.title = pauseParked
@@ -4276,19 +4289,39 @@ export function chatHtml(
   // Unified footer (D29d): while busy, the main input IS the guide box.
   const GUIDE_PLACEHOLDER =
     'Guide Plato mid-run\u2026 (injected at the next safe point)';
+  // at a philosopher's park the composer is where the user answers, so
+  // the mechanism wording gives way to a plain instruction.
+  const PARK_PLACEHOLDER =
+    'Tell Plato what to do differently, then press Resume.';
   const ASK_PLACEHOLDER = q.placeholder;
+  // the park's two view facts \u2014 the placeholder and the note offer.
+  // The offer shows only while parked with a note AND an empty composer, so it
+  // can never overwrite text the user typed.
+  function paintParkNote() {
+    const parkedWithNote = pauseParked && pauseNote !== '';
+    q.placeholder = parkedWithNote
+      ? PARK_PLACEHOLDER
+      : (busy ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER);
+    if (!noteOffer) { return; }
+    const show = parkedWithNote && pauseNoteBy !== '' && q.value.length === 0;
+    noteOffer.hidden = !show;
+    if (show) { noteOffer.textContent = "Use " + pauseNoteBy + "'s note"; }
+  }
   function setRunUi(on) {
     pp.hidden = !on;
     cx.hidden = !on;
-    q.placeholder = on ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER;
     // Both directions reset. A run must start with no pause history, and a
-    // finished run must not leave a stale label for the next one to show.
+    // finished run must not leave a stale label \u2014 or a stale philosopher note \u2014
+    // for the next one to show.
     pauseWanted = false;
     pauseParked = false;
+    pauseNote = '';
+    pauseNoteBy = '';
     pauseHoldsStatus = false;
     pp.disabled = false;
     cx.disabled = false;
     paintPause();
+    paintParkNote();
   }
   function sendGuidance() {
     const text = q.value.trim();
@@ -4296,6 +4329,7 @@ export function chatHtml(
     vsapi.postMessage({ type: 'guidance', text: text });
     addMsg('you', 'You', '[guide] ' + text);
     q.value = '';
+    paintParkNote(); // the composer is empty again, so the offer may return
   }
   pp.addEventListener('click', () => {
     if (!busy) { return; }
@@ -4304,17 +4338,32 @@ export function chatHtml(
       // round trip is still out and re-pause the run the user just released.
       pauseWanted = false;
       pauseParked = false;
-      vsapi.postMessage({ type: 'resume' });
+      // The park placeholder tells the user to type a redirect and press this
+      // button, so what they typed must travel with the click. The CLI's
+      // /continue <text> is the same contract: send it, then resume.
+      const note = q.value.trim();
+      vsapi.postMessage(note.length > 0 ? { type: 'resume', note } : { type: 'resume' });
+      if (note.length > 0) {
+        // The host keeps the same row in the saved log; this draws it now, as
+        // sendGuidance does.
+        addMsg('you', 'You', '[guide] ' + note);
+        q.value = '';
+      }
     } else {
       pauseWanted = true;
       vsapi.postMessage({ type: 'pause' });
     }
     paintPause();
+    paintParkNote();
     refreshChip();
   });
   /** D49bm: the host's account of the RUN, which is the only account there is. */
-  function setPauseState(parked) {
+  function setPauseState(parked, note, by) {
     pauseParked = Boolean(parked);
+    // a note belongs to the park that carried it. Any other edge needs
+    // none — a resume, or a user's own pause — so it clears here.
+    pauseNote = pauseParked && typeof note === 'string' ? note : '';
+    pauseNoteBy = pauseParked && typeof by === 'string' ? by : '';
     pauseHoldsStatus = pauseParked;
     // The status line is the other half of the claim. It said "writing" while
     // the run sat still, so "paused" has to be said there too, not only on a
@@ -4324,6 +4373,7 @@ export function chatHtml(
     const bar = document.getElementById('statusbar');
     if (bar) { bar.classList.toggle('paused', pauseParked); }
     paintPause();
+    paintParkNote();
   }
   cx.addEventListener('click', () => {
     if (!busy || cx.disabled) { return; }
@@ -4332,6 +4382,16 @@ export function chatHtml(
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
+  // fill the composer with the philosopher's note, and never over text
+  // the user has already typed.
+  if (noteOffer) {
+    noteOffer.addEventListener('click', () => {
+      if (pauseNote === '' || q.value.length > 0) { return; }
+      q.value = pauseNote;
+      q.focus();
+      paintParkNote();
+    });
+  }
 
   // --- D44c: real slash commands + paperclip attachment -------------------
   // The reserved .future-attach slot (D39) hosts the paperclip, far-left of
@@ -4582,6 +4642,7 @@ export function chatHtml(
       clearChips();
       vsapi.postMessage({ type: 'attach-clear' });
     }
+    paintParkNote(); // the note offer hides as soon as the composer has text
     syncCmdPop();
   });
   q.addEventListener('keyup', syncCmdPop);
@@ -4983,7 +5044,11 @@ export function chatHtml(
       // read from m.text because the host's send() builds {type, text, ...meta}
       // — reading m.parked here found nothing, so the label never left
       // "Pausing…" while the run sat still, which is the same lie in a new place.
-      case 'pause-state': setPauseState((m.text || {}).parked); break;
+      case 'pause-state': {
+        const p = m.text || {};
+        setPauseState(p.parked, p.note, p.by);
+        break;
+      }
       // D49bo: the whole queue, every time. One authoritative mirror beats
       // three messages that each have to be kept in step with it.
       case 'queue': renderQueue(m.items, m.held); break;

@@ -216,8 +216,13 @@ export type AgentEvent =
       /** Exit code, present on 'exited' only. Null when killed by a signal. */
       code?: number | null;
     }
-  /** Human-readable in-flight notice. Not a run state. */
-  | { type: 'notice'; runId: string; text: string };
+  /**
+   * Human-readable in-flight notice. Not a run state.
+   *
+   * `color` is a UI tag that rides the same event, so the saved record and the
+   * screen carry the same line once.
+   */
+  | { type: 'notice'; runId: string; text: string; color?: string };
 
 export type AgentListener = (event: AgentEvent) => void;
 

@@ -35,7 +35,14 @@ import {
   EditorView,
 } from 'vscode-extension-tester';
 
-import { CASES, DEMO_REPO, MODE_PROBE } from './cases.mjs';
+import {
+  CASES,
+  DEMO_REPO,
+  MODE_PROBE,
+  OBSERVER_CANCEL_REASON,
+  OBSERVER_GUIDANCE,
+  OBSERVER_PAUSE_REASON,
+} from './cases.mjs';
 import { Field } from './driver.mjs';
 import { runsDirFor, verdict } from './verdict.mjs';
 
@@ -219,13 +226,15 @@ const selected = only.length > 0 ? CASES.filter((c) => only.includes(c.n)) : CAS
  * a race inside it can only be hit by luck; with one, a case can walk into it on
  * purpose. See case 26.
  */
-async function setScript(steps, needles = [], modelsDelayMs = 0) {
+async function setScript(steps, needles = [], modelsDelayMs = 0, observers = []) {
   const res = await fetch(`${STUB}/__script`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     // titleMode 'prompt' gives each conversation a title taken from its own
     // prompt, so two open chat tabs are distinguishable in the workbench.
-    body: JSON.stringify({ steps, needles, modelsDelayMs, titleMode: 'prompt' }),
+    // `observers` is the philosopher's script, consumed by its own cursor — an
+    // observer call carries no tools, so it must not shift the agent's steps.
+    body: JSON.stringify({ steps, needles, modelsDelayMs, observers, titleMode: 'prompt' }),
   });
   if (!res.ok) throw new Error(`stub refused the script: ${res.status}`);
 }
@@ -506,7 +515,7 @@ describe('Plato field tests — real VS Code', function () {
         // misdiagnosis: a note saying "model was told: refused" appearing under
         // the masked-read run looked like the wrong case definition had loaded.
         const mark = notes.length;
-        await setScript(run.steps, [], run.modelsDelayMs ?? 0);
+        await setScript(run.steps, [], run.modelsDelayMs ?? 0, run.observers ?? []);
         await field.setMode(run.mode);
         // D49ca: the picker changed the mode and nothing has been sent. If the
         // product ever resumes a run on the click alone, this is where it shows —
@@ -581,8 +590,14 @@ describe('Plato field tests — real VS Code', function () {
         // D49bt: the chat log persists across the runs of a case, so the plan
         // half is judged on what IT added. Matching the whole log found the
         // previous run's notices and reported a server that never started.
+        // Case 42's three runs share one chat for the same reason cases 4 and 8
+        // do, and its runs assert DIFFERENT endings — so a whole-log "✓ done in"
+        // on the pause run would be run 1's, and the check would pass even if the
+        // resumed run never finished.
         const logBefore =
-          (c.n === 29 && run.mode === 'plan') || c.n === 32 ? await field.logText() : '';
+          (c.n === 29 && run.mode === 'plan') || c.n === 32 || c.n === 42
+            ? await field.logText()
+            : '';
         // D49bz: the stub's log accumulates across runs, so the model-side half
         // of case 32 has to be read as a DELTA. `expectModelTold` reads the whole
         // log and cannot answer "what did THIS run tell the model".
@@ -681,6 +696,57 @@ describe('Plato field tests — real VS Code', function () {
                 notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}"`);
               }
               notes.push('pause-too-late: asked while the final answer was still being written');
+            } else if (run.during === 'observerPause') {
+              // Case 42. A philosopher's pause PARKS the run, so this waits for
+              // the park (the host's own account of it, the Resume label)
+              // rather than treating the click as one. The reason line and the
+              // safe-point line are read AT the park, in that order, because
+              // that is the moment the claim is about; they persist in the log
+              // afterwards, but the footer and the control do not.
+              await field.waitForRunStart();
+              const parked = await field.waitForPauseLabel('Resume');
+              if (parked.label !== 'Resume') {
+                notes.push(`PAUSE: the philosopher asked for a pause and the run never parked — the button stayed at "${parked.label}"`);
+              }
+              const ui = await field.driver.executeScript(`
+                const bar = document.getElementById('statusbar');
+                const pp = document.getElementById('pp');
+                return {
+                  status: bar ? (bar.querySelector('.stext') || {}).textContent : null,
+                  paused: bar ? bar.classList.contains('paused') : null,
+                  button: pp ? pp.textContent : null,
+                };
+              `);
+              const atPark = await field.logText();
+              const reasonLine = `[Aristotle] paused the run — ${OBSERVER_PAUSE_REASON}.`;
+              const count = atPark.split(reasonLine).length - 1;
+              if (count !== 1) {
+                notes.push(`PAUSE: the philosopher's reason was drawn ${count} time(s), expected exactly once`);
+              }
+              const reasonAt = atPark.indexOf(reasonLine);
+              const safeAt = atPark.indexOf('Plato paused at a safe point.');
+              if (reasonAt < 0) {
+                notes.push("PAUSE: the philosopher's reason line is not on screen");
+              } else if (safeAt < 0) {
+                notes.push('PAUSE: the safe-point line is not on screen after the park');
+              } else if (safeAt < reasonAt) {
+                notes.push("PAUSE: the safe-point line was drawn before the philosopher's reason");
+              }
+              if (!/^Paused\b/.test(ui.status || '')) {
+                notes.push(`PAUSE: the footer does not say the run is paused — it reads "${ui.status}"`);
+              }
+              if (ui.button !== 'Resume') {
+                notes.push(`PAUSE: the control offers "${ui.button}", not Resume`);
+              }
+              notes.push(
+                `observer pause: footer "${ui.status}", button "${ui.button}", ` +
+                `reason ${count}x, safe-point follows=${reasonAt >= 0 && safeAt > reasonAt}`,
+              );
+              // Resume so the run can finish; a correct park must never hang
+              // the case. Click only what is there: a park that never happened
+              // leaves no control to click, and a driver exception would bury
+              // the notes above instead of letting them name the failure.
+              if (parked.label === 'Resume') await field.pause();
             } else if (run.during === 'queueWhileBusy') {
               await field.waitForRunStart();
               await field.queueMessage('write the release notes');
@@ -1633,6 +1699,54 @@ describe('Plato field tests — real VS Code', function () {
             notes.push('PLANNOTE: the run ended with 2 of 3 plan steps unfinished and did not say so');
           }
           notes.push(`plannote: says-unfinished=${says}`);
+        }
+        if (c.n === 42) {
+          // Each run scripts ONE philosopher decision, and the screen half is
+          // read here, after the run. The paused run's reason line, safe-point
+          // line, footer and Resume control are read AT the park, in `during`;
+          // what survives to here is whether the run then continued. `own` is
+          // this run's slice of the shared chat: run 1's "✓ done in" must not
+          // answer "did the pause run finish?".
+          const own = screen.slice(logBefore.length);
+          const action = run.observers?.[0]?.action;
+          const done = /✓ done in/.test(own);
+          if (action === 'guidance') {
+            // Guidance must STEER, not stop: the line is drawn, and the run
+            // reaches an ordinary completion.
+            const line = `[Aristotle] guidance: ${OBSERVER_GUIDANCE}`;
+            const drawn = own.includes(line);
+            const stopped = own.includes('— cancelled');
+            if (!drawn) {
+              notes.push("GUIDANCE: the philosopher's guidance line is not on screen, so the steering left no trace");
+            }
+            if (!done || stopped) {
+              notes.push('GUIDANCE: the run did not continue to a normal completion after the guidance');
+            }
+            notes.push(`guidance: drawn=${drawn} completed=${done && !stopped}`);
+          } else if (action === 'pause') {
+            const resumed = own.includes('Plato resumed.');
+            if (!resumed) {
+              notes.push('PAUSE: nothing on screen says the resumed run continued');
+            }
+            if (!done) {
+              notes.push('PAUSE: the run did not complete after Resume');
+            }
+            notes.push(`pause: resumed=${resumed} completed=${done}`);
+          } else if (action === 'cancel') {
+            // The closing line must name BOTH the cancel and the philosopher's
+            // reason; a bare "cancelled" would leave the user unable to tell a
+            // philosopher's stop from their own.
+            const line = `[Aristotle] cancelled the run — ${OBSERVER_CANCEL_REASON}.`;
+            const named = own.includes(line);
+            const says = own.includes('— cancelled');
+            if (!named) {
+              notes.push("CANCEL: the closing line does not name the philosopher's cancel and its reason");
+            }
+            if (!says) {
+              notes.push('CANCEL: the run does not say it ended cancelled');
+            }
+            notes.push(`cancel: line-names-reason=${named} says-cancelled=${says}`);
+          }
         }
 
         // D49bz: a case that changed a setting puts it back, so the next case

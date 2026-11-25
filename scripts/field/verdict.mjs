@@ -29,6 +29,12 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  OBSERVER_CANCEL_REASON,
+  OBSERVER_GUIDANCE,
+  OBSERVER_PAUSE_REASON,
+} from './cases.mjs';
+
 const DEFAULT_ROOT = '/Users/ai/Desktop/HcadPublicAndroid-demo';
 
 /** D46/D24c: the host keys runs by an 8-char sha1 of the workspace root. */
@@ -100,6 +106,8 @@ export function analyse(events) {
     decisions: of('approval-decided'),
     toolEvents: of('tool-event'),
     notices: of('notice').map((e) => e.text),
+    /** The notice events themselves, so a rule can read a notice's COLOUR tag. */
+    noticeEvents: of('notice'),
     /** D49ca: the user's mode switches, with the click's own time. */
     modeChanges: of('mode-changed'),
     /** D49cb: the model's requests, and whether the user approved each. */
@@ -639,6 +647,100 @@ const RULES = {
       detail: a.failed.length === 0 ? 'no failure' : JSON.stringify(a.failed[0]),
     },
   ],
+
+  // 42 — a philosopher's DECISION, end to end in Duo.
+  //
+  // Case 16 proves the observer path is live but scripts no action, so it only
+  // ever noops. This rule reads what each decision did to the RECORD, the half
+  // the webview cannot see. The three runs are told apart by their TASK text,
+  // as case 32's runs are: all three share a mode and an ending is not enough
+  // (a pause that wrongly ended cancelled would otherwise be judged as the
+  // cancel run, and pass on the wrong claim).
+  //
+  // The philosopher's lines are asserted VERBATIM in the record: the pause
+  // reason, the cancel line, and the guidance line each appear exactly once —
+  // with the speaker and the reason — and each carries the philosopher's colour
+  // tag, because the screen and the saved record must read as one line. That
+  // was the gap this case was written to close: the host used to draw these
+  // lines without emitting them on the bus, so the writer never saw them. The
+  // exact violet is the Duo default (Aristotle), the same value the package
+  // test pins; this rule asserts the record keeps it, not only the text.
+  42: (a) => {
+    const ONCE = (line) => {
+      const found = a.noticeEvents.filter((e) => e.text === line);
+      return {
+        found,
+        count: found.length,
+        colored: found.length === 1 && found[0].color === '#b48ad4',
+      };
+    };
+    if (/rename the ISO8601 constant/.test(a.task)) {
+      const cancel = ONCE(`[Aristotle] cancelled the run — ${OBSERVER_CANCEL_REASON}.`);
+      return [
+        {
+          name: 'the philosopher stopped the run',
+          ok: a.completed.length === 1 && a.completed[0].reason === 'cancelled',
+          detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+        },
+        {
+          // The philosopher's cancel is set at the turn boundary, before the
+          // turn's tool gate — so the write it was about must never execute.
+          // A late cancel that let it through would show up here even when the
+          // screen still said "cancelled".
+          name: 'the write it stopped never executed',
+          ok: a.doneFor('apply_diff').length === 0 && a.doneFor('write_file').length === 0,
+          detail: summarise(a.phasesFor('apply_diff')) || 'no apply_diff call',
+        },
+        {
+          name: 'the record carries the cancel line with its reason, once, in colour',
+          ok: cancel.count === 1 && cancel.colored,
+          detail: `${cancel.count} exact line(s); colours: ${cancel.found.map((e) => e.color ?? 'none').join(', ') || 'none'}`,
+        },
+      ];
+    }
+    if (/summarise how it formats dates/.test(a.task)) {
+      return [
+        {
+          name: 'the run parked at the philosopher’s request',
+          ok: a.notices.some((t) => /paused at a safe point/.test(t)),
+          detail: a.notices.join(' · ') || 'no notices',
+        },
+        {
+          name: 'and resumed',
+          ok: a.notices.some((t) => /Plato resumed/.test(t)),
+          detail: a.notices.join(' · ') || 'no notices',
+        },
+        {
+          name: 'the resumed run completed',
+          ok: a.completed.some((e) => e.reason === 'complete'),
+          detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+        },
+        {
+          name: 'the record carries the philosopher’s reason for the pause',
+          ok: a.notices.some((t) => t.includes(OBSERVER_PAUSE_REASON)),
+          detail: a.notices.join(' · ') || 'no notices',
+        },
+      ];
+    }
+    const guidance = ONCE(`[Aristotle] guidance: ${OBSERVER_GUIDANCE}`);
+    return [
+      {
+        name: 'the guided run completed normally',
+        ok: a.completed.some((e) => e.reason === 'complete'),
+        detail: a.completed.map((e) => e.reason).join(', ') || 'no run-completed',
+      },
+      {
+        name: 'the guided run did the real work',
+        ok: a.phasesFor('read_file').filter((e) => e.phase === 'done').length >= 2,
+        detail: summarise(a.phasesFor('read_file')),
+      },
+      {
+        name: 'the record carries the guidance line, once, in colour',
+        ok: guidance.count === 1 && guidance.colored,
+        detail: `${guidance.count} exact line(s); colours: ${guidance.found.map((e) => e.color ?? 'none').join(', ') || 'none'}`,
+      },
+    ];
+  },
 
   // 17 — D49at CLAUSE 5: a run that ends with an unfinished plan says so.
   //

@@ -24,8 +24,8 @@ idle click starts nothing; a switch made mid-run applies at the next tool call),
 and the same run continues in the approved mode), **and 37–41 with tabs, session
 messaging, the title-bar mark, the chat header's mark and the activity-bar
 chat** — see the table below.
-**The scripted suite is 39 cases in 50 runs:** the 34 table cases in `cases.mjs`
-(whose runs add to 45) plus the five single-run tests 37–41. **Two further cases (30, 31)
+**The scripted suite is 40 cases in 53 runs:** the 35 table cases in `cases.mjs`
+(whose runs add to 48) plus the five single-run tests 37–41. **Two further cases (30, 31)
 cover the queue
 and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
 they are not part of the scripted suite and need the founder's key file.
@@ -185,7 +185,8 @@ Two rules keep the driver honest:
 | 39 title-bar mark | the Plato mark is in the title bar of every Plato tab and of a plain file editor; clicking it on the file opens a new chat | the new chat is a Plato tab and carries the mark too, and the activity bar has a Plato container. **Falsified by reverting the `when` clause:** the mark disappears from the plain file editor |
 | 40 one reply round | B receives A's message and replies once; the window labels the answer as coming from B | B was offered `send_to_session` **as a reply**; A's reply run was **not** offered it, and its forced send was refused with `exchange is over`; A's own message to B reported `delivered to` |
 | 41 activity-bar chat and the header mark | the activity bar is a chat — a composer and no "+" — and it keeps its conversation across hide/show; the header draws the Plato mark titled "New chat" | the view reports no tabs; it registers as a live session under its generated title; a tab's `list_sessions` names it and `send_to_session` reaches it; the inbound run says `Message from another Plato session`, and the window shows the sender. **The mark (2026-11-11, D49dc):** on a chat tab it opens a new tab; on the activity-bar chat one click clears the view with **no dialog**, opens no tab, and the cleared conversation is found in History under its title. **Falsified by giving the sidebar the tab action:** case 41 fails |
-| 33 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, **32 on 2026-10-15** when the MCP case took 29, and **33 on 2026-10-21** when the .gitignore case took 32 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. **Cases 32, 34, 35 and 36 are placed AHEAD of it in the array, so it keeps the last slot; the numbers are labels and the ARRAY order is the rule.**) |
+| 42 philosopher decisions (Duo) | a scripted philosopher **guides** (the line is drawn and the run completes), **pauses** (the reason line appears once, the safe-point line follows, the footer reads Paused and the control offers Resume, then Resume finishes the run), and **cancels** (the closing line names the cancel and the reason, and the run says it ended cancelled) | the guided run completes · the paused run parked, resumed and completed · the cancelled run ends `cancelled` and the write it stopped never executes. The RECORD must also carry the philosopher's pause reason, the cancel line (with its reason) and the guidance line — each **exactly once and with its colour tag** — so the saved run reads as the screen did |
+| 33 panel close | *(not checked — see below)* | the run ended `cancelled` **with the panel-close notice in the record** (D49bn). **Asserts from the record only, and must stay LAST:** the harness cannot step back inside a webview panel it has closed, so the spec skips the screen read for this one case **by name**. (Numbered 29 on 2026-10-08, **32 on 2026-10-15** when the MCP case took 29, and **33 on 2026-10-21** when the .gitignore case took 32 — 30 and 31 belong to the real-model cases, so the panel close moved past them rather than colliding. **Cases 32, 34, 35, 36 and 42 are placed AHEAD of it in the array, so it keeps the last slot; the numbers are labels and the ARRAY order is the rule.**) |
 
 **Case 12 scripts a stuck model, and the script IS the evidence.** Five turns of
 the same `todo_write` call with the same arguments — byte-identical, every time.
@@ -287,18 +288,29 @@ a product that ignored the Stop button entirely — a check that cannot fail. Th
 case also refuses to pass if no question card was ever detected, and the driver
 treats a DISABLED Stop button as an error rather than a no-op click.
 
-### Coverage gap: no case runs Duo
+### The observer's decisions: case 42
 
-**Every case runs Solo.** Case 16 configures the observer path, but the run stays
-Solo in the window, so the suite never starts a philosopher. The consequence is
-precise: the philosopher's pause, the reason it carries, and the moment that line
-appears are **outside the reach of this suite**. Cases 24 and 25 do not cover
-them — they check the host's own park notice (`Plato paused at a safe point.`)
-and that the control and the status bar wait for the park. The two strings come
-from different paths.
+Case 16 runs a Duo team, but it scripts no philosopher action, so its observer
+always noops. What it leaves unexercised is a philosopher's DECISION, not a team
+run — and that is a different path from the host's own pause and stop (cases 24,
+25 and 10): the philosopher acts inside the run at a turn boundary, and its one
+sentence is the only account the user gets of why the run stopped.
 
-The philosopher line's timing rests on unit tests alone. Add a Duo case before
-this gap is claimed to be closed.
+Case 42 scripts all three decisions, one per run, each with its own ending:
+guidance must leave the run to finish normally, a pause parks it until Resume
+and must then finish, and a cancel stops it. Every run seeds a `DUO.yaml` that
+grants pause and cancel — Duo's built-in philosopher may guide only, and a
+disabled verb is degraded to noop, so without the file two of the three actions
+would never reach the run.
+
+**The record half is deliberately separate from the screen half.** The host
+draws each philosopher line in the chat and emits it on the bus as well, so the
+transcript keeps the same text with the philosopher's colour tag. The case
+asserts that the pause reason, the cancel line and the guidance line are each in
+the record **exactly once and in colour**, as well as on screen; and for the
+cancel it asserts the stop itself — the run ends `cancelled` and the write the
+philosopher stopped never executes. A case that only read the screen could not
+tell a real stop from a late one, or prove the saved run reads as the screen did.
 
 ## The acceptance test, executed (D49at)
 

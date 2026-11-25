@@ -8671,3 +8671,71 @@ Three faults came out of the demo round. All three are repaired and committed
   is unaffected — its line goes through `append`. A future round can carry the
   colour on the bus notice and close it; it is not a reason to hold this
   release, because the chat, which is what the user reads, is correct.
+
+## The park round — the record keeps the words, and the park asks for them (2026-11-26)
+
+The three gaps the founder set for tonight. Two are the ones named above; the
+third was found while closing them.
+
+**D49et — Every philosopher line goes on the bus, colour and all.**
+
+- **The fault.** The pause, guidance and cancel lines were sent straight to the
+  chat. Only bus events reach the run's JSONL (`transcript.ts` `append`), so a
+  saved run could not say why it stopped. D49es left exactly this gap open and
+  named it.
+- **The rule.** All three lines are emitted as `notice` events, and the notices
+  listener is the one place that both records a line and sends it. The `notice`
+  event gained an optional `color`, so the tag the screen uses and the tag the
+  record keeps are one value rather than two that can drift (D47f).
+- **Why the bus rather than a second write.** A line written twice — once to the
+  record, once to the screen — can be fixed in one place and not the other. The
+  listener already had both jobs; the lines simply did not reach it.
+- **The proof.** `packages/vscode/test/pause-notice.test.mjs` asserts each of
+  the three lines is drawn once and kept once in the record, with colour
+  `#b48ad4`. Field case 42 asserts the same three lines in a real window's run
+  records, each exactly once and each with its colour.
+
+**D49eu — At a philosopher's park, the composer is where the answer is written,
+and Resume takes it.**
+
+- **The fault.** The park told the user "Resume to continue, or type a note
+  first", which asks them to find the reason and invent a redirect from nothing.
+  The reason was on screen as a sentence they could not act on, and Resume sent
+  no note at all, so anything typed was left behind.
+- **The rule.** When the park was asked for by a philosopher, the composer's
+  mechanism wording is replaced with a plain instruction — "Tell Plato what to
+  do differently, then press Resume." — and a control named "Use Aristotle's
+  note" fills the composer with that philosopher's own sentence. Pressing Resume
+  sends the composer's text first and then resumes, which is the CLI's
+  `/continue <text>` contract, word for word.
+- **The offer never overwrites.** It appears only while the composer is empty,
+  so text the user already typed is never replaced. It is bounded in width, so a
+  long name cannot push the send control off the bar.
+- **The park carries the raw sentence.** The notice's line keeps its bracket
+  prefix and its full stop; the note offered to the composer carries neither, so
+  editing it starts from the philosopher's words and not from Plato's framing.
+- **The proof.** Render scene G asserts the placeholder, the offer's text, that
+  it hides on typing, and that Resume sends the typed note and empties the
+  composer. The package test asserts the park payload carries the note without
+  its prefix and with its speaker's name. Field case 42 drives the same edge in
+  a real window, and the installed build was walked by hand: the offer filled the
+  composer, an edit was typed over it, and Resume drew a `[guide]` row and
+  reached the model — the next request's user-token count rose from 335 to 377
+  and stayed there for every later turn.
+
+**D49ev — The terminal's cancel line carries its reason too.**
+
+- **The fault.** Both editors kept the philosopher's sentence on a cancel; the
+  CLI dropped it, so a terminal user saw the run stop without the one sentence
+  that says why.
+- **The rule.** The same shape the pause line already had: the reason, stripped
+  of trailing punctuation, after an em dash, with Plato's own full stop. A model
+  that wrote no reason gets the plain line, not a dash with nothing after it.
+- **The proof.** `packages/cli/test/team.test.ts` pins the line, and field case
+  42 asserts the editor's line in the record.
+
+**What this round does not prove.** The window walk-through was one run with one
+model, watched once. The field case is scripted, so it proves the code path and
+not how a real philosopher reads a real digest. Neither says anything about the
+philosopher's judgement — only that when it decides, the product tells the user
+why and lets them answer.

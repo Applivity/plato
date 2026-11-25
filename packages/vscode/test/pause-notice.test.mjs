@@ -23,10 +23,13 @@
  */
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
@@ -55,6 +58,13 @@ const HOME = mkdtempSync(join(tmpdir(), 'plato-pause-notice-home-'));
 const ROOT = mkdtempSync(join(tmpdir(), 'plato-pause-notice-root-'));
 const STATE = join(HOME, 'state');
 const PLATO_HOME = join(HOME, '.plato');
+// The run record lands under ~/.plato/runs/<project-key>/ (D24c, D46). The
+// key is the first eight hex digits of the workspace root's sha1.
+const RUNS_DIR = join(
+  PLATO_HOME,
+  'runs',
+  createHash('sha1').update(ROOT).digest('hex').slice(0, 8),
+);
 const BUILD = mkdtempSync(join(tmpdir(), 'plato-pause-notice-build-'));
 mkdirSync(PLATO_HOME, { recursive: true });
 process.env['HOME'] = HOME;
@@ -199,6 +209,32 @@ function waitPost(predicate, label, from = 0, timeoutMs = 60_000) {
   });
 }
 
+/** Every event written to this project's run record(s) so far. */
+function readRunEvents() {
+  if (!existsSync(RUNS_DIR)) return [];
+  const events = [];
+  for (const f of readdirSync(RUNS_DIR).filter((n) => n.endsWith('.jsonl'))) {
+    for (const line of readFileSync(join(RUNS_DIR, f), 'utf8').split('\n')) {
+      if (line.length > 0) events.push(JSON.parse(line));
+    }
+  }
+  return events;
+}
+
+/** Each run record as its own list of events, so a test can name one run. */
+function readRuns() {
+  if (!existsSync(RUNS_DIR)) return [];
+  return readdirSync(RUNS_DIR)
+    .filter((n) => n.endsWith('.jsonl'))
+    .map((f) => ({
+      file: f,
+      events: readFileSync(join(RUNS_DIR, f), 'utf8')
+        .split('\n')
+        .filter((l) => l.length > 0)
+        .map((l) => JSON.parse(l)),
+    }));
+}
+
 const PAUSE_REASON =
   'The coder is about to write checkout.js, and price rules live in pricing.js.';
 const PHILOSOPHER_LINE = `[Aristotle] paused the run — ${PAUSE_REASON}`;
@@ -223,6 +259,7 @@ try {
       '  model: stub:stub-model',
       '  color: violet',
       '  pause: true',
+      '  cancel: true',
       '  maxInterventions: 5',
       '',
     ].join('\n'),
@@ -255,11 +292,20 @@ try {
     type: 'ask',
     text: 'Read note.txt while the philosopher pauses.',
   });
-  await waitPost(
+  const park = await waitPost(
     (m) => m.type === 'pause-state' && m.text?.parked === true,
     'the observer to park the run',
     mark,
   );
+  // The park screen offers the philosopher's own sentence back to the composer,
+  // named by its speaker. The note is the raw sentence: the bracket prefix and
+  // the line's full stop belong to the notice, not to the note.
+  assert.equal(
+    park.text?.note,
+    PAUSE_REASON.replace(/[.!?]+$/, ''),
+    'the park carries the philosopher\'s sentence without its prefix or full stop',
+  );
+  assert.equal(park.text?.by, 'Aristotle', 'the park names whose note it is');
 
   const pauseLines = posts.filter(
     (m, i) =>
@@ -292,7 +338,52 @@ try {
     `the pause line was drawn ${away} ms before the park — it is the answer's, not the park's`,
   );
 
-  host.receive({ type: 'resume' });
+  // The defect this change fixes: the reason used to live only on screen. It
+  // rides the bus now, so the run's own record keeps it — once, with its
+  // colour — and keeps the safe-point line after it.
+  const runEvents = readRunEvents();
+  const recordedReasons = runEvents.filter(
+    (e) => e.type === 'notice' && e.text === PHILOSOPHER_LINE,
+  );
+  assert.equal(
+    recordedReasons.length,
+    1,
+    'the run record carries the philosopher\'s reason exactly once',
+  );
+  assert.equal(
+    recordedReasons[0].color,
+    '#b48ad4',
+    'the recorded reason keeps the philosopher\'s colour (violet)',
+  );
+  const recordedSafe = runEvents.filter(
+    (e) => e.type === 'notice' && e.text === SAFE_POINT,
+  );
+  assert.equal(
+    recordedSafe.length,
+    1,
+    'the run record carries the safe-point line once',
+  );
+  assert.ok(
+    runEvents.indexOf(recordedReasons[0]) < runEvents.indexOf(recordedSafe[0]),
+    'the run record keeps the reason before the safe-point line',
+  );
+
+  // The park's placeholder tells the user to type a redirect and press Resume,
+  // so the composer's words must travel with the click — the same contract the
+  // CLI's `/continue <text>` has. This resume carries one, and the model's next
+  // request is the witness that it was sent before the run continued.
+  const NOTE = 'Confirm the target file before you touch it.';
+  host.receive({ type: 'resume', note: NOTE });
+  const release = await waitPost(
+    (m) => m.type === 'pause-state' && m.text?.parked === false,
+    'the host to report the release',
+    mark,
+  );
+  assert.equal(
+    release.text?.note,
+    undefined,
+    'a resume carries no note, so the park screen cannot offer a stale one',
+  );
   const done = await waitPost(
     (m) => m.type === 'done' || m.type === 'error',
     'the resumed run to finish',
@@ -300,6 +391,19 @@ try {
     90_000,
   );
   assert.equal(done.type, 'done', JSON.stringify(done));
+
+  // The model's own request log is the witness that the note left the composer:
+  // the loop drains guidance at the turn the resume wakes, so the first request
+  // after the park carries the words the user pressed Resume with.
+  const resumedLog = await (await fetch(`http://127.0.0.1:${port}/__log`)).json();
+  assert.ok(
+    resumedLog.log.some(
+      (entry) =>
+        entry.consumedStep !== 'observer' &&
+        entry.userTexts.some((text) => text.includes(NOTE)),
+    ),
+    'the note pressed with Resume reached the model in its next request',
+  );
 
   // A run stopped before it parks never speaks the held line: the request ran
   // out of run. The observer answers pause while the second turn's model call
@@ -332,6 +436,63 @@ try {
     0,
     'a pause that never parked is never announced as a pause',
   );
+
+  // The other two notices that used to go straight to the webview: guidance and
+  // cancel. Neither reached the run record, so neither survived a reload. Both
+  // must now be drawn once and kept in the run record with their colour. The
+  // observer steers once, then stops the run; the model steps are held so the
+  // observation re-arms between turns rather than racing the next one.
+  const GUIDANCE = 'Check pricing.js before checkout.js sees a price.';
+  const GUIDANCE_LINE = `[Aristotle] guidance: ${GUIDANCE}`;
+  const CANCEL_REASON = 'The run is about to write the wrong file.';
+  const CANCEL_LINE =
+    `[Aristotle] cancelled the run — ${CANCEL_REASON.replace(/[.!?]+$/, '')}.`;
+  await setScript(
+    [read(), read(400), read(400), { text: 'Never reached.' }],
+    [
+      { action: 'guidance', message: GUIDANCE },
+      { action: 'cancel', message: CANCEL_REASON },
+    ],
+  );
+  const mark4 = posts.length;
+  const TASK4 = 'Read note.txt while the philosopher steers.';
+  host.receive({ type: 'ask', text: TASK4 });
+  const steered = await waitPost(
+    (m) => m.type === 'done' || m.type === 'error',
+    'the guided run to finish',
+    mark4,
+    90_000,
+  );
+  assert.equal(steered.type, 'done', JSON.stringify(steered));
+
+  for (const line of [GUIDANCE_LINE, CANCEL_LINE]) {
+    const seen = posts.filter(
+      (m, i) => i >= mark4 && m.type === 'notice' && m.text === line,
+    );
+    assert.equal(seen.length, 1, `"${line}" is drawn exactly once`);
+    assert.equal(
+      seen[0].meta?.color,
+      '#b48ad4',
+      `"${line}" keeps its colour on screen`,
+    );
+  }
+
+  // The run that carried them, named by its own header, keeps both once.
+  const steeredRun = readRuns().find((r) =>
+    r.events.some((e) => e.kind === 'header' && e.task === TASK4),
+  );
+  assert.ok(steeredRun, 'the guided run wrote its own record');
+  for (const line of [GUIDANCE_LINE, CANCEL_LINE]) {
+    const recorded = steeredRun.events.filter(
+      (e) => e.type === 'notice' && e.text === line,
+    );
+    assert.equal(recorded.length, 1, `the run record carries "${line}" exactly once`);
+    assert.equal(
+      recorded[0].color,
+      '#b48ad4',
+      `the recorded "${line}" keeps its colour`,
+    );
+  }
 
   // The closing line for a pause that ran out of run. It is keyed to the
   // USER's own Pause button (`pauseRequested`), not to a philosopher's answer,

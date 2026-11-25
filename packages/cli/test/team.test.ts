@@ -284,11 +284,28 @@ describe('observer actions', () => {
   });
 
   it('cancels the run', async () => {
-    const { bus, controller } = await setup({ action: 'cancel' });
+    const { bus, controller, notices } = await setup({ action: 'cancel' });
     bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
     await delay(10);
 
     expect(await controller.gate()).toBe(false);
+    // No message from the model: the plain line, with no dangling dash.
+    expect(notices).toEqual(['[Aristotle] cancelled the run.']);
+  });
+
+  it('carries the philosopher’s reason on the cancel notice', async () => {
+    const { bus, notices } = await setup({
+      action: 'cancel',
+      message: 'The schema change would drop the audit trail...',
+    });
+    bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
+    await delay(10);
+
+    // The sentence arrives as written, and its own trailing punctuation is
+    // replaced by the one full stop the line ends on — never both.
+    expect(notices).toEqual([
+      '[Aristotle] cancelled the run — The schema change would drop the audit trail.',
+    ]);
   });
 
   it('stops instead of parking when the host cannot resume', async () => {

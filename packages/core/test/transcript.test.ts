@@ -171,6 +171,42 @@ describe('TranscriptWriter', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('persists a notice with its colour, so the screen and the record agree', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'plato-t-notice-'));
+    const runsDir = join(dir, 'runs');
+    const bus = new AgentBus();
+    const writer = new TranscriptWriter(runsDir, { task: 'pause', root: dir });
+    writer.attach(bus);
+    bus.emit({
+      type: 'run-started',
+      runId: 'p1',
+      task: 'pause',
+      model: 'm',
+      mode: 'edit',
+    });
+    // A philosopher's pause reason rides the bus now, so the record must keep
+    // the same colour the screen draws — that is the whole point of the tag.
+    bus.emit({
+      type: 'notice',
+      runId: 'p1',
+      text: '[Aristotle] paused the run — keep price rules in pricing.js.',
+      color: '#b48ad4',
+    });
+    writer.close();
+
+    const name = readdirSync(runsDir).find((f) => f.endsWith('.jsonl'));
+    const lines = readFileSync(join(runsDir, name!), 'utf8')
+      .split('\n')
+      .filter((l) => l.length > 0)
+      .map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines.find((l) => l['type'] === 'notice')).toMatchObject({
+      type: 'notice',
+      text: '[Aristotle] paused the run — keep price rules in pricing.js.',
+      color: '#b48ad4',
+    });
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('ignores events that arrive before a run-started anchor', () => {
     const dir = mkdtempSync(join(tmpdir(), 'plato-t2-'));
     const bus = new AgentBus();

@@ -191,6 +191,106 @@ const snap = (p) => p.evaluate(() => {
   await p.close();
 }
 
+// G. The park screen: a philosopher's note replaces the mechanism wording and
+// is offered back to the empty composer. A user's own pause carries no note.
+// `S({ open: false })` keeps the chat surface on screen so the composer can
+// take focus; the payload still carries the provider, so the run can start.
+{
+  const p = await page(620, S({ open: false }));
+  const post = (x) => p.evaluate(
+    (m) => window.dispatchEvent(new MessageEvent('message', { data: m })), x);
+  const snapN = () => p.evaluate(() => {
+    const q = document.getElementById('q');
+    const offer = document.getElementById('noteOffer');
+    return {
+      placeholder: q.placeholder,
+      value: q.value,
+      focused: document.activeElement === q,
+      offerHidden: offer ? offer.hidden : null,
+      offerText: offer ? offer.textContent : null,
+    };
+  });
+  const GUIDE = 'Guide Plato mid-run… (injected at the next safe point)';
+  const PLAIN = 'Tell Plato what to do differently, then press Resume.';
+  const NOTE =
+    'The coder is about to write checkout.js, and price rules live in pricing.js.';
+
+  await send(p, 'a long job');
+
+  // The user's own pause: parked, but no note. It must read as the guide box,
+  // with no offer — a note is a philosopher's, never the user's own pause.
+  await post({ type: 'pause-state', text: { parked: true } });
+  await p.waitForTimeout(120);
+  const own = await snapN();
+  check('a park with no note keeps the guide placeholder',
+    own.placeholder === GUIDE, own);
+  check('and shows no note offer', own.offerHidden === true, own);
+
+  // A philosopher's park: plain instruction, and the note offered by name.
+  await post({ type: 'pause-state', text: { parked: true, note: NOTE, by: 'Aristotle' } });
+  await p.waitForTimeout(120);
+  const offered = await snapN();
+  check('a philosopher\'s park replaces the mechanism wording with a plain instruction',
+    offered.placeholder === PLAIN, offered);
+  check('and offers the note under the speaker\'s name',
+    offered.offerHidden === false && offered.offerText === "Use Aristotle's note", offered);
+
+  // Clicking fills the composer, focuses it, and the offer leaves.
+  await p.bringToFront(); // headless can leave a fresh page unfocused
+  await p.evaluate(() => document.getElementById('noteOffer').click());
+  await p.waitForTimeout(120);
+  const filled = await snapN();
+  check('clicking the offer fills the composer with the note',
+    filled.value === NOTE, filled);
+  check('and focuses the composer so the user can edit it', filled.focused === true, filled);
+  check('and the offer hides once the composer has text',
+    filled.offerHidden === true, filled);
+
+  // Text already typed: the offer must not appear over it, and must never
+  // replace it.
+  await p.evaluate(() => {
+    const q = document.getElementById('q');
+    q.value = 'make it use pricing.js';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await post({ type: 'pause-state', text: { parked: true, note: NOTE, by: 'Aristotle' } });
+  await p.waitForTimeout(120);
+  const typed = await snapN();
+  check('the offer is absent when the composer already has text',
+    typed.offerHidden === true, typed);
+  check('and the text the user typed is untouched',
+    typed.value === 'make it use pricing.js', typed);
+
+  // Resume takes what the user typed with it. The park's own instruction says
+  // to type a redirect and press Resume, so the words must leave the composer
+  // on that click — the CLI's /continue <text> is the same contract.
+  await p.evaluate(() => { document.getElementById('pp').click(); });
+  await p.waitForTimeout(120);
+  const released = await p.evaluate(() => {
+    const posted = window.__posted;
+    return {
+      last: posted.length > 0 ? posted[posted.length - 1] : null,
+      value: document.getElementById('q').value,
+    };
+  });
+  check('pressing Resume sends the typed note with the release',
+    released.last !== null && released.last.type === 'resume'
+      && released.last.note === 'make it use pricing.js', released);
+  check('and the composer is empty again', released.value === '', released);
+
+  // Resume clears the park wording and the offer.
+  await post({ type: 'pause-state', text: { parked: false } });
+  await p.waitForTimeout(120);
+  const resumed = await snapN();
+  check('resuming restores the guide placeholder', resumed.placeholder === GUIDE, resumed);
+  check('and takes the note offer away', resumed.offerHidden === true, resumed);
+
+  await post({ type: 'done', text: { secs: 2, tools: 1 } });
+  await p.waitForTimeout(150);
+  checkPageClean(p, 'park note');
+  await p.close();
+}
+
 // F. The controls' words, and Esc on the run surface doing nothing to the run.
 //
 // A window with buttons does not need the keyboard to duplicate them. Esc in a
