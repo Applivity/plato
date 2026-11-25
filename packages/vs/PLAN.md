@@ -1005,8 +1005,15 @@ Done:
   names the process image
   `…\extensions\szyphvra.b2p\sidecar\node.exe`, and `Win32_Process` shows that
   was the only `node.exe` child of `devenv.exe`.
-- **Tests.** `pnpm exec tsc -b`, `pnpm --dir packages/vs typecheck`, and
-  `pnpm --dir packages/vs test` pass. The shared webview did not change, so
+- **Tests.** `pnpm exec tsc -b` and `pnpm --dir packages/vs test` pass.
+  `pnpm --dir packages/vs typecheck` **does not pass**: it reports errors in
+  `packages/vscode/src/extension.ts` against the shim's declared API, which
+  has no `Webview`, `WebviewView`, `registerWebviewViewProvider` or
+  `registerWebviewPanelSerializer`. They entered on 2026-11-03 (tabs) and
+  2026-11-06 (the activity bar) and predate 0.5.2. The calls are guarded at
+  runtime with `typeof … === 'function'`, and `esbuild` does not typecheck, so
+  the suite and the VSIX are not affected. Widening the shim is a separate
+  change, not a patch release. The shared webview did not change, so
   `render:fast` is not part of this phase; it cannot run on this machine.
 
 Remaining, and why:

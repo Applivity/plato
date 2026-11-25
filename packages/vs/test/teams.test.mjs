@@ -7,7 +7,8 @@
  *     "[Name] watching — <ref>" line with that philosopher's colour, and its
  *     guidance reaches the run;
  *   - a philosopher with pause/cancel granted pauses and cancels the run, with
- *     the same notices the VS Code extension shows;
+ *     the same notices the VS Code extension shows, and the pause line is
+ *     spoken at the park rather than when the answer lands;
  *   - Academy posts the council's team card (the observer strip) with every
  *     member's name, kind, model and powers;
  *   - guidance, pause and cancel share ONE cap of five per run, counted across
@@ -116,6 +117,8 @@ const settings = {
 };
 
 const posts = [];
+/** When each post arrived, so a test can say WHEN a line was drawn, not only that it was. */
+const postedAt = [];
 const waiters = [];
 let disposed = false;
 
@@ -126,6 +129,7 @@ const transport = {
   },
   post(message) {
     posts.push(message);
+    postedAt.push(Date.now());
     for (const waiter of [...waiters]) {
       if (waiter.predicate(message)) {
         waiters.splice(waiters.indexOf(waiter), 1);
@@ -392,6 +396,24 @@ try {
       '[Aristotle] paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
     ).length,
     1,
+  );
+  // b71a089a: the answer only ASKS for a pause. The loop honours it at its next
+  // safe point, which can be a whole step later, so a line spoken when the
+  // answer lands names a stop that has not happened yet — the chat says
+  // "paused" while the footer is still reading a file. The measured gap to the
+  // park is what separates the two readings. It cannot be an order check: the
+  // park edge sends the line first and the state second, in one tick.
+  const pauseLineIndex = posts.findIndex(
+    (m, i) =>
+      i >= mark &&
+      m.type === 'notice' &&
+      m.text ===
+        '[Aristotle] paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
+  );
+  const parkGapMs = postedAt[posts.indexOf(paused)] - postedAt[pauseLineIndex];
+  assert.ok(
+    pauseLineIndex >= 0 && parkGapMs >= 0 && parkGapMs < 100,
+    `the pause line was drawn ${parkGapMs} ms before the park`,
   );
   host.receive({ type: 'resume' });
   const resumed = await waitPost(
