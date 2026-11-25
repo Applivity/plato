@@ -5767,6 +5767,14 @@ class ChatHost {
       });
     }
     const observers: { agent: ObserverAgent; name: string }[] = [];
+    // A philosopher's pause ANSWER is not the pause. `pause()` only states the
+    // request; the run then works on to the next safe point, and in the demo
+    // take that was another 90 seconds with the footer still reading "reading a
+    // file" and the buttons still Pause and Stop. The line said paused while
+    // the run was not. Each answer is held here and spoken by `onPark` below,
+    // where the run has actually stopped. A run that ends before it parks ends
+    // this function, and the held line with it.
+    const heldPauseNotices: { text: string; meta: { color: string } }[] = [];
     let interventionsUsed = 0; // hard cap 5 per run across members (D31d)
     for (const spec of obsSpecs) {
       const oParts = splitModelRef(spec.ref);
@@ -5877,7 +5885,10 @@ class ChatHost {
                       ? ''
                       : ` — ${a.message.replace(/[.!?]+$/, '')}`;
                   this.controller.pause();
-                  this.send('notice', `[${name}] paused the run${why}.`, noticeMeta);
+                  heldPauseNotices.push({
+                    text: `[${name}] paused the run${why}.`,
+                    meta: noticeMeta,
+                  });
                 } else if (a.action === 'cancel') {
                   interventionsUsed += 1;
                   // D49bi: release the parked cards BEFORE cancelling, exactly as
@@ -5913,6 +5924,17 @@ class ChatHost {
     this.controller = new RunController({
       onPark: (parked) => {
         if (parked) this.pauseEverParked = true;
+        // The pause the run has now honoured was asked for by a philosopher:
+        // speak its line here, once, and before the safe-point line below, so
+        // the chat reads the reason and then what to do next. Sent, not
+        // bus-emitted, exactly as it was before the move: the notices listener
+        // sends every bus notice already, and sending it both ways would draw
+        // it twice. The colour rides on the post the way it always has.
+        if (parked) {
+          for (const held of heldPauseNotices.splice(0)) {
+            this.send('notice', held.text, held.meta);
+          }
+        }
         const line = parked
           ? 'Plato paused at a safe point. Resume to continue, or type a note first.'
           : 'Plato resumed.';
@@ -6367,9 +6389,13 @@ class ChatHost {
       // button read "Pausing...", the run ended, and nothing said why the pause
       // never landed. A cancel already narrates itself, so it is not repeated.
       if (this.pauseRequested && !this.pauseEverParked && ended !== 'cancelled') {
-        const line = 'The run finished before the pause took effect.';
-        bus.emit({ type: 'notice', runId, text: line });
-        this.send('notice', line);
+        // One notice, on the bus: the `notice` listener above both records and
+        // sends it. The explicit `send` this used to make drew the line twice.
+        bus.emit({
+          type: 'notice',
+          runId,
+          text: 'The run finished before the pause took effect.',
+        });
       }
       this.running = false;
       this.stateChanged();

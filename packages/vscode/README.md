@@ -65,8 +65,8 @@ Or run:
 code --install-extension applivity.plato
 ```
 
-The listing is at
-[Plato by Applivity](https://marketplace.visualstudio.com/items?itemName=applivity.plato).
+Plato's site, with every way to get it:
+[plato.applivity.com](https://plato.applivity.com).
 
 For a local build, install the VSIX:
 
