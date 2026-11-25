@@ -308,6 +308,14 @@ export function watchObservers(
               last: `guidance: ${action.message}`,
             });
           } else if (action.action === 'pause') {
+            // The philosopher's one sentence is the only account the user gets
+            // of WHY the run stopped, so it rides on the notice. A model that
+            // wrote none gets the plain line rather than a dangling dash.
+            const why =
+              action.message === undefined
+                ? ''
+                : ` — ${action.message.replace(/[.!?]+$/, '')}`;
+            const head = `[${handle.name}] paused the run${why}.`;
             if (options.resumable === false) {
               // Nothing in this host can release a park, so holding the run
               // would strand it. Stop at the next safe point instead, and name
@@ -316,9 +324,8 @@ export function watchObservers(
                 pauseStopNotified = true;
                 options.controller.cancel();
                 hooks.notice(
-                  `[${handle.name}] paused the run. This run cannot be resumed, so Plato ` +
-                    'stopped here. To continue, start an interactive session and send the ' +
-                    'task again.',
+                  `${head} This run cannot be resumed, so Plato stopped here. To ` +
+                    'continue, start an interactive session and send the task again.',
                 );
               }
               hooks.event({
@@ -331,7 +338,7 @@ export function watchObservers(
             } else {
               interventionsUsed += 1;
               options.controller.pause();
-              hooks.notice(`[${handle.name}] paused the run`);
+              hooks.notice(head);
               hooks.event({
                 type: 'state',
                 name: handle.name,

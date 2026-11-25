@@ -44,6 +44,35 @@ describe('ObserverAgent', () => {
     expect(await o.observe('t', [])).toEqual({ action: 'pause' });
   });
 
+  it('carries the philosopher’s reason for a pause, as one clean line', async () => {
+    const o = new ObserverAgent(
+      fakeProvider(
+        '{"action":"pause","message":"The edit rewrites checkoutTotal.\\n  Check the price rule."}',
+      ),
+      OPTS,
+    );
+    expect(await o.observe('t', [])).toEqual({
+      action: 'pause',
+      message: 'The edit rewrites checkoutTotal. Check the price rule.',
+    });
+  });
+
+  it('drops an empty pause reason rather than showing an empty one', async () => {
+    const o = new ObserverAgent(fakeProvider('{"action":"pause","message":"   "}'), OPTS);
+    expect(await o.observe('t', [])).toEqual({ action: 'pause' });
+  });
+
+  it('cuts a long pause reason to the width of one notice row', async () => {
+    const o = new ObserverAgent(
+      fakeProvider(`{"action":"pause","message":"${'x'.repeat(400)}"}`),
+      OPTS,
+    );
+    const a = await o.observe('t', []);
+    const message = a.action === 'pause' ? a.message ?? '' : '';
+    expect(message).toHaveLength(240);
+    expect(message.endsWith('…')).toBe(true);
+  });
+
   it('enforces permission tiers: disabled cancel degrades to noop', async () => {
     const o = new ObserverAgent(
       fakeProvider('{"action":"cancel"}'),

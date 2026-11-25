@@ -369,7 +369,12 @@ try {
   /* ================================================================== */
   await setScript(
     [read(), read(1_200), read(1_200), read(1_200), { text: 'Resumed and done.' }],
-    [{ action: 'pause' }],
+    [
+      {
+        action: 'pause',
+        message: 'The coder is about to write checkout.js, and price rules live in pricing.js.',
+      },
+    ],
   );
   mark = posts.length;
   host.receive({ type: 'ask', text: 'Read note.txt while the philosopher pauses.' });
@@ -379,7 +384,15 @@ try {
     mark,
   );
   assert.equal(paused.text.parked, true);
-  assert.equal(notices(mark, '[Aristotle] paused the run').length, 1);
+  // The philosopher's sentence is the only account the user gets of WHY the
+  // run stopped, so the notice carries it, not just the verb.
+  assert.equal(
+    notices(
+      mark,
+      '[Aristotle] paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
+    ).length,
+    1,
+  );
   host.receive({ type: 'resume' });
   const resumed = await waitPost(
     (m) => m.type === 'pause-state' && m.text?.parked === false,
@@ -393,7 +406,9 @@ try {
   assert.equal(
     posts.filter(
       (m, i) =>
-        i >= mark && m.type === 'notice' && m.text === 'Plato paused at a safe point.',
+        i >= mark &&
+        m.type === 'notice' &&
+        m.text === 'Plato paused at a safe point. Resume to continue, or type a note first.',
     ).length,
     1,
     'the pause line is drawn once, not twice',

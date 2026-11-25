@@ -265,6 +265,23 @@ describe('observer actions', () => {
     await gate;
   });
 
+  it('shows the philosopher’s reason with the pause', async () => {
+    const { bus, notices } = await setup({
+      action: 'pause',
+      message: 'The coder is about to write checkout.js, and price rules live in pricing.js.',
+    });
+    bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });
+    await delay(10);
+
+    expect(
+      notices.some((note) =>
+        note.includes(
+          'paused the run — The coder is about to write checkout.js, and price rules live in pricing.js.',
+        ),
+      ),
+    ).toBe(true);
+  });
+
   it('cancels the run', async () => {
     const { bus, controller } = await setup({ action: 'cancel' });
     bus.emit({ type: 'turn-started', runId: 'r', turn: 2 });

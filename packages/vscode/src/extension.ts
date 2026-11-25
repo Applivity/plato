@@ -5869,8 +5869,15 @@ class ChatHost {
                   this.send('notice', `[${name}] guidance: ${a.message}`, noticeMeta);
                 } else if (a.action === 'pause') {
                   interventionsUsed += 1;
+                  // The philosopher's one sentence is the only account the user
+                  // gets of WHY the run stopped, so it rides on the notice. A
+                  // model that wrote none gets the plain line, not a dumb dash.
+                  const why =
+                    a.message === undefined
+                      ? ''
+                      : ` — ${a.message.replace(/[.!?]+$/, '')}`;
                   this.controller.pause();
-                  this.send('notice', `[${name}] paused the run`, noticeMeta);
+                  this.send('notice', `[${name}] paused the run${why}.`, noticeMeta);
                 } else if (a.action === 'cancel') {
                   interventionsUsed += 1;
                   // D49bi: release the parked cards BEFORE cancelling, exactly as
@@ -5880,7 +5887,11 @@ class ChatHost {
                   // user answered it themselves.
                   this.releaseParkedCards();
                   this.controller.cancel();
-                  this.send('notice', `[${name}] cancelled the run`, noticeMeta);
+                  const why =
+                    a.message === undefined
+                      ? ''
+                      : ` — ${a.message.replace(/[.!?]+$/, '')}`;
+                  this.send('notice', `[${name}] cancelled the run${why}.`, noticeMeta);
                 }
               })
               .catch(() => undefined)
@@ -5903,7 +5914,7 @@ class ChatHost {
       onPark: (parked) => {
         if (parked) this.pauseEverParked = true;
         const line = parked
-          ? 'Plato paused at a safe point.'
+          ? 'Plato paused at a safe point. Resume to continue, or type a note first.'
           : 'Plato resumed.';
         // D49ch: ONE notice. The `notice` listener below both writes the log
         // and sends the line (D49bz), so the explicit `send` this used to make

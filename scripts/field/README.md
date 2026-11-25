@@ -170,7 +170,7 @@ Two rules keep the driver honest:
 | 21 masked read + write | no card (`auto`) | the protected file reads and the write completes — and the disk still holds the real value (D49bb) |
 | 22 unmaskable file | the reveal card states the cost, and it is drawn **once** in `auto` | both reads complete, and the second raises no card (D49bc) |
 | 23 indirect secret | no card (`auto`) | the `cat .en*` call RUNS — so the masking is the stub's log, not the transcript (D49bc) |
-| 24 pause | the button says `Pausing…` and **not** `Resume` straight after the click, then `Resume` once the run really parked | `Plato paused at a safe point.` and `Plato resumed.` — the pause is in the record, not only on the button (D49bm) |
+| 24 pause | the button says `Pausing…` and **not** `Resume` straight after the click, then `Resume` once the run really parked | `Plato paused at a safe point. Resume to continue, or type a note first.` and `Plato resumed.` — the pause is in the record, not only on the button (D49bm) |
 | 25 pause on the final answer | the button says Pausing…, then Resume; the run area says Paused and the busy dot stops | the record has the park notice; Resume lands the answer and the run completes (D49bm) |
 | 26 queue | the queued message is listed while the first run works | a **second run starts by itself** carrying the queued task, the queue is empty after, and **the queued run began only after the run before it had finished** — checked as OVERLAP, not as a count of runs, because the defect this catches started the queued run *first* (D49bo) |
 | 27 queue held on cancel | both messages are still listed, with `Start` | the run ended `cancelled` and **nothing was handed on** (D49bo) |

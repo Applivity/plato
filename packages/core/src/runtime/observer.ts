@@ -28,6 +28,24 @@ export interface DigestEntry {
   text: string;
 }
 
+/**
+ * A pause or a cancel message is read by the user as one notice row, so it
+ * arrives as one line: whitespace runs collapse, and a long reply is cut at a
+ * length that fits the row. `undefined` when the model wrote nothing usable,
+ * so each host falls back to its own sentence instead of showing an empty
+ * reason.
+ */
+function userFacing(text: string | undefined): string | undefined {
+  if (text === undefined) {
+    return undefined;
+  }
+  const one = text.replace(/\s+/g, ' ').trim();
+  if (one.length === 0) {
+    return undefined;
+  }
+  return one.length > 240 ? `${one.slice(0, 239)}…` : one;
+}
+
 const SYSTEM =
   'You are the observer of an AI coding agent (the "coder") working ' +
   'inside a user workspace. You see a digest of the run so far. Judge ' +
@@ -35,11 +53,18 @@ const SYSTEM =
   'JSON, nothing else: ' +
   '{"action":"noop"} if all is well (use this most of the time), ' +
   '{"action":"guidance","message":"..."} to inject a short instruction ' +
-  'at the next safe point, {"action":"pause"} to hold at the next safe ' +
-  'point until the human resumes, {"action":"cancel"} if the run is ' +
-  'wrong or dangerous and must stop after the current tool call. Be ' +
+  'at the next safe point, ' +
+  '{"action":"pause","message":"..."} to hold at the next safe point ' +
+  'until the human resumes, ' +
+  '{"action":"cancel","message":"..."} if the run is wrong or dangerous ' +
+  'and must stop after the current tool call. Be ' +
   'conservative: intervene only when clearly warranted; never try to ' +
-  'approve or execute anything yourself.';
+  'approve or execute anything yourself. ' +
+  'The message on a pause or a cancel is read by the user exactly as you ' +
+  'write it, with no other explanation, so it must say what you saw in the ' +
+  'run and what the user should check or do next, in one plain sentence. ' +
+  'Do not describe yourself or the rules you follow, and never name a file, ' +
+  'command, or secret the digest does not show.';
 
 export class ObserverAgent {
   interventions = 0;
@@ -207,9 +232,9 @@ export class ObserverAgent {
             ? { action: 'guidance', message: msg }
             : null;
         case 'pause':
-          return { action: 'pause', message: msg };
+          return { action: 'pause', message: userFacing(msg) };
         case 'cancel':
-          return { action: 'cancel', message: msg };
+          return { action: 'cancel', message: userFacing(msg) };
         default:
           return null;
       }
