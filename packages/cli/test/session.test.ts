@@ -1021,6 +1021,84 @@ describe('Duo', () => {
     await run;
   });
 
+  it('says nothing for a pause that is cancelled before the run parks', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'a.txt'), 'hello');
+    const env = environment();
+    const home = env['PLATO_HOME'] as string;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, 'DUO.yaml'),
+      [
+        'philosopher:',
+        '  persona: aristotle',
+        '  name: Aristotle',
+        '  pause: true',
+        '  cancel: false',
+        '  maxInterventions: 3',
+      ].join('\n'),
+    );
+    let turn = 0;
+    let releaseTurn = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    const worker: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        turn += 1;
+        if (turn === 2) {
+          await held;
+        }
+        return {
+          content: [
+            { type: 'tool_use', id: `call-${turn}`, name: 'read_file', input: { path: 'a.txt' } },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'tool_use',
+        };
+      },
+    };
+    const observer: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [
+            { type: 'text', text: '{"action":"pause","message":"price rules live in pricing.js."}' },
+          ],
+          usage: { inputTokens: 1, outputTokens: 1 },
+          stopReason: 'stop',
+        };
+      },
+    };
+    const active = new Session({
+      root,
+      config: { ...config('auto'), team: 'duo' },
+      env,
+      provider: worker,
+      observerProvider: () => observer,
+      fetchImpl: offline,
+    });
+
+    const run = active.submit('read the file');
+    await waitUntil(
+      () => active.getSnapshot().observers.some((entry) => entry.last === 'paused the run'),
+      'the philosopher to answer',
+    );
+    // Stop before the run reaches a safe point: the request never becomes a
+    // park, so the run must not claim that a philosopher paused it.
+    active.cancel();
+    releaseTurn();
+    await run;
+
+    expect(
+      active
+        .getSnapshot()
+        .rows.filter((row) => row.text.includes('paused the run')),
+    ).toEqual([]);
+    expect(active.getSnapshot().pause).toBe('none');
+  });
+
   it('runs Solo without an observer strip', async () => {
     const root = tempDir('plato-cli-session-root-');
     const active = session(
@@ -1034,6 +1112,93 @@ describe('Duo', () => {
     );
     await active.submit('write');
     expect(active.getSnapshot().observers).toEqual([]);
+  });
+});
+
+describe('Academy', () => {
+  it('says the first philosopher to ask, not a later answer', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    writeFileSync(join(root, 'a.txt'), 'hello');
+    const env = environment();
+    const home = env['PLATO_HOME'] as string;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, 'ACADEMY.yaml'),
+      [
+        'members:',
+        '  - name: Socrates',
+        '    kind: philosopher',
+        '    model: stub:socrates',
+        '    persona: socrates',
+        '    pause: true',
+        '  - name: Plato',
+        '    kind: philosopher',
+        '    model: stub:plato',
+        '    persona: plato',
+        '    pause: true',
+      ].join('\n'),
+    );
+    let turn = 0;
+    let releaseTurn = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    const worker: ChatProvider = {
+      id: 'openai',
+      async completeTurn(): Promise<TurnResponse> {
+        turn += 1;
+        if (turn === 2) {
+          await held;
+        }
+        return {
+          content: [
+            { type: 'tool_use', id: `call-${turn}`, name: 'read_file', input: { path: 'a.txt' } },
+          ],
+          usage: { inputTokens: 10, outputTokens: 5 },
+          stopReason: 'tool_use',
+        };
+      },
+    };
+    const active = new Session({
+      root,
+      config: { ...config('auto'), team: 'academy' },
+      env,
+      provider: worker,
+      observerProvider: (spec) => ({
+        id: 'openai',
+        async completeTurn(): Promise<TurnResponse> {
+          return {
+            content: [
+              { type: 'text', text: `{"action":"pause","message":"${spec.name} sees a problem."}` },
+            ],
+            usage: { inputTokens: 1, outputTokens: 1 },
+            stopReason: 'stop',
+          };
+        },
+      }),
+      fetchImpl: offline,
+    });
+
+    const run = active.submit('read the file');
+    // Both philosophers answer before the run reaches a safe point. Only the
+    // first request parks it, so only that one is the account of the pause.
+    await waitUntil(
+      () =>
+        active
+          .getSnapshot()
+          .observers.filter((entry) => entry.last === 'paused the run').length === 2,
+      'both philosophers to answer',
+    );
+    releaseTurn();
+    await waitUntil(() => active.getSnapshot().pause === 'parked', 'the run to park');
+    const lines = active
+      .getSnapshot()
+      .rows.filter((row) => row.text.includes('paused the run'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.text).toContain('Socrates sees a problem.');
+
+    active.cancel();
+    await run;
   });
 });
 

@@ -1104,7 +1104,12 @@ export class Session {
     }
     this.pause = parked ? 'parked' : 'none';
     this.update({ pause: this.pause });
-    if (parked && this.pendingPauseNotice !== undefined) {
+    if (!parked) {
+      // Leaving a park: its account was already said, or no park ever came.
+      this.pendingPauseNotice = undefined;
+      return;
+    }
+    if (this.pendingPauseNotice !== undefined) {
       // The park is real now, so the line is true. One line, once: a resume
       // and a second park of the same request must not say it again.
       const text = this.pendingPauseNotice;
@@ -1829,7 +1834,11 @@ export class Session {
       outsidePath: (card) => this.askOutsidePath(card),
       notice: (text) => this.append('notice', text),
       observerPause: (text) => {
-        this.pendingPauseNotice = text;
+        // The first philosopher to ask is the one whose request parks the run;
+        // a later answer before the same park is not the account of it.
+        if (this.pendingPauseNotice === undefined) {
+          this.pendingPauseNotice = text;
+        }
       },
       bindApprovalCards: (emit) => {
         this.reportApprovalCard = emit;
