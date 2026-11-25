@@ -121,6 +121,40 @@ describe('ObserverAgent', () => {
     expect(o.lastRaw).toContain('coder seems fine');
   });
 
+  it('gives the philosopher room for a reasoning model', async () => {
+    let seen: TurnRequest | undefined;
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(req: TurnRequest): Promise<TurnResponse> {
+        seen = req;
+        return {
+          content: [{ type: 'text', text: '{"action":"noop"}' }],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      },
+    };
+    const o = new ObserverAgent(p, OPTS);
+    await o.observe('t', []);
+    expect(seen?.maxTokens).toBe(2500);
+  });
+
+  it('counts a reply cut off by the allowance apart from an unreadable one', async () => {
+    const p: ChatProvider = {
+      id: 'anthropic',
+      async completeTurn(): Promise<TurnResponse> {
+        return {
+          content: [{ type: 'text', text: '' }],
+          usage: { inputTokens: 1, outputTokens: 2500 },
+          stopReason: 'max_tokens',
+        };
+      },
+    };
+    const o = new ObserverAgent(p, OPTS);
+    expect(await o.observe('t', [])).toEqual({ action: 'noop' });
+    expect(o.cutShort).toBe(1);
+    expect(o.parseErrors).toBe(0);
+  });
+
   it('counts tier-degraded actions (pause wanted, pause disabled)', async () => {
     const p: ChatProvider = {
       id: 'anthropic',

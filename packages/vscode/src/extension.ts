@@ -4067,12 +4067,17 @@ class ChatHost {
     observers: { agent: ObserverAgent; name: string }[],
   ): string {
     const parts: string[] = [];
-    const unparseable = observers.reduce((s, o) => s + o.agent.parseErrors, 0);
+    // D49eo: a check that produced no usable answer, for either reason — the
+    // allowance ran out, or the reply could not be read.
+    const unanswered = observers.reduce(
+      (s, o) => s + o.agent.parseErrors + o.agent.cutShort,
+      0,
+    );
     const degraded = observers.reduce((s, o) => s + o.agent.degraded, 0);
     // Philosopher cost metering (D33+): priced via the model catalog.
     const cost = observers.reduce((s, o) => s + o.agent.costUsd, 0);
-    if (unparseable > 0) {
-      parts.push(`${unparseable} unparseable`);
+    if (unanswered > 0) {
+      parts.push(`${unanswered} unanswered`);
     }
     if (degraded > 0) {
       parts.push(`${degraded} tier-blocked`);
@@ -5802,6 +5807,7 @@ class ChatHost {
       let observing = true;
       let errNotified = false;
       let parseErrNotified = false;
+      let cutShortNotified = false;
       this.send('notice', `[${name}] watching — ${spec.ref}`, noticeMeta);
       // Arg summaries in digest entries (D33+): a philosopher steering code
       // needs to see WHICH files/commands are involved, not just tool names.
@@ -5841,11 +5847,19 @@ class ChatHost {
                     noticeMeta,
                   );
                 }
+                if (agent.cutShort > 0 && !cutShortNotified) {
+                  cutShortNotified = true;
+                  this.send(
+                    'notice',
+                    `[${name}] could not finish this check. The run continues.`,
+                    noticeMeta,
+                  );
+                }
                 if (agent.parseErrors > 0 && !parseErrNotified) {
                   parseErrNotified = true;
                   this.send(
                     'notice',
-                    `[${name}] reply not parseable as JSON (${agent.parseErrors} so far) — try a stronger model or tighten the role prompt`,
+                    `[${name}] gave an answer Plato could not read. The run continues.`,
                     noticeMeta,
                   );
                 }

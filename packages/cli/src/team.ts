@@ -222,6 +222,7 @@ export function watchObservers(
     let observing = true;
     let errorNotified = false;
     let parseErrorNotified = false;
+    let cutShortNotified = false;
     hooks.event({ type: 'watching', name: handle.name, ref: handle.ref, hex: handle.hex });
 
     options.bus.on((event) => {
@@ -266,10 +267,16 @@ export function watchObservers(
             errorNotified = true;
             hooks.notice(`[${handle.name}] unavailable — ${handle.agent.lastError}`);
           }
+          if (handle.agent.cutShort > 0 && !cutShortNotified) {
+            cutShortNotified = true;
+            hooks.notice(
+              `[${handle.name}] could not finish this check. The run continues.`,
+            );
+          }
           if (handle.agent.parseErrors > 0 && !parseErrorNotified) {
             parseErrorNotified = true;
             hooks.notice(
-              `[${handle.name}] reply not parseable as JSON — try a stronger model`,
+              `[${handle.name}] gave an answer Plato could not read. The run continues.`,
             );
           }
 
@@ -338,7 +345,11 @@ export function observerSummary(handles: readonly ObserverHandle[]): string | un
   }
   const checks = handles.reduce((sum, handle) => sum + handle.agent.checks, 0);
   const interventions = handles.reduce((sum, handle) => sum + handle.agent.interventions, 0);
-  const unparseable = handles.reduce((sum, handle) => sum + handle.agent.parseErrors, 0);
+  // D49eo: a check that produced no usable answer, for either reason.
+  const unanswered = handles.reduce(
+    (sum, handle) => sum + handle.agent.parseErrors + handle.agent.cutShort,
+    0,
+  );
   const degraded = handles.reduce((sum, handle) => sum + handle.agent.degraded, 0);
   const cost = handles.reduce((sum, handle) => sum + handle.agent.costUsd, 0);
 
@@ -347,8 +358,8 @@ export function observerSummary(handles: readonly ObserverHandle[]): string | un
       checks === 1 ? 'check' : 'checks'
     } · ${interventions} ${interventions === 1 ? 'intervention' : 'interventions'}`,
   ];
-  if (unparseable > 0) {
-    parts.push(`${unparseable} unparseable`);
+  if (unanswered > 0) {
+    parts.push(`${unanswered} unanswered`);
   }
   if (degraded > 0) {
     parts.push(`${degraded} tier-blocked`);

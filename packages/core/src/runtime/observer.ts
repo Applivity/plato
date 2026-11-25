@@ -4,7 +4,7 @@
  * digest shaping, and response parsing — providers and the controller
  * are injected, so everything here is unit-testable without network.
  */
-import type { ChatProvider } from '../providers/types.js';
+import type { ChatProvider, TurnResponse } from '../providers/types.js';
 import { estimateCost } from './cost.js';
 
 export type ObserverAction =
@@ -51,6 +51,13 @@ export class ObserverAgent {
   lastError: string | null = null;
   /** Replies that were not parseable as one-line JSON (D33+). */
   parseErrors = 0;
+  /**
+   * Checks where the model used the whole reply allowance before it answered.
+   * A reasoning model does this: its thinking is billed inside `maxTokens`, so
+   * a 300-token allowance left the answer empty and the host reported it as an
+   * unreadable reply. The two are different faults and are counted apart.
+   */
+  cutShort = 0;
   /** First 200 chars of the last unparseable reply, for diagnostics. */
   lastRaw: string | null = null;
   /** Actions the philosopher wanted but the tier config disabled (D33+). */
@@ -100,6 +107,7 @@ export class ObserverAgent {
       return { action: 'noop' };
     }
     let raw: string;
+    let stopReason: TurnResponse['stopReason'];
     this.checks += 1;
     try {
       const res = await this.provider.completeTurn({
@@ -117,8 +125,15 @@ export class ObserverAgent {
           },
         ],
         tools: [],
-        maxTokens: 300,
+        // D49eo: 300 was too small. A reasoning model bills its thinking
+        // inside this allowance, so a dozen digest lines used all 300 on
+        // reasoning and returned an empty answer. Measured 2026-11-25 on
+        // deepseek-v4-pro: 620 output tokens at most, 300 always cut short,
+        // 1200 clean. 2500 is four times the measured need and costs
+        // nothing unless a model uses it.
+        maxTokens: 2500,
       });
+      stopReason = res.stopReason;
       raw =
         res.content.find((b) => b.type === 'text')?.text?.trim() ?? '';
       // Philosopher cost metering (D33+): usage rides here, not the bus.
@@ -131,6 +146,15 @@ export class ObserverAgent {
       this.apiErrors += 1;
       this.lastError = e instanceof Error ? e.message : 'observer error';
       return { action: 'noop' }; // observer failure never disturbs the run
+    }
+
+    // The allowance ran out before the model answered. The reply is empty or
+    // partial because of the cap, not because the model wrote prose, so the
+    // host must not report it as an unreadable reply.
+    if (stopReason === 'max_tokens') {
+      this.cutShort += 1;
+      this.lastRaw = raw.slice(0, 200);
+      return { action: 'noop' };
     }
 
     const parsed = this.parseAction(raw);
