@@ -8478,3 +8478,27 @@ the adapter is Solo even when the configuration says Duo or Academy.
   and offer a control the user can answer. Plato R&D owns it; nothing is built.
   **Researched 2026-11-24 in Zed 1.29.3: the two-client bar was not met, and the
   recommendation to defer was accepted.**
+
+## Naming and launch — 2026-11-25
+
+**D49en — The brand carries the category (2026-11-25).**
+
+Every title, tagline, listing field and description pairs the name with what it
+is: **"Plato, the AI coding agent"**. The wordmark stays **Plato**, and the
+differentiator stays **philosophers keep it honest**. The founder accepted the
+rule on 2026-11-25.
+
+- **Why the qualifier is not optional.** Measured on 2026-11-25, Google's
+  autocomplete returns an empty list for "plato coding agent", and "plato vs"
+  completes with Aristotle, Socrates and Diogenes. The name alone carries no
+  product meaning.
+- **Why the word "AI" stays.** The category vocabulary on the listings uses it.
+  Aider's launch title was "AI pair programming in your terminal", and Cline
+  describes itself as an "AI coding assistant". The phrase a user types starts
+  with it. "Coding agent" alone is not yet the searched form.
+- **Where it applies.** The Marketplace display name and description, the npm
+  description, the first line of the packaged README, the website title and meta
+  description, and every social post. It does not apply inside the product: the
+  user there already knows what Plato is.
+- **What it is not.** No rename. Package ids, extension ids, the command name
+  and the domain do not change.
