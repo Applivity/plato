@@ -8539,3 +8539,57 @@ not only for a model that narrates its plan a step early.
 action, and a philosopher that judges the request itself can pause before any
 write. The feature waits for evidence that the between-steps review misses real
 edits in practice.
+
+## The philosopher round — an allowance, a label, and a run that cannot pause (2026-11-25)
+
+Three faults came out of the demo round. All three are repaired and committed
+(`04d1257a`, `06ed3083`, `cc1248ae`).
+
+**D49eo — The check gets room, and a cut check says so.**
+
+- **The fault.** The observer's check was limited to 300 output tokens. A
+  reasoning model spends that allowance on its thinking and returns an empty
+  answer. The host counted this as an unreadable reply and told the user, in a
+  developer's sentence, that the reply was not parseable as JSON.
+- **The rule.** A check gets 2500 output tokens. A check that uses the whole
+  allowance before it answers is counted apart from a reply that cannot be
+  read, and each case has its own sentence: "could not finish this check. The
+  run continues." and "gave an answer Plato could not read. The run
+  continues." The run summary says "unanswered" for both.
+- **Why the number is a repair and not a knob.** 300 was chosen for a reply
+  that should be one line of JSON. It did not account for a model that thinks
+  first. 2500 clears every reasoning model we run. It is still an allowance:
+  a thinking model that needs more will be cut short, and the product will now
+  say so instead of blaming the reply.
+
+**D49ep — A note carries who spoke.**
+
+- **The fault.** When the user typed a correction while the run was parked, the
+  worker received it labelled `[observer guidance]` — the same label a
+  philosopher's note gets. The worker read the user's own instruction as advice
+  from a watcher, kept the plan it was first given, and did not follow it.
+- **The rule.** Guidance is a pair of `text` and `from`. The terminal and the
+  VS Code composer send `user`. Philosophers send `observer`. The worker prompt
+  says what each label means and that a note from the user outranks the task
+  as first given.
+- **Why the label rather than a new message.** A note that arrives as a new
+  user message would restart the conversation's shape and lose the tool result
+  the loop is committing in the same request. The label keeps one message
+  shape and adds the fact the worker was missing.
+
+**D49eq — A run that cannot pause stops instead of hanging.**
+
+- **The fault.** `plato -p` and `--plain` have no control that can release a
+  park. A philosopher's pause held the run until nothing was left to run: Node
+  printed its unsettled top-level await warning and the process exited 13 with
+  no summary and no answer.
+- **The rule.** The host states whether it can resume. Where it cannot, a pause
+  stops the run at the next safe point and says so once: what happened, that
+  this run cannot be resumed, and that the way to continue is an interactive
+  session. The interactive terminal and both extensions keep the park, because
+  each has a control that releases it.
+- **Why not park and wait.** The command is one task and an exit. There is no
+  later line to read and no card to click. A park there is not a pause; it is a
+  process that never returns.
+- **Scope.** `plato -p --team duo` is an advertised path — the CLI tells a user
+  without an interactive terminal to use it — so the case is not rare.
