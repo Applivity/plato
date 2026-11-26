@@ -9103,3 +9103,39 @@ are filled at the close.
   would keep reading alike, which is the problem.
 - **What it is not.** Not a change to Plato's turn, and not a new colour
   system: the bubble borrows a colour the theme already chose.
+
+## The release tool's fifth surface — Open VSX (2026-11-26)
+
+**D49ff — A publish takes the same path on every surface, and a package hash
+names the file.**
+
+- **Open VSX is the fifth surface.** `scripts/release/release.mjs` had four
+  verbs — `npm`, `github`, `vscode` and `vs` — and `openvsx` is the fifth. It
+  follows the path the others take: read the artifact and check what is inside
+  it, read the public surface, refuse when the version is already listed, print
+  the report, and publish only on `--go`. After publishing it reads the
+  registry back and fails if the version does not answer. Both sides of a
+  publish — what we send and what the surface serves — appear in one report, as
+  they do for npm, GitHub and the two Marketplaces.
+- **The check comes before the publish, because the registry's refusal reads
+  like a fault.** A clean republish answers *"already published, but currently
+  isn't active and therefore not visible"*, and a republish is never the repair
+  (D49el). The tool refuses the collision before it sends anything, and names
+  the version it read out of the `.vsix` as the evidence.
+- **The token is read from the keychain and passed in the environment.** The
+  tool asks `security find-generic-password -s plato.release.openvsx -w` for
+  it, and `ovsx publish` receives it as `OVSX_PAT` in the child process's
+  environment. It never goes on a command line, because a command line is
+  readable in the process list: any process on the machine can read another's
+  arguments with `ps`. If the keychain item is missing, the tool stops and
+  prints the one command that adds it. The Marketplace verbs read their PAT
+  the same way.
+- **A package hash names the file, not the source.** `vsce package` is not byte
+  reproducible: three builds of one tree gave three hashes. The recorded hash
+  must therefore always be the one on the artifact that was actually
+  published, and it must never be used to argue that a rebuild is the same
+  build. That is why the Visual Studio rebuild on the Windows 11 box is
+  evidence — it reproduces the build from the committed tree and matches the
+  published file — while the VS Code `.vsix` hash in HANDOFF names the
+  published file and nothing more. Reproducing a `vsce` build would need the
+  archive's byte-level determinism, which nothing here provides.
