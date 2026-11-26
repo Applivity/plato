@@ -216,7 +216,10 @@ try {
   assert.equal(pasted.rejected.length, 0, JSON.stringify(pasted.rejected));
   assert.equal(pasted.accepted.length, 1, 'one pasted image was attached');
   const chip = pasted.accepted[0];
-  assert.match(chip.path, /plato\/pasted|\.plato\/pasted/, `stored in Plato's own folder (${chip.path})`);
+  // Compared through `dirname`, not a separator-bearing regex: the folder is
+  // what is being asserted, and a `/plato\/pasted/` pattern would pass on
+  // Linux and macOS while failing on Windows, where the separator is `\`.
+  assert.equal(dirname(chip.path), PASTED, `stored in Plato's own folder (${chip.path})`);
   assert.ok(chip.path.startsWith(PASTED), 'the copy lives under the pasted folder');
   assert.ok(
     chip.name.endsWith('clip screen.png'),

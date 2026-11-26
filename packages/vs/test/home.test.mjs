@@ -16,14 +16,18 @@ const require = createRequire(import.meta.url);
 const { resolvePlatoHome } = require('../../vscode/out/home.js');
 
 // Default: unchanged, on any platform, because the caller passes both parts.
+// The expectation is joined rather than written as a literal: `join` is what
+// the resolver uses, and on Windows it separates with a backslash, so a
+// '/home/founder/.plato' literal asserts Linux's spelling of the rule rather
+// than the rule itself.
 assert.equal(
   resolvePlatoHome({}, '/home/founder'),
-  '/home/founder/.plato',
+  join('/home/founder', '.plato'),
   'with no PLATO_HOME the home is homedir()/.plato',
 );
 assert.equal(
   resolvePlatoHome({ PLATO_HOME: '' }, '/home/founder'),
-  '/home/founder/.plato',
+  join('/home/founder', '.plato'),
   'an empty PLATO_HOME means unset, not an empty path',
 );
 

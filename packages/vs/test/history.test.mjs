@@ -90,11 +90,27 @@ await new Promise((resolve, reject) => {
 });
 
 async function setScript(steps, observers = []) {
-  const response = await fetch(`http://127.0.0.1:${port}/__script`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ steps, observers }),
-  });
+  let response;
+  try {
+    response = await fetch(`http://127.0.0.1:${port}/__script`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ steps, observers }),
+    });
+  } catch (error) {
+    // A bare "fetch failed" says nothing about which side went away. This one
+    // failed twice on Windows with the stub's stderr empty, so the cause, the
+    // address and the child's state are attached to the throw instead.
+    error.message += ` — ${JSON.stringify({
+      cause: error.cause?.code ?? error.cause?.message,
+      address: error.cause?.address,
+      port: error.cause?.port,
+      stubExit: stub.exitCode,
+      stubSignal: stub.signalCode,
+      stubStderr,
+    })}`;
+    throw error;
+  }
   assert.equal(response.status, 200, 'the stub accepted the script');
 }
 

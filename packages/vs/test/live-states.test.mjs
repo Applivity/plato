@@ -28,7 +28,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -37,7 +37,12 @@ const ROOT = mkdtempSync(join(tmpdir(), 'plato-vs-live-states-root-'));
 process.env['HOME'] = HOME;
 process.env['USERPROFILE'] = HOME;
 const require = createRequire(import.meta.url);
-const { createLiveSession } = await import(join(REPO, 'packages/core/dist/src/index.js'));
+// Through `pathToFileURL`: a bare absolute path is a valid module specifier on
+// POSIX and not on Windows, where the ESM loader reads the drive letter as a
+// protocol ("Received protocol 'c:'").
+const { createLiveSession } = await import(
+  pathToFileURL(join(REPO, 'packages/core/dist/src/index.js')).href
+);
 
 async function freePort() {
   return await new Promise((resolve, reject) => {
