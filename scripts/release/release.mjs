@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * One command for the four publish surfaces.
+ * One command for the five publish surfaces.
  *
- *   node scripts/release/release.mjs npm    0.5.2
- *   node scripts/release/release.mjs vscode 0.32.0
- *   node scripts/release/release.mjs vs     0.6.0
- *   node scripts/release/release.mjs github cli-v0.5.1 [--target <sha>]
+ *   node scripts/release/release.mjs npm     0.5.2
+ *   node scripts/release/release.mjs vscode  0.32.0
+ *   node scripts/release/release.mjs openvsx 0.32.0
+ *   node scripts/release/release.mjs vs      0.6.0
+ *   node scripts/release/release.mjs github  cli-v0.5.1 [--target <sha>]
  *
  * Without --go it checks everything, prints the report and stops. With --go it
  * publishes and then reads the public surface back. The report is identical on
@@ -196,6 +197,84 @@ async function marketplace(kind, version, go) {
   if (!seen) process.exit(1);
 }
 
+// ---------------------------------------------------------------- open vsx
+
+const OPENVSX = 'https://open-vsx.org';
+const OPENVSX_KEYCHAIN = 'plato.release.openvsx';
+
+/** The registry's own view of one extension: its latest version and every version it lists. */
+async function openvsxState(id) {
+  const res = await fetch(`${OPENVSX}/api/${id.replace('.', '/')}`);
+  if (!res.ok) return { latest: null, versions: [] };
+  const j = await res.json();
+  return {
+    latest: j.version ?? null,
+    versions: Object.keys(j.allVersions ?? {}).filter((v) => v !== 'latest'),
+  };
+}
+
+async function openvsxHas(id, version) {
+  const res = await fetch(`${OPENVSX}/api/${id.replace('.', '/')}/${version}`);
+  return res.ok;
+}
+
+function openvsxPat() {
+  const r = spawnSync('security', ['find-generic-password', '-s', OPENVSX_KEYCHAIN, '-w'], { encoding: 'utf8' });
+  if (r.status !== 0 || !r.stdout.trim()) {
+    die(
+      `no Open VSX token in the keychain (${OPENVSX_KEYCHAIN}).\n\n` +
+        `  Add it once, replacing <token> with the token from open-vsx.org:\n\n` +
+        `    security add-generic-password -s ${OPENVSX_KEYCHAIN} -a applivity -w '<token>'`,
+    );
+  }
+  return r.stdout.trim();
+}
+
+/**
+ * Publish to the Eclipse Foundation registry. The token travels in the
+ * environment, never in argv: a command line is readable in the process list,
+ * and this one is a credential.
+ */
+async function openvsx(version, go) {
+  const file = `${ART}/plato-${version}.vsix`;
+  rule(`Open VSX — plato ${version}`);
+  try { statSync(file); } catch { die(`no artifact at ${file}`); }
+
+  const inside = insideVsix(file);
+  if (inside.version !== version) die(`the artifact inside says ${inside.version}, not ${version}.`);
+  if (inside.id !== 'applivity.plato') die(`the artifact inside is ${inside.id}, expected applivity.plato.`);
+
+  const state = await openvsxState(inside.id);
+  if (state.versions.includes(version)) die(`Open VSX already serves ${version}.`);
+
+  say('artifact', file);
+  say('bytes', withCommas(bytesOf(file)));
+  say('sha256', hashOf(file));
+  say('inside', `${inside.id} ${inside.version}  ok`);
+  say('registry', `latest ${state.latest ?? 'none'}, no ${version}  ok`);
+  say('will do', `PUT ${OPENVSX}/api/-/publish`);
+
+  if (!go) return console.log('\n  NOT PUBLISHED — re-run with --go to publish.\n');
+
+  console.log('\n  publishing...');
+  const r = spawnSync('npx', ['--yes', 'ovsx@1.4.0', 'publish', file], {
+    stdio: 'inherit',
+    env: { ...process.env, OVSX_PAT: openvsxPat() },
+  });
+  if (r.status !== 0) die(`ovsx publish failed (${r.status}).`);
+
+  const deadline = Date.now() + 180_000;
+  while (Date.now() < deadline) {
+    if (await openvsxHas(inside.id, version)) {
+      say('published', `${version} is live  ok`);
+      return;
+    }
+    await new Promise((res) => setTimeout(res, 10_000));
+  }
+  say('published', `${version} accepted but not visible yet after 3 min`);
+  process.exit(1);
+}
+
 // ---------------------------------------------------------------- github
 
 function seriesOf(tag) {
@@ -301,5 +380,6 @@ if (!verb || !arg) {
 
 if (verb === 'npm') await npm(arg, go);
 else if (verb === 'vscode' || verb === 'vs') await marketplace(verb, arg, go);
+else if (verb === 'openvsx') await openvsx(arg, go);
 else if (verb === 'github') await github(arg, target, go);
 else die(`unknown surface "${verb}".`);
