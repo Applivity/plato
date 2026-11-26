@@ -399,6 +399,36 @@ describe('approval card', () => {
     active.cardConfirm();
     await done;
   });
+
+  it('names a command as a command, and remembers the widened answer', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        // A read-only command runs without a card in `edit`; these change the
+        // project, so each one asks on its own.
+        { tool: { name: 'shell', input: { command: 'touch one.txt' } } },
+        { tool: { name: 'shell', input: { command: 'touch two.txt' } } },
+        { text: 'Ran both.' },
+      ]),
+    );
+    const done = active.submit('run two commands');
+
+    const card = await waitForCard(active, 'approval');
+    if (card.kind === 'approval') {
+      // A command is not a file: the third answer says what it covers.
+      expect(card.options[2]).toBe('Yes, allow every command this session');
+    }
+    active.cardMove(2);
+    active.cardConfirm();
+
+    // The widened wording is the truth of the grant: the second command draws
+    // no card, because the session now allows every command.
+    await waitUntil(() => !active.getSnapshot().running, 'the run to finish');
+    await done;
+    expect(active.getSnapshot().card).toBeNull();
+  });
 });
 
 describe('question card', () => {

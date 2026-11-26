@@ -7,14 +7,17 @@
  * (*"read_file × 12 · shell × 2"*). A user does not know what `apply_diff` is,
  * and should not have to.
  *
- * **One table, three views, because a second list that must agree is a list that
- * will not.** Each tool has three forms and they are used by exactly one place
- * each:
+ * **One table, five views, because a second list that must agree is a list that
+ * will not.** Each tool has five forms, and each is used by exactly one place:
  *
  *   - `noun`       — the object of a sentence: *"Plato did not run the command."*
  *   - `doing`      — present tense, for work in progress: *"running a command"*
  *   - `counted`    — a plural for a tally: *"2 commands run"*
  *   - `countedOne` — the same tally at one: *"1 command run"*
+ *   - `every`      — what follows "allow" when a grant covers the whole tool for
+ *                    the session: *"Yes, allow every command this session"*. It
+ *                    names the TOOL, because that is what such a grant actually
+ *                    remembers — "this file" would promise one call.
  *
  * `countedOne` exists because the summary line printed *"1 files edited"*: a
  * tally of one was reading the plural form, because there was no other form to
@@ -37,6 +40,12 @@ export interface ToolWords {
   counted: string;
   /** The same count at one, for a tally of a single call. */
   countedOne: string;
+  /**
+   * What follows "allow" when a grant covers the whole tool for the session:
+   * *"Yes, allow every command this session"*. It names the tool, because that
+   * is what the grant remembers.
+   */
+  every: string;
 }
 
 const GENERIC: ToolWords = {
@@ -44,27 +53,28 @@ const GENERIC: ToolWords = {
   doing: 'using a tool',
   counted: 'tool calls',
   countedOne: 'tool call',
+  every: 'every call to this tool',
 };
 
 const WORDS: Record<string, ToolWords> = {
-  read_file: { noun: 'the read', doing: 'reading a file', counted: 'files read', countedOne: 'file read' },
-  read_image: { noun: 'the image', doing: 'looking at an image', counted: 'images read', countedOne: 'image read' },
-  write_file: { noun: 'the write', doing: 'writing a file', counted: 'files written', countedOne: 'file written' },
-  apply_diff: { noun: 'the edit', doing: 'editing a file', counted: 'files edited', countedOne: 'file edited' },
-  apply_patch: { noun: 'the edit', doing: 'editing files', counted: 'files edited', countedOne: 'file edited' },
-  list_dir: { noun: 'the listing', doing: 'listing a folder', counted: 'folders listed', countedOne: 'folder listed' },
-  grep: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search' },
-  glob: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search' },
-  shell: { noun: 'the command', doing: 'running a command', counted: 'commands run', countedOne: 'command run' },
-  bash_output: { noun: 'the output read', doing: 'reading the output', counted: 'outputs read', countedOne: 'output read' },
-  kill_shell: { noun: 'the stop', doing: 'stopping a command', counted: 'commands stopped', countedOne: 'command stopped' },
-  git: { noun: 'the git command', doing: 'running git', counted: 'git commands', countedOne: 'git command' },
-  web_fetch: { noun: 'the fetch', doing: 'fetching a page', counted: 'pages fetched', countedOne: 'page fetched' },
-  todo_write: { noun: 'the plan', doing: 'writing the plan', counted: 'plans written', countedOne: 'plan written' },
-  ask_user: { noun: 'the question', doing: 'asking you', counted: 'questions', countedOne: 'question' },
+  read_file: { noun: 'the read', doing: 'reading a file', counted: 'files read', countedOne: 'file read', every: 'every read' },
+  read_image: { noun: 'the image', doing: 'looking at an image', counted: 'images read', countedOne: 'image read', every: 'every image read' },
+  write_file: { noun: 'the write', doing: 'writing a file', counted: 'files written', countedOne: 'file written', every: 'every write' },
+  apply_diff: { noun: 'the edit', doing: 'editing a file', counted: 'files edited', countedOne: 'file edited', every: 'every edit' },
+  apply_patch: { noun: 'the edit', doing: 'editing files', counted: 'files edited', countedOne: 'file edited', every: 'every edit' },
+  list_dir: { noun: 'the listing', doing: 'listing a folder', counted: 'folders listed', countedOne: 'folder listed', every: 'every listing' },
+  grep: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search', every: 'every search' },
+  glob: { noun: 'the search', doing: 'searching', counted: 'searches', countedOne: 'search', every: 'every search' },
+  shell: { noun: 'the command', doing: 'running a command', counted: 'commands run', countedOne: 'command run', every: 'every command' },
+  bash_output: { noun: 'the output read', doing: 'reading the output', counted: 'outputs read', countedOne: 'output read', every: 'every output read' },
+  kill_shell: { noun: 'the stop', doing: 'stopping a command', counted: 'commands stopped', countedOne: 'command stopped', every: 'every stop' },
+  git: { noun: 'the git command', doing: 'running git', counted: 'git commands', countedOne: 'git command', every: 'every git command' },
+  web_fetch: { noun: 'the fetch', doing: 'fetching a page', counted: 'pages fetched', countedOne: 'page fetched', every: 'every fetch' },
+  todo_write: { noun: 'the plan', doing: 'writing the plan', counted: 'plans written', countedOne: 'plan written', every: 'every plan update' },
+  ask_user: { noun: 'the question', doing: 'asking you', counted: 'questions', countedOne: 'question', every: 'every question' },
   // D49cb: a request that the user decides; the words name that, not a switch
   // the model made.
-  request_mode: { noun: 'the mode request', doing: 'asking for a mode change', counted: 'requests', countedOne: 'request' },
+  request_mode: { noun: 'the mode request', doing: 'asking for a mode change', counted: 'requests', countedOne: 'request', every: 'every mode request' },
 };
 
 export function toolWords(tool: string): ToolWords {

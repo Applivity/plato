@@ -1974,15 +1974,21 @@ export class Session {
     // A write that names no path cannot be remembered, so it must not offer to
     // remember: the editor drops the session option in exactly this case.
     const remember = paths.length > 0 || key !== undefined;
-    const target =
+    // The third answer states the truth of what it grants (D49ba): one file,
+    // several files, one host, or — for a call that names none of those — the
+    // whole tool. That last phrase comes from core's table, so the word for a
+    // command cannot drift from the rest of the product.
+    const grant =
       paths.length > 1
-        ? 'these files'
-        : request.host !== undefined
-          ? `the host ${request.host}`
-          : 'this file';
-    const options = remember
-      ? ['No', 'Yes', `Yes, allow ${target} for this session`]
-      : ['No', 'Yes'];
+        ? 'these files for this session'
+        : paths.length === 1
+          ? 'this file for this session'
+          : request.host !== undefined
+            ? `the host ${request.host} for this session`
+            : typeof request.args['path'] === 'string'
+              ? 'this file for this session'
+              : `${toolWords(request.tool).every} this session`;
+    const options = remember ? ['No', 'Yes', `Yes, allow ${grant}`] : ['No', 'Yes'];
     const doing = toolWords(request.tool).doing;
     this.approvalStopped = false;
     this.reportApprovalCard?.(request.tool, 'shown');
