@@ -8973,6 +8973,14 @@ version number, and he is not asked for numbers again.
 First applied in the interface round, where the numbers in the tree are CLI
 **0.5.5**, VS Code **0.31.4** and Visual Studio **0.5.4**.
 
+**Amended 2026-11-26, before that round was published.** A bump belongs to a
+version that is about to be published, not to each commit. The numbers moved
+once for this round, and the round is not published, so further work in the
+same unpublished round does not bump again: that version is still being
+assembled. After it is published, the next change to a variant's code takes the
+next patch. The reason is the one above: a published number is frozen, and an
+unpublished one is not yet a promise.
+
 ## The terminal's approval memory — files, not the tool (2026-11-26)
 
 **D49fc — The terminal's approval memory remembers a file, not a tool.**
@@ -9012,3 +9020,43 @@ First applied in the interface round, where the numbers in the tree are CLI
   the first names two files and its session option says `Yes, allow these files
   for this session`; the second names one allowed file and one new one, so it
   asks once; the third names only an allowed file and draws no card at all.
+
+## Command approvals — the widest answer is honoured (2026-11-26)
+
+**D49fd — The widest answer is named, chosen, and honoured.**
+
+- **The rule.** When a person chooses the widest option — allow every command
+  for the session — Plato honours it. It does not second-guess the person by
+  inspecting the command.
+- **The grant says its own extent.** The third answer on a card that names no
+  file reads `Yes, allow every command this session`: the whole tool, stated
+  rather than implied. The phrase comes from core's shared tool-word table,
+  which gained an `every` form written out per tool, so a second copy of the
+  word cannot drift from the first. The grant and its name are one thing.
+- **Why not inspect.** The host cannot classify a command reliably, and this
+  project has already paid for that lesson once: one spelling the text check
+  did not know ran, and a protected file reached a model's context (D49ai). A
+  check that reads text and misses is worse than an honest grant, because it
+  invites a trust it cannot repay.
+- **What actually protects the person, blanket approval or not.** A protected
+  file is refused outright, whatever was approved (D49ai's executor rule).
+  Every command remains a row in the transcript, with its output. And the grant
+  is session-scoped, never a saved setting.
+- **What it is not.** Not a widening of what any mode asks for, and not a ban
+  on a future narrow guard. The one candidate is recorded below for R&D.
+
+## Recorded for R&D — `sudo` as the one command-level guard (2026-11-26)
+
+**Not a decision, and not a proposal. Recorded so the idea is not lost.**
+
+The founder wants one command-level guard picked up later: `sudo`. It is a
+single token, unambiguous, and has no version that is safe to batch-approve.
+
+- **Even this is a pattern.** A guard on the word `sudo` reads command text,
+  and text can reach the same result another way. It is a smaller pattern than
+  a classifier, not a different kind of thing.
+- **Why it is the only candidate.** `sudo` has no innocent use in a coding
+  session. A guard that would refuse something a person may legitimately want
+  is a nuisance, and a new guard must not become one.
+- **No design is recorded.** If it is taken up, it gets its own decision and
+  its own wording.
