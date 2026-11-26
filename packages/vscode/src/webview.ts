@@ -156,10 +156,35 @@ export function chatHtml(
      taller by default (rows=3, min-height 56px was 44px) so the
      user has more room to think before reaching the cap. */
   #log { flex:1; overflow-y:auto; padding:10px 14px; min-height:0; }
-  /* D39b: #pp and #cx are now styled by .bar-btn (matches the other
-     controls in the composer-bar). The old 44px-tall square styling
-     is gone. */
-  #pp[hidden], #cx[hidden] { display:none; }
+  /* D39b/D49zz: the run controls are ONE family, drawn to the Send button's
+     proportions, each with a small icon before its label. Pause is the quiet
+     one; Stop is the only filled destructive control on the screen; the
+     primary keeps the active mode's own colour. */
+  .run-btn { display:inline-flex; align-items:center; gap:6px; height:28px;
+             padding:0 12px; border-radius:5px;
+             border:1px solid var(--pl-border); background:transparent;
+             color:var(--pl-muted); font-family:inherit; font-size:12px;
+             font-weight:600; cursor:pointer; }
+  .run-btn .run-icn { width:13px; height:13px; flex:none; }
+  .run-btn:hover { color:var(--vscode-editor-foreground);
+                   border-color:var(--vscode-focusBorder, #6a6a6a); }
+  .run-btn[disabled] { opacity:.45; cursor:default; }
+  /* Stop is the way out, so it is the one filled control — white label,
+     unmistakeable in every live state. The fill is a fixed red rather than the
+     theme's #f14c4c: white on that measures 3.57:1, under the 4.5:1 floor for
+     12px text, and a destructive control is the last place to strain an eye.
+     White on #c62828 measures 5.62:1 and is still unmistakably red. */
+  #cx.run-btn { background:#c62828;
+                border-color:transparent; color:#fff; }
+  #cx.run-btn:hover { filter:brightness(1.08); color:#fff;
+                      border-color:transparent; }
+  /* .run-btn is display:inline-flex, so its [hidden] needs saying again. */
+  #pp[hidden], #cx[hidden], .run-btn[hidden] { display:none; }
+  /* .btn-send is display:inline-flex by author CSS, which outranks the user
+     agent's [hidden] rule — so a hidden primary STAYED ON SCREEN beside Pause
+     and Stop, three controls where the footer allows two. The attribute was
+     set and true; the page simply ignored it. */
+  #go[hidden], .btn-send[hidden] { display:none; }
   #pp:disabled, #cx:disabled { opacity:.45; cursor:default; }
   /* D43: empty first-run state — the composer is replaced by a friendly
      explainer + CTA until a provider exists. #log and footer stay hidden
@@ -1258,22 +1283,38 @@ export function chatHtml(
                             cursor:pointer; }
   .queue-row .queue-start:hover { color:var(--vscode-editor-foreground);
                                   border-color:var(--vscode-focusBorder, #6a6a6a); }
-  .bar-btn { font-family:inherit; font-size:11.5px; padding:4px 10px;
-             border:1px solid var(--pl-border); border-radius:4px;
-             background:transparent; color:var(--pl-muted); cursor:pointer; }
-  .bar-btn:hover { color:var(--vscode-editor-foreground);
-                   border-color:var(--vscode-focusBorder, #6a6a6a); }
-  /* Stop is destructive - red text. */
-  #cx.bar-btn { color:var(--vscode-testing-iconFailed, #f14c4c); }
-  #cx.bar-btn:hover { color:var(--vscode-testing-iconFailed, #f14c4c);
-                      border-color:rgba(241,76,76,.35); }
-  /* the parked note offer sits beside Resume/Stop. Kept quiet — an
-     offer, not a second Resume — and bounded so a long name cannot push the
-     send control off the bar. */
-  #noteOffer.note-offer { max-width:220px; overflow:hidden;
-                          text-overflow:ellipsis; white-space:nowrap; }
+  /* The park's instruction is drawn in the composer itself, where the words
+     are read and typed. Only the philosopher's phrase is a control; the rest
+     of the sentence is text, and the overlay takes no pointer events, so a
+     click anywhere else in the box still puts the caret in and lets the
+     person type. The phrase is bounded and elided so a long name cannot run
+     past the box. */
+  .park-hint { position:absolute; pointer-events:none;
+               left:calc(1.5px + 11px); right:calc(1.5px + 38px);
+               top:calc(1.5px + 9px);
+               font-family:var(--vscode-font-family); font-size:13px;
+               line-height:1.5;
+               color:var(--vscode-input-placeholderForeground, #999); }
+  .park-hint button { display:inline-block; max-width:100%;
+                      margin:0; padding:0; border:none; background:none;
+                      font:inherit; font-size:13px; line-height:inherit;
+                      color:#b48ad4; cursor:pointer; pointer-events:auto;
+                      overflow:hidden; text-overflow:ellipsis;
+                      white-space:nowrap; }
+  .park-hint button:hover,
+  .park-hint button:focus-visible { text-decoration:underline; }
+  /* An author display rule outranks the user agent's [hidden] rule, so every
+     element here that can be hidden says it again. */
+  .park-hint[hidden], .park-hint button[hidden] { display:none; }
+  /* The sentence wraps to two or three lines; the box grows to hold it and
+     returns to its own height when the sentence goes. */
+  .textarea-wrap.park-hint-on #q { min-height:80px; }
+  /* Read by a screen reader, never drawn. */
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+             overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap;
+             border:0; }
   /* D39: mode picker trigger. Color hints at the active mode. */
-  #modeBtn { display:inline-flex; align-items:center; gap:6px;
+  #modeBtn { display:inline-flex; align-items:center; gap:6px; margin-left:6px;
              background:transparent; border:1px solid transparent;
              color:var(--vscode-editor-foreground);
              font-family:inherit; font-size:12px; font-weight:500;
@@ -1299,6 +1340,18 @@ export function chatHtml(
   .btn-send:hover { filter:brightness(1.08);
                     box-shadow:0 1px 4px rgba(0,0,0,.25); }
   .btn-send[disabled] { opacity:.5; cursor:default; }
+  /* Greyed means no action, so it must not light up under the cursor. */
+  .btn-send[disabled]:hover { box-shadow:none; }
+  /* At half strength the mode colour still read as a live button, so the
+     disabled primary loses the colour as well: visibly inert, not just
+     fainter. */
+  #go[disabled] { opacity:.4; filter:saturate(.18); }
+  #go[disabled]:hover { filter:saturate(.18); box-shadow:none; }
+  /* The primary's wrapper exists so the greyed state can still explain itself:
+     a disabled button does not open its own tooltip. */
+  .go-wrap { display:inline-flex; }
+  /* The primary shares the run controls' height, so the row reads as one. */
+  #go { height:28px; }
   .btn-send .btn-send-icn { width:14px; height:14px; fill:none;
                              stroke:currentColor; stroke-width:2.2;
                              stroke-linecap:round; stroke-linejoin:round; }
@@ -1455,6 +1508,13 @@ export function chatHtml(
 <footer style="position:relative;">
   <div class="textarea-wrap">
     <textarea id="q" rows="3" placeholder="Describe the change… (Enter to send, Shift+Enter for newline)"></textarea>
+    <!-- The park's instruction, in the box. Shown only while a philosopher's
+         park is on screen and the composer is empty; the phrase between the
+         dashes is the only control. The static words carry aria-hidden, and
+         the full sentence reaches a screen reader through #parkHintText,
+         which the textarea points at while this shows. -->
+    <div id="parkHint" class="park-hint" hidden><span aria-hidden="true">Tell Plato what to do differently — or </span><button id="parkHintUse" type="button"></button><span aria-hidden="true"> — then press Resume.</span></div>
+    <span id="parkHintText" class="sr-only" hidden></span>
     <div class="ring-wrap" tabindex="0" aria-label="Context usage">
       <svg id="contextRing" viewBox="0 0 28 28" class="unknown" tabindex="0">
         <circle class="track" cx="14" cy="14" r="11"></circle>
@@ -1535,25 +1595,30 @@ export function chatHtml(
           </svg>
         </button>
       </div>
+      <!-- The mode picker belongs to the LEFT cluster, where the composer bar's
+           own design put it: it chooses what the next send does, so it sits
+           with the other tools, not among the run controls. -->
+      <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
+        <span class="mode-btn-label" id="modeBtnLabel">act</span>
+        <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
     </div>
     <span class="bar-spacer"></span>
-    <!-- D49bm: the label and title are set by paintPause(), never by the click.
-         A button that flipped itself on the click claimed the run was paused
-         while only the REQUEST had been recorded. -->
-    <button id="pp" class="bar-btn" title="Pause after the current step. Nothing is lost." hidden>Pause</button>
-    <button id="cx" class="bar-btn" title="Stop the task. The conversation stays." hidden>Stop</button>
-    <!-- offered only while a philosopher's park is on screen and the
-         composer is empty; clicking fills the composer with the note. -->
-    <button id="noteOffer" class="bar-btn note-offer" type="button" hidden></button>
-    <button id="modeBtn" class="mode-btn mode-edit" type="button" aria-haspopup="listbox" aria-expanded="false">
-      <svg class="mode-icn" id="modeBtnIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
-      <span class="mode-btn-label" id="modeBtnLabel">act</span>
-      <svg class="caret" viewBox="0 0 24 24" width="10" height="10" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-    </button>
-    <button id="go" class="btn-send mode-edit" type="button" title="Send">
-      <svg class="btn-send-icn" id="goIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
-      <span class="btn-send-label">Send</span>
-    </button>
+    <!-- D49bm: every label, title and visibility here is set by paintFooter(),
+         never by the click. Two controls at most: the primary (#go) and Stop,
+         with Pause standing in only while the run works and the box is empty. -->
+    <!-- One line on purpose: the icon must add no text nodes, because the
+         button's own textContent is the label everywhere it is read (the
+         field driver and the render harness both compare it). -->
+    <button id="pp" class="run-btn" title="Pause after the current step — the run waits for Resume." hidden><svg class="run-icn" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"></rect><rect x="14" y="5" width="4" height="14" rx="1"></rect></svg><span class="run-label" id="ppLabel">Pause</span></button>
+    <button id="cx" class="run-btn stop" title="End this run now — the conversation stays." hidden><svg class="run-icn" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"></rect></svg><span class="run-label">Stop</span></button>
+    <span id="goWrap" class="go-wrap">
+      <button id="go" class="btn-send mode-edit" type="button" title="Send">
+        <svg class="btn-send-icn" id="goIcn" viewBox="0 0 24 24" aria-hidden="true"></svg>
+        <span class="btn-send-label">Send</span>
+      </button>
+    </span>
   </div>
 </footer>
 <div id="settingsPage">
@@ -2168,7 +2233,12 @@ export function chatHtml(
 
 
 
-  document.getElementById('go').addEventListener('click', ask);
+  // The primary control's job follows the state, and so does its click: at a
+  // park it resumes the run with the composer's words; otherwise it sends.
+  document.getElementById('go').addEventListener('click', () => {
+    if (pauseParked) { resumeRun(); return; }
+    ask();
+  });
   // The Plato mark beside history and settings starts a conversation. On a
   // host with tabs (including the activity-bar chat, whose own surface has
   // none) it opens a new tab, exactly like the title-bar mark. A window with
@@ -4267,7 +4337,17 @@ export function chatHtml(
   const g = document.getElementById('g');
   const pp = document.getElementById('pp');
   const cx = document.getElementById('cx');
-  const noteOffer = document.getElementById('noteOffer');
+  const go = document.getElementById('go');
+  // The primary's label and title, and the wrapper that carries its tooltip
+  // in the one state where the button itself is disabled and cannot show one.
+  const goLabel = go ? go.querySelector('.btn-send-label') : null;
+  const goWrap = document.getElementById('goWrap');
+  // Pause carries an icon now, so its word lives in its own span; setting the
+  // button's textContent would take the icon with it.
+  const ppLabel = pp.querySelector('.run-label');
+  const parkHint = document.getElementById('parkHint');
+  const parkHintUse = document.getElementById('parkHintUse');
+  const parkHintRead = document.getElementById('parkHintText');
   // D49bm: two different facts, and only one of them is knowable here.
   // pauseWanted is what the user asked for; pauseParked is what the RUN is
   // doing, and it is set only by the host, because only the loop knows when it
@@ -4280,12 +4360,57 @@ export function chatHtml(
   // asked for is on screen. Empty means no note: the user's own pause, or none.
   let pauseNote = '';
   let pauseNoteBy = '';
-  function paintPause() {
-    pp.textContent = pauseParked ? 'Resume' : (pauseWanted ? 'Pausing\u2026' : 'Pause');
-    pp.title = pauseParked
-      ? 'Continue the run'
-      : (pauseWanted ? 'Click to cancel the pause' : 'Pause after the current step. Nothing is lost.');
+  function composerHasText() {
+    return q.value.trim().length > 0;
   }
+  /**
+   * D49bm + "Keep Pause": the whole footer, drawn from four facts \u2014 a run is
+   * live, the run is parked at a safe point, the pause has been asked for, and
+   * the box has words in it. At most two controls show at any moment: the
+   * primary (#go) and Stop, with Pause standing in for the primary only while
+   * the run works and the box is empty.
+   *
+   * Every value here is a FACT the host owns or the box holds; nothing is
+   * written on a click. That is what stopped the button claiming a pause the
+   * run had only been asked for.
+   */
+  function paintFooter() {
+    const hasText = composerHasText();
+    const working = busy && !pauseParked;
+    const showPause = working && !hasText;
+
+    // Pause: while the run works and the box is empty. The request is not
+    // cancellable from here, so the title never offers it, and a requested
+    // pause reads as done rather than as a button to press again.
+    pp.hidden = !showPause;
+    if (ppLabel) { ppLabel.textContent = pauseWanted ? 'Pausing\u2026' : 'Pause'; }
+    pp.title = 'Pause after the current step \u2014 the run waits for Resume.';
+    // A run already being stopped cannot also be asked to pause.
+    pp.disabled = pauseWanted || cx.disabled;
+
+    // Stop: the way out of every live state, the park included. A parked run
+    // must never sit with no way to end it.
+    cx.hidden = !busy;
+    cx.title = 'End this run now \u2014 the conversation stays.';
+
+    if (go && goLabel) {
+      // Hidden only where Pause has taken its place. At a park it is the
+      // primary again, and it carries Resume.
+      go.hidden = showPause;
+      goLabel.textContent = pauseParked ? 'Resume' : 'Send';
+      go.title = pauseParked ? 'Resume' : 'Send';
+      // Greyed and unclickable while idle with an empty box: the one state
+      // where the primary has nothing to send.
+      go.disabled = !busy && !hasText;
+    }
+    // A disabled button's own tooltip does not open, so the sentence that
+    // explains why sits on the wrapper above it.
+    if (goWrap) {
+      goWrap.title = !busy && !hasText ? 'Type something to send.' : '';
+    }
+  }
+  // The page opens idle with an empty box, so the primary opens greyed.
+  paintFooter();
   // Unified footer (D29d): while busy, the main input IS the guide box.
   const GUIDE_PLACEHOLDER =
     'Guide Plato mid-run\u2026 (injected at the next safe point)';
@@ -4294,22 +4419,43 @@ export function chatHtml(
   const PARK_PLACEHOLDER =
     'Tell Plato what to do differently, then press Resume.';
   const ASK_PLACEHOLDER = q.placeholder;
-  // the park's two view facts \u2014 the placeholder and the note offer.
-  // The offer shows only while parked with a note AND an empty composer, so it
-  // can never overwrite text the user typed.
+  // the park's two view facts \u2014 the placeholder and the note sentence.
+  // The sentence shows only while parked with a note, by name, AND an empty
+  // composer, so it can never sit over text the user typed. A park with no
+  // note is still a park, so it says what to do next rather than the guide
+  // wording the run used while it worked.
+  const PARK_HINT_TAIL = ' \u2014 then press Resume.';
   function paintParkNote() {
-    const parkedWithNote = pauseParked && pauseNote !== '';
-    q.placeholder = parkedWithNote
-      ? PARK_PLACEHOLDER
-      : (busy ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER);
-    if (!noteOffer) { return; }
-    const show = parkedWithNote && pauseNoteBy !== '' && q.value.length === 0;
-    noteOffer.hidden = !show;
-    if (show) { noteOffer.textContent = "Use " + pauseNoteBy + "'s note"; }
+    const parkedWithNote =
+      pauseParked && pauseNote !== '' && pauseNoteBy !== '';
+    const show = parkedWithNote && q.value.length === 0;
+    // The sentence is drawn in the box, so the native placeholder is blank
+    // while it shows and the textarea points at the sentence instead: a
+    // screen reader hears the same instruction a sighted person reads.
+    q.placeholder = show
+      ? ''
+      : (pauseParked ? PARK_PLACEHOLDER
+        : (busy ? GUIDE_PLACEHOLDER : ASK_PLACEHOLDER));
+    q.parentElement?.classList.toggle('park-hint-on', show);
+    if (parkHint) { parkHint.hidden = !show; }
+    const phrase = show ? "use " + pauseNoteBy + "'s note" : '';
+    if (parkHintUse) { parkHintUse.textContent = phrase; }
+    if (parkHintRead) {
+      parkHintRead.hidden = !show;
+      parkHintRead.textContent = show
+        ? 'Tell Plato what to do differently \u2014 or ' + phrase + PARK_HINT_TAIL
+        : '';
+    }
+    if (show) {
+      q.setAttribute('aria-describedby', 'parkHintText');
+    } else {
+      q.removeAttribute('aria-describedby');
+    }
   }
   function setRunUi(on) {
-    pp.hidden = !on;
-    cx.hidden = !on;
+    // This is the run's on/off switch: every caller already sets the busy flag
+    // beside it, and every control's visibility is derived from that one fact.
+    busy = on;
     // Both directions reset. A run must start with no pause history, and a
     // finished run must not leave a stale label \u2014 or a stale philosopher note \u2014
     // for the next one to show.
@@ -4320,7 +4466,7 @@ export function chatHtml(
     pauseHoldsStatus = false;
     pp.disabled = false;
     cx.disabled = false;
-    paintPause();
+    paintFooter();
     paintParkNote();
   }
   function sendGuidance() {
@@ -4329,34 +4475,44 @@ export function chatHtml(
     vsapi.postMessage({ type: 'guidance', text: text });
     addMsg('you', 'You', '[guide] ' + text);
     q.value = '';
-    paintParkNote(); // the composer is empty again, so the offer may return
+    paintParkNote(); // the composer is empty again, so the park's sentence may return
+    paintFooter();
   }
   pp.addEventListener('click', () => {
-    if (!busy) { return; }
-    if (pauseParked || pauseWanted) {
-      // Both cleared at once, so a second click cannot arrive while the first
-      // round trip is still out and re-pause the run the user just released.
-      pauseWanted = false;
-      pauseParked = false;
-      // The park placeholder tells the user to type a redirect and press this
-      // button, so what they typed must travel with the click. The CLI's
-      // /continue <text> is the same contract: send it, then resume.
-      const note = q.value.trim();
-      vsapi.postMessage(note.length > 0 ? { type: 'resume', note } : { type: 'resume' });
-      if (note.length > 0) {
-        // The host keeps the same row in the saved log; this draws it now, as
-        // sendGuidance does.
-        addMsg('you', 'You', '[guide] ' + note);
-        q.value = '';
-      }
-    } else {
-      pauseWanted = true;
-      vsapi.postMessage({ type: 'pause' });
+    // Ask for the pause, and nothing else. It is not a toggle: a person who
+    // regrets the request lets the run park and presses Resume, which costs
+    // nothing — and a parked run never loses its Stop because of this.
+    if (!busy || pauseParked || pauseWanted) { return; }
+    pauseWanted = true;
+    vsapi.postMessage({ type: 'pause' });
+    paintFooter();
+  });
+  /**
+   * The park's way out, carried by the primary control's click. The composer's
+   * words are the note the run continues with — the CLI's /continue <text> is
+   * the same contract — so they travel with the resume and the box clears.
+   *
+   * This must NEVER go through ask(): ask() sends text to a live run as
+   * guidance, and the run would answer the click by staying parked.
+   */
+  function resumeRun() {
+    if (!busy || !pauseParked) { return; }
+    // Cleared at once, so a second click cannot arrive while the first round
+    // trip is still out and re-pause the run the user just released.
+    pauseWanted = false;
+    pauseParked = false;
+    const note = q.value.trim();
+    vsapi.postMessage(note.length > 0 ? { type: 'resume', note } : { type: 'resume' });
+    if (note.length > 0) {
+      // The host keeps the same row in the saved log; this draws it now, as
+      // sendGuidance does.
+      addMsg('you', 'You', '[guide] ' + note);
+      q.value = '';
     }
-    paintPause();
+    paintFooter();
     paintParkNote();
     refreshChip();
-  });
+  }
   /** D49bm: the host's account of the RUN, which is the only account there is. */
   function setPauseState(parked, note, by) {
     pauseParked = Boolean(parked);
@@ -4372,7 +4528,7 @@ export function chatHtml(
     setStatus(pauseParked ? PAUSED_STATUS : 'Plato is thinking');
     const bar = document.getElementById('statusbar');
     if (bar) { bar.classList.toggle('paused', pauseParked); }
-    paintPause();
+    paintFooter();
     paintParkNote();
   }
   cx.addEventListener('click', () => {
@@ -4382,13 +4538,16 @@ export function chatHtml(
     refreshChip();
     vsapi.postMessage({ type: 'cancel' });
   });
-  // fill the composer with the philosopher's note, and never over text
-  // the user has already typed.
-  if (noteOffer) {
-    noteOffer.addEventListener('click', () => {
+  // Fill the composer with the philosopher's note, never over text the user
+  // has already typed, and never send it: Resume stays the person's own press.
+  if (parkHintUse) {
+    parkHintUse.addEventListener('click', () => {
       if (pauseNote === '' || q.value.length > 0) { return; }
       q.value = pauseNote;
       q.focus();
+      // The note is a starting point, not a finished sentence, so leave the
+      // caret after its last word.
+      q.setSelectionRange(q.value.length, q.value.length);
       paintParkNote();
     });
   }
@@ -4546,6 +4705,10 @@ export function chatHtml(
     const payload = typeof text === 'string' ? text : '';
     if (payload !== '' && id === 'queue') { q.value = ''; }
     else if (q.value.trim() && q.value.charAt(0) === '/') { q.value = ''; }
+    // An emptied box changes what the footer can do: the primary greys while
+    // idle, and Pause comes back while a run works.
+    paintFooter();
+    paintParkNote();
     q.focus();
     vsapi.postMessage({ type: 'slash-run', id: id, text: payload });
   }
@@ -4642,7 +4805,8 @@ export function chatHtml(
       clearChips();
       vsapi.postMessage({ type: 'attach-clear' });
     }
-    paintParkNote(); // the note offer hides as soon as the composer has text
+    paintParkNote(); // the park's sentence hides as soon as the box has text
+    paintFooter();   // and the primary/Pause pair follows an empty or full box
     syncCmdPop();
   });
   q.addEventListener('keyup', syncCmdPop);
@@ -4793,6 +4957,8 @@ export function chatHtml(
     if (raw.trim() === '/continue') {
       addMsg('sys', 'Plato', 'Press Resume to continue the run.');
       q.value = '';
+      paintFooter();
+      paintParkNote();
       return;
     }
     // D44c: a message that starts with a known command runs it NOW (idle or
@@ -5740,7 +5906,11 @@ export function chatHtml(
     // internal tool where a request with no host used to read
     // "Approve all requests to write_file this session".
     const yes = document.createElement('button');
-    yes.textContent = 'Allow once';
+    // D49ak: in edit mode a yes to an edit is remembered for that file for the
+    // session, and the host then sends the label that says so. The fallback is
+    // for the cards whose yes really is forgotten once — commands, fetches,
+    // and an old host that sends no label.
+    yes.textContent = String(m.allowOnce || 'Allow once');
     const all = document.createElement('button');
     all.textContent = String(m.allowAll || 'Allow every request this session');
     all.className = 'all';

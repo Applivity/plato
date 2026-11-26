@@ -6370,7 +6370,10 @@ class ChatHost {
       if (result.reason === 'cap') {
         endNotes.push('stopped early — output hit the token cap');
       } else if (result.reason === 'cancelled') {
-        endNotes.push('cancelled');
+        // The closing note speaks to the person, so it says what they did —
+        // they stopped the run. `cancelled` is the RECORD's word for the same
+        // event, and the record keeps it.
+        endNotes.push('stopped');
       } else if (result.reason === 'stuck') {
         // D49aw: the sentence is written in core, so the closing line and the
         // record say the same thing — and it names what Plato was actually
@@ -6538,7 +6541,18 @@ class ChatHost {
         this.noteApproval('session-memory', req);
         return true;
       }
-      const ok = await this.promptCard(req);
+      // The yes this card waits for is REMEMBERED for every path on it, so
+      // the button must say that. It said "Allow once", promising one call
+      // while granting a standing approval — the demo video shows the
+      // contradiction. A malformed patch names no path and remembers nothing,
+      // so it keeps the plain label.
+      const once =
+        paths.length === 1
+          ? 'Allow this file'
+          : paths.length > 1
+            ? 'Allow these files'
+            : undefined;
+      const ok = await this.promptCard(req, once);
       if (ok) {
         for (const p of paths) {
           this.sessionWrites.add(p);
@@ -6690,7 +6704,12 @@ class ChatHost {
     });
   }
 
-  private promptCard(req: ApprovalRequest): Promise<boolean> {
+  /**
+   * `allowOnce` is what this call's own button says, when the answer outlives
+   * the call (D49ak's per-file memory). Omitted, the view says "Allow once" —
+   * which is exactly true for every card whose yes is forgotten.
+   */
+  private promptCard(req: ApprovalRequest, allowOnce?: string): Promise<boolean> {
     const key = this.approvalKey(req);
     // Check if this tool (and host) is already approved for this session
     if (this.sessionApprovals.has(key)) {
@@ -6732,6 +6751,7 @@ class ChatHost {
         headingAllowed: approvalAnswered(heading, true),
         headingDenied: approvalAnswered(heading, false),
         headingSession: approvalAnsweredSession(heading),
+        ...(allowOnce !== undefined ? { allowOnce } : {}),
         ...(req.host !== undefined ? { host: req.host } : {}),
         preview,
       });
