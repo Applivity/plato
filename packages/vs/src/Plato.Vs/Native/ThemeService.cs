@@ -68,6 +68,7 @@ namespace Plato.Vs.Native
                 ["--vscode-input-background"] = Hex(VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxBackgroundColorKey)),
                 ["--vscode-input-foreground"] = Hex(VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxTextColorKey)),
                 ["--vscode-input-border"] = Hex(VSColorTheme.GetThemedColor(EnvironmentColors.ComboBoxBorderColorKey)),
+                ["--vscode-input-placeholderForeground"] = Hex(gray),
                 ["--vscode-button-background"] = Hex(accent),
                 ["--vscode-button-foreground"] = Hex(accentText),
                 ["--vscode-button-hoverBackground"] = Hex(

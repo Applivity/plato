@@ -474,7 +474,7 @@ try {
   );
   assert.match(
     JSON.stringify(cancelledQueued.text ?? {}),
-    /cancel/i,
+    /stopped/i,
     'the queued run that was cancelled says so',
   );
 

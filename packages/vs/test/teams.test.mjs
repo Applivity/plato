@@ -466,7 +466,7 @@ try {
   assert.equal(notices(mark, '[Aristotle] cancelled the run').length, 1);
   assert.match(
     String(cancelled.text?.note),
-    /cancelled/,
+    /stopped/,
     'a cancelled run says so in its closing line',
   );
 
