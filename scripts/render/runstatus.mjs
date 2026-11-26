@@ -99,58 +99,91 @@ const snap = (p) => p.evaluate(() => {
   await p.close();
 }
 
-// E. D49bm: the pause button reports the RUN, and never the click.
+// E. The footer is at most two controls, and the park is the only moment the
+// run has really stopped.
 //
-// The defect this exists for: the button flipped its own label to "Resume" the
-// instant it was clicked, so it claimed the run had stopped while only a
-// REQUEST had been recorded — and when the run ended before any safe point, it
-// claimed a pause that never happened. So the assertion that matters is the one
-// right after the click, and it is that the label is NOT "Resume".
+// D49bm is why: the old button flipped its own label to "Resume" on the click,
+// claiming a stop that had only been requested. Now the footer is drawn from
+// facts — a run is live, the run is parked, a pause was asked for, the box has
+// words — and the claims that matter are: Pause while working with an empty
+// box; Pausing… and disabled once asked, cancelling nothing; Stop and Resume
+// once parked, with Resume as the primary.
+//
+// The chat page, not the Settings page: `S()` opens Settings, and the footer
+// then sits inside a `display:none` ancestor. Visibility checks read that,
+// correctly — a control nobody can see is not on screen.
 {
-  const p = await page(620, S());
+  const p = await page(620, S({ open: false }));
   const snapP = () => p.evaluate(() => {
-    const btn = document.getElementById('pp');
+    const pp = document.getElementById('pp');
+    const go = document.getElementById('go');
+    const goLabel = go ? go.querySelector('.btn-send-label') : null;
+    const cx = document.getElementById('cx');
     const bar = document.getElementById('statusbar');
     const dot = bar ? bar.querySelector('.pdot') : null;
+    // VISIBILITY, not the attribute. `.btn-send` is display:inline-flex in the
+    // page's own CSS, which outranks the user agent's `[hidden]` rule — so a
+    // hidden primary once stayed on screen beside Pause and Stop while every
+    // `el.hidden` read true. The count has to mean what a person sees.
+    const visible = (el) => {
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    };
+    const shown = [pp, go, cx].filter(visible).length;
     const posted = window.__posted;
     return {
-      hidden: btn.hidden,
-      label: btn.textContent,
-      title: btn.title,
+      pp: { hidden: !visible(pp), label: pp.textContent.trim(), title: pp.title, disabled: pp.disabled },
+      go: {
+        hidden: !visible(go),
+        label: (goLabel ? goLabel.textContent : go.textContent).trim(),
+        disabled: go.disabled,
+      },
+      stop: { hidden: !visible(cx), label: cx.textContent.trim() },
+      shown,
       status: bar ? (bar.querySelector('.stext') || {}).textContent : null,
       paused: bar ? bar.classList.contains('paused') : null,
       dotAnim: dot ? getComputedStyle(dot).animationName : null,
       last: posted.length > 0 ? posted[posted.length - 1] : null,
+      posted: posted.slice(),
     };
   });
   const post = (x) => p.evaluate(
     (m) => window.dispatchEvent(new MessageEvent('message', { data: m })), x);
-  const click = () => p.evaluate(() => { document.getElementById('pp').click(); });
+  const clickPp = () => p.evaluate(() => { document.getElementById('pp').click(); });
+  const clickGo = () => p.evaluate(() => { document.getElementById('go').click(); });
 
   await send(p, 'a long job');
   const started = await snapP();
-  check('the pause button appears with the run', started.hidden === false, started);
-  check('and it offers to pause', started.label === 'Pause', started);
-  check('and its tooltip is the terminal\'s sentence, word for word',
-    started.title === 'Pause after the current step. Nothing is lost.', started);
+  check('while working with an empty box the footer offers Pause and Stop',
+    started.pp.hidden === false && started.pp.label === 'Pause'
+      && started.stop.hidden === false && started.stop.label === 'Stop',
+    started);
+  check('and the primary is not a third control',
+    started.go.hidden === true && started.shown === 2, started);
 
-  await click();
+  await clickPp();
   const asked = await snapP();
   check('a click asks to pause and does NOT claim the run has stopped',
-    asked.label === 'Pausing…', asked);
-  check('and it says the click can be taken back',
-    /cancel the pause/i.test(asked.title || ''), asked);
-  check('the request reaches the host',
-    asked.last !== null && asked.last.type === 'pause', asked);
+    asked.pp.label === 'Pausing…' && asked.go.hidden === true, asked);
+  check('and the label is disabled, so a second click cannot ask twice',
+    asked.pp.disabled === true, asked);
+  check('and the click cancels nothing, because it cannot be taken back',
+    asked.posted.every((m) => m.type !== 'cancel') && asked.last.type === 'pause', asked);
   check('the status line does not say paused yet',
-    asked.status !== 'Paused', asked);
+    !/^Paused\b/.test(asked.status || ''), asked);
 
   // The host's account of the run: only now is it genuinely parked.
   await post({ type: 'pause-state', text: { parked: true } });
   await p.waitForTimeout(120);
   const parked = await snapP();
-  check('when the host reports the park, the button offers to resume',
-    parked.label === 'Resume', parked);
+  check('when the host reports the park, the footer is Stop and Resume',
+    parked.stop.hidden === false && parked.stop.label === 'Stop'
+      && parked.go.hidden === false && parked.go.label === 'Resume', parked);
+  check('and Resume is the primary, with Pause gone',
+    parked.pp.hidden === true && parked.shown === 2, parked);
   check('and the status line says paused, not what it was doing',
     /^Paused\b/.test(parked.status || ''), parked);
   check('and it says a pause does not survive closing the window',
@@ -166,17 +199,13 @@ const snap = (p) => p.evaluate(() => {
   check('a streamed fragment does not repaint writing over the paused line',
     /^Paused\b/.test(stillParked.status || '') && stillParked.paused === true, stillParked);
 
-  await click();
+  await clickGo();
   const released = await snapP();
-  check('clicking Resume releases at once', released.label === 'Pause', released);
+  check('clicking Resume releases at once',
+    released.pp.hidden === false && released.pp.label === 'Pause', released);
   check('and the release reaches the host',
-    released.last !== null && released.last.type === 'resume', released);
-  // The flags are cleared together, so a second click cannot arrive while the
-  // first round trip is out and re-pause the run the user just let go.
-  await click();
-  const again = await snapP();
-  check('a second click pauses again rather than repeating the release',
-    again.label === 'Pausing…' && again.last.type === 'pause', again);
+    released.last !== null && released.last.type === 'resume'
+      && released.last.note === undefined, released);
 
   await post({ type: 'pause-state', text: { parked: false } });
   const resumed = await snapP();
@@ -185,14 +214,60 @@ const snap = (p) => p.evaluate(() => {
   await post({ type: 'done', text: { secs: 2, tools: 1 } });
   await p.waitForTimeout(150);
   const after = await snapP();
-  check('the end of the run takes the button away and clears the label',
-    after.hidden === true && after.label === 'Pause', after);
+  check('the end of the run takes the run controls away',
+    after.pp.hidden === true && after.stop.hidden === true
+      && after.go.hidden === false && after.go.label === 'Send', after);
+  check('and the primary is greyed and unclickable while idle and empty',
+    after.go.disabled === true, after);
   checkPageClean(p, 'pause');
   await p.close();
 }
 
-// G. The park screen: a philosopher's note replaces the mechanism wording and
-// is offered back to the empty composer. A user's own pause carries no note.
+// E2. With words in the box the footer is Stop and Send: the user's text is the
+// next thing to send, so Pause gives way rather than hiding the primary.
+{
+  const p = await page(620, S({ open: false }));
+  const snapF = () => p.evaluate(() => {
+    // Visibility, for the same reason as section E: the page's own CSS can
+    // outrank `[hidden]`, so the attribute is not what a person sees.
+    const visible = (el) => {
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    };
+    const go = document.getElementById('go');
+    const goLabel = go ? go.querySelector('.btn-send-label') : null;
+    return {
+      ppHidden: !visible(document.getElementById('pp')),
+      goHidden: !visible(go),
+      goLabel: goLabel ? goLabel.textContent : null,
+      stopHidden: !visible(document.getElementById('cx')),
+      goDisabled: go.disabled,
+    };
+  });
+  await send(p, 'a long job');
+  await p.evaluate(() => {
+    const q = document.getElementById('q');
+    q.value = 'use pricing.js';
+    q.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await p.waitForTimeout(120);
+  const typed = await snapF();
+  check('typing during a run makes the footer Stop and Send',
+    typed.ppHidden === true && typed.stopHidden === false
+      && typed.goHidden === false && typed.goLabel === 'Send', typed);
+  check('and the primary is live again, because there is something to send',
+    typed.goDisabled === false, typed);
+  checkPageClean(p, 'typed during a run');
+  await p.close();
+}
+
+// G. The park screen: one sentence with a live phrase, drawn in the composer.
+// A philosopher's note is offered back by name; a park without one says what to
+// do next and offers nothing. The click fills the box and sends nothing — the
+// Resume press is the person's own.
 // `S({ open: false })` keeps the chat surface on screen so the composer can
 // take focus; the payload still carries the provider, so the run can start.
 {
@@ -201,13 +276,25 @@ const snap = (p) => p.evaluate(() => {
     (m) => window.dispatchEvent(new MessageEvent('message', { data: m })), x);
   const snapN = () => p.evaluate(() => {
     const q = document.getElementById('q');
-    const offer = document.getElementById('noteOffer');
+    const hint = document.getElementById('parkHint');
+    const use = document.getElementById('parkHintUse');
+    // The sentence is checked the way it is seen: a page rule can outrank
+    // `[hidden]`, so the attribute alone would not prove it is off screen.
+    const visible = (el) => {
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    };
     return {
       placeholder: q.placeholder,
       value: q.value,
       focused: document.activeElement === q,
-      offerHidden: offer ? offer.hidden : null,
-      offerText: offer ? offer.textContent : null,
+      hintHidden: !visible(hint),
+      hintText: hint ? hint.textContent : null,
+      phrase: use ? use.textContent : null,
+      posted: window.__posted.slice(),
     };
   });
   const GUIDE = 'Guide Plato mid-run… (injected at the next safe point)';
@@ -216,55 +303,60 @@ const snap = (p) => p.evaluate(() => {
     'The coder is about to write checkout.js, and price rules live in pricing.js.';
 
   await send(p, 'a long job');
+  const working = await snapN();
+  check('while working the box keeps the guide wording and no sentence',
+    working.placeholder === GUIDE && working.hintHidden === true, working);
 
-  // The user's own pause: parked, but no note. It must read as the guide box,
-  // with no offer — a note is a philosopher's, never the user's own pause.
+  // The user's own pause: parked, but no note. It must read as the plain
+  // instruction, with no phrase — a note is a philosopher's, never the user's.
   await post({ type: 'pause-state', text: { parked: true } });
   await p.waitForTimeout(120);
   const own = await snapN();
-  check('a park with no note keeps the guide placeholder',
-    own.placeholder === GUIDE, own);
-  check('and shows no note offer', own.offerHidden === true, own);
+  check('a park with no note keeps the plain park wording',
+    own.placeholder === PLAIN, own);
+  check('and shows no phrase', own.hintHidden === true, own);
 
-  // A philosopher's park: plain instruction, and the note offered by name.
+  // A philosopher's park: one sentence, with the phrase live inside it.
   await post({ type: 'pause-state', text: { parked: true, note: NOTE, by: 'Aristotle' } });
   await p.waitForTimeout(120);
   const offered = await snapN();
-  check('a philosopher\'s park replaces the mechanism wording with a plain instruction',
-    offered.placeholder === PLAIN, offered);
-  check('and offers the note under the speaker\'s name',
-    offered.offerHidden === false && offered.offerText === "Use Aristotle's note", offered);
+  check('a philosopher\'s park draws one sentence with a live phrase',
+    offered.hintHidden === false
+      && offered.hintText ===
+        "Tell Plato what to do differently — or use Aristotle's note — then press Resume.",
+    offered);
+  check('and the phrase names the speaker', offered.phrase === "use Aristotle's note", offered);
+  check('and the sentence stands in the box, so it cannot sit over the placeholder',
+    offered.placeholder === '', offered);
 
-  // Clicking fills the composer, focuses it, and the offer leaves.
+  // Clicking the phrase fills the box, focuses it, and sends nothing.
   await p.bringToFront(); // headless can leave a fresh page unfocused
-  await p.evaluate(() => document.getElementById('noteOffer').click());
+  await p.evaluate(() => document.getElementById('parkHintUse').click());
   await p.waitForTimeout(120);
   const filled = await snapN();
-  check('clicking the offer fills the composer with the note',
+  check('clicking the phrase fills the composer with the note',
     filled.value === NOTE, filled);
   check('and focuses the composer so the user can edit it', filled.focused === true, filled);
-  check('and the offer hides once the composer has text',
-    filled.offerHidden === true, filled);
+  check('and the click sends nothing',
+    filled.posted.length === offered.posted.length, filled);
 
-  // Text already typed: the offer must not appear over it, and must never
-  // replace it.
+  // Typing hides the sentence and the plain park wording comes back.
   await p.evaluate(() => {
     const q = document.getElementById('q');
     q.value = 'make it use pricing.js';
     q.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await post({ type: 'pause-state', text: { parked: true, note: NOTE, by: 'Aristotle' } });
   await p.waitForTimeout(120);
   const typed = await snapN();
-  check('the offer is absent when the composer already has text',
-    typed.offerHidden === true, typed);
+  check('typing hides the sentence', typed.hintHidden === true, typed);
+  check('and the park wording returns to the box', typed.placeholder === PLAIN, typed);
   check('and the text the user typed is untouched',
     typed.value === 'make it use pricing.js', typed);
 
-  // Resume takes what the user typed with it. The park's own instruction says
-  // to type a redirect and press Resume, so the words must leave the composer
-  // on that click — the CLI's /continue <text> is the same contract.
-  await p.evaluate(() => { document.getElementById('pp').click(); });
+  // Resume takes the box's words with it. The park's sentence says to press
+  // Resume, so the words must leave the composer on that click — the CLI's
+  // /continue <text> is the same contract.
+  await p.evaluate(() => { document.getElementById('go').click(); });
   await p.waitForTimeout(120);
   const released = await p.evaluate(() => {
     const posted = window.__posted;
@@ -278,12 +370,12 @@ const snap = (p) => p.evaluate(() => {
       && released.last.note === 'make it use pricing.js', released);
   check('and the composer is empty again', released.value === '', released);
 
-  // Resume clears the park wording and the offer.
+  // Resume clears the park wording and the sentence.
   await post({ type: 'pause-state', text: { parked: false } });
   await p.waitForTimeout(120);
   const resumed = await snapN();
   check('resuming restores the guide placeholder', resumed.placeholder === GUIDE, resumed);
-  check('and takes the note offer away', resumed.offerHidden === true, resumed);
+  check('and takes the sentence away', resumed.hintHidden === true, resumed);
 
   await post({ type: 'done', text: { secs: 2, tools: 1 } });
   await p.waitForTimeout(150);
@@ -300,22 +392,31 @@ const snap = (p) => p.evaluate(() => {
 // carries the provider, so the composer can send.
 {
   const p = await page(620, S({ open: false }));
-  const state = () => p.evaluate(() => ({
-    pp: document.getElementById('pp').textContent,
-    ppTitle: document.getElementById('pp').title,
-    stop: document.getElementById('cx').textContent,
-    stopTitle: document.getElementById('cx').title,
-    hidden: document.getElementById('pp').hidden,
-    posted: window.__posted.slice(),
-  }));
+  const state = () => p.evaluate(() => {
+    const visible = (el) => {
+      if (!el) return false;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      const box = el.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    };
+    return {
+      pp: document.getElementById('pp').textContent.trim(),
+      ppTitle: document.getElementById('pp').title,
+      stop: document.getElementById('cx').textContent.trim(),
+      stopTitle: document.getElementById('cx').title,
+      hidden: !visible(document.getElementById('pp')),
+      posted: window.__posted.slice(),
+    };
+  });
 
   await send(p, 'a long job');
   const idle = await state();
   check('the run-stop control reads Stop', idle.stop === 'Stop', idle);
   check('and its tooltip is the terminal\'s sentence, word for word',
-    idle.stopTitle === 'Stop the task. The conversation stays.', idle);
+    idle.stopTitle === 'End this run now — the conversation stays.', idle);
   check('and the pause tooltip is the terminal\'s sentence, word for word',
-    idle.ppTitle === 'Pause after the current step. Nothing is lost.', idle);
+    idle.ppTitle === 'Pause after the current step — the run waits for Resume.', idle);
 
   await p.evaluate(() => document.getElementById('q').focus());
   await p.keyboard.press('Escape');

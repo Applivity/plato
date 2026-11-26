@@ -24,6 +24,22 @@ import {
  * would assert the harness's idea of the wording rather than the product's.
  */
 
+/**
+ * The host's per-call label (extension.ts, promptCard): a write card that
+ * remembers its yes for every path on it says so — "Allow this file" for one,
+ * "Allow these files" for several — and a call with no usable path keeps the
+ * view's plain "Allow once" fallback. Mirrored here because the host's helper
+ * is not exported from core; the assertion is about what the view DRAWS for the
+ * message it is sent, and the click below is by that label.
+ */
+const allowOnceFor = (tool, args) => {
+  const paths = tool === 'apply_patch'
+    ? (Array.isArray(args.patches) ? args.patches.map((p) => p.path).filter(Boolean) : [])
+    : (args.path === undefined ? [] : [args.path]);
+  if (paths.length === 0) return undefined;
+  return paths.length === 1 ? 'Allow this file' : 'Allow these files';
+};
+
 /** An approval message exactly as the host builds one. */
 const card = (tool, args, host) => ({
   type: 'approval',
@@ -32,6 +48,7 @@ const card = (tool, args, host) => ({
   ...(host ? { host } : {}),
   heading: approvalHeading(tool, args),
   allowAll: approvalAllowAll(tool, host),
+  ...(allowOnceFor(tool, args) === undefined ? {} : { allowOnce: allowOnceFor(tool, args) }),
   // The three answered variants travel with it, because the view draws them.
   headingAllowed: approvalAnswered(approvalHeading(tool, args), true),
   headingDenied: approvalAnswered(approvalHeading(tool, args), false),
@@ -49,7 +66,10 @@ const cardInfo = (p) => p.evaluate(() => {
   const h = c.querySelector('h3');
   return {
     found: true,
-    buttons: [...c.querySelectorAll('button')].map((b) => b.textContent),
+    // Trimmed: a button can carry child markup (the run controls now do),
+    // and an exact-text match on untrimmed text is how a cosmetic change turns
+    // into an unrelated red suite.
+    buttons: [...c.querySelectorAll('button')].map((b) => b.textContent.trim()),
     text: c.textContent,
     heading: h ? h.textContent : '',
     tool: c.dataset.tool ?? '',
@@ -142,6 +162,8 @@ const cardInfo = (p) => p.evaluate(() => {
   await p.waitForTimeout(250);
   check('a multi-file patch counts its files',
     (await cardInfo(p)).heading === 'Let Plato edit 3 files?', (await cardInfo(p)).heading);
+  check('and its per-call button says the yes covers every path on the card',
+    (await cardInfo(p)).buttons[0] === 'Allow these files', (await cardInfo(p)).buttons);
   checkPageClean(p, 'patch card');
   await p.close();
 }
@@ -153,9 +175,13 @@ const cardInfo = (p) => p.evaluate(() => {
   const p = await page(900, S());
   await post(p, card('write_file', { path: 'src/a.ts', content: 'x' }));
   await p.waitForTimeout(250);
+  // The host remembers the yes for this file, so the button says that rather
+  // than promising one call it does not grant.
+  check('a single-file card\'s per-call button says Allow this file',
+    (await cardInfo(p)).buttons[0] === 'Allow this file', (await cardInfo(p)).buttons);
   await p.evaluate(() => {
     [...document.querySelectorAll('.card.approval-card button')]
-      .find((b) => b.textContent === 'Allow once').click();
+      .find((b) => b.textContent.trim() === 'Allow this file').click();
   });
   await p.waitForTimeout(150);
   const r = await cardInfo(p);

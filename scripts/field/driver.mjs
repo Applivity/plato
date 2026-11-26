@@ -921,26 +921,63 @@ export class Field {
   }
 
   /**
-   * D49bm: reads the pause button as the user sees it, without clicking.
+   * D49bm + the two-control footer: reads the footer as the user sees it,
+   * without clicking anything.
    *
-   * The label is the whole point of the control: "Pausing…" means the request is
-   * recorded and the run is still going, "Resume" means the run has actually
-   * stopped. A test that only clicked would not be able to tell the two apart.
+   * `label` is what the control a person reaches for to pause or resume says:
+   * Pause, "Pausing…", or Resume. While the run works with an empty box that is
+   * the pause control; at a park it is the primary (#go), which carries Resume
+   * and sends the box's words with the release. `primary` and `stop` are the
+   * other controls, so a case can prove the footer is at most two and that a
+   * parked run never loses Stop.
    */
   async pauseState() {
-    const btn = await this.driver.findElement(By.id('pp'));
-    return {
-      hidden: (await btn.getAttribute('hidden')) !== null,
-      label: (await btn.getText()).trim(),
-      title: await btn.getAttribute('title'),
-    };
+    return await this.driver.executeScript(`
+      const pp = document.getElementById('pp');
+      const go = document.getElementById('go');
+      const cx = document.getElementById('cx');
+      const labelOf = (el, sel) => {
+        if (!el) return null;
+        const part = sel ? el.querySelector(sel) : null;
+        return (part ? part.textContent : el.textContent || '').trim();
+      };
+      // VISIBILITY, not the attribute. .btn-send is display:inline-flex in
+      // the page's own CSS, which outranks the user agent's [hidden] rule, so
+      // a hidden primary once stayed painted beside Pause and Stop while
+      // el.hidden read true. shown goes into the case notes and must mean
+      // what a person sees.
+      const visible = (el) => {
+        if (!el) return false;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        const box = el.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      };
+      const ppShown = visible(pp);
+      const goShown = visible(go);
+      return {
+        hidden: !ppShown && !goShown,
+        label: !ppShown ? labelOf(go, '.btn-send-label') : labelOf(pp),
+        title: !ppShown ? (go ? go.title : null) : (pp ? pp.title : null),
+        pp: { hidden: !ppShown, label: labelOf(pp), disabled: pp ? pp.disabled : null },
+        primary: {
+          hidden: !goShown,
+          label: labelOf(go, '.btn-send-label'),
+          disabled: go ? go.disabled : null,
+        },
+        stop: { hidden: !visible(cx), label: labelOf(cx) },
+        shown: [pp, go, cx].filter(visible).length,
+      };
+    `);
   }
 
-  /** Clicks Pause or Resume, whichever the button currently offers. */
+  /** Clicks Pause or Resume, whichever the footer currently offers. */
   async pause() {
-    const btn = await this.driver.findElement(By.id('pp'));
+    const before = await this.pauseState();
+    const id = before.pp.hidden ? 'go' : 'pp';
+    const btn = await this.driver.findElement(By.id(id));
     await this.clickElement(btn);
-    this.log('  clicked the pause control');
+    this.log(`  clicked the ${id === 'pp' ? 'pause' : 'resume'} control`);
     return this.pauseState();
   }
 
@@ -948,23 +985,23 @@ export class Field {
    * Waits for a run to be in flight.
    *
    * `send` returns as soon as the prompt is typed, so anything that acts on a
-   * RUNNING run has to wait for the run control to appear first. Clicking Pause
-   * before that is a no-op — the handler ignores a click outside a run — and the
-   * case would report a pause that was never asked for.
+   * RUNNING run has to wait for the run controls to appear first. Stop is up
+   * exactly while a run is live, so it is the fact this waits on: Pause is
+   * hidden whenever the composer holds words or the run is parked.
    */
   async waitForRunStart(timeoutMs = 20000) {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
       try {
         const st = await this.pauseState();
-        if (!st.hidden) return st;
+        if (st.stop && st.stop.hidden === false) return st;
       } catch {
         // The frame can lag the click that opened the run; keep waiting.
       }
       await this.driver.sleep(200);
     }
     throw new Error(
-      `no run started within ${timeoutMs}ms — the run control never appeared, so nothing could be tested`,
+      `no run started within ${timeoutMs}ms — the run controls never appeared, so nothing could be tested`,
     );
   }
 
@@ -1467,14 +1504,19 @@ export class Field {
     return freshDone();
   }
 
-  /** Clicks Allow once / Deny / Approve-all on the open card. */
+  /** Clicks the card's per-call yes, or Deny, or the session-wide yes. */
   async decide(which) {
+    // The per-call yes says what it grants: "Allow this file" (or "these
+    // files") on a write card that remembers its paths, and the plain
+    // "Allow once" on a call that remembers nothing.
     const xpath =
       which === 'deny'
         ? "//button[normalize-space(text())='Deny']"
         : which === 'all'
           ? "//button[contains(text(),'this session')]"
-          : "//button[normalize-space(text())='Allow once']";
+          : "//button[normalize-space(text())='Allow this file' or " +
+            "normalize-space(text())='Allow these files' or " +
+            "normalize-space(text())='Allow once']";
     const btn = await this.driver.wait(until.elementLocated(By.xpath(xpath)), 15000);
     await this.clickElement(btn);
     await this.driver.sleep(SETTLE_MS);

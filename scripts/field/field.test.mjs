@@ -642,15 +642,27 @@ describe('Plato field tests — real VS Code', function () {
               if (clicked.label !== 'Pausing…') {
                 notes.push(`PAUSE: straight after the click the button claimed "${clicked.label}" — a request is not a pause`);
               }
+              // Pausing… is a fact, not a button: it is disabled and cancels
+              // nothing, so a second click cannot ask twice or take it back.
+              if (clicked.pp.disabled !== true) {
+                notes.push('PAUSE: "Pausing…" is still clickable, so the request can be asked twice');
+              }
               const parked = await field.waitForPauseLabel('Resume');
               if (parked.label !== 'Resume') {
-                notes.push(`PAUSE: the run never parked — the button stayed at "${parked.label}"`);
+                notes.push(`PAUSE: the run never parked — the control stayed at "${parked.label}"`);
               } else {
-                notes.push('pause: the run parked, and only then did the button offer Resume');
+                notes.push('pause: the run parked, and only then did the footer offer Resume');
+              }
+              // The parked footer is Stop and Resume, and nothing else.
+              if (parked.stop.hidden !== false || parked.stop.label !== 'Stop') {
+                notes.push('PAUSE: a parked run does not offer Stop');
+              }
+              if (parked.shown !== 2 || parked.pp.hidden !== true) {
+                notes.push(`PAUSE: the parked footer shows ${parked.shown} controls, not Stop and Resume`);
               }
               const released = await field.pause();
               if (released.label !== 'Pause') {
-                notes.push(`PAUSE: the release left the button reading "${released.label}"`);
+                notes.push(`PAUSE: the release left the footer reading "${released.label}"`);
               }
             } else if (run.during === 'pauseFinalAnswer') {
               await field.waitForRunStart();
@@ -706,17 +718,48 @@ describe('Plato field tests — real VS Code', function () {
               await field.waitForRunStart();
               const parked = await field.waitForPauseLabel('Resume');
               if (parked.label !== 'Resume') {
-                notes.push(`PAUSE: the philosopher asked for a pause and the run never parked — the button stayed at "${parked.label}"`);
+                notes.push(`PAUSE: the philosopher asked for a pause and the run never parked — the control stayed at "${parked.label}"`);
               }
               const ui = await field.driver.executeScript(`
                 const bar = document.getElementById('statusbar');
-                const pp = document.getElementById('pp');
+                const hint = document.getElementById('parkHint');
+                const use = document.getElementById('parkHintUse');
+                const q = document.getElementById('q');
                 return {
                   status: bar ? (bar.querySelector('.stext') || {}).textContent : null,
                   paused: bar ? bar.classList.contains('paused') : null,
-                  button: pp ? pp.textContent : null,
+                  hintHidden: hint ? hint.hidden : null,
+                  hintText: hint ? hint.textContent : null,
+                  phrase: use ? use.textContent : null,
+                  placeholder: q ? q.placeholder : null,
                 };
               `);
+              // The footer while parked: Stop and Resume, with Pause gone. A
+              // parked run must never sit with no way to end it.
+              if (parked.stop.hidden !== false || parked.stop.label !== 'Stop') {
+                notes.push('PAUSE: a parked run does not offer Stop');
+              }
+              if (parked.pp.hidden !== true) {
+                notes.push('PAUSE: Pause is still in the footer beside Resume, so the footer offers three things');
+              }
+              if (parked.shown !== 2) {
+                notes.push(`PAUSE: the parked footer shows ${parked.shown} controls, expected two`);
+              }
+              // The park's sentence, with the philosopher's phrase live in it.
+              const expectedHint =
+                "Tell Plato what to do differently — or use Aristotle's note — then press Resume.";
+              if (ui.hintHidden !== false) {
+                notes.push("PAUSE: the philosopher's note was not offered as a sentence");
+              }
+              if (ui.hintText !== expectedHint) {
+                notes.push(`PAUSE: the sentence reads "${ui.hintText}", not the park's one sentence`);
+              }
+              if (ui.phrase !== "use Aristotle's note") {
+                notes.push(`PAUSE: the live phrase reads "${ui.phrase}", not the philosopher's name`);
+              }
+              if (ui.placeholder !== '') {
+                notes.push('PAUSE: the sentence did not take the box, so it can sit under the placeholder');
+              }
               const atPark = await field.logText();
               const reasonLine = `[Aristotle] paused the run — ${OBSERVER_PAUSE_REASON}.`;
               const count = atPark.split(reasonLine).length - 1;
@@ -735,12 +778,33 @@ describe('Plato field tests — real VS Code', function () {
               if (!/^Paused\b/.test(ui.status || '')) {
                 notes.push(`PAUSE: the footer does not say the run is paused — it reads "${ui.status}"`);
               }
-              if (ui.button !== 'Resume') {
-                notes.push(`PAUSE: the control offers "${ui.button}", not Resume`);
+              // The phrase fills the box and sends nothing; Resume then
+              // carries those words with the release. Both halves are the
+              // contract the sentence promises.
+              if (ui.hintHidden === false) {
+                await field.driver.executeScript(
+                  "document.getElementById('parkHintUse').click();",
+                );
+                await field.driver.sleep(250);
+                const filled = await field.driver.executeScript(`
+                  const q = document.getElementById('q');
+                  const hint = document.getElementById('parkHint');
+                  return { value: q ? q.value : null, hintHidden: hint ? hint.hidden : null };
+                `);
+                if (filled.value !== OBSERVER_PAUSE_REASON) {
+                  notes.push('PAUSE: clicking the phrase did not put the note in the composer');
+                }
+                if (filled.hintHidden !== true) {
+                  notes.push('PAUSE: the sentence stayed up after the phrase filled the box');
+                }
+                const still = await field.pauseState();
+                if (still.label !== 'Resume') {
+                  notes.push('PAUSE: clicking the phrase resumed the run; it must only fill the box');
+                }
               }
               notes.push(
-                `observer pause: footer "${ui.status}", button "${ui.button}", ` +
-                `reason ${count}x, safe-point follows=${reasonAt >= 0 && safeAt > reasonAt}`,
+                `observer pause: footer "${ui.status}", controls ${parked.shown}, ` +
+                `phrase "${ui.phrase}", reason ${count}x, safe-point follows=${reasonAt >= 0 && safeAt > reasonAt}`,
               );
               // Resume so the run can finish; a correct park must never hang
               // the case. Click only what is there: a park that never happened
@@ -876,22 +940,29 @@ describe('Plato field tests — real VS Code', function () {
           }
         }
         if (c.n === 10) {
-          // D49as: three things a cancelled run must show, and the middle one is
+          // D49as: three things a stopped run must show, and the middle one is
           // the defect itself. "The run ended" was never in doubt — the transcript
           // check covers that. What the user sees must agree: the card must be
-          // GONE, and the run must SAY it was cancelled. A run that stops in
+          // GONE, and the run must SAY it was stopped. A run that stops in
           // silence leaves the user unsure the Stop took effect.
+          //
+          // The closing note says "stopped", not "cancelled": that is the user's
+          // word for a run the Stop control ended. The RECORD still carries
+          // `reason: cancelled`, and not by accident — it is shared with a
+          // philosopher's own cancel decision, so it stays the neutral machine
+          // value while the screen speaks to the person who pressed Stop. The
+          // transcript half below is unchanged.
           const stillOpen = await field.questionOpen();
           if (!field.questionSeen) {
             notes.push('QUESTION: no question card was ever detected, so the cancel path was never exercised');
           }
           if (stillOpen) {
-            notes.push('CANCEL: the question card is STILL on screen after the run was cancelled');
+            notes.push('CANCEL: the question card is STILL on screen after the run was stopped');
           }
-          if (!/cancelled/i.test(screen)) {
-            notes.push('CANCEL: the run does not say it was cancelled, so nothing tells the user the Stop worked');
+          if (!/\bstopped\b/i.test(screen)) {
+            notes.push('CANCEL: the run does not say it was stopped, so nothing tells the user the Stop worked');
           }
-          notes.push(`cancel: card-dismissed=${!stillOpen} says-cancelled=${/cancelled/i.test(screen)}`);
+          notes.push(`cancel: card-dismissed=${!stillOpen} says-stopped=${/\bstopped\b/i.test(screen)}`);
         }
         // D49bm: the pause is only honest if the RECORD agrees with the button.
         // The button is checked live, in `during`; these check that the run kept
@@ -990,8 +1061,8 @@ describe('Plato field tests — real VS Code', function () {
             if (!q.start) {
               notes.push('QUEUE: the queue is held but offers no way to continue it');
             }
-            if (!/cancelled/i.test(screen)) {
-              notes.push('CANCEL: the run does not say it was cancelled');
+            if (!/\bstopped\b/i.test(screen)) {
+              notes.push('CANCEL: the run does not say it was stopped');
             }
             notes.push('queue: held after the cancel, with a way to continue');
           }
@@ -1715,7 +1786,9 @@ describe('Plato field tests — real VS Code', function () {
             // reaches an ordinary completion.
             const line = `[Aristotle] guidance: ${OBSERVER_GUIDANCE}`;
             const drawn = own.includes(line);
-            const stopped = own.includes('— cancelled');
+            // The run's closing note says "stopped" when anything ended it
+            // before its finish; guidance must never do that.
+            const stopped = /\bstopped\b/i.test(own);
             if (!drawn) {
               notes.push("GUIDANCE: the philosopher's guidance line is not on screen, so the steering left no trace");
             }
@@ -1738,14 +1811,19 @@ describe('Plato field tests — real VS Code', function () {
             // philosopher's stop from their own.
             const line = `[Aristotle] cancelled the run — ${OBSERVER_CANCEL_REASON}.`;
             const named = own.includes(line);
-            const says = own.includes('— cancelled');
+            // The screen's word for a run ended early is "stopped" — that is
+            // the note the done card draws. The RECORD keeps `reason:
+            // cancelled` (the transcript half, unchanged): it is shared with
+            // the philosopher's decision, so it stays the neutral machine
+            // value, while the screen speaks to the person.
+            const says = /\bstopped\b/i.test(own);
             if (!named) {
               notes.push("CANCEL: the closing line does not name the philosopher's cancel and its reason");
             }
             if (!says) {
-              notes.push('CANCEL: the run does not say it ended cancelled');
+              notes.push('CANCEL: the run does not say it was stopped');
             }
-            notes.push(`cancel: line-names-reason=${named} says-cancelled=${says}`);
+            notes.push(`cancel: line-names-reason=${named} says-stopped=${says}`);
           }
         }
 

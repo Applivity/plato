@@ -39,21 +39,35 @@ const card = (tool, args) => ({
   preview: args.preview ?? 'preview',
 });
 
-const runUi = (p) => p.evaluate(() => ({
-  pauseHidden: document.getElementById('pp').hidden,
-  stopHidden: document.getElementById('cx').hidden,
-  pauseLabel: document.getElementById('pp').textContent,
-  stopLabel: document.getElementById('cx').textContent,
-  stopTitle: document.getElementById('cx').title,
-  placeholder: document.getElementById('q').placeholder,
-  status: document.getElementById('statusbar')?.textContent ?? '',
-  lastUser: [...document.querySelectorAll('#log .msg.you')].slice(-1).map((e) => e.textContent)[0] ?? '',
-  posted: window.__posted.slice(),
-}));
+const runUi = (p) => p.evaluate(() => {
+  // Visibility, not the attribute: the page's own `display` rules outrank
+  // `[hidden]`, so a hidden control can still be painted.
+  const visible = (el) => {
+    if (!el) return false;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    const box = el.getBoundingClientRect();
+    return box.width > 0 && box.height > 0;
+  };
+  return {
+    pauseHidden: !visible(document.getElementById('pp')),
+    stopHidden: !visible(document.getElementById('cx')),
+    pauseLabel: document.getElementById('pp').textContent.trim(),
+    stopLabel: document.getElementById('cx').textContent.trim(),
+    stopTitle: document.getElementById('cx').title,
+    placeholder: document.getElementById('q').placeholder,
+    status: document.getElementById('statusbar')?.textContent ?? '',
+    lastUser: [...document.querySelectorAll('#log .msg.you')].slice(-1).map((e) => e.textContent)[0] ?? '',
+    posted: window.__posted.slice(),
+  };
+});
 
 // A. A queued run shows the task and the run controls, and both controls post.
+// The chat page, not the Settings page: `S()` opens Settings, and the footer
+// then sits inside a `display:none` ancestor, which a visibility read reports
+// as not on screen — correctly.
 {
-  const p = await page(620, S());
+  const p = await page(620, S({ open: false }));
   await post(p, { type: 'queue-run', text: 'Queued follow-up message' });
   await p.waitForTimeout(200);
   const ui = await runUi(p);
@@ -63,7 +77,7 @@ const runUi = (p) => p.evaluate(() => ({
   check('and the run-stop control is labelled Stop, not Cancel',
     ui.stopLabel === 'Stop', ui);
   check('and its tooltip says what it does and what survives',
-    ui.stopTitle === 'Stop the task. The conversation stays.', ui);
+    ui.stopTitle === 'End this run now — the conversation stays.', ui);
   check('and the composer becomes the guide box', /Guide Plato mid-run/.test(ui.placeholder), ui.placeholder);
   check('and the status says Plato is working', /thinking/i.test(ui.status), ui.status);
 
