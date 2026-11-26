@@ -24,8 +24,10 @@ idle click starts nothing; a switch made mid-run applies at the next tool call),
 and the same run continues in the approved mode), **and 37–41 with tabs, session
 messaging, the title-bar mark, the chat header's mark and the activity-bar
 chat** — see the table below.
-**The scripted suite is 40 cases in 53 runs:** the 35 table cases in `cases.mjs`
-(whose runs add to 48) plus the five single-run tests 37–41. **Two further cases (30, 31)
+**The scripted suite is 41 cases in 54 runs:** the 36 table cases in `cases.mjs`
+(whose runs add to 49) plus the five single-run tests 37–41. **Case 43 is
+numbered last and runs before case 29**, because case 29 closes the chat panel
+and nothing after it can reach into the window. **Two further cases (30, 31)
 cover the queue
 and the pause against a REAL model** and run only under `PLATO_FIELD_REAL=1`;
 they are not part of the scripted suite and need the founder's key file.

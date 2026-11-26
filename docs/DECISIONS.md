@@ -9139,3 +9139,72 @@ names the file.**
   published file — while the VS Code `.vsix` hash in HANDOFF names the
   published file and nothing more. Reproducing a `vsce` build would need the
   archive's byte-level determinism, which nothing here provides.
+
+## The chain, the time, and the copy button (2026-11-26)
+
+**D49fg — The tool chain is one quiet line that opens into the calls behind
+it, and it reports the time those calls took.**
+
+- **What was wrong.** The summary of a chain of tool calls was a filled chip
+  with a 2px accent bar, set in 11px monospace. Measured against the reply it
+  sat between, 11px monospace is not smaller than 13px proportional text: the
+  fixed-width glyphs are about as wide per character and the face has a taller
+  x-height, so the chip read as large as the prose while also being a filled
+  rectangle. A reader said it took his eye before the answer did. That is the
+  same fault the readability work (D49fe) fixed on the person's own turn, one
+  row down.
+- **The line.** Plain muted text, 10.5px monospace, no fill and no bar. The
+  accent appears only on the chevron, and only on hover or keyboard focus: a
+  permanent second accent on every chain would dilute the cue that now
+  identifies the person's own turn. The words lost their restatement too —
+  "8 calls · 5 files read · 2 searches · 1 command run", not "tools 8 tool
+  calls · ...". Nothing is hidden: the line carries the whole tally.
+- **The detail is closed until it is asked for.** The line is a real button, so
+  the keyboard reaches it, the browser announces it as expandable, and Enter
+  and Space open it without a key handler of ours. Closed by default was the
+  founder's condition: a closed chain costs one line and no vertical space.
+- **What opens.** One row per call: how it ended, the call in the same words the
+  tally uses ("file read", not `read_file`), what it touched — the digest the
+  record already kept — and how long it took. The tool's arguments and its
+  result are not shown, because they are not stored. A panel that promised
+  "what came back" would invent it.
+- **Timing.** `allowed` is emitted for every call the loop goes on to run,
+  immediately before it runs, and the loop runs tools one at a time — the fact
+  the diagnostics slot already relies on. The host stamps it and records the
+  duration on the row, so a live chain and a reloaded one report the same
+  figure. The line shows the SUM of the calls, and only when every call in it
+  was timed: a sum of some of them would understate the run, and a record
+  written before this decision shows no figure at all rather than a zero.
+- **What is counted, and what is shown.** Only completed calls are counted, so
+  the line still equals the done card's number. A denied or declined request
+  joins the detail with its reason — it was a request that did not run, and a
+  record that dropped it would be a record of successes only.
+- **Rejected: a setting for the closed state.** The founder proposed one and
+  then agreed against it. A setting that changes what content exists is
+  invisible, global and forgotten; it also hides the line that is the only sign
+  of progress during a run. A click is per instance, discoverable and
+  reversible.
+
+**D49fh — Copy is offered on the things a person pastes, and drawn only when
+the pointer is on them.**
+
+- **Where.** A fenced code block carries a button for that block. A reply
+  carries one for the whole of its text. The person's own turn carries none,
+  and an error message is not a reply, so it carries none either. A button on
+  every message would be noise, and noise is what the whole round is about.
+- **At rest they cost nothing.** Both are drawn at zero opacity and appear on
+  hover or keyboard focus, so a reply with a copy button occupies exactly the
+  space of one without it.
+- **What is copied is the body.** For a block, the code and not its language
+  label — a copied command with the word "bash" in front of it does not run.
+  Trailing whitespace goes too: a command pasted into a terminal runs the
+  moment it ends in a newline, and copying it is not the same as running it.
+  For a reply, the text without the speaker label and without the button's own
+  wording.
+- **The clipboard is reached from the page, not through the host.**
+  `vscode.env` does not exist in the Visual Studio host shim, so a host-routed
+  clipboard would work in one editor and silently fail in the other. The page
+  tries `navigator.clipboard.writeText` and falls back to a hidden textarea and
+  `execCommand('copy')`, which needs no permission from either host.
+- **It says what happened.** The label reads "Copied" for a moment and then
+  returns to "Copy". A failure says "Could not copy" rather than pretending.
