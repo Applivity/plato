@@ -140,7 +140,10 @@ function lastRun(dir: string): LastRun | null {
     }
     if (event['type'] === 'run-completed') {
       const turns = typeof event['turns'] === 'number' ? event['turns'] : 0;
-      outcome = `${String(event['reason'] ?? 'complete')}, ${turns} ${
+      // The record keeps its own words; this line uses the user's word for a
+      // run that the Stop control ended.
+      const reason = String(event['reason'] ?? 'complete');
+      outcome = `${reason === 'cancelled' ? 'stopped' : reason}, ${turns} ${
         turns === 1 ? 'turn' : 'turns'
       }`;
       failed = false;

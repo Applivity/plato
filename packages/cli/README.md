@@ -10,6 +10,20 @@ mid-run, and stops at a safe point. The same engine powers the
 [Authenticate](#authenticate) · [Teams](#teams) · [Commands](#commands) ·
 [Source](https://github.com/Applivity/plato)
 
+**0.5.5** uses the person's word for a run the person ended, and remembers
+approved files as files rather than as a tool. Ctrl+C now reads "Stopping at
+the next safe point. Press Ctrl+C again to exit."; a stopped run's closing line
+reads "Run ended: stopped."; and `plato doctor` reports the last run as stopped.
+Before this release those lines said "cancelling" and "cancelled", the same
+word a philosopher's own decision uses. The run record keeps `cancelled`,
+because that value is shared with that decision and cannot say who ended the
+run. The philosopher's line, `[Aristotle] cancelled the run — <reason>.`, keeps
+its word, and it is the only thing that tells the two apart. Choosing to allow
+files for the session now covers every file the request names, as it already
+does in the editors, so a request that touches only allowed files does not ask
+again. A request is answered as a whole: if it touches a file you want and one
+you do not, decline it and tell Plato what to change.
+
 **0.5.4** makes the run's own account the true one. When a philosopher pauses
 the run, its one-sentence reason appears when the run actually pauses at a safe
 point, not when the check answers; if the run ends before it pauses, the line is
@@ -224,8 +238,10 @@ looks like a fact.
 - `auto` runs without asking. Use it when nobody can answer, and know what you
   are granting.
 
-An approval defaults to No. `Yes, allow this file for this session` is
-remembered for that file or host only.
+An approval defaults to No. `Yes, allow this file for this session` — or
+`Yes, allow these files for this session` when the request names several — is
+remembered for those files or host only. A request is answered as a whole: you
+cannot allow one file of a patch and decline another within it.
 
 When the mode blocks the task, the model can ask to switch. The request arrives
 as a card with its reason and what the other mode means. Nothing changes unless

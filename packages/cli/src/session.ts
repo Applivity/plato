@@ -6,12 +6,14 @@ import {
   estimateTokens,
   historyTokens,
   inboundTask,
+  isWriteTool,
   parseModelRef,
   planFold,
   recentWorkBlock,
   shouldAutoCompact,
   toolLine as logToolLine,
   toolWords,
+  writePathsOf,
   type ApprovalRequest,
   type ChatProvider,
   type Mode,
@@ -328,6 +330,11 @@ export const SESSION_HELP = [
   'A paused run does not survive Plato exiting.',
 ].join('\n');
 
+/**
+ * What a NON-write session approval is remembered against: the tool and the
+ * host it reached, the tool and the path it named, or the tool alone. A write
+ * is not remembered here — it is remembered per file, by `writePathsOf`.
+ */
 function approvalKey(request: ApprovalRequest): string {
   if (request.host !== undefined) {
     return `${request.tool}:${request.host}`;
@@ -429,6 +436,12 @@ export class Session {
   /** When the first Esc of a paused pair was pressed; 0 means no pair open. */
   private escStopAt = 0;
   private readonly remembered = new Set<string>();
+  /**
+   * The files a write tool may change without asking again, by path. Kept
+   * apart from `remembered` because its members are plain paths, shared by
+   * every write tool, the way the editor's `sessionWrites` is.
+   */
+  private readonly rememberedWrites = new Set<string>();
   private modeRequestsThisRun = 0;
   private nextRow = 1;
   /** D49cq: the shared transport, attached by the interactive host. */
@@ -1939,13 +1952,37 @@ export class Session {
   }
 
   private askApproval(request: ApprovalRequest): Promise<boolean> {
-    const key = approvalKey(request);
-    if (this.remembered.has(key)) {
+    // The editor's rule, copied: a write is approved once per FILE per
+    // session. `apply_patch` carries its paths in `patches` and no top-level
+    // `path`, so the old key was the bare tool name for it — one yes covered
+    // every later patch in the session, on every file. The list comes from
+    // core so the two hosts cannot drift.
+    const write = isWriteTool(request.tool);
+    const paths = write ? writePathsOf(request.tool, request.args) : [];
+    // A non-write keeps its own key (host, path, or tool). A write that names
+    // no path — a malformed patch — asks and remembers nothing: a tool-level
+    // key would bring the fault back.
+    const key = write ? undefined : approvalKey(request);
+    const known =
+      paths.length > 0
+        ? paths.every((path) => this.rememberedWrites.has(path))
+        : key !== undefined && this.remembered.has(key);
+    if (known) {
       this.reportApprovalCard?.(request.tool, 'session-memory');
       return Promise.resolve(true);
     }
-    const target = request.host !== undefined ? `the host ${request.host}` : 'this file';
-    const options = ['No', 'Yes', `Yes, allow ${target} for this session`];
+    // A write that names no path cannot be remembered, so it must not offer to
+    // remember: the editor drops the session option in exactly this case.
+    const remember = paths.length > 0 || key !== undefined;
+    const target =
+      paths.length > 1
+        ? 'these files'
+        : request.host !== undefined
+          ? `the host ${request.host}`
+          : 'this file';
+    const options = remember
+      ? ['No', 'Yes', `Yes, allow ${target} for this session`]
+      : ['No', 'Yes'];
     const doing = toolWords(request.tool).doing;
     this.approvalStopped = false;
     this.reportApprovalCard?.(request.tool, 'shown');
@@ -1963,7 +2000,15 @@ export class Session {
         return false;
       }
       if (choice === 2) {
-        this.remembered.add(key);
+        // Remember every file the call named, not just the first: this one
+        // answer covers all of them.
+        if (paths.length > 0) {
+          for (const path of paths) {
+            this.rememberedWrites.add(path);
+          }
+        } else if (key !== undefined) {
+          this.remembered.add(key);
+        }
       }
       const word =
         choice === 0 ? 'Declined' : choice === 2 ? 'Approved for this session' : 'Approved';

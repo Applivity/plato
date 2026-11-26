@@ -218,6 +218,25 @@ describe('doctor: state and the last run', () => {
     expect(io.out()).toContain('new.jsonl');
   });
 
+  it('uses the Stop control’s word for a run that was stopped', async () => {
+    const env = tempEnv({ ANTHROPIC_API_KEY: 'sk-env' });
+    validConfig(env);
+    const root = '/tmp/project-stopped';
+    const dir = runs(env, root);
+    writeFileSync(
+      join(dir, '2026-10-21T10-00-00-000Z-stopped.jsonl'),
+      [
+        JSON.stringify({ kind: 'header', startedAt: new Date().toISOString() }),
+        JSON.stringify({ type: 'run-completed', reason: 'cancelled', turns: 2 }),
+        '',
+      ].join('\n'),
+    );
+    const io = capture();
+    await runDoctor({ env, streams: io.streams, keychain: null, root });
+    // The record keeps `cancelled`; the line the user reads says `stopped`.
+    expect(io.out()).toContain('Last run just now: stopped, 2 turns');
+  });
+
   it('warns, without failing, when the last run failed', async () => {
     const env = tempEnv({ ANTHROPIC_API_KEY: 'sk-env' });
     validConfig(env);

@@ -853,7 +853,7 @@ describe('an observer pause in a one-shot run', () => {
     expect(result.code).toBe(1);
     expect(result.err).toContain('[Aristotle] paused the run');
     expect(result.err).toContain('cannot be resumed');
-    expect(result.err).toContain('Run ended: cancelled.');
+    expect(result.err).toContain('Run ended: stopped.');
   });
 });
 

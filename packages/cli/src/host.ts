@@ -254,7 +254,9 @@ export function reasonText(reason: RunEndReason): string {
     case 'cap':
       return 'the output token cap was reached';
     case 'cancelled':
-      return 'cancelled';
+      // The control that stops a run says "Stop", so the line that reports the
+      // stop says the same word. The run record keeps `cancelled`.
+      return 'stopped';
     case 'stuck':
       return 'stopped because it looked stuck';
   }
@@ -876,7 +878,7 @@ export async function runTask(options: TaskOptions): Promise<number> {
   const onSigint = (): void => {
     interrupts += 1;
     if (interrupts === 1) {
-      io.err('\nCancelling at the next safe point. Press Ctrl+C again to exit.\n');
+      io.err('\nStopping at the next safe point. Press Ctrl+C again to exit.\n');
       controller.cancel();
     } else {
       process.exit(130);

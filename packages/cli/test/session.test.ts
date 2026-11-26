@@ -290,7 +290,7 @@ describe('approval card', () => {
         (row) => row.kind === 'notice' && row.text === 'Denied and stopped — writing a file.',
       ),
     ).toHaveLength(1);
-    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: cancelled.')).toBe(
+    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: stopped.')).toBe(
       true,
     );
     expect(active.getSnapshot().running).toBe(false);
@@ -320,6 +320,84 @@ describe('approval card', () => {
     expect(readFileSync(join(root, 'one.txt'), 'utf8')).toBe('1');
     // The second call found no card: the session remembered the answer.
     expect(active.getSnapshot().card).toBeNull();
+  });
+
+  it('remembers a patch per file, and asks again for a file it has not seen', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    for (const name of ['a.txt', 'b.txt', 'c.txt']) {
+      writeFileSync(join(root, name), 'old');
+    }
+    // One patch call, one entry per file it touches.
+    const call = (files: [path: string, search: string, replace: string][]) => ({
+      tool: {
+        name: 'apply_patch',
+        input: {
+          patches: files.map(([path, search, replace]) => ({
+            path,
+            diffs: [{ search, replace }],
+          })),
+        },
+      },
+    });
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        call([
+          ['a.txt', 'old', 'a1'],
+          ['b.txt', 'old', 'b1'],
+        ]),
+        call([
+          ['b.txt', 'b1', 'b2'],
+          ['c.txt', 'old', 'c1'],
+        ]),
+        call([['b.txt', 'b2', 'b3']]),
+        { text: 'Patched.' },
+      ]),
+    );
+    const done = active.submit('patch the files');
+
+    // A and B: one card, and the button says it covers more than one file.
+    const first = await waitForCard(active, 'approval');
+    if (first.kind === 'approval') {
+      expect(first.options[2]).toBe('Yes, allow these files for this session');
+    }
+    active.cardMove(2);
+    active.cardConfirm();
+
+    // B and C: C is new, so one card — even though B was allowed a moment ago.
+    const second = await waitForCard(active, 'approval');
+    if (second.kind === 'approval') {
+      expect(second.options[2]).toBe('Yes, allow these files for this session');
+    }
+    active.cardMove(1);
+    active.cardConfirm();
+
+    // B alone was covered by the first answer: the run reaches its end with no
+    // third card. A card nobody answers would hold it here.
+    await waitUntil(() => !active.getSnapshot().running, 'the run to finish');
+    await done;
+    expect(active.getSnapshot().card).toBeNull();
+  });
+
+  it('offers no session option for a write that names no path', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'apply_patch', input: { patches: [] } } },
+        { text: 'Nothing to patch.' },
+      ]),
+    );
+    const done = active.submit('patch nothing');
+    const card = await waitForCard(active, 'approval');
+    if (card.kind === 'approval') {
+      // Nothing could be remembered, so the card must not promise it.
+      expect(card.options).toEqual(['No', 'Yes']);
+    }
+    active.cardConfirm();
+    await done;
   });
 });
 
@@ -572,7 +650,7 @@ describe('a long step', () => {
     expect(rows.some((row) => row.kind === 'notice' && row.text.includes('what had arrived'))).toBe(
       true,
     );
-    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: cancelled.')).toBe(
+    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: stopped.')).toBe(
       true,
     );
     expect(active.getSnapshot().running).toBe(false);
