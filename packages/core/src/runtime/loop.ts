@@ -574,13 +574,14 @@ export interface LoopOptions {
   /** Observer inbox (D24b): guidance/pause/cancel at safe points. */
   controller?: RunController;
   /**
-   * D49bm (terminal): a pause requested while the FINAL answer streams must
-   * park before that answer lands, so Enter can continue it and Esc can still
-   * stop it. Without a gate the run simply ends, and a pause pressed mid-answer
-   * would have been claimed and never honoured. The desktop pair keeps its old
-   * rule (no gate left, no park) and does not set this, so only the terminal
-   * changes. Guidance typed while parked here continues the SAME run as a fresh
-   * model turn rather than being dropped with the closing answer.
+   * D49bm: a pause requested while the FINAL answer streams must park before
+   * that answer lands, so the user can continue it or still stop it. Without a
+   * gate the run simply ends, and a pause pressed mid-answer would have been
+   * claimed and never honoured. This flag is how that press is honoured in all
+   * three hosts — the terminal (`packages/cli/src/host.ts`) and the desktop
+   * pair (the VS Code host, which Visual Studio bundles) all set it. Guidance
+   * typed while parked here continues the SAME run as a fresh model turn
+   * rather than being dropped with the closing answer.
    */
   pauseFinalAnswer?: boolean;
   /** Bound provider adapter (D25b). Replaces the old apiKey field. */
