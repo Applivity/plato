@@ -241,7 +241,7 @@ export function chatHtml(
   /* #go is now styled by .btn-send (with per-mode color). The old
      44x44 square styling is gone; the send button is a normal
      pill that lives in .composer-bar. */
-  .msg { margin:0 0 10px; line-height:1.55; white-space:pre-wrap;
+  .msg { margin:0 0 12px; line-height:1.55; white-space:pre-wrap;
          word-break:break-word; }
   .msg.tool-summary { color:var(--pl-muted); font-size:11px;
                       font-family:var(--vscode-editor-font-family, monospace);
@@ -254,7 +254,21 @@ export function chatHtml(
   .msg .who { display:block; font-size:10px; letter-spacing:.08em;
               text-transform:uppercase; color:var(--pl-muted);
               margin-bottom:2px; }
-  .msg.you { border-left:2px solid var(--pl-accent); padding-left:8px; }
+  /* The person's own turn is a filled bubble on the right, so it cannot be
+     lost among Plato's. Three facts hold it together:
+     1. The 2px bar is kept on purpose. It is the cue that survives high
+        contrast and colour blindness, where a light wash flattens away.
+     2. The wash is the THEME's accent at 12%, never a fixed hue — so it is
+        blue on every surface we run on, and it follows whatever theme is on.
+     3. The grey is the fallback for an engine that cannot mix colours; it is
+        the same weight of tint the wash gives, without the hue. */
+  .msg.you { margin:20px 0 12px auto; max-width:90%;
+             padding:6px 11px 6px 9px; border-radius:8px;
+             border-left:2px solid var(--pl-accent);
+             background:rgba(128,128,128,.14); }
+  @supports (background: color-mix(in srgb, red 50%, transparent)) {
+    .msg.you { background:color-mix(in srgb, var(--pl-accent) 12%, transparent); }
+  }
   .msg.bot  { border-left:2px solid var(--pl-border); padding-left:8px; }
   /* D49cq: a message another session sent. It is NOT the user's own words, so
      it must not be painted like them — a different edge colour, and a chip

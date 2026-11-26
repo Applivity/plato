@@ -863,9 +863,14 @@ function Header({
 export function RowView({ row, columns }: { row: Row; columns: number }): ReactElement {
   switch (row.kind) {
     case 'user':
+      // The glyph sits in its own column so a wrapped turn hangs under the text
+      // rather than falling back to column 0, where it would read as a tool line.
       return (
-        <Box marginTop={1}>
-          <Text color="cyan">› {row.text}</Text>
+        <Box marginTop={1} flexDirection="row">
+          <Text color="cyan">› </Text>
+          <Box flexGrow={1}>
+            <Text color="cyan">{row.text}</Text>
+          </Box>
         </Box>
       );
     case 'assistant':
