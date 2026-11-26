@@ -9208,3 +9208,25 @@ the pointer is on them.**
   `execCommand('copy')`, which needs no permission from either host.
 - **It says what happened.** The label reads "Copied" for a moment and then
   returns to "Copy". A failure says "Could not copy" rather than pretending.
+
+## Shipping without a window proof (2026-11-27)
+
+**D49fi — A release may go out with one named, unproven claim, and the record
+must say so in the same breath as the version.**
+
+- **The case.** The Visual Studio package for this round was built on the
+  Windows 11 box from the committed tree, its host suite passed 23 of 23, its
+  manifest and its sidecar were checked, and it was installed there. What never
+  happened is a window drawing it: the desktop session drops, and the helper
+  that can reach that session died between commands.
+- **The rule.** The founder chose to ship rather than wait, and that is his to
+  choose. What follows from it is an obligation on the record: the surface that
+  was not seen is named as unproven, next to the version it belongs to, in
+  HANDOFF, in the release row of PROGRESS, and in the note handed to the
+  founder. "Released" and "verified" are not the same word, and a release note
+  that let them blur would be the kind of claim this repository exists to
+  avoid.
+- **What is not acceptable is imprecision, not risk.** Every other surface of
+  this round was read back after publishing. The Visual Studio pane is the one
+  thing that was not, it is written down as such, and it waits for a calm
+  session rather than for a better argument.
