@@ -9060,3 +9060,46 @@ single token, unambiguous, and has no version that is safe to batch-approve.
   is a nuisance, and a new guard must not become one.
 - **No design is recorded.** If it is taken up, it gets its own decision and
   its own wording.
+
+## Chat readability — the person's turn is a bubble (2026-11-26)
+
+The founder approved this design on 2026-11-26, on a real user's report. The
+builds were landing as this was recorded; the measured result and the counts
+are filled at the close.
+
+**D49fe — The person's turn is a bubble, filled with the theme's accent.**
+
+- **The problem, as a person met it.** He loses his own message in the thread.
+  Measured in the real page at 760px: his turn and Plato's were 732px wide,
+  transparent, square-cornered, 10px apart, and differed only in the colour of
+  a 2px hairline. On a white theme, that hairline was the only cue.
+- **The shape.** The person's turn becomes a filled bubble: the theme's accent
+  at 12% behind the words, 8px corners, 6px/11px padding, a 20px gap above the
+  turn, a 12px gap within a turn, and a 10% right shift with a 90% cap, so the
+  text never wraps into a tall column.
+- **The bar stays.** The 2px accent bar remains on the bubble's left edge. It
+  is deliberate: a shape survives high contrast and colour blindness, where a
+  12% wash can flatten.
+- **The wash is never a fixed hue.** It is `--vscode-focusBorder`, which is
+  blue on every surface Plato runs on: VS Code light #005fb8 and dark #0078d4;
+  Visual Studio light #006cbe through SystemHighlight. A grey fallback covers
+  an engine that cannot mix colours.
+- **The wash does not follow the mode.** Plan is violet, Edit is blue, Auto is
+  green, but the bubble stays the accent blue, so the tint means "you", not
+  "which mode".
+- **One page, two editors.** Visual Studio starts the compiled VS Code
+  extension behind a shim (`packages/vs/host/entry.ts`), so the stylesheet is
+  shared and there is no Visual Studio work.
+- **The terminal keeps its vocabulary and gains a hanging indent.** The blank
+  line above, the cyan `›` and full-width colour stay; Plato's reply keeps its
+  thin grey rule. The one change is a hanging indent, so a wrapped message
+  keeps its marker instead of dropping to column 0 — at 60 columns today, the
+  second line starts flush left with no glyph. A background band was rejected:
+  in a terminal it reads as a text selection, fights the user's palette and
+  breaks on light themes. The thick bar was rejected as in the editor: it would
+  give both turns the same structure, differing only by weight.
+- **Two rejected routes.** A fixed brand colour, because it would clash with a
+  user's theme and break on high contrast. No fill, because the two turns
+  would keep reading alike, which is the problem.
+- **What it is not.** Not a change to Plato's turn, and not a new colour
+  system: the bubble borrows a colour the theme already chose.
