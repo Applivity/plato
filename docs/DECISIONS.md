@@ -8366,6 +8366,77 @@ record.
   machine, and no token passes through a chat message, the repository, or an
   evidence file.
 
+### How run control behaves — read from the source (2026-11-26)
+
+Read from `packages/core/src/runtime/loop.ts` and
+`packages/core/src/runtime/bus.ts` on 2026-11-26, not from memory. This is the
+behaviour the interface decisions of the same date act on.
+
+**The safe points.** The loop can honour a control only where it is between
+steps. There are three:
+
+1. At the top of each turn, before that turn's model request.
+2. Before each tool call, inside the tool loop.
+3. After a turn returns an answer and calls no tools, before that answer is
+   committed to the screen. This one is opt-in in core (`pauseFinalAnswer`),
+   and all three hosts pass it: the terminal in `packages/cli/src/host.ts`,
+   VS Code in `packages/vscode/src/extension.ts`, and Visual Studio, which
+   bundles the same host.
+
+A safe point is never inside a write, a command that is running, or a model
+request in flight. At each one, a cancel ends the run, a pause waits, and
+queued guidance is drained into the request that comes next, exactly once.
+
+**Pause.**
+
+- The click records a request. The run keeps working until it next reaches a
+  safe point, then holds there and waits.
+- A write or a command cannot be cut in half, so the wait can last as long as
+  the current step. That is why the control reads `Pausing…` until the host
+  reports the park.
+- A park is live process state only. No record, plan position or transcript
+  flag is written; the safe-point notice is a line in the record, but the park
+  itself is not a stored state. A parked run does not survive the process, and
+  the status line says so.
+- A park keeps the same run, its plan, its conversation, its tool results and
+  its background shells.
+- If the run ends before the request is honoured, the held line is dropped and
+  the run's own ending is reported instead. **The two hosts do not say the same
+  thing.** VS Code, and Visual Studio, which bundles it, adds `The run finished
+  before the pause took effect.` The terminal says nothing about the pause:
+  `packages/cli/src/session.ts` clears the held notice in its `finally`, and the
+  run ends as any other run does. A reader who knows one host must not assume
+  the other. A run that parks says neither line. With the third safe point on, a
+  click during the closing answer parks there; the request runs out of run only
+  when the click lands after the last safe point, or when the run ends on its
+  own bound (the output cap, a stuck bound, or an error).
+
+**Stop.**
+
+- Stop refuses every future safe point. The loop exits rather than waiting.
+- It cannot cut a tool call in half. A write that has started finishes, and a
+  running command finishes up to Plato's 120-second limit on it. Stop is not a
+  kill switch, and a reader will assume it is unless this is said plainly.
+- It does abort the model request in flight, so a long generation is not waited
+  out. Tokens already spent stay spent.
+- It is the only run control that releases a waiting approval card. A run
+  blocked on a card is not at a safe point, so a pause cannot move it; Stop
+  answers the card as No and ends the run.
+- It ends the run as `cancelled` in the record, and the screen says `stopped`
+  (D49ex). Background shells the run started are killed when it ends, with the
+  notice that they do not outlive the run.
+
+**Resume and the composer.** The composer's words travel with the Resume press:
+they are sent first as the person's guidance (`from: 'user'`, D49ep), then the
+run continues, and the loop drains them at the gate it wakes from, once. Enter
+is not Resume: at a park, Enter sends guidance and leaves the run parked.
+
+**The record and the screen.** The record keeps `reason: cancelled` because
+that value is shared with the philosopher's own cancel decision and cannot say
+who ended the run. The screen uses the person's word, `stopped`. The
+philosopher's line, `[Name] cancelled the run — …`, stays, and it is the only
+thing that distinguishes the philosopher's decision from the person's (D49ex).
+
 ## Distribution — the Agent Client Protocol (2026-11-24)
 
 **D49ej — Plato speaks the Agent Client Protocol (2026-11-24).**
@@ -8739,3 +8810,205 @@ model, watched once. The field case is scripted, so it proves the code path and
 not how a real philosopher reads a real digest. Neither says anything about the
 philosopher's judgement — only that when it decides, the product tells the user
 why and lets them answer.
+
+## The interface round — after the demo (2026-11-26)
+
+The founder watched the demo recording and named five changes to what the
+interfaces say and offer. The code for them is being written in this round;
+these entries record the rule and the reason. They carry no count and no proof
+claim, because the round is not yet verified.
+
+**D49ew — The footer carries two run controls, and the primary moves with the
+state.**
+
+- **The rule.** At most two run controls show at any moment. The primary
+  (`#go`) reads `Send`, or `Resume` at a park. `Stop` shows whenever a run is
+  live — working, pause requested, parked, or with an approval card open — and
+  never changes its label. `Pause` shows only while the run works and the
+  composer is empty, in the primary's place. With words in the box during a
+  run, the footer is `Stop` and `Send`: Pause gives way rather than hiding the
+  primary. The mode picker is a setting rather than a run control and is not
+  counted.
+- **A greyed primary explains itself.** The primary is disabled when no run is
+  live and the box is empty, and it carries no click. A disabled button does not
+  open its own tooltip, so the sentence "Type something to send." sits on the
+  wrapper (`#goWrap`) above it. A greyed button also does not light up under the
+  pointer, because a hover state would offer an action it cannot take.
+- **Why.** The demo recording showed four controls at a park, two of them
+  plausible ways to continue, and the visually primary one — `Send` — did not
+  move the run.
+- **Where it lives.** `paintFooter()` in `packages/vscode/src/webview.ts`,
+  which both editors draw. It is painted from four facts — a run is live, the
+  run is parked, a pause was asked for, and the box holds words — and no value
+  is written on a click. `setRunUi` sets the busy fact and repaints. Stop's
+  title is `End this run now — the conversation stays.`, replacing D49ed's
+  sentence, because the control is now the way out of every live state and not
+  only of a working run.
+- **What it is not.** Pause is no longer a toggle. `Pausing…` cannot take the
+  request back; a person who regrets the pause lets it park and presses Resume
+  (D49ez). That removes D49bm's "the click on `Pausing…` takes the request
+  back", and the label still never claims a park the run has not made.
+
+**D49ex — The person's word is Stop; the philosopher's word stays cancel.**
+
+- **The rule.** On screen and in the terminal, a run that the person ended is
+  announced as "stopped": `reasonText` in `packages/cli/src/host.ts`, the
+  terminal's Ctrl+C line (`Stopping at the next safe point. Press Ctrl+C again
+  to exit.`), `plato doctor`'s last-run line, the done card's closing note in
+  the two editors, and field case 10's expected closing word.
+- **The record keeps `cancelled`.** The run's `run-completed` event still
+  carries `reason: cancelled`, unchanged. That value is shared with the
+  philosopher's own decision, and the record cannot say who ended the run. The
+  record is an internal account rather than a sentence to the user, and the
+  JSON that exposes it is unchanged.
+- **The philosopher's line stays.** `[Name] cancelled the run — <reason>.` is
+  unchanged and must stay. It is the only thing that distinguishes the
+  philosopher's decision from the person's, and D49ev gave it its reason.
+- **Why.** The control says Stop (D49ed), so the line that reports its effect
+  says the same word. Two vocabularies for one event made the person's action
+  and the philosopher's read alike at the moment the difference matters.
+- **Where the existing copy already stood.** The packaged README keeps its two
+  mentions of "a cancel". Its 0.5.4 paragraph ("a cancel names the philosopher's
+  reason") sits inside a paragraph about a philosopher's check, so its subject
+  is the philosopher. Its `-p` exit-code list ("a failure, refusal, or cancel")
+  names the record's `cancelled` value that the same page exposes as JSON, and
+  `-p` has no person's Stop control at all. Renaming either would make the page
+  disagree with itself.
+- **What it is not.** Not a schema change, not a rename of the record's value,
+  and not a change to the philosopher's line.
+
+**D49ey — The philosopher's note is offered inside the composer, not as a
+button.**
+
+- **The rule.** While a philosopher's park with a note is on screen and the
+  composer is empty, the hint becomes one sentence — `Tell Plato what to do
+  differently — or use Aristotle's note — then press Resume.` — and only the
+  phrase between the dashes, `use Aristotle's note`, takes a click. The click
+  fills the composer with the philosopher's sentence and sends nothing. Resume
+  stays the person's own press.
+- **The rest of the sentence is not a control.** It takes no pointer events, so
+  a click anywhere else in the box lands in the textarea and the person types.
+  The box grows to hold the sentence and returns to its own height when the
+  sentence goes.
+- **A screen reader hears the same sentence.** The native placeholder is blank
+  while the sentence shows, so the full sentence has an off-screen home
+  (`#parkHintText`) and the textarea points at it with `aria-describedby`.
+- **What it replaces.** D49eu's separate bar control, `Use Aristotle's note`.
+  D49eu's contract is unchanged: empty composer only, never overwrites typed
+  text, the offered note is the raw sentence without its prefix, and Resume
+  sends the composer's words and then resumes, which is the terminal's
+  `/continue <text>`.
+- **A park with no note still says what to do next.** The plain instruction —
+  `Tell Plato what to do differently, then press Resume.` — stands, because a
+  park is a park even when the philosopher wrote nothing.
+- **Why.** A placeholder cannot be clicked, and the empty composer is where a
+  person goes to type. A separate button put the answer outside the box and, at
+  a park, made a fourth control.
+
+**D49ez — Keep Pause: a park keeps the run's place.**
+
+- **The decision.** The founder decided against dropping Pause.
+- **Its stated benefit.** A paused run keeps its place, its plan and its
+  background shells, and resumes into the same run. Stop refuses the next step
+  and ends the run.
+- **`Pausing…` is not a cancel.** A person who regrets the pause lets it park
+  and presses Resume, which costs nothing. That is what keeps the footer to two
+  run controls: the request needs no cancel affordance of its own (D49ew).
+- **A change to D49bm and to D49ed's Pause tooltip.** D49bm's second click took
+  the pause request back from the `Pausing…` label; that affordance is removed.
+  The Pause control is disabled while the request is out, and its title no
+  longer offers to cancel anything: `Pause after the current step — the run
+  waits for Resume.` That sentence replaces D49ed's "Nothing is lost", because
+  the run now says what it will do instead of what it will not cost.
+- **What it is not.** Not a claim that Pause and Stop differ only in speed.
+  Pause waits and keeps the run's place; Stop ends the run and keeps only the
+  conversation.
+
+**D49fa — The approval card's button says what its answer does.**
+
+- **The rule.** In `edit`, a yes to an edit is remembered for that file for the
+  session (D49ak). The card's per-call button therefore reads `Allow this
+  file`, or `Allow these files` when the call carries several. `Allow once`
+  remains only where nothing is remembered: a command, a fetch, or a malformed
+  patch that names no path.
+- **The host sends the label.** Only the host knows the mode and the paths, so
+  it puts `allowOnce` on the approval message (`promptCard` in
+  `packages/vscode/src/extension.ts`). The view draws the label it is given and
+  falls back to `Allow once` for a host that sends none.
+- **Why.** The demo recording shows the contradiction: "Allow once" is pressed,
+  and the next line says Plato will not ask again before editing that file.
+- **What it is not.** Not a change to the session-wide choice (`Allow every
+  edit this session`) and not a change to when a card appears. A command still
+  asks every time, and its button still says `Allow once`, because its yes is
+  not remembered.
+
+## Versioning — every change bumps its variant (2026-11-26)
+
+**D49fb — Every change bumps its variant's patch number, in the same commit.**
+
+The founder gave this as a standing rule on 2026-11-26, in his words: **"how
+ever small it is, a change is a change"**. Every change that ships gets a new
+version number, and he is not asked for numbers again.
+
+- **What bumps.** Any change to a variant's code bumps that variant's PATCH
+  number in the same commit that carries the change. A round that touches
+  several variants bumps each of them. The agent takes the next patch number;
+  it does not ask.
+- **Docs.** A docs-only change ships no artifact, so there is nothing to bump.
+  When docs travel with code, the code's bump carries them.
+- **Where the numbers live.** Exactly four places:
+  `packages/cli/package.json`; `packages/cli/src/version.ts` (a literal, so the
+  shipped bundle needs no JSON); `packages/vscode/package.json` (the `version`
+  and the `install:vsix` filename); and
+  `packages/vs/src/Plato.Vs/source.extension.vsixmanifest` (`Identity
+  Version`). The release script reads the version from each built artifact, so
+  there is no fifth list.
+- **Why the rule sticks.** A published version cannot change under the same
+  number: npm and both Marketplaces refuse a republish. An unbumped change
+  therefore cannot ship at all.
+- **What it is not.** Not a change to what a minor or a major means, and not a
+  lowering of the bar for a change that alters behaviour. The version is the
+  release vehicle that already exists.
+
+First applied in the interface round, where the numbers in the tree are CLI
+**0.5.5**, VS Code **0.31.4** and Visual Studio **0.5.4**.
+
+## The terminal's approval memory — files, not the tool (2026-11-26)
+
+**D49fc — The terminal's approval memory remembers a file, not a tool.**
+
+- **The fault.** `apply_patch`, the tool used when one change must touch
+  several files, carries its paths in `patches` and no top-level `path`. The
+  session's key was built from the tool and its path, so a patch's key was the
+  bare tool name: one yes covered every later patch in the session, on every
+  file, including files the person had never seen.
+- **The rule.** A write is approved once per file per session. A later request
+  that names only files already allowed is not asked about. One that reaches a
+  file the person has not allowed is asked about once, and that one answer
+  remembers every file the request names. The session option reads `Yes, allow
+  these files for this session` when the request names more than one file; the
+  single-file wording is unchanged.
+- **It is the editors' rule.** The VS Code host has remembered a write per file
+  for the session since D49ak (`sessionWrites`). The terminal is brought into
+  line rather than given something new. The path list comes from core
+  (`writePathsOf` in `packages/core/src/runtime/modes.ts`), whose own comment
+  already states the rule: ask unless ALL of the paths are approved, and
+  remember all of them on a yes.
+- **Where it lives.** `packages/cli/src/session.ts`: `rememberedWrites` holds
+  plain paths, shared by every write tool, and `askApproval` builds the key and
+  the session option's label from them.
+- **The honest limit.** A request is answered as a whole. If it touches a file
+  the person wants and one the person does not, it cannot be split: they
+  decline and tell Plato what to change. That follows from the request being
+  atomic, not from the approval design, and it is said beside the benefit
+  rather than left to be discovered.
+- **What it is not.** Not a change to non-write approvals: a command, a fetch
+  or an outside-path read keeps its own key. A write that names no path — a
+  malformed patch — asks and remembers nothing, and its card offers only `No`
+  and `Yes`: the session option is offered only where the answer would actually
+  be remembered, so the card falls back to two answers rather than promising
+  something it cannot keep.
+- **The proof.** `packages/cli/test/session.test.ts` scripts three patch calls:
+  the first names two files and its session option says `Yes, allow these files
+  for this session`; the second names one allowed file and one new one, so it
+  asks once; the third names only an allowed file and draws no card at all.
