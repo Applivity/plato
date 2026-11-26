@@ -148,8 +148,8 @@ const guardLines = (p) => p.evaluate(() => [...document.querySelectorAll('.msg.g
     .map((e) => e.textContent).join('\n'));
   check('the refusal is still drawn between two allowed calls',
     /Plato did not run the command\. That file is protected\./.test(guard), guard);
-  check('and the refused call is NOT counted among the tools that ran',
-    !/3 tool calls/.test(summary), summary);
+  check('and the refused call is NOT counted among the calls that ran',
+    !/3 calls/.test(summary), summary);
   checkPageClean(p, 'chain broken');
   await p.close();
 }

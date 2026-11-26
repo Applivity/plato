@@ -137,8 +137,10 @@ const summary = (p) => p.evaluate(
   await post(p, { type: 'tool', tool: 'apply_diff', phase: 'done' });
   await p.waitForTimeout(700); // the buffer flushes 500ms after the last event
   const one = await summary(p);
+  // D49fg: the line counts CALLS, and it shows no time when the events carried
+  // none — a transcript written before timing existed must not invent one.
   check('a tally of one reads in the singular',
-    one === '1 tool call · 1 file edited', one);
+    one === '1 call · 1 file edited', one);
   checkPageClean(p, 'tool summary, one call');
   await p.close();
 }
@@ -150,7 +152,7 @@ const summary = (p) => p.evaluate(
   await p.waitForTimeout(700);
   const two = await summary(p);
   check('a tally of two still reads in the plural',
-    two === '2 tool calls · 2 files edited', two);
+    two === '2 calls · 2 files edited', two);
   checkPageClean(p, 'tool summary, two calls');
   await p.close();
 }

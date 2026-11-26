@@ -22,6 +22,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -1839,6 +1840,56 @@ describe('Plato field tests — real VS Code', function () {
           );
         }
 
+        // D49fg/D49fh: the tool chain opens, and a reply copies. The render
+        // suites prove both in Chromium; neither proves them in the editor we
+        // ship. Case 43 is the only case that asks, so this block is keyed to
+        // it and to nothing else.
+        //
+        // What makes this a check and not a demonstration: the clipboard is
+        // read back with `pbpaste`. A button that says "Copied" only proves no
+        // exception was thrown; the operating system's clipboard is the thing
+        // the feature is for. NOTE: this replaces the machine's clipboard while
+        // it runs.
+        if (c.n === 43) {
+          try {
+            const line = await driver.findElement(By.css('.msg.tool-summary'));
+            const detail = await driver.findElement(By.css('.tool-detail'));
+            if (await detail.isDisplayed()) {
+              notes.push('CHAIN: the calls were already open before the line was clicked');
+            }
+            await line.click();
+            await driver.sleep(250);
+            if (!(await detail.isDisplayed())) {
+              notes.push('CHAIN: clicking the line did not open it');
+            }
+            const rows = await driver.findElements(By.css('.tool-detail .tool-row'));
+            if (rows.length < 2) {
+              notes.push(`CHAIN: the open line drew ${rows.length} row(s) for a two-call run`);
+            } else {
+              const first = (await rows[0].getText()).replace(/\s+/g, ' ').trim();
+              notes.push(`chain: ${rows.length} rows, the first reads "${first}"`);
+            }
+            await field.shot('case-43-chain-open');
+
+            const copy = await driver.findElement(By.css('.msg-copy'));
+            await copy.click();
+            await driver.sleep(400);
+            const label = (await copy.getText()).trim();
+            if (label !== 'Copied') {
+              notes.push(`COPY: the button said "${label}" — the clipboard call did not succeed`);
+            }
+            const pasted = execFileSync('pbpaste', { encoding: 'utf8' });
+            if (!pasted.includes('assembleDebug')) {
+              notes.push(`COPY: the system clipboard holds "${pasted.slice(0, 80)}"`);
+            } else {
+              notes.push('copy: the system clipboard holds the reply');
+            }
+            await field.shot('case-43-copy');
+          } catch (e) {
+            notes.push(`CHAIN: ${String((e && e.message) || e)}`);
+          }
+        }
+
         // D49at: `STUCK`, `GUIDANCE` and the clause prefixes above are FATAL. The
         // stuck cases' screen checks were written as notes and were NOT in this
         // list, so "no stuck card was ever detected" — the check that gives cases
@@ -1853,7 +1904,7 @@ describe('Plato field tests — real VS Code', function () {
         // D49bm/D49bo: `PAUSE`, `QUEUE` and `PANEL` join it in the same breath as
         // the checks that use them, for exactly that reason.
         const failures = notes.slice(mark).filter((n) =>
-          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT|MCP|SCHEMA|IGNORE|MODE):/.test(n),
+          /^(CARDS|QUESTION|MEMORY|NOTICE|PLAN|PLANNOTE|LOG|DISK|TRANSCRIPT|TICKS|CANCEL|DIAGNOSTICS|STUCK|GUIDANCE|FETCH|OBSERVER|UNDO|SECRET|MODEL|REVEAL|PAUSE|QUEUE|PANEL|CUT|MCP|SCHEMA|IGNORE|MODE|CHAIN|COPY):/.test(n),
         );
         // D49bt: the seeded home config goes as soon as this run is over, so the
         // next case starts from the same empty state this one did.

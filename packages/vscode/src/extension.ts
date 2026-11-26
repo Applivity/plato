@@ -1454,6 +1454,13 @@ class ChatHost {
   /** D49av: what was known before the write in flight — see `onToolEvent`. */
   private pendingDiag: DiagSnapshot | null = null;
   /**
+   * D49fg: when the call in flight started, in epoch milliseconds, or 0 when
+   * no call is running. One slot is enough for the same reason `pendingDiag`
+   * has one: the loop runs tools strictly one at a time, `allowed` then
+   * `done` per call, in order.
+   */
+  private toolStart = 0;
+  /**
    * D49cq: this chat's own live-session endpoint. One per ChatHost, so a
    * message for this conversation reaches THIS panel's run, never whichever
    * panel happened to be created last. Absent when the registry could not be
@@ -6264,11 +6271,28 @@ class ChatHost {
           if (e.phase === 'allowed' && isWriteTool(e.tool)) {
             this.pendingDiag = this.editorDiag.snapshot(root, e.tool, e.args);
           }
+          // D49fg: how long the call took. `allowed` fires for every call the
+          // loop goes on to run, immediately before it runs, and the loop runs
+          // tools strictly one at a time — the fact the slot above already
+          // relies on. A call that never reached `allowed` (denied, declined)
+          // has no duration, and says so rather than borrowing the last one's.
+          if (e.phase === 'allowed') this.toolStart = Date.now();
+          const ended =
+            e.phase === 'done' || e.phase === 'denied' || e.phase === 'declined';
+          const ms = e.phase === 'done' && this.toolStart > 0
+            ? Date.now() - this.toolStart
+            : undefined;
+          if (ended) this.toolStart = 0;
+          // One computation for the wire and the record: the line the person
+          // opens and the line a reload draws must name the same target.
+          const digest = ended ? digestToolCall(e.tool, e.args) : undefined;
           void this.panel.webview.postMessage({
             type: 'tool',
             tool: e.tool,
             phase: e.phase,
             ok: e.ok,
+            digest,
+            ms,
             // D49as: the guard's reason. Without it the live log can say a call
             // was stopped but not which guard stopped it.
             reason: e.reason,
@@ -6286,9 +6310,13 @@ class ChatHost {
               k: 'tool',
               tool: e.tool,
               phase: e.phase,
-              digest: digestToolCall(e.tool, e.args),
+              digest: digest,
               ok: e.ok,
               reason: e.reason,
+              // D49fg: the duration travels with the row, so a reloaded chain
+              // reports what the live one did instead of going quiet. Rows
+              // written before this keep no `ms` and draw no time.
+              ...(ms !== undefined ? { ms } : {}),
             });
           }
           // D49ah: the plan is shown as it is set, and recorded so a reload

@@ -1134,6 +1134,33 @@ export const CASES = [
     ],
   },
   {
+    // D49fg/D49fh. Numbered LAST but run BEFORE case 29 for the reason that
+    // case's own note gives: 29 closes the chat panel, and a case placed after
+    // it starts from a window the driver can no longer reach into.
+    //
+    // Two calls and a fenced block, because the case asserts three things the
+    // render suites cannot: the line is CLOSED in the shipped build, a click
+    // opens it to one row per call, and the reply's copy button puts the text
+    // on the operating system's clipboard.
+    n: 43,
+    title: 'The tool chain opens in a real window, and the reply copies to the system clipboard',
+    runs: [
+      {
+        mode: 'plan',
+        prompt: 'Read both view models, tell me in one line how they differ, and show the exact command that builds the app.',
+        steps: [
+          { tool: 'read_file', args: { path: VIEW_MODEL } },
+          {
+            tool: 'read_file',
+            args: { path: 'app/src/main/java/com/localgsa/hcad/utilities/DateHelper.java' },
+          },
+          { text: 'They differ in how each formats its date.\n\n```sh\n./gradlew assembleDebug\n```\n' },
+        ],
+        cards: [],
+      },
+    ],
+  },
+  {
     n: 29,
     title: 'An MCP server is started, gated and used — and a disabled one is absent',
     // D49bt. MCP shipped in 0.6.0 and had never been driven through a real

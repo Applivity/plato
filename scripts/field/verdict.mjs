@@ -1129,6 +1129,24 @@ const RULES = {
       detail: a.notices.join(' · ') || 'no notices',
     },
   ],
+
+  // 43 — D49fg and D49fh. The SCREEN half (the chain opens, the reply copies to
+  // the system clipboard) is checked in field.test.mjs, because only a real
+  // window can answer it. These are the record's half: the run did the work the
+  // screen is reporting, and nothing was stopped on the way.
+  43: (a) => [
+    {
+      name: 'both reads reached done',
+      ok: a.phasesFor('read_file').filter((e) => e.phase === 'done').length >= 2,
+      detail: summarise(a.phasesFor('read_file')),
+    },
+    {
+      name: 'nothing was refused or declined',
+      ok: !a.phasesFor('read_file')
+        .some((e) => e.phase === 'denied' || e.phase === 'declined'),
+      detail: summarise(a.phasesFor('read_file')),
+    },
+  ],
 };
 
 function summarise(events) {

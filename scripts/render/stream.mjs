@@ -23,10 +23,18 @@ const snap = () =>
   p.evaluate(() => {
     const bots = [...document.querySelectorAll('#log .msg.bot')];
     const live = document.getElementById('streaming');
+    // A committed reply carries a copy button (D49fh). It is a control, not
+    // part of the answer, so the text under test is the text with the controls
+    // taken out — otherwise this suite would pass or fail on the word "Copy".
+    const textOf = (el) => {
+      const clone = el.cloneNode(true);
+      for (const b of clone.querySelectorAll('button')) b.remove();
+      return (clone.textContent || '').trim();
+    };
     return {
       count: bots.length,
-      texts: bots.map((b) => (b.textContent || '').trim()),
-      live: live ? (live.textContent || '').trim() : null,
+      texts: bots.map(textOf),
+      live: live ? textOf(live) : null,
     };
   });
 

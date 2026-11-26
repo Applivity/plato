@@ -243,14 +243,36 @@ export function chatHtml(
      pill that lives in .composer-bar. */
   .msg { margin:0 0 12px; line-height:1.55; white-space:pre-wrap;
          word-break:break-word; }
-  .msg.tool-summary { color:var(--pl-muted); font-size:11px;
+  /* D49fg: the chain's one line. It used to be a filled chip with an accent
+     bar, and a reader said it took his eye before the answer did. It is now
+     plain muted text: 10.5px monospace is genuinely smaller than the 13px
+     prose, which 11px monospace was not, and the chevron — not a rectangle —
+     is what says there is more behind it. No accent sits here: the accent is
+     the cue for the person's own turn, and a second one on every chain would
+     dilute it. The chevron takes the accent on hover and on focus only. */
+  .tool-chain { margin:0 0 12px; }
+  .msg.tool-summary { color:var(--pl-muted); font-size:10.5px; line-height:1.6;
                       font-family:var(--vscode-editor-font-family, monospace);
-                      background:var(--vscode-textCodeBlock-background, rgba(128,128,128,.09));
-                      padding:4px 8px; border-radius:4px;
-                      border-left:2px solid var(--vscode-charts-blue,#4aa3df);
-                      display:inline-block; }
-  /* Leading label so the chip reads as a tool summary, not stray text. */
-  .msg.tool-summary::before { content:'tools '; opacity:.6; }
+                      background:none; border:0; padding:1px 0; margin:0;
+                      display:block; width:100%; text-align:left; cursor:pointer; }
+  .msg.tool-summary::before { content:'\\203A  '; opacity:.7; }
+  .tool-chain.open .msg.tool-summary::before { content:'\\2304  '; }
+  .msg.tool-summary:hover::before,
+  .msg.tool-summary:focus-visible::before { color:var(--pl-accent); opacity:1; }
+  .msg.tool-summary:focus-visible { outline:1px solid var(--pl-accent);
+                                    outline-offset:2px; }
+  /* The calls behind the line. Hidden until the line is clicked, so the
+     closed chain costs one line and nothing else. */
+  .tool-detail { margin:3px 0 0 13px; }
+  .tool-detail[hidden] { display:none; }
+  .tool-row { display:flex; gap:7px; font-size:11px; line-height:1.55;
+              font-family:var(--vscode-editor-font-family, monospace);
+              color:var(--pl-muted); }
+  .tool-row .g { flex:none; }
+  .tool-row .w { flex:none; }
+  .tool-row .d { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; opacity:.9; }
+  .tool-row .t { flex:none; opacity:.65; }
+  .tool-row.bad .g { color:var(--vscode-errorForeground,#e5534b); }
   .msg .who { display:block; font-size:10px; letter-spacing:.08em;
               text-transform:uppercase; color:var(--pl-muted);
               margin-bottom:2px; }
@@ -982,6 +1004,23 @@ export function chatHtml(
                  background:var(--vscode-textCodeBlock-background,
                                 rgba(128,128,128,.09)); }
   .md-code pre code { background:none; padding:0; font-size:inherit; }
+  /* D49fh: copy. Nothing is drawn until the pointer is over the thing that can
+     be copied, so a reply with no copy button costs exactly as much room as
+     one with it. The code block carries its own; a reply carries one for the
+     whole of its text. */
+  .md-code { position:relative; }
+  .copy-btn, .msg-copy { position:absolute; opacity:0; cursor:pointer;
+                         font-family:inherit; font-size:10px; line-height:1;
+                         border-radius:4px; padding:3px 6px;
+                         color:var(--pl-muted);
+                         border:1px solid var(--pl-border);
+                         background:var(--vscode-editorWidget-background,#fff); }
+  .copy-btn { top:4px; right:6px; }
+  .md-code:hover .copy-btn, .copy-btn:focus-visible,
+  .msg.bot:hover .msg-copy, .msg-copy:focus-visible { opacity:1; }
+  .copy-btn:hover, .msg-copy:hover { color:var(--vscode-editor-foreground); }
+  .msg.bot { position:relative; }
+  .msg-copy { top:0; right:0; }
   .md-table { margin:.6em 0; overflow-x:auto; }
   .md-table table { border-collapse:collapse; font-size:12px; }
   .md-table th, .md-table td { border:1px solid var(--pl-border);
@@ -4994,46 +5033,143 @@ export function chatHtml(
     vsapi.postMessage({ type: 'ask', text: text });
   }
 
-  // Tool calls collapse into one summary line ("read_file × 12 · shell × 2").
-  // Only completed calls (phase 'done') are counted, so the line always
-  // matches the done card's tool-call count. Consecutive flushes update the
-  // same line; any other message ends the chain and the next flush starts a
-  // new line.
+  // Tool calls fold into ONE quiet line ("8 calls, 5 files read, 1 command
+  // run") that opens into the calls themselves. Only completed calls (phase
+  // 'done') are counted, so the line always matches the done card's count.
+  // Consecutive flushes update the same chain; any other message ends it.
   let toolBuffer = [];
   let toolFlushTimer = null;
-  let summaryLine = null;
-  let summaryCounts = new Map();
+  /** The chain on screen: its line, the calls behind it, and its detail block. */
+  let chain = null;
+  let chainCounts = new Map();
 
-  function flushToolBuffer() {
-    if (toolBuffer.length === 0) return;
-    const merging = summaryLine !== null && log.lastElementChild === summaryLine;
-    const counts = merging ? summaryCounts : new Map();
-    for (const evt of toolBuffer) {
-      counts.set(evt.tool, (counts.get(evt.tool) || 0) + 1);
-    }
-    toolBuffer = [];
-    summaryCounts = counts;
-    // D49ba: "12 files read \u00b7 2 commands run" rather than "read_file x 12 \u00b7
-    // shell x 2". The count moves behind the words, which is how a person says
-    // it aloud.
-    // A tally of ONE reads the singular: "1 file edited", not "1 files edited".
-    // The plural form alone was what the line always used, so every single call
-    // printed the bug.
+  /** 400ms, 1.2s, 2m 05s: a duration a person reads without converting it. */
+  function spent(ms) {
+    if (!(ms > 0)) return '';
+    if (ms < 1000) return Math.round(ms) + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    return Math.floor(ms / 60000) + 'm '
+      + String(Math.round((ms % 60000) / 1000)).padStart(2, '0') + 's';
+  }
+
+  /**
+   * How the chain's line reads at rest.
+   *
+   * D49ba's wording is kept, one level down: "12 files read", never
+   * "read_file x 12", and a tally of one reads in the singular.
+   *
+   * The time is the SUM of the calls, not the span from first to last: it
+   * answers "how long the tools took", which the line can answer truthfully.
+   * It is shown only when EVERY call in the chain was timed. A sum of some of
+   * them would understate the run, and a transcript written before timing
+   * existed must show no figure at all.
+   */
+  function chainText(counts, calls) {
     const parts = Array.from(counts.entries()).map((p) => {
       const w = wordsFor(String(p[0]));
       return p[1] + ' ' + (p[1] === 1 ? w.countedOne : w.counted);
     });
     const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
-    const text = total + (total === 1 ? ' tool call \u00b7 ' : ' tool calls \u00b7 ')
-      + parts.join(' \u00b7 ');
-    if (merging) {
-      summaryLine.textContent = text;
-    } else {
-      summaryLine = document.createElement('div');
-      summaryLine.className = 'msg tool-summary';
-      summaryLine.textContent = text;
-      log.appendChild(summaryLine);
+    // A chain where every request was declined shows no tally at all. "0
+    // calls" would be a number about nothing.
+    if (total === 0) return 'no calls ran';
+    // Only the calls that RAN are timed; a declined request has no duration
+    // and must not stop the others from reporting theirs.
+    const ran = calls.filter((c) => c.phase === 'done');
+    const timed = ran.filter((c) => typeof c.ms === 'number');
+    const took = ran.length > 0 && timed.length === ran.length
+      ? spent(timed.reduce((a, c) => a + c.ms, 0)) : '';
+    const sep = ' · ';
+    return total + (total === 1 ? ' call' : ' calls')
+      + sep + parts.join(sep) + (took ? sep + took : '');
+  }
+
+  /** One call inside the open chain: how it ended, what it touched, how long. */
+  function toolRowOf(call) {
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+    const ended = call.phase === 'done'
+      ? (call.ok === false ? '✕' : '✓')
+      : call.phase === 'denied' ? '⊘' : '⊖';
+    if (call.phase !== 'done' || call.ok === false) row.classList.add('bad');
+    const glyph = document.createElement('span');
+    glyph.className = 'g';
+    glyph.textContent = ended;
+    const words = document.createElement('span');
+    words.className = 'w';
+    // The tally above says "5 files read", so its rows say "file read". The
+    // tool's own name is never the thing the person reads.
+    words.textContent = wordsFor(call.tool).countedOne;
+    const what = document.createElement('span');
+    what.className = 'd';
+    what.textContent = call.digest || '';
+    row.appendChild(glyph);
+    row.appendChild(words);
+    row.appendChild(what);
+    const why = call.phase === 'denied' ? 'not permitted in this mode'
+      : call.phase === 'declined' ? 'you declined'
+        : call.ok === false ? 'failed' : '';
+    const tail = why || (typeof call.ms === 'number' ? spent(call.ms) : '');
+    if (tail) {
+      const time = document.createElement('span');
+      time.className = 't';
+      time.textContent = tail;
+      row.appendChild(time);
     }
+    return row;
+  }
+
+  function drawChain() {
+    if (chain === null) return;
+    chain.detail.textContent = '';
+    for (const call of chain.calls) chain.detail.appendChild(toolRowOf(call));
+  }
+
+  function flushToolBuffer() {
+    if (toolBuffer.length === 0) return;
+    const merging = chain !== null && chain.wrap === log.lastElementChild;
+    const counts = merging ? chainCounts : new Map();
+    const calls = merging ? chain.calls.slice() : [];
+    for (const evt of toolBuffer) {
+      if (evt.phase === 'done') {
+        counts.set(evt.tool, (counts.get(evt.tool) || 0) + 1);
+      }
+      calls.push(evt);
+    }
+    toolBuffer = [];
+    chainCounts = counts;
+    if (!merging) {
+      const wrap = document.createElement('div');
+      wrap.className = 'tool-chain';
+      // A real button, not a div with a click handler: the keyboard reaches it,
+      // the browser announces it as expandable, and Enter and Space work
+      // without a key handler of ours.
+      const line = document.createElement('button');
+      line.type = 'button';
+      line.className = 'msg tool-summary';
+      line.setAttribute('aria-expanded', 'false');
+      const detail = document.createElement('div');
+      detail.className = 'tool-detail';
+      detail.hidden = true;
+      wrap.appendChild(line);
+      wrap.appendChild(detail);
+      log.appendChild(wrap);
+      // The handler closes over ITS OWN chain, so a line from an earlier run
+      // still opens itself after a newer chain has started.
+      line.addEventListener('click', () => {
+        const opening = detail.hidden;
+        detail.hidden = !opening;
+        wrap.classList.toggle('open', opening);
+        line.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        scroll();
+      });
+      chain = { wrap, line, detail, calls: [] };
+    }
+    chain.calls = calls;
+    chain.line.textContent = chainText(counts, calls);
+    chain.line.title = 'Show the ' + (calls.length === 1 ? 'call' : 'calls')
+      + ' behind this line';
+    drawChain();
     scroll();
   }
 
@@ -5248,7 +5384,7 @@ export function chatHtml(
         // Turn boundary: commit the ongoing stream into a finished block so
         // the next turn and any intervening notices/logos land in order.
         const el = document.getElementById('streaming');
-        if (el) { el.removeAttribute('id'); }
+        if (el) { el.removeAttribute('id'); addReplyCopy(el); }
         streaming = false;
         break;
       }
@@ -5281,9 +5417,18 @@ export function chatHtml(
           refreshChip();
           break;
         }
-        // Only completed calls count; pending/denied phases stay in the chip.
-        if (m.phase === 'done') {
-          toolBuffer.push({ tool: m.tool, phase: m.phase });
+        // Only completed calls are COUNTED: the line must equal the done
+        // card's number. A declined or denied call still joins the chain, so
+        // the open line can say it did not run and why — a record of the
+        // requests that were made, not only the ones that went through.
+        if (m.phase === 'done' || m.phase === 'denied' || m.phase === 'declined') {
+          toolBuffer.push({
+            tool: m.tool,
+            phase: m.phase,
+            ok: m.ok,
+            digest: m.digest,
+            ms: m.ms,
+          });
           scheduleToolFlush();
         }
         refreshChip();
@@ -5487,7 +5632,17 @@ export function chatHtml(
           addMsg('guard', null, guardText(t.tool, t.reason));
           break;
         }
-        if (t.phase === 'done') { toolBuffer.push({ tool: t.tool, phase: t.phase }); }
+        // The same three phases the live path keeps, from the same row, so a
+        // reloaded chain opens to exactly what the live one showed.
+        if (t.phase === 'done' || t.phase === 'denied' || t.phase === 'declined') {
+          toolBuffer.push({
+            tool: t.tool,
+            phase: t.phase,
+            ok: t.ok,
+            digest: t.digest,
+            ms: t.ms,
+          });
+        }
         break;
       // D49cg: a replayed approval card is never interactive. A log written
       // before this fix has an open row with no close, and the state it ended
@@ -5730,6 +5885,89 @@ export function chatHtml(
     return 'Plato did not run ' + what + '.';
   }
 
+  /**
+   * D49fh: copy.
+   *
+   * A button on every reply would be noise, so nothing is drawn until the
+   * pointer is over the thing that can be copied. Two rules hold it down: a
+   * fenced block carries a button for that block, and a reply carries ONE for
+   * its whole text. The person's own turn never carries one — it is already in
+   * their head, and it is already in their buffer.
+   */
+  function copyText(text) {
+    const fallback = () => {
+      // The page's own clipboard API needs a permission the webview host may
+      // not grant. A hidden textarea and execCommand need none, and they work
+      // in both editors we ship in.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      ta.remove();
+      return ok;
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text)
+        .catch(() => { if (!fallback()) throw new Error('copy failed'); });
+    }
+    return fallback()
+      ? Promise.resolve()
+      : Promise.reject(new Error('copy failed'));
+  }
+
+  /** Says what happened, then goes back to being an offer. */
+  function copyButton(className, textOf) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = className;
+    btn.textContent = 'Copy';
+    let timer = null;
+    btn.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      try {
+        await copyText(String(textOf() || ''));
+        btn.textContent = 'Copied';
+      } catch {
+        btn.textContent = 'Could not copy';
+      }
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+    });
+    return btn;
+  }
+
+  /** One button per fenced block. Safe to call on every fragment that lands. */
+  function decorateCopy(el) {
+    for (const block of el.querySelectorAll('.md-code')) {
+      if (block.querySelector(':scope > .copy-btn') !== null) continue;
+      const code = block.querySelector('pre code');
+      // The block's body and nothing else: the language label is a label, and
+      // a copied command with the word "bash" in front of it does not run.
+      // Trailing whitespace goes too — a command pasted into a terminal runs
+      // the moment it ends in a newline, which is not what copying it means.
+      block.appendChild(copyButton('copy-btn',
+        () => (code ? String(code.textContent || '').replace(/\s+$/, '') : '')));
+    }
+  }
+
+  /** One button per reply, for the whole of it. */
+  function addReplyCopy(div) {
+    if (div.querySelector(':scope > .msg-copy') !== null) return;
+    const body = () => {
+      const clone = div.cloneNode(true);
+      for (const b of clone.querySelectorAll('button')) b.remove();
+      for (const w of clone.querySelectorAll('.who')) w.remove();
+      return (clone.textContent || '').trim();
+    };
+    if (body() === '') return;
+    div.appendChild(copyButton('msg-copy', body));
+  }
+
   function addMsg(cls, who, text, asHtml) {
     const div = document.createElement('div');
     div.className = 'msg ' + cls;
@@ -5741,7 +5979,15 @@ export function chatHtml(
     if (asHtml) { body.innerHTML = text; } else { body.textContent = text; }
     div.appendChild(body);
     log.appendChild(div);
-    if (asHtml) { scanPaths(div); }
+    if (asHtml) {
+      scanPaths(div);
+      decorateCopy(div);
+    }
+    // D49fh: a reply is a reply whether it arrived live or came back from the
+    // record, so the button is attached here rather than only where HTML is
+    // inserted. An error is not a reply, and the placeholder an arriving
+    // answer draws into is empty until it has text.
+    if (cls === 'bot' && who !== 'Error') addReplyCopy(div);
     scroll();
     return div;
   }
@@ -5874,12 +6120,18 @@ export function chatHtml(
     // The host's answer is cached per path, so this is a lookup on every
     // fragment after the first — not a round trip per keystroke.
     scanPaths(el);
+    decorateCopy(el);
     scroll();
   }
 
   function finish() {
     const el = document.getElementById('streaming');
-    if (el) { el.removeAttribute('id'); }
+    if (el) {
+      el.removeAttribute('id');
+      // The answer is whole, so this is the first moment its copy button can
+      // copy the whole of it.
+      addReplyCopy(el);
+    }
     streaming = false;
     busy = false;
     clearStatus();
