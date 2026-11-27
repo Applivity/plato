@@ -9354,3 +9354,31 @@ person's name.**
   a heading that matches none of them stays plain.
 - **The row glyph grew.** A tick at the row's 11px reads as a speck; the glyph
   is 13px, slightly heavier, and its column is fixed so the words line up.
+
+**D49fu — The terminal's approval card names the situation, and three outcomes
+stay three.**
+
+- **The heading comes from core.** The terminal's card draws
+  `approvalHeading(tool, args)` — `Let Plato run this command?`, `Let Plato write
+  note.txt?` — and the plain one-line prompt, used when there is no panel, asks
+  the same question. It used to print `Allow <tool>?`, which names Plato's own
+  part and says nothing about the decision (the fault D49ba repaired in the
+  editors). One function builds all three, so the terminal and the panels cannot
+  drift apart.
+- **Denied is an answer; cancelled is not.** The card's footer promises that
+  Esc "denies and stops the run", so a person who presses it has answered no,
+  and the row records `denied`. Only a close that takes the choice for them —
+  Ctrl+C on the card, or a host releasing a waiting card — records `cancelled`.
+  The old row, `Denied and stopped — …`, was one sentence for both cases and
+  claimed the person answered when the run had ended under them.
+- **The outcome is stored as data, not parsed out of the sentence.** The row
+  carries the outcome and the exact word it owes; the view splits the row only
+  where its tail is that word, and colours only the word — allowed and a session
+  grant green, denied yellow, cancelled red, the founder's scheme from D49fs.
+  With `NO_COLOR` the row stays plain and the mark and word still say which way
+  it went.
+- **What it is not.** The terminal's Markdown renderer, the chain's chevron and
+  the tick size are not part of this change: a terminal has no chevron and sets
+  glyph size with its own font. The decimal-as-link repair (D49fq) does not
+  reach it either, because the terminal makes a link only from
+  `[text](url)` — `0.88` in a sentence was already plain text there.
