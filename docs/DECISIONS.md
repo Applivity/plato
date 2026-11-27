@@ -9244,3 +9244,36 @@ and a dispatched mouse event both fail to copy — the clipboard APIs require a
 trusted gesture — which is why the proof used dispatched input at a
 scroll-corrected point, and why a future check of this kind must not judge the
 feature from a script-driven click.
+
+## The copy control, the room around an answer, and the time (2026-11-27)
+
+**D49fj — A control in the corner of a message must not cover the message, and
+every turn says when it was said.**
+
+- **The overlap was structural, not cosmetic.** Both copy controls were drawn
+  absolutely in the corner of the thing they belonged to, so a long line of code
+  ran under one and the first line of an answer ran under the other. Moving them
+  would only move the collision. The block's control now sits in the block's
+  header bar, which the renderer emits **always** — a block with no language
+  still has a bar — so there is no position from which it can cover code. The
+  reply's control sits in a 20px strip reserved beneath every answer.
+- **They are glyphs, not words.** A word in the corner of a message is a label
+  competing with the text. The control draws a clipboard and becomes a tick when
+  the copy succeeds; its accessible name carries the wording a screen reader
+  needs. An icon with no name would be invisible to one.
+- **Spacing is now generous on purpose.** An answer takes 18px above it, a 1.6
+  line height, 10px of code padding and the strip below. The person's turn moves
+  from 20px to 24px, because adjacent margins collapse to the larger one and a
+  cue of 20 against 18 would be no cue at all. The readability suite now asserts
+  that relation — a turn is introduced by more space than an answer — instead of
+  the fixed 14px it used to check, which the new spacing makes meaningless.
+- **The time.** Every turn carries a short local time at the right end of its
+  speaker row, with the whole date and time as the tooltip. The host stamps each
+  message it records, in one place, so no row can be added without a time and a
+  reload shows what the live page showed. A record written before this shows
+  **no** time rather than a guess — the same rule as the tool durations, and for
+  the same reason.
+- **A defect found on the way.** The streaming render replaced the message's
+  whole content on every fragment, which took the speaker row with it: a reply
+  being written had no name, and no place for a time, until the transcript was
+  redrawn at the end of the run. The row is restored on every fragment now.
