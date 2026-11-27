@@ -1020,15 +1020,17 @@ export function chatHtml(
      one with it. The code block carries its own; a reply carries one for the
      whole of its text. */
   .copy-btn, .msg-copy { opacity:0; cursor:pointer; font-family:inherit;
-                         line-height:1; padding:3px; border-radius:3px;
+                         line-height:1; padding:5px; border-radius:4px;
                          border:1px solid transparent; background:none;
                          color:var(--pl-muted); display:inline-flex;
                          align-items:center; justify-content:center; }
   .copy-btn { flex:none; }
   /* The answer carries a 2px bar and 8px of padding, and the button's own
-     padding sits between its box and the glyph. left:4px puts the glyph on the
-     answer's first character and keeps it clear of the bar. */
-  .msg-copy { position:absolute; left:4px; bottom:2px; }
+     border and padding sit between its box and the glyph: 1 + 5 = 6, so
+     left:2px puts the glyph on the answer's first character and keeps the box
+     clear of the bar. The 5px padding is what makes the control easy to hit
+     with a pointer, not just easy to see. */
+  .msg-copy { position:absolute; left:2px; bottom:2px; }
   .md-code:hover .copy-btn, .copy-btn:focus-visible,
   .msg.bot:hover .msg-copy, .msg-copy:focus-visible { opacity:1; }
   .copy-btn:hover, .msg-copy:hover { color:var(--vscode-editor-foreground);

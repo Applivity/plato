@@ -38,6 +38,14 @@ const scene = (p) => p.evaluate(() => {
       const b = bot.getBoundingClientRect();
       return Math.round(b.bottom - r.bottom);
     })(),
+    // The founder asked for a control a pointer can hit, not one it must aim
+    // at. A 13px glyph in a 3px frame is 21px square, which is too small.
+    copySize: (() => {
+      const btn = bot ? bot.querySelector('.msg-copy') : null;
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    })(),
     // The founder saw the glyph pressed against the answer's grey bar. Where
     // the ink starts, measured, so a padding change cannot quietly undo it.
     copyInset: (() => {
@@ -86,6 +94,8 @@ const scene = (p) => p.evaluate(() => {
     parseFloat(s.paddingBottom) >= 18 && s.marginBottom !== '0px', s);
   check('the copy control sits at the BOTTOM of the reply',
     s.copyBottom !== null && s.copyBottom <= 6, s);
+  check('the copy control is big enough to hit without aiming',
+    s.copySize !== null && s.copySize.w >= 24 && s.copySize.h >= 24, s.copySize);
   check('the copy glyph starts on the answer\'s text column',
     s.copyInset !== null && Math.abs(s.copyInset.fromText) <= 1, s.copyInset);
   check('and keeps clear air between it and the answer\'s bar',
