@@ -9277,3 +9277,47 @@ every turn says when it was said.**
   whole content on every fragment, which took the speaker row with it: a reply
   being written had no name, and no place for a time, until the transcript was
   redrawn at the end of the run. The row is restored on every fragment now.
+
+**D49fq — A number is not a file, and a theme colour must be readable as text.**
+
+- **The defect was one rule with two harms.** The path detector treated any bare
+  token with two characters after a dot as a file name, so `0.88` in a sentence
+  became "a file called 0 with the extension 88" and was drawn as a link. On the
+  code chip that is link colour on a grey box: measured in the founder's Visual
+  Studio dark theme, `#7160e8` on `#525252`, a ratio of 1.7:1 — the value was
+  unreadable, and it looked like a control because it was one. A bare name now
+  needs a letter before the dot. Real names (`screenshot.png`,
+  `Demo/OrderService.cs`) still become clickable; numbers cannot.
+- **Visual Studio's semantic colour keys cannot be trusted, so they are
+  corrected rather than believed.** Measured on the installed 0.5.6 pane: the
+  error and warning keys both resolve to the plain foreground (`#fafafa`), so a
+  denied card would have drawn white; the auto green was `#1a8a4a`, 3.4:1 on the
+  panel; the link accent was 3.2:1. The host now starts from a fixed hue for
+  states that are read as text and moves it toward white or black until it
+  reaches 4.5:1 against the panel, keeping the hue. Muted text takes the same
+  floor. The code chip is a tint of the panel/foreground pair, because the
+  code-block key is not tied to the theme either.
+- **The mode colours were fixed hexes in a theme-blind stylesheet.** Auto, act
+  and plan drew the same green, blue and purple on every surface, which is why
+  the auto green disappeared on a dark panel. They now take the theme's charts
+  palette, which both hosts provide (Visual Studio's values pass through the
+  same contrast floor).
+
+**D49fr — An answered card carries its own decision; it is not a message in the
+person's name.**
+
+- **The fault was in the record, not only the pixels.** Answering a card pushed
+  a `You` message reading `[allowed]` or `[denied]` — a turn the person never
+  took, in a format no person writes, repeating the heading one line above it.
+  A denied card made the transcript claim its reader said "denied".
+- **The card owns the outcome.** The heading carries a mark — tick for allowed,
+  cross for denied, dash for cancelled — coloured from the theme's pass, fail
+  and warning colours, with the minute at its right end. Allowed and "allow
+  every … this session" are both green, because both grant.
+- **The record keeps it as data.** `card-done` gained `outcome` and `t`; the
+  view draws the mark from the field rather than parsing the sentence, the same
+  rule that made the card's `data-tool` necessary. A record written before this
+  draws the plain heading it always had.
+- **Old transcripts are cleaned on replay.** The three exact strings the old
+  host wrote are skipped when a log is replayed, so an old conversation does not
+  come back with a fake turn in it.

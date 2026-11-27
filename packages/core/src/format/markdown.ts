@@ -69,7 +69,13 @@ function asLocalPath(raw: string, bareName: boolean): string | null {
   if (hasSlash) {
     return /\.[A-Za-z0-9]{1,10}$/.test(s) ? s : null;
   }
-  return bareName && /\.[A-Za-z0-9]{2,10}$/.test(s) ? s : null;
+  // D49fq: a bare name needs a LETTER before the dot. Without that rule a
+  // decimal such as `0.88` in a sentence is "a file called 0 with extension
+  // 88", and the reply draws it as a link — link colour on the code chip, which
+  // is unreadable. A real bare file name always has a letter in its stem.
+  if (!bareName) return null;
+  const stem = s.replace(/\.[^.]*$/, '');
+  return /[A-Za-z]/.test(stem) && /\.[A-Za-z0-9]{2,10}$/.test(s) ? s : null;
 }
 
 /** The content of an inline code span, when that content is a path. */

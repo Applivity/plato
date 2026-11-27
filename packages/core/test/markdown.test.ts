@@ -223,6 +223,19 @@ describe('local paths (D49dj)', () => {
     expect(out).toContain(`<code>${span('screenshot.png')}</code>`);
   });
 
+  // D49fq: the client saw `0.88` drawn as a link on the code chip. The bare-name
+  // rule read it as a file "0" with extension "88", so a number in a sentence
+  // became a control — in link colour, which is unreadable on the chip.
+  it('leaves a decimal in inline code as plain code, not a link', () => {
+    const out = renderMarkdown('a total of `0.88` is not right');
+    expect(out).toBe('<p>a total of <code>0.88</code> is not right</p>');
+  });
+
+  it('and the same for a version-like number', () => {
+    const out = renderMarkdown('pinned at `1.2.10`');
+    expect(out).toBe('<p>pinned at <code>1.2.10</code></p>');
+  });
+
   it('keeps a path with spaces clickable inside backticks', () => {
     const out = renderMarkdown('Saved `/Users/me/My Folder/shot.png` now');
     expect(out).toContain(span('/Users/me/My Folder/shot.png'));

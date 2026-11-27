@@ -1138,7 +1138,15 @@ type Entry =
   | { k: 'mode-open'; current: Mode; mode: Mode; reason: string }
   /** D49cb: answered, or the run was cancelled — closes the card on a reload. */
   | { k: 'mode-done' }
-  | { k: 'card-done'; title: string; preview: string }
+  | {
+      k: 'card-done';
+      title: string;
+      preview: string;
+      // D49fr: how the card was answered, and when. The view colours the mark
+      // from this and draws the time; neither is parsed back out of the title.
+      outcome?: 'allowed' | 'denied' | 'session' | 'cancelled';
+      t?: number;
+    }
   /** D44d: the model's memory boundary — a fold replaced older turns with this. */
   | { k: 'compact'; text: string }
   /**
@@ -1576,18 +1584,18 @@ class ChatHost {
           const ok = m.value === 'yes';
           resolve(ok);
           if (card !== null) {
+            // D49fr: the decision lives on the CARD — its mark and its time.
+            // A "You" message used to be pushed underneath it reading
+            // "[allowed]", which claimed the person typed it and repeated what
+            // the heading already says.
             this.push({
               k: 'card-done',
               title: approvalAnswered(card.heading, ok),
               preview: card.preview,
+              outcome: ok ? 'allowed' : 'denied',
+              t: Date.now(),
             });
           }
-          this.push({
-            k: 'msg',
-            cls: 'you',
-            who: 'You',
-            text: ok ? '[allowed]' : '[denied]',
-          });
           return;
         }
         if (m.type === 'approve-all' && typeof m.tool === 'string') {
@@ -1614,6 +1622,8 @@ class ChatHost {
               k: 'card-done',
               title: approvalAnsweredSession(card.heading),
               preview: card.preview,
+              outcome: 'session',
+              t: Date.now(),
             });
           }
           // D49ba: the key is internal ("web_fetch:example.com") and "approved"
@@ -3774,7 +3784,13 @@ class ChatHost {
     // live, so the user could answer a card that belonged to a dead run.
     if (card !== null) {
       const title = approvalCancelled(card.heading);
-      this.push({ k: 'card-done', title, preview: card.preview });
+      this.push({
+        k: 'card-done',
+        title,
+        preview: card.preview,
+        outcome: 'cancelled',
+        t: Date.now(),
+      });
       this.send('approval-done', title);
     }
     // D49aq: and unblock a waiting QUESTION, which cancel used to miss. The loop

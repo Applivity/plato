@@ -324,8 +324,22 @@ export function chatHtml(
   .card { margin:6px 0 12px; border:1px solid var(--pl-border);
           border-radius:6px; overflow:hidden; }
   .card h3 { margin:0; padding:7px 10px; font-size:12px; font-weight:600;
+             display:flex; align-items:center; gap:6px;
              background:var(--vscode-editorWidget-background,
                         rgba(128,128,128,.12)); }
+  /* D49fr: the answered card wears its outcome — a coloured mark, the sentence,
+     and the minute — on the heading row. Allowed green, denied red, cancelled
+     yellow (the theme's warning colour, which is that hue on every surface). */
+  .card h3 .out-text { flex:1 1 auto; min-width:0; }
+  .card h3 .msg-time { flex:none; font-size:10px; font-weight:400;
+                       letter-spacing:0; text-transform:none; opacity:.75; }
+  .card[data-outcome="allowed"] .out-mark,
+  .card[data-outcome="session"] .out-mark {
+    color:var(--vscode-testing-iconPassed,#73c991); }
+  .card[data-outcome="denied"] .out-mark {
+    color:var(--vscode-testing-iconFailed,#f14c4c); }
+  .card[data-outcome="cancelled"] .out-mark {
+    color:var(--vscode-editorWarning-foreground,#cca700); }
   .card pre { margin:0; padding:8px 10px; max-height:220px; overflow:auto;
               font-family:var(--vscode-editor-font-family, monospace);
               font-size:11.5px; line-height:1.45;
@@ -1398,9 +1412,12 @@ export function chatHtml(
   #modeBtn .caret { color:var(--pl-muted); flex:none; }
   /* D49ak: three distinct hues - plan=violet, edit=blue, auto=green.
      No two modes are the same color. The act mode's orange went with it. */
-  #modeBtn.mode-plan { color:#7c4dbf; }
-  #modeBtn.mode-edit { color:#4a9eff; }
-  #modeBtn.mode-auto { color:#1a8a4a; }
+  /* D49fq: the mode is a colour cue, so the colour must follow the theme. These
+     were fixed hexes: the auto green was 3.4:1 on Visual Studio's dark panel,
+     and the plan purple was worse. The charts palette is the theme's own. */
+  #modeBtn.mode-plan { color:var(--vscode-charts-purple,#b180d7); }
+  #modeBtn.mode-edit { color:var(--vscode-charts-blue,#3794ff); }
+  #modeBtn.mode-auto { color:var(--vscode-charts-green,#89d185); }
   /* Send button: same four-color palette, with readable text colors
      on each. */
   .btn-send { display:inline-flex; align-items:center; gap:6px;
@@ -1514,9 +1531,9 @@ export function chatHtml(
      uses a chip background behind the icon so it reads at a glance
      even in dim themes. */
   .mp-row .mp-icn { padding:3px; border-radius:5px; }
-  .mp-row.mode-plan .mp-icn { color:#7c4dbf; background:rgba(149,117,205,.16); }
-  .mp-row.mode-edit .mp-icn { color:#4a9eff; background:rgba(74,158,255,.14); }
-  .mp-row.mode-auto .mp-icn { color:#1a8a4a; background:rgba(59,186,106,.12); }
+  .mp-row.mode-plan .mp-icn { color:var(--vscode-charts-purple,#b180d7); background:rgba(149,117,205,.16); }
+  .mp-row.mode-edit .mp-icn { color:var(--vscode-charts-blue,#3794ff); background:rgba(74,158,255,.14); }
+  .mp-row.mode-auto .mp-icn { color:var(--vscode-charts-green,#89d185); background:rgba(59,186,106,.12); }
   .mp-row.active.mode-plan .mp-icn { color:#fff; background:#9575cd; }
   .mp-row.active.mode-edit .mp-icn { color:#fff; background:#4a9eff; }
   .mp-row.active.mode-auto .mp-icn { color:#0d2a18; background:#3bba6a; }
@@ -5622,7 +5639,19 @@ export function chatHtml(
     scroll();
   }
 
+  // D49fr: records written before the decision moved onto the card kept it as a
+  // "You" message. Those three exact strings are the whole set, and replay
+  // skips them: the card above already says which way it went.
+  const LEGACY_DECISION = new Set([
+    '[allowed]',
+    '[denied]',
+    '[allowed for the rest of this session]',
+  ]);
+
   function appendEntry(t) {
+    if (t.k === 'msg' && t.cls === 'you' && LEGACY_DECISION.has(String(t.text))) {
+      return;
+    }
     // Replay uses the same collapsing rule as live runs: consecutive tool
     // entries merge into one summary line, any other entry ends the chain.
     if (t.k !== 'tool') { flushToolBuffer(); }
@@ -6292,10 +6321,10 @@ export function chatHtml(
      * it by the approval-card class minus the answered class. A spent card left
      * unmarked reads as live, and a case would then answer a settled question.
      */
-    function spent(text) {
+    function spent(text, outcome) {
       actions.remove();
       card.classList.add('answered');
-      h.textContent = text;
+      markDecision(card, text, outcome, Date.now());
       if (openApprovalCard === card) { openApprovalCard = null; }
     }
     function decide(v) {
@@ -6303,8 +6332,10 @@ export function chatHtml(
       // All three answered headings arrive ready-made. This used to be a string
       // replace here, which silently did nothing if the heading ever stopped
       // ending in a question mark — leaving a spent card reading like a live one.
-      spent(String(v ? (m.headingAllowed || 'Allowed') : (m.headingDenied || 'Denied')));
-      addMsg('you', 'You', v ? '[allowed]' : '[denied]', false, Date.now());
+      spent(
+        String(v ? (m.headingAllowed || 'Allowed') : (m.headingDenied || 'Denied')),
+        v ? 'allowed' : 'denied',
+      );
     }
     function decideAll() {
       vsapi.postMessage({
@@ -6312,8 +6343,7 @@ export function chatHtml(
         tool: m.tool,
         sessionKey: m.sessionKey,
       });
-      spent(String(m.headingSession || 'Allowed for the rest of this session'));
-      addMsg('you', 'You', '[allowed for the rest of this session]');
+      spent(String(m.headingSession || 'Allowed for the rest of this session'), 'session');
     }
     actions.appendChild(yes);
     actions.appendChild(all);
@@ -6345,9 +6375,8 @@ export function chatHtml(
     const actions = card.querySelector('.actions');
     if (actions) { actions.remove(); }
     card.classList.add('answered');
-    const h = card.querySelector('h3');
-    if (h && typeof title === 'string' && title.length > 0) {
-      h.textContent = title;
+    if (typeof title === 'string' && title.length > 0) {
+      markDecision(card, title, 'cancelled', Date.now());
     }
     clearStatus();
   }
@@ -7024,12 +7053,49 @@ export function chatHtml(
     card.className = 'card approval-card answered';
     if (t.tool) { card.dataset.tool = String(t.tool); }
     const h = document.createElement('h3');
-    h.textContent = t.title;
     card.appendChild(h);
+    // D49fr: the record carries the outcome and its time, so a replayed card
+    // draws the same mark and the same minute the live one did — and a record
+    // written before either existed draws the plain heading it always had.
+    markDecision(card, String(t.title), t.outcome, t.t);
     const pre = document.createElement('pre');
     pre.innerHTML = diffHtml(String(t.preview));
     card.appendChild(pre);
     log.appendChild(card);
+  }
+
+  /**
+   * D49fr: how the card was answered — a coloured mark, the sentence core built,
+   * and the time at the right end. It replaces a "You" message that read
+   * "[allowed]": it claimed the person typed the answer, and it repeated what
+   * the heading already said.
+   */
+  function markDecision(card, text, outcome, ms) {
+    const h = card.querySelector('h3');
+    if (h === null) return;
+    h.textContent = '';
+    if (typeof outcome === 'string' && outcome.length > 0) {
+      const mark = document.createElement('span');
+      mark.className = 'out-mark';
+      mark.setAttribute('aria-hidden', 'true');
+      mark.textContent = outcome === 'denied' ? '✕'
+        : outcome === 'cancelled' ? '–' : '✓';
+      h.appendChild(mark);
+      card.dataset.outcome = outcome;
+    }
+    const label = document.createElement('span');
+    label.className = 'out-text';
+    label.textContent = String(text);
+    h.appendChild(label);
+    if (typeof ms === 'number') {
+      const when = new Date(ms);
+      const t = document.createElement('span');
+      t.className = 'msg-time';
+      t.textContent = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      t.title = when.toLocaleString();
+      t.setAttribute('datetime', when.toISOString());
+      h.appendChild(t);
+    }
   }
 
   function diffHtml(preview) {

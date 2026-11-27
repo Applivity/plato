@@ -109,9 +109,13 @@ const runUi = (p) => p.evaluate(() => {
   await p.waitForTimeout(200);
   const closed = await p.evaluate(() => {
     const c = document.querySelector('.card.approval-card');
+    // D49fr: an answered heading is a mark, the label and the time; the sentence
+    // is the label, so that is what a check about the wording reads.
+    const label = c ? c.querySelector('h3 .out-text') : null;
     return {
       answered: c ? c.classList.contains('answered') : false,
-      heading: c ? c.querySelector('h3').textContent : '',
+      heading: label ? label.textContent : (c ? c.querySelector('h3').textContent : ''),
+      outcome: c ? (c.dataset.outcome ?? '') : '',
       buttons: c ? c.querySelectorAll('button').length : -1,
       posted: window.__posted.slice(),
     };
@@ -119,6 +123,8 @@ const runUi = (p) => p.evaluate(() => {
   check('a cancelled card is marked answered', closed.answered === true, closed);
   check('and says it was cancelled, not denied',
     closed.heading === 'Let Plato write src/a.ts — cancelled', closed.heading);
+  check('and carries the cancelled outcome, so its mark is not the denied one',
+    closed.outcome === 'cancelled', closed.outcome);
   check('and has no buttons left', closed.buttons === 0, closed.buttons);
   check('and closing it posts no answer',
     closed.posted.every((m) => m.type !== 'approve' && m.type !== 'approve-all'), closed.posted);

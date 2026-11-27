@@ -11,6 +11,7 @@ export const approvalHeading = core.approvalHeading;
 export const approvalAllowAll = core.approvalAllowAll;
 export const approvalAnswered = core.approvalAnswered;
 export const approvalAnsweredSession = core.approvalAnsweredSession;
+export const approvalCancelled = core.approvalCancelled;
 
 /** The message the host sends at ready. Every suite that draws tool words needs it. */
 export const TOOL_WORDS_MSG = { type: 'tool-words', words: core.toolWordsForView() };

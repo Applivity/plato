@@ -314,9 +314,18 @@ try {
   await waitPost((m) => m.type === 'done', 'the denied run to finish', mark);
   assert.equal(existsSync(join(ROOT, 'denied.txt')), false, 'a denied write does not happen');
   await settle();
+  // D49fr: the refusal is on the CARD — its outcome and its time — and it is
+  // not written as a turn in the person's name. The old record kept "[denied]"
+  // as a `You` message, which claimed the person typed the answer.
+  const deniedLog = chatValue(stateFile(), 'log');
   assert.ok(
-    chatValue(stateFile(), 'log').some((e) => e.k === 'msg' && e.text === '[denied]'),
-    'the refusal is in the conversation',
+    deniedLog.some((e) => e.k === 'card-done' && e.outcome === 'denied'),
+    'the refusal is on the card in the conversation',
+  );
+  assert.equal(
+    deniedLog.some((e) => e.k === 'msg' && e.text === '[denied]'),
+    false,
+    'and is not written as a turn in the person\'s name',
   );
 
   // -- approve ----------------------------------------------------------

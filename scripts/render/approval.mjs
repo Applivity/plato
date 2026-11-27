@@ -8,6 +8,7 @@ import {
   approvalAllowAll,
   approvalAnswered,
   approvalAnsweredSession,
+  approvalCancelled,
 } from './plib.mjs';
 
 /**
@@ -62,8 +63,19 @@ const post = (p, msg) => p.evaluate((x) => window.dispatchEvent(
 
 const cardInfo = (p) => p.evaluate(() => {
   const c = document.querySelector('.card.approval-card');
-  if (!c) return { found: false, buttons: [], text: '', heading: '', tool: '' };
+  if (!c) {
+    return {
+      found: false, buttons: [], text: '', heading: '', tool: '',
+      outcome: '', mark: '', time: '', you: 0,
+    };
+  }
   const h = c.querySelector('h3');
+  // D49fr: an answered card's heading is a mark, a label and a time; a live
+  // card's is one text node. Reading the label when it exists keeps every
+  // heading check about the sentence, not about the decoration.
+  const label = h ? h.querySelector('.out-text') : null;
+  const mark = h ? h.querySelector('.out-mark') : null;
+  const time = h ? h.querySelector('.msg-time') : null;
   return {
     found: true,
     // Trimmed: a button can carry child markup (the run controls now do),
@@ -71,7 +83,11 @@ const cardInfo = (p) => p.evaluate(() => {
     // into an unrelated red suite.
     buttons: [...c.querySelectorAll('button')].map((b) => b.textContent.trim()),
     text: c.textContent,
-    heading: h ? h.textContent : '',
+    heading: h ? (label ? label.textContent : h.textContent) : '',
+    outcome: c.dataset.outcome ?? '',
+    mark: mark ? mark.textContent : '',
+    time: time ? time.textContent : '',
+    you: document.querySelectorAll('.msg.you').length,
     tool: c.dataset.tool ?? '',
   };
 });
@@ -187,6 +203,14 @@ const cardInfo = (p) => p.evaluate(() => {
   const r = await cardInfo(p);
   check('the answered card says it was allowed',
     r.heading === approvalAnswered('Let Plato write src/a.ts?', true), r.heading);
+  // D49fr: the answer lives on the card — carry it as data, draw a mark, keep
+  // the time — instead of a "You" message reading "[allowed]" underneath.
+  check('the card carries its outcome as data, so the mark can be coloured',
+    r.outcome === 'allowed', r.outcome);
+  check('the outcome has a mark and the minute beside it',
+    r.mark.length > 0 && r.time.length > 0, r);
+  check('and nothing is written in the person\'s name',
+    r.you === 0, r.you);
   check('and the buttons are gone, so it cannot be answered twice',
     r.buttons.length === 0, r.buttons);
   // Still the same card, still findable by class: anything watching for an OPEN
@@ -194,6 +218,61 @@ const cardInfo = (p) => p.evaluate(() => {
   check('and it is marked answered',
     await p.evaluate(() => document.querySelector('.card.approval-card.answered') !== null));
   checkPageClean(p, 'answered card');
+  await p.close();
+}
+
+// F2. Deny and cancel are outcomes too, and each takes its own mark. Neither
+//     writes a message in the person's name.
+{
+  const p = await page(900, S());
+  const denied = card('shell', { preview: '{"command":"rm -rf build"}' });
+  await post(p, denied);
+  await p.waitForTimeout(250);
+  await p.evaluate(() => {
+    [...document.querySelectorAll('.card.approval-card button')]
+      .find((b) => b.textContent.trim() === 'Deny').click();
+  });
+  await p.waitForTimeout(150);
+  const r = await cardInfo(p);
+  check('a denied card says it was denied',
+    r.heading === approvalAnswered(denied.heading, false), r.heading);
+  check('and carries the denied outcome, so the mark is red',
+    r.outcome === 'denied', r.outcome);
+  check('with a mark to colour', r.mark.length > 0, r);
+  check('and no message in the person\'s name', r.you === 0, r.you);
+  checkPageClean(p, 'denied card');
+  await p.close();
+}
+
+// F3. A card the host closed on cancel says cancelled — it must not claim the
+//     person answered, and it must not borrow the denied mark.
+{
+  const p = await page(900, S());
+  const m = card('shell', {});
+  await post(p, m);
+  await p.waitForTimeout(250);
+  await post(p, { type: 'approval-done', text: approvalCancelled(m.heading) });
+  await p.waitForTimeout(150);
+  const r = await cardInfo(p);
+  check('a cancelled card says cancelled, not denied',
+    r.outcome === 'cancelled' && /cancelled$/.test(r.heading), r);
+  check('and draws no message in the person\'s name', r.you === 0, r.you);
+  checkPageClean(p, 'cancelled card');
+  await p.close();
+}
+
+// F4. A record written before the change kept the answer as a "You" message.
+//     Replay skips it, so an old conversation comes back without the fake turn.
+{
+  const p = await page(900, S());
+  await post(p, { type: 'restore', hasConnections: true, title: '', log: [
+    { k: 'msg', cls: 'you', who: 'You', text: '[allowed]', t: Date.now() },
+    { k: 'msg', cls: 'bot', who: 'Plato', text: 'Applied.' },
+  ] });
+  await p.waitForTimeout(250);
+  const n = await p.evaluate(() => document.querySelectorAll('.msg.you').length);
+  check('an old "[allowed]" is not replayed as a turn the person took', n === 0, n);
+  checkPageClean(p, 'legacy record');
   await p.close();
 }
 
