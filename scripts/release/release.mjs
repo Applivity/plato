@@ -129,6 +129,23 @@ async function awaitGallery(id, version) {
 
 // ---------------------------------------------------------------- npm
 
+/**
+ * The registry's `dist` block for a version, or null if it never becomes
+ * readable. `npm view <pkg>@<version> dist --json` prints the dist object
+ * itself, so the fields sit at the top level.
+ */
+async function npmDist(version, ms = 180_000) {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const r = run('npm', ['view', `${NPM_NAME}@${version}`, 'dist', '--json'], { allowFail: true });
+    if (r.status === 0) {
+      try { return JSON.parse(r.stdout); } catch { /* not readable yet */ }
+    }
+    if (Date.now() >= deadline) return null;
+    await new Promise((res) => setTimeout(res, 10_000));
+  }
+}
+
 async function npm(version, go) {
   rule(`npm — ${NPM_NAME} ${version}`);
   const file = `${ART}/applivity-plato-${version}.tgz`;
@@ -153,10 +170,19 @@ async function npm(version, go) {
   console.log('\n  publishing...');
   run('npm', ['publish', file, '--access', 'public'], { cwd: ART, stdio: 'inherit' });
 
-  const d = JSON.parse(run('npm', ['view', `${NPM_NAME}@${version}`, 'dist', '--json']).stdout);
+  // npm answers 202 "being processed" and the version is not readable for a
+  // few minutes. Reading once made a successful publish look failed, and the
+  // obvious next move — re-run with --go — is a duplicate. Wait it out, then
+  // say so plainly; the publish itself already succeeded.
+  const d = await npmDist(version);
+  if (d === null) {
+    say('published', `${version} accepted; not readable after 3 min`);
+    console.log('\n  npm took the upload. Do NOT re-run — a second publish of this version is a duplicate.\n');
+    return;
+  }
   say('published', `${version}  ok`);
-  say('shasum', d.dist.shasum);
-  say('integrity', d.dist.integrity);
+  say('shasum', d.shasum ?? d.dist?.shasum ?? '?');
+  say('integrity', d.integrity ?? d.dist?.integrity ?? '?');
 }
 
 // ---------------------------------------------------------------- marketplaces
@@ -272,7 +298,7 @@ async function openvsx(version, go) {
     await new Promise((res) => setTimeout(res, 10_000));
   }
   say('published', `${version} accepted but not visible yet after 3 min`);
-  process.exit(1);
+  console.log('\n  The upload was accepted. Do NOT re-run — a second publish of this version is a duplicate.\n');
 }
 
 // ---------------------------------------------------------------- github
