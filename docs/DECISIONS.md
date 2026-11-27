@@ -9321,3 +9321,36 @@ person's name.**
 - **Old transcripts are cleaned on replay.** The three exact strings the old
   host wrote are skipped when a log is replayed, so an old conversation does not
   come back with a fake turn in it.
+
+**D49fs — The outcome word carries the colour, and the chain's arrow is drawn.**
+
+- **The word, not the sentence.** The founder asked for "allowed", "denied" and
+  "cancelled" themselves in colour, and for those words only. Core builds the
+  heading as `<sentence> — <word>`, so the view splits the word off only when
+  the tail is exactly the word the outcome owes. If a heading ever stops ending
+  that way, the sentence stays plain: a colour in the wrong place is worse than
+  no colour.
+- **The scheme is the founder's, and it is not the traffic-light one.** Allowed
+  is green, denied is YELLOW, cancelled is RED. Denied is a decision the person
+  made; cancelled is a run that died while they were deciding, and red belongs
+  to the second. The mark takes the same colour as the word, because two
+  colours for one outcome would be two answers.
+- **The chain's chevron is one arrow that turns.** It was two text characters —
+  `›` closed and `⌄` open — which are different shapes at the same size, so the
+  open state looked stretched, and both were nearly invisible at 10.5px. It is
+  now a 13px drawn arrow, rotated 90 degrees when the chain opens, and it keeps
+  the accent on hover and focus only.
+
+**D49ft — An outcome already written in words is still an outcome.**
+
+- **The founder reopened a conversation and saw no colour.** The card's colour
+  comes from `data-outcome`, which the record only started carrying in D49fr.
+  A card answered one version earlier has the word in its heading and nothing
+  in the field, so it replayed plain — and would stay plain for as long as the
+  conversation is kept.
+- **The sentence is read, but only at its exact end.** Four suffixes are
+  recognised — ` — allowed`, ` — denied`, ` — cancelled`, ` — allowed for the
+  rest of this session`. Nothing is guessed from the middle of a heading, and
+  a heading that matches none of them stays plain.
+- **The row glyph grew.** A tick at the row's 11px reads as a speck; the glyph
+  is 13px, slightly heavier, and its column is fixed so the words line up.

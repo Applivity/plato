@@ -75,6 +75,7 @@ const cardInfo = (p) => p.evaluate(() => {
   // heading check about the sentence, not about the decoration.
   const label = h ? h.querySelector('.out-text') : null;
   const mark = h ? h.querySelector('.out-mark') : null;
+  const word = h ? h.querySelector('.out-word') : null;
   const time = h ? h.querySelector('.msg-time') : null;
   return {
     found: true,
@@ -86,6 +87,9 @@ const cardInfo = (p) => p.evaluate(() => {
     heading: h ? (label ? label.textContent : h.textContent) : '',
     outcome: c.dataset.outcome ?? '',
     mark: mark ? mark.textContent : '',
+    word: word ? word.textContent : '',
+    wordColor: word ? getComputedStyle(word).color : '',
+    textColor: label ? getComputedStyle(label).color : '',
     time: time ? time.textContent : '',
     you: document.querySelectorAll('.msg.you').length,
     tool: c.dataset.tool ?? '',
@@ -209,6 +213,9 @@ const cardInfo = (p) => p.evaluate(() => {
     r.outcome === 'allowed', r.outcome);
   check('the outcome has a mark and the minute beside it',
     r.mark.length > 0 && r.time.length > 0, r);
+  // D49fs: the founder asked for the WORD in colour, and only the word.
+  check('only the outcome word is coloured, not the sentence',
+    r.word === 'allowed' && r.wordColor.length > 0 && r.wordColor !== r.textColor, r);
   check('and nothing is written in the person\'s name',
     r.you === 0, r.you);
   check('and the buttons are gone, so it cannot be answered twice',
@@ -239,6 +246,7 @@ const cardInfo = (p) => p.evaluate(() => {
   check('and carries the denied outcome, so the mark is red',
     r.outcome === 'denied', r.outcome);
   check('with a mark to colour', r.mark.length > 0, r);
+  check('and its word is the coloured one', r.word === 'denied', r);
   check('and no message in the person\'s name', r.you === 0, r.you);
   checkPageClean(p, 'denied card');
   await p.close();
@@ -267,11 +275,21 @@ const cardInfo = (p) => p.evaluate(() => {
   const p = await page(900, S());
   await post(p, { type: 'restore', hasConnections: true, title: '', log: [
     { k: 'msg', cls: 'you', who: 'You', text: '[allowed]', t: Date.now() },
+    // D49ft: this record predates the outcome field, so the view has to read
+    // the outcome from the sentence core built.
+    { k: 'card-done', title: 'Let Plato write src/a.ts — denied', preview: 'x' },
     { k: 'msg', cls: 'bot', who: 'Plato', text: 'Applied.' },
   ] });
   await p.waitForTimeout(250);
   const n = await p.evaluate(() => document.querySelectorAll('.msg.you').length);
   check('an old "[allowed]" is not replayed as a turn the person took', n === 0, n);
+  const old = await p.evaluate(() => {
+    const c = document.querySelector('.card.approval-card');
+    const w = c ? c.querySelector('.out-word') : null;
+    return { outcome: c ? (c.dataset.outcome ?? '') : '', word: w ? w.textContent : '' };
+  });
+  check('and an answered card recorded before the field still takes its colour',
+    old.outcome === 'denied' && old.word === 'denied', old);
   checkPageClean(p, 'legacy record');
   await p.close();
 }

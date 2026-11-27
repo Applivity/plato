@@ -255,10 +255,19 @@ export function chatHtml(
                       font-family:var(--vscode-editor-font-family, monospace);
                       background:none; border:0; padding:1px 0; margin:0;
                       display:block; width:100%; text-align:left; cursor:pointer; }
-  .msg.tool-summary::before { content:'\\203A  '; opacity:.7; }
-  .tool-chain.open .msg.tool-summary::before { content:'\\2304  '; }
-  .msg.tool-summary:hover::before,
-  .msg.tool-summary:focus-visible::before { color:var(--pl-accent); opacity:1; }
+  /* D49fs: the chevron is one drawn glyph that TURNS, not two text characters.
+     The old pair (› and ⌄) were different shapes at the same size, so the open
+     state looked stretched and both read as punctuation at 10.5px. One 13px
+     arrow, rotated 90 degrees when the chain opens. */
+  .msg.tool-summary .chev { display:inline-flex; align-items:center;
+                            justify-content:center; width:13px; height:13px;
+                            margin-right:5px; vertical-align:-3px;
+                            opacity:.75; }
+  .msg.tool-summary .chev svg { display:block; width:13px; height:13px;
+                                transition:transform .12s ease; }
+  .tool-chain.open .msg.tool-summary .chev svg { transform:rotate(90deg); }
+  .msg.tool-summary:hover .chev,
+  .msg.tool-summary:focus-visible .chev { color:var(--pl-accent); opacity:1; }
   .msg.tool-summary:focus-visible { outline:1px solid var(--pl-accent);
                                     outline-offset:2px; }
   /* The calls behind the line. Hidden until the line is clicked, so the
@@ -268,7 +277,11 @@ export function chatHtml(
   .tool-row { display:flex; gap:7px; font-size:11px; line-height:1.55;
               font-family:var(--vscode-editor-font-family, monospace);
               color:var(--pl-muted); }
-  .tool-row .g { flex:none; }
+  /* D49ft: the row's glyph is the fastest thing to read, so it is not set at
+     the row's 11px — a tick that size reads as a speck. 13px, slightly heavier,
+     and a fixed width so every row's words start on the same column. */
+  .tool-row .g { flex:none; font-size:13px; font-weight:600; line-height:1.3;
+                 width:12px; text-align:center; align-self:flex-start; }
   .tool-row .w { flex:none; }
   .tool-row .d { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; opacity:.9; }
   .tool-row .t { flex:none; opacity:.65; }
@@ -328,18 +341,24 @@ export function chatHtml(
              background:var(--vscode-editorWidget-background,
                         rgba(128,128,128,.12)); }
   /* D49fr: the answered card wears its outcome — a coloured mark, the sentence,
-     and the minute — on the heading row. Allowed green, denied red, cancelled
-     yellow (the theme's warning colour, which is that hue on every surface). */
+     and the minute — on the heading row. D49fs: the founder set the scheme and
+     asked for the WORD itself in colour too, and only the word: allowed green,
+     denied yellow, cancelled red. The mark takes the same colour, because two
+     colours for one outcome would be two answers. */
   .card h3 .out-text { flex:1 1 auto; min-width:0; }
   .card h3 .msg-time { flex:none; font-size:10px; font-weight:400;
                        letter-spacing:0; text-transform:none; opacity:.75; }
   .card[data-outcome="allowed"] .out-mark,
-  .card[data-outcome="session"] .out-mark {
+  .card[data-outcome="allowed"] .out-word,
+  .card[data-outcome="session"] .out-mark,
+  .card[data-outcome="session"] .out-word {
     color:var(--vscode-testing-iconPassed,#73c991); }
-  .card[data-outcome="denied"] .out-mark {
-    color:var(--vscode-testing-iconFailed,#f14c4c); }
-  .card[data-outcome="cancelled"] .out-mark {
+  .card[data-outcome="denied"] .out-mark,
+  .card[data-outcome="denied"] .out-word {
     color:var(--vscode-editorWarning-foreground,#cca700); }
+  .card[data-outcome="cancelled"] .out-mark,
+  .card[data-outcome="cancelled"] .out-word {
+    color:var(--vscode-testing-iconFailed,#f14c4c); }
   .card pre { margin:0; padding:8px 10px; max-height:220px; overflow:auto;
               font-family:var(--vscode-editor-font-family, monospace);
               font-size:11.5px; line-height:1.45;
@@ -5202,7 +5221,17 @@ export function chatHtml(
       chain = { wrap, line, detail, calls: [] };
     }
     chain.calls = calls;
-    chain.line.textContent = chainText(counts, calls);
+    // D49fs: the arrow is markup so it can turn. Kept out of the text, because
+    // the copied/announced line is the sentence the tally wrote.
+    chain.line.textContent = '';
+    const chev = document.createElement('span');
+    chev.className = 'chev';
+    chev.setAttribute('aria-hidden', 'true');
+    chev.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"'
+      + ' stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'
+      + '<path d="M6.2 3.8 10.4 8l-4.2 4.2"/></svg>';
+    chain.line.appendChild(chev);
+    chain.line.appendChild(document.createTextNode(chainText(counts, calls)));
     chain.line.title = 'Show the ' + (calls.length === 1 ? 'call' : 'calls')
       + ' behind this line';
     drawChain();
@@ -7055,13 +7084,28 @@ export function chatHtml(
     const h = document.createElement('h3');
     card.appendChild(h);
     // D49fr: the record carries the outcome and its time, so a replayed card
-    // draws the same mark and the same minute the live one did — and a record
-    // written before either existed draws the plain heading it always had.
-    markDecision(card, String(t.title), t.outcome, t.t);
+    // draws the same mark and the same minute the live one did.
+    //
+    // D49ft: a record written BEFORE the field existed carries neither, so the
+    // outcome is read from the sentence core built — exact suffixes only. The
+    // founder reopened a conversation recorded one version earlier and saw no
+    // colour at all; without this, every answered card from before today stays
+    // plain for as long as it is kept.
+    markDecision(card, String(t.title), t.outcome ?? outcomeFromTitle(t.title), t.t);
     const pre = document.createElement('pre');
     pre.innerHTML = diffHtml(String(t.preview));
     card.appendChild(pre);
     log.appendChild(card);
+  }
+
+  /** The outcome a pre-D49fr answered heading names, or undefined. */
+  function outcomeFromTitle(title) {
+    const t = String(title);
+    if (t.endsWith(' — allowed for the rest of this session')) return 'session';
+    if (t.endsWith(' — allowed')) return 'allowed';
+    if (t.endsWith(' — denied')) return 'denied';
+    if (t.endsWith(' — cancelled')) return 'cancelled';
+    return undefined;
   }
 
   /**
@@ -7069,7 +7113,20 @@ export function chatHtml(
    * and the time at the right end. It replaces a "You" message that read
    * "[allowed]": it claimed the person typed the answer, and it repeated what
    * the heading already said.
+   *
+   * D49fs: the founder asked for the LAST WORD itself in colour, and only that
+   * word. Core builds the sentence as "<heading> — <word>", so the word is
+   * split off only when the tail is exactly the word this outcome owes; if a
+   * heading ever stops ending that way, the sentence is left plain rather than
+   * coloured in the wrong place.
    */
+  const OUTCOME_WORD = {
+    allowed: 'allowed',
+    denied: 'denied',
+    cancelled: 'cancelled',
+    session: 'allowed for the rest of this session',
+  };
+
   function markDecision(card, text, outcome, ms) {
     const h = card.querySelector('h3');
     if (h === null) return;
@@ -7085,7 +7142,18 @@ export function chatHtml(
     }
     const label = document.createElement('span');
     label.className = 'out-text';
-    label.textContent = String(text);
+    const sentence = String(text);
+    const word = outcome ? OUTCOME_WORD[outcome] : null;
+    const at = word ? sentence.lastIndexOf(' — ' + word) : -1;
+    if (at !== -1) {
+      label.appendChild(document.createTextNode(sentence.slice(0, at + 3)));
+      const w = document.createElement('span');
+      w.className = 'out-word';
+      w.textContent = word;
+      label.appendChild(w);
+    } else {
+      label.textContent = sentence;
+    }
     h.appendChild(label);
     if (typeof ms === 'number') {
       const when = new Date(ms);

@@ -20,6 +20,10 @@ const scene = (p) => p.evaluate(() => {
   const bot = document.querySelector('.msg.bot');
   if (!btn || !det) return null;
   const cs = getComputedStyle(btn);
+  const chev = btn.querySelector('.chev');
+  const chevSvg = chev ? chev.querySelector('svg') : null;
+  const chevBox = chev ? chev.getBoundingClientRect() : null;
+  const firstGlyph = det.querySelector('.tool-row .g');
   const rows = [...det.querySelectorAll('.tool-row')].map((r) => {
     const part = (c) => {
       const el = r.querySelector('.' + c);
@@ -37,6 +41,11 @@ const scene = (p) => p.evaluate(() => {
     borderLeft: cs.borderLeftWidth,
     hidden: det.hidden,
     rows,
+    // D49fs: one drawn arrow that turns, at a size a reader can see.
+    chev: chevBox ? { w: chevBox.width, h: chevBox.height } : null,
+    chevTurn: chevSvg ? getComputedStyle(chevSvg).transform : null,
+    // D49ft: the tick at 11px read as a speck.
+    glyphType: firstGlyph ? getComputedStyle(firstGlyph).fontSize : '',
   };
 });
 
@@ -89,19 +98,30 @@ const CALLS = [
   check('nothing is behind the line until it is asked for',
     a.rows.length === 3 && a.hidden === true, a.rows);
 
-  // Open it. A person clicks the line, not the chevron — the chevron is a
-  // pseudo-element and cannot be a target of its own.
+  // D49fs: the arrow is drawn, not typed — the old pair of text glyphs read as
+  // punctuation at 10.5px and the open one looked stretched.
+  check('the line carries a chevron a reader can see',
+    a.chev !== null && a.chev.w >= 12 && a.chev.h >= 12, a.chev);
+  check('and it starts unturned', a.chevTurn === 'none', a.chevTurn);
+
+  // Open it. A person clicks the line, not the chevron.
   await p.click('.msg.tool-summary');
-  await p.waitForTimeout(120);
+  await p.waitForTimeout(180);
   const b = await scene(p);
   check('a click opens it, and says so',
     b.hidden === false && b.expanded === 'true', b);
+  check('and the SAME arrow turns to point down, rather than a second glyph',
+    b.chevTurn !== null && b.chevTurn !== 'none' && /matrix/.test(b.chevTurn),
+    b.chevTurn);
 
   check('one row per call, in the order they ran',
     b.rows.length === 3
       && b.rows[0].what === 'src/pricing/Pricing.java'
       && b.rows[2].what === './gradlew test --tests PricingTest',
     b.rows);
+
+  check('the row glyph is large enough to read, not a speck',
+    parseFloat(b.glyphType) >= 13, b.glyphType);
 
   check('each row names the call in words, never the tool name',
     b.rows.every((r) => r.words === 'file read' || r.words === 'command run'),
