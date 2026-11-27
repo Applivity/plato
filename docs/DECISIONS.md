@@ -9230,3 +9230,17 @@ must say so in the same breath as the version.**
   this round was read back after publishing. The Visual Studio pane is the one
   thing that was not, it is written down as such, and it waits for a calm
   session rather than for a better argument.
+
+**D49fi, closed by evidence (2026-11-27).** The claim that was named as unproven
+is now proven. On the Windows 11 box, with the desktop session live and 0.5.5
+installed, a real run in Visual Studio 2026 drew the chain closed, a click
+opened six rows carrying target, ending and duration — one failed read marked
+`failed` — and both copy buttons put text on the operating system's clipboard,
+read back with `Get-Clipboard`. **The path taken there is the fallback, which
+vindicates the reason it exists:** `navigator.clipboard` is absent in Visual
+Studio's WebView2, so a host-routed or clipboard-API-only implementation would
+have failed on that surface and passed on the other. A synthetic `element.click()`
+and a dispatched mouse event both fail to copy — the clipboard APIs require a
+trusted gesture — which is why the proof used dispatched input at a
+scroll-corrected point, and why a future check of this kind must not judge the
+feature from a script-driven click.
