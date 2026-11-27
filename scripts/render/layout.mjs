@@ -38,6 +38,25 @@ const scene = (p) => p.evaluate(() => {
       const b = bot.getBoundingClientRect();
       return Math.round(b.bottom - r.bottom);
     })(),
+    // The founder saw the glyph pressed against the answer's grey bar. Where
+    // the ink starts, measured, so a padding change cannot quietly undo it.
+    copyInset: (() => {
+      const btn = bot ? bot.querySelector('.msg-copy') : null;
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      const csb = getComputedStyle(btn);
+      const glyphLeft = r.left + parseFloat(csb.borderLeftWidth) + parseFloat(csb.paddingLeft);
+      const csbBot = getComputedStyle(bot);
+      const barRight = (() => {
+        const b = bot.getBoundingClientRect();
+        return b.left + parseFloat(csbBot.borderLeftWidth);
+      })();
+      const textLeft = barRight + parseFloat(csbBot.paddingLeft);
+      return {
+        fromBar: Math.round(glyphLeft - barRight),
+        fromText: Math.round(glyphLeft - textLeft),
+      };
+    })(),
   };
 });
 
@@ -67,6 +86,10 @@ const scene = (p) => p.evaluate(() => {
     parseFloat(s.paddingBottom) >= 18 && s.marginBottom !== '0px', s);
   check('the copy control sits at the BOTTOM of the reply',
     s.copyBottom !== null && s.copyBottom <= 6, s);
+  check('the copy glyph starts on the answer\'s text column',
+    s.copyInset !== null && Math.abs(s.copyInset.fromText) <= 1, s.copyInset);
+  check('and keeps clear air between it and the answer\'s bar',
+    s.copyInset !== null && s.copyInset.fromBar >= 6, s.copyInset);
   check('and the text is set with air between the lines',
     parseFloat(s.lineHeight) >= 20, s);
 

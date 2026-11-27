@@ -1025,7 +1025,10 @@ export function chatHtml(
                          color:var(--pl-muted); display:inline-flex;
                          align-items:center; justify-content:center; }
   .copy-btn { flex:none; }
-  .msg-copy { position:absolute; left:0; bottom:2px; }
+  /* The answer carries a 2px bar and 8px of padding, and the button's own
+     padding sits between its box and the glyph. left:4px puts the glyph on the
+     answer's first character and keeps it clear of the bar. */
+  .msg-copy { position:absolute; left:4px; bottom:2px; }
   .md-code:hover .copy-btn, .copy-btn:focus-visible,
   .msg.bot:hover .msg-copy, .msg-copy:focus-visible { opacity:1; }
   .copy-btn:hover, .msg-copy:hover { color:var(--vscode-editor-foreground);
@@ -5935,11 +5938,15 @@ export function chatHtml(
   }
 
   // D49fj: the controls are glyphs, not words. A word in the corner of a
-  // message is a label competing with the text; a 13px clipboard is furniture.
+  // message is a label competing with the text; a 13px glyph is furniture.
+  // The mark is two sheets, the one in front whole and the one behind showing
+  // its corner — the shape every editor uses for copy. A clipboard with a neck
+  // was tried first and read as a bottle at this size.
   const COPY_GLYPH = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"'
-    + ' stroke="currentColor" stroke-width="1.3" aria-hidden="true">'
-    + '<rect x="4.5" y="3.6" width="7" height="9.8" rx="1.2"/>'
-    + '<path d="M6.4 3.6v-.9c0-.3.3-.6.6-.6h2c.3 0 .6.3.6.6v.9"/></svg>';
+    + ' stroke="currentColor" stroke-width="1.5" stroke-linecap="round"'
+    + ' stroke-linejoin="round" aria-hidden="true">'
+    + '<path d="M10.2 3.2H4.4a1.5 1.5 0 0 0-1.5 1.5v4.1"/>'
+    + '<rect x="5.6" y="5.6" width="8" height="8" rx="1.4"/></svg>';
   const DONE_GLYPH = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"'
     + ' stroke="currentColor" stroke-width="1.7" aria-hidden="true">'
     + '<path d="M3.4 8.6l3 3 6.2-6.6"/></svg>';
