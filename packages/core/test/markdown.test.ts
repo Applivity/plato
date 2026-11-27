@@ -17,6 +17,14 @@ describe('renderMarkdown', () => {
     expect(out).not.toContain('<p>');
   });
 
+  it('draws the bar even when no language is named (D49fj)', () => {
+    const out = renderMarkdown('```\nplain\n```');
+    // The bar holds the copy control at its right end, so the control can never
+    // sit over a long line of code.
+    expect(out).toContain('md-lang');
+    expect(out).toContain('md-lang"></span>');
+  });
+
   it('leaves an unterminated fence as plain text', () => {
     const out = renderMarkdown('```js\nlet x = 1;');
     expect(out).not.toContain('md-code');

@@ -143,8 +143,12 @@ export function renderMarkdown(src: string): string {
   let work = String(src).replace(
     FENCE,
     (_m: string, lang: string, body: string) => {
+      // D49fj: the bar is ALWAYS there, even when the model names no language.
+      // It carries the copy control at its right end, so the control can never
+      // sit over the code, and the block never changes height when a language
+      // is added or omitted.
       const l = lang.trim();
-      const label = l ? `<span class="md-lang">${escapeHtml(l)}</span>` : '';
+      const label = `<span class="md-lang">${escapeHtml(l)}</span>`;
       fences.push(
         `<div class="md-code">${label}<pre><code>${escapeHtml(body)}</code></pre></div>`,
       );

@@ -63,8 +63,13 @@ const buttons = (p) => p.evaluate(() => {
     replies: document.querySelectorAll('.msg-copy').length,
     blockOpacity: opacity(copy),
     replyOpacity: opacity(reply),
-    blockLabel: copy ? copy.textContent : '',
-    replyLabel: reply ? reply.textContent : '',
+    // D49fj: the controls are icons, so what they SAY lives in the accessible
+    // name and the tooltip, not in their text.
+    blockLabel: copy ? (copy.getAttribute('aria-label') || '') : '',
+    replyLabel: reply ? (reply.getAttribute('aria-label') || '') : '',
+    blockText: copy ? copy.textContent.trim() : '',
+    inBar: copy ? copy.parentElement.classList.contains('md-lang') : false,
+    barHeight: copy ? copy.parentElement.getBoundingClientRect().height : 0,
   };
 });
 
@@ -77,6 +82,10 @@ const buttons = (p) => p.evaluate(() => {
 
   const a = await buttons(p);
   check('a fenced block carries a copy button', a.blocks === 1, a);
+  check('the control sits in the block\'s bar, not over the code',
+    a.inBar === true && a.barHeight >= 20, a);
+  check('and it is a glyph with an accessible name, not a word',
+    a.blockText === '' && a.blockLabel === 'Copy this block', a);
   check('the reply carries ONE button for its whole text', a.replies === 1, a);
   check('neither is drawn until the pointer is over it',
     a.blockOpacity === 0 && a.replyOpacity === 0, a);
@@ -91,12 +100,12 @@ const buttons = (p) => p.evaluate(() => {
   const copied = await p.evaluate(() => window.__copied);
   check('the block copies its body and nothing else',
     copied === 'npm test -- --watch=false', copied);
-  check('and the label said what happened',
+  check('and the control said what happened, to a screen reader too',
     (await buttons(p)).blockLabel === 'Copied', await buttons(p));
 
   await p.waitForTimeout(1500);
   check('then it went back to being an offer',
-    (await buttons(p)).blockLabel === 'Copy', await buttons(p));
+    (await buttons(p)).blockLabel === 'Copy this block', await buttons(p));
 
   await p.hover('.msg.bot');
   await p.click('.msg-copy');

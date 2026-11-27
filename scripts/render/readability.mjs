@@ -97,8 +97,22 @@ const transparent = (bg) =>
     const b = n.getBoundingClientRect();
     return { gap: b.top - a.bottom, cls: n.className };
   });
-  check('and the answer follows closely — 14px or less',
-    next !== null && next.gap <= 14, next);
+  // D49fj: the answer gained room (18px), so a fixed "14px or less" would now
+  // fail for a reason that is not a defect. What must hold is the RELATION the
+  // rule was written for: a turn of the person's is separated more than an
+  // ordinary answer, so the bubble and the gap agree.
+  // The cue is the gap ABOVE the person's turn: adjacent margins collapse to
+  // the larger one, so a turn is marked by the space it opens before itself,
+  // not by anything it leaves below.
+  const gapBeforeTurn = await p.evaluate(() => {
+    const you = document.querySelector('.msg.you');
+    const before = you && you.previousElementSibling;
+    if (!you || !before) return null;
+    return you.getBoundingClientRect().top - before.getBoundingClientRect().bottom;
+  });
+  check('a turn of the person\'s is introduced by more space than an answer',
+    next !== null && gapBeforeTurn !== null && gapBeforeTurn > next.gap,
+    { answer: next && next.gap, beforeTurn: gapBeforeTurn });
 
   check('the accent bar survives the fill: 2px on the left edge',
     r.you.borderLeft === '2px', { border: r.you.borderLeft, color: r.you.borderLeftColor });

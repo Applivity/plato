@@ -155,7 +155,7 @@ export function chatHtml(
      vertically up to 220px (was 160px) and the textbox itself is
      taller by default (rows=3, min-height 56px was 44px) so the
      user has more room to think before reaching the cap. */
-  #log { flex:1; overflow-y:auto; padding:10px 14px; min-height:0; }
+  #log { flex:1; overflow-y:auto; padding:14px 18px; min-height:0; }
   /* D39b/D49zz: the run controls are ONE family, drawn to the Send button's
      proportions, each with a small icon before its label. Pause is the quiet
      one; Stop is the only filled destructive control on the screen; the
@@ -241,7 +241,7 @@ export function chatHtml(
   /* #go is now styled by .btn-send (with per-mode color). The old
      44x44 square styling is gone; the send button is a normal
      pill that lives in .composer-bar. */
-  .msg { margin:0 0 12px; line-height:1.55; white-space:pre-wrap;
+  .msg { margin:0 0 12px; line-height:1.6; white-space:pre-wrap;
          word-break:break-word; }
   /* D49fg: the chain's one line. It used to be a filled chip with an accent
      bar, and a reader said it took his eye before the answer did. It is now
@@ -273,9 +273,14 @@ export function chatHtml(
   .tool-row .d { flex:1 1 auto; min-width:0; overflow-wrap:anywhere; opacity:.9; }
   .tool-row .t { flex:none; opacity:.65; }
   .tool-row.bad .g { color:var(--vscode-errorForeground,#e5534b); }
-  .msg .who { display:block; font-size:10px; letter-spacing:.08em;
+  .msg .who { display:flex; align-items:baseline; justify-content:space-between;
+              gap:10px; font-size:10px; letter-spacing:.08em;
               text-transform:uppercase; color:var(--pl-muted);
-              margin-bottom:2px; }
+              margin-bottom:4px; }
+  /* D49fj: when it was said. Short time here, the whole date and time on the
+     tooltip. A record written before this shows nothing rather than a guess. */
+  .msg .msg-time { flex:none; font-size:10px; letter-spacing:0;
+                   text-transform:none; opacity:.75; }
   /* The person's own turn is a filled bubble on the right, so it cannot be
      lost among Plato's. Three facts hold it together:
      1. The 2px bar is kept on purpose. It is the cue that survives high
@@ -284,7 +289,7 @@ export function chatHtml(
         blue on every surface we run on, and it follows whatever theme is on.
      3. The grey is the fallback for an engine that cannot mix colours; it is
         the same weight of tint the wash gives, without the hue. */
-  .msg.you { margin:20px 0 12px auto; max-width:90%;
+  .msg.you { margin:24px 0 12px auto; max-width:90%;
              padding:6px 11px 6px 9px; border-radius:8px;
              border-left:2px solid var(--pl-accent);
              background:rgba(128,128,128,.14); }
@@ -957,7 +962,7 @@ export function chatHtml(
      below, which set it on top of the text it introduced. The ladder now climbs
      clear of the body text and the space above a heading dominates the space
      below it, which is what makes a section read as a section. */
-  .msg.bot { line-height:1.5; }
+  .msg.bot { line-height:1.6; }
   .msg.bot p { margin:.5em 0; }
   /* D49ac follow-up: the ladder was climbing correctly and the report still read
      flat, because THE MODEL DOES NOT USE THE TOP OF IT. A real report was a
@@ -991,14 +996,20 @@ export function chatHtml(
                   font-family:var(--vscode-editor-font-family,monospace);
                   font-size:12px; padding:1px 4px; border-radius:3px; }
   .msg.bot a { color:var(--vscode-textLink-foreground); }
-  .md-code { margin:.5em 0; border:1px solid var(--pl-border);
-             border-radius:5px; overflow:hidden; }
-  .md-code .md-lang { display:block; padding:3px 9px; font-size:10px;
+  .md-code { margin:.7em 0; border:1px solid var(--pl-border);
+             border-radius:5px; overflow:hidden; position:relative; }
+  /* D49fj: the bar is a row, and the copy control lives at its right end — so
+     it can never sit over a long line of code. It is always present, because
+     the renderer always emits it now. */
+  .md-code .md-lang { display:flex; align-items:center; gap:8px;
+                      min-height:26px; padding:0 5px 0 10px; font-size:10px;
                       letter-spacing:.06em; text-transform:uppercase;
                       color:var(--pl-muted);
                       background:var(--vscode-editorWidget-background,
                                       rgba(128,128,128,.12)); }
-  .md-code pre { margin:0; padding:8px 10px; overflow-x:auto;
+  .md-code .md-lang .lang { flex:1 1 auto; min-width:0; overflow:hidden;
+                            text-overflow:ellipsis; white-space:nowrap; }
+  .md-code pre { margin:0; padding:10px 12px; overflow-x:auto;
                  font-family:var(--vscode-editor-font-family,monospace);
                  font-size:11.5px; line-height:1.5;
                  background:var(--vscode-textCodeBlock-background,
@@ -1008,19 +1019,22 @@ export function chatHtml(
      be copied, so a reply with no copy button costs exactly as much room as
      one with it. The code block carries its own; a reply carries one for the
      whole of its text. */
-  .md-code { position:relative; }
-  .copy-btn, .msg-copy { position:absolute; opacity:0; cursor:pointer;
-                         font-family:inherit; font-size:10px; line-height:1;
-                         border-radius:4px; padding:3px 6px;
-                         color:var(--pl-muted);
-                         border:1px solid var(--pl-border);
-                         background:var(--vscode-editorWidget-background,#fff); }
-  .copy-btn { top:4px; right:6px; }
+  .copy-btn, .msg-copy { opacity:0; cursor:pointer; font-family:inherit;
+                         line-height:1; padding:3px; border-radius:3px;
+                         border:1px solid transparent; background:none;
+                         color:var(--pl-muted); display:inline-flex;
+                         align-items:center; justify-content:center; }
+  .copy-btn { flex:none; }
+  .msg-copy { position:absolute; left:0; bottom:2px; }
   .md-code:hover .copy-btn, .copy-btn:focus-visible,
   .msg.bot:hover .msg-copy, .msg-copy:focus-visible { opacity:1; }
-  .copy-btn:hover, .msg-copy:hover { color:var(--vscode-editor-foreground); }
-  .msg.bot { position:relative; }
-  .msg-copy { top:0; right:0; }
+  .copy-btn:hover, .msg-copy:hover { color:var(--vscode-editor-foreground);
+                                     border-color:var(--pl-border); }
+  .copy-btn:focus-visible, .msg-copy:focus-visible {
+    outline:1px solid var(--pl-accent); outline-offset:1px; }
+  /* D49fj: room under a reply for its copy control, and the air the answers
+     were missing. The person's own turn keeps its measured bubble spacing. */
+  .msg.bot { position:relative; margin:18px 0 14px; padding-bottom:20px; }
   .md-table { margin:.6em 0; overflow-x:auto; }
   .md-table table { border-collapse:collapse; font-size:12px; }
   .md-table th, .md-table td { border:1px solid var(--pl-border);
@@ -4526,7 +4540,7 @@ export function chatHtml(
     const text = q.value.trim();
     if (!text || !busy) { return; }
     vsapi.postMessage({ type: 'guidance', text: text });
-    addMsg('you', 'You', '[guide] ' + text);
+    addMsg('you', 'You', '[guide] ' + text, false, Date.now());
     q.value = '';
     paintParkNote(); // the composer is empty again, so the park's sentence may return
     paintFooter();
@@ -4559,7 +4573,7 @@ export function chatHtml(
     if (note.length > 0) {
       // The host keeps the same row in the saved log; this draws it now, as
       // sendGuidance does.
-      addMsg('you', 'You', '[guide] ' + note);
+      addMsg('you', 'You', '[guide] ' + note, false, Date.now());
       q.value = '';
     }
     paintFooter();
@@ -5022,7 +5036,7 @@ export function chatHtml(
     if (lead) { runSlash(lead.slice(1), payloadFor(lead.slice(1))); return; }
     if (busy) { sendGuidance(); return; }
     const text = raw.trim();
-    addMsg('you', 'You', text);
+    addMsg('you', 'You', text, false, Date.now());
     clearChips();           // local only - the host consumes on ask
     q.value = '';
     busy = true;
@@ -5372,7 +5386,7 @@ export function chatHtml(
       // the only chance to show the message and set the run UI. Without it the
       // Pause and Stop controls stayed hidden for the whole queued run.
       case 'queue-run':
-        addMsg('you', 'You', String(m.text || ''));
+        addMsg('you', 'You', String(m.text || ''), false, Date.now());
         busy = true;
         runT0 = Date.now();
         refreshChip();
@@ -5384,7 +5398,7 @@ export function chatHtml(
         // Turn boundary: commit the ongoing stream into a finished block so
         // the next turn and any intervening notices/logos land in order.
         const el = document.getElementById('streaming');
-        if (el) { el.removeAttribute('id'); addReplyCopy(el); }
+        if (el) { el.removeAttribute('id'); addReplyCopy(el); stampTime(el, Date.now()); }
         streaming = false;
         break;
       }
@@ -5610,10 +5624,10 @@ export function chatHtml(
     switch (t.k) {
       case 'msg': {
         if (t.cls === 'bot' && t.html) {
-          addMsg('bot', t.who, String(t.html), true);
+          addMsg('bot', t.who, String(t.html), true, t.t);
           break;
         }
-        const row = addMsg(t.cls || 'bot', t.who, String(t.text));
+        const row = addMsg(t.cls || 'bot', t.who, String(t.text), false, t.t);
         // D49cq: a replayed incoming message keeps its sender's host, exactly
         // as the live row showed it.
         if (t.cls === 'in' && t.from) {
@@ -5920,23 +5934,45 @@ export function chatHtml(
       : Promise.reject(new Error('copy failed'));
   }
 
+  // D49fj: the controls are glyphs, not words. A word in the corner of a
+  // message is a label competing with the text; a 13px clipboard is furniture.
+  const COPY_GLYPH = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"'
+    + ' stroke="currentColor" stroke-width="1.3" aria-hidden="true">'
+    + '<rect x="4.5" y="3.6" width="7" height="9.8" rx="1.2"/>'
+    + '<path d="M6.4 3.6v-.9c0-.3.3-.6.6-.6h2c.3 0 .6.3.6.6v.9"/></svg>';
+  const DONE_GLYPH = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"'
+    + ' stroke="currentColor" stroke-width="1.7" aria-hidden="true">'
+    + '<path d="M3.4 8.6l3 3 6.2-6.6"/></svg>';
+
   /** Says what happened, then goes back to being an offer. */
-  function copyButton(className, textOf) {
+  function copyButton(className, textOf, label) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = className;
-    btn.textContent = 'Copy';
+    // An icon has no text for a screen reader to read, so it carries a name.
+    const name = label || 'Copy';
+    btn.setAttribute('aria-label', name);
+    btn.title = name;
+    btn.innerHTML = COPY_GLYPH;
     let timer = null;
     btn.addEventListener('click', async (ev) => {
       ev.stopPropagation();
+      let said = 'Copied';
       try {
         await copyText(String(textOf() || ''));
-        btn.textContent = 'Copied';
+        btn.innerHTML = DONE_GLYPH;
       } catch {
-        btn.textContent = 'Could not copy';
+        said = 'Could not copy';
+        btn.textContent = '!';
       }
+      btn.setAttribute('aria-label', said);
+      btn.title = said;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+      timer = setTimeout(() => {
+        btn.innerHTML = COPY_GLYPH;
+        btn.setAttribute('aria-label', name);
+        btn.title = name;
+      }, 1400);
     });
     return btn;
   }
@@ -5944,15 +5980,54 @@ export function chatHtml(
   /** One button per fenced block. Safe to call on every fragment that lands. */
   function decorateCopy(el) {
     for (const block of el.querySelectorAll('.md-code')) {
-      if (block.querySelector(':scope > .copy-btn') !== null) continue;
+      let bar = block.querySelector(':scope > .md-lang');
+      if (bar === null) {
+        // A transcript written before the bar was always emitted still gets one
+        // here, so an old block copies exactly like a new one.
+        bar = document.createElement('span');
+        bar.className = 'md-lang';
+        block.insertBefore(bar, block.firstChild);
+      }
+      if (bar.querySelector(':scope > .copy-btn') !== null) continue;
+      // The label is wrapped so the row can push the button to the far end
+      // without the text collapsing.
+      if (bar.querySelector(':scope > .lang') === null) {
+        const text = document.createElement('span');
+        text.className = 'lang';
+        text.textContent = bar.textContent;
+        bar.textContent = '';
+        bar.appendChild(text);
+      }
       const code = block.querySelector('pre code');
       // The block's body and nothing else: the language label is a label, and
       // a copied command with the word "bash" in front of it does not run.
       // Trailing whitespace goes too — a command pasted into a terminal runs
       // the moment it ends in a newline, which is not what copying it means.
-      block.appendChild(copyButton('copy-btn',
-        () => (code ? String(code.textContent || '').replace(/\s+$/, '') : '')));
+      bar.appendChild(copyButton('copy-btn',
+        () => (code ? String(code.textContent || '').replace(/\s+$/, '') : ''),
+        'Copy this block'));
     }
+  }
+
+  /**
+   * D49fj: when the message was said. The short time sits at the right end of
+   * the speaker row; the whole date and time is the tooltip. A message with no
+   * recorded time draws none — a guessed time is worse than a blank.
+   */
+  function stampTime(div, ms) {
+    if (!div || typeof ms !== 'number') return;
+    const who = div.querySelector('.who');
+    if (who === null) return;
+    let span = who.querySelector('.msg-time');
+    if (span === null) {
+      span = document.createElement('span');
+      span.className = 'msg-time';
+      who.appendChild(span);
+    }
+    const when = new Date(ms);
+    span.textContent = when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    span.title = when.toLocaleString();
+    span.setAttribute('datetime', when.toISOString());
   }
 
   /** One button per reply, for the whole of it. */
@@ -5968,7 +6043,7 @@ export function chatHtml(
     div.appendChild(copyButton('msg-copy', body));
   }
 
-  function addMsg(cls, who, text, asHtml) {
+  function addMsg(cls, who, text, asHtml, at) {
     const div = document.createElement('div');
     div.className = 'msg ' + cls;
     const w = document.createElement('span');
@@ -5988,6 +6063,12 @@ export function chatHtml(
     // inserted. An error is not a reply, and the placeholder an arriving
     // answer draws into is empty until it has text.
     if (cls === 'bot' && who !== 'Error') addReplyCopy(div);
+    // A live message is stamped as it lands; a replayed one carries the time
+    // the record kept for it, and shows nothing when that record had none.
+    // Only TURNS are stamped: a guard line, a notice and the run's closing
+    // line are not things anyone said at a time.
+    const turn = cls === 'you' || cls === 'bot' || cls === 'in';
+    if (turn && who !== 'Error' && typeof at === 'number') stampTime(div, at);
     scroll();
     return div;
   }
@@ -6113,10 +6194,19 @@ export function chatHtml(
     streaming = true;
     let el = document.getElementById('streaming');
     if (!el) {
-      el = addMsg('bot', 'Plato', '');
+      el = addMsg('bot', 'Plato', '', false, Date.now());
       el.id = 'streaming';
     }
     el.innerHTML = html; // host-built, escape-first (D25a)
+    // Every fragment replaces the element's whole content, which takes the
+    // speaker row with it — so a reply being written showed no name and, since
+    // D49fj, no time, until the transcript was redrawn. Put the row back on
+    // every fragment: it is one line of text, and its absence was the reason
+    // the label flickered away mid-answer.
+    const who = document.createElement('span');
+    who.className = 'who';
+    who.textContent = 'Plato';
+    el.insertBefore(who, el.firstChild);
     // The host's answer is cached per path, so this is a lookup on every
     // fragment after the first — not a round trip per keystroke.
     scanPaths(el);
@@ -6129,8 +6219,9 @@ export function chatHtml(
     if (el) {
       el.removeAttribute('id');
       // The answer is whole, so this is the first moment its copy button can
-      // copy the whole of it.
+      // copy the whole of it — and the moment its own time is honest.
       addReplyCopy(el);
+      stampTime(el, Date.now());
     }
     streaming = false;
     busy = false;
@@ -6204,7 +6295,7 @@ export function chatHtml(
       // replace here, which silently did nothing if the heading ever stopped
       // ending in a question mark — leaving a spent card reading like a live one.
       spent(String(v ? (m.headingAllowed || 'Allowed') : (m.headingDenied || 'Denied')));
-      addMsg('you', 'You', v ? '[allowed]' : '[denied]');
+      addMsg('you', 'You', v ? '[allowed]' : '[denied]', false, Date.now());
     }
     function decideAll() {
       vsapi.postMessage({

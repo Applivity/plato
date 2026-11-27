@@ -23,12 +23,12 @@ const snap = () =>
   p.evaluate(() => {
     const bots = [...document.querySelectorAll('#log .msg.bot')];
     const live = document.getElementById('streaming');
-    // A committed reply carries a copy button (D49fh). It is a control, not
-    // part of the answer, so the text under test is the text with the controls
-    // taken out — otherwise this suite would pass or fail on the word "Copy".
+    // A committed reply carries a copy control (D49fh) and a speaker row with a
+    // time (D49fj). Neither is part of the answer, so the text under test is the
+    // text with those taken out.
     const textOf = (el) => {
       const clone = el.cloneNode(true);
-      for (const b of clone.querySelectorAll('button')) b.remove();
+      for (const b of clone.querySelectorAll('button, .who')) b.remove();
       return (clone.textContent || '').trim();
     };
     return {

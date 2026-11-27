@@ -1062,7 +1062,9 @@ type Entry =
    * It is provenance for the reader, not text for the model — the model sees
    * the message as an ordinary turn from the person at this keyboard.
    */
-  | { k: 'msg'; cls: string; who: string; text: string; from?: string; reply?: boolean }
+  | { k: 'msg'; cls: string; who: string; text: string; from?: string; reply?: boolean;
+      /** D49fj: when it was said, epoch ms. Absent on rows written before it. */
+      t?: number }
   /**
    * D49ag: `digest` is what the call WAS FOR (see `digestToolCall`), `ok`
    * whether it worked. Without them this row recorded only that something ran,
@@ -5030,7 +5032,14 @@ class ChatHost {
   }
 
   private push(entry: Entry): void {
-    this.log.push(entry);
+    // D49fj: every message the record keeps is stamped here rather than at each
+    // of its call sites, so a row cannot be added without a time — and a reload
+    // shows the same time the live page showed.
+    if (entry.k === 'msg' && entry.t === undefined) {
+      this.log.push({ ...entry, t: Date.now() });
+    } else {
+      this.log.push(entry);
+    }
     if (this.log.length > LOG_MAX) {
       this.recordTrim(LOG_MAX);
     }
