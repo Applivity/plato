@@ -1874,9 +1874,12 @@ describe('Plato field tests — real VS Code', function () {
             const copy = await driver.findElement(By.css('.msg-copy'));
             await copy.click();
             await driver.sleep(400);
-            const label = (await copy.getText()).trim();
+            // D49fj: the control is a glyph now, so what it says lives in its
+            // accessible name. `getText()` would be empty and would fail a copy
+            // that actually happened — which is exactly what it did first.
+            const label = String((await copy.getAttribute('aria-label')) || '').trim();
             if (label !== 'Copied') {
-              notes.push(`COPY: the button said "${label}" — the clipboard call did not succeed`);
+              notes.push(`COPY: the control said "${label}" — the clipboard call did not succeed`);
             }
             const pasted = execFileSync('pbpaste', { encoding: 'utf8' });
             if (!pasted.includes('assembleDebug')) {
