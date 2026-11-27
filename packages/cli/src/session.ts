@@ -1,6 +1,10 @@
 import {
   IdleFold,
   RunController,
+  approvalAnswered,
+  approvalAnsweredSession,
+  approvalCancelled,
+  approvalHeading,
   createProvider,
   digestToolCall,
   estimateTokens,
@@ -127,11 +131,23 @@ export interface ToolDetail {
   fromLog?: boolean;
 }
 
+/** How an approval was answered. A session grant is its own outcome, not a wider "yes". */
+export type ApprovalOutcome = 'allowed' | 'denied' | 'cancelled' | 'session';
+
 export interface Row {
   id: number;
   kind: RowKind;
   text: string;
   detail?: ToolDetail;
+  /**
+   * Set on the row that records an approval's answer, so the view can colour
+   * the outcome word alone instead of reading colour out of the stored text.
+   * Esc is a real answer and records `denied`; only a close on the person's
+   * behalf (Ctrl+C, a host releasing the card) records `cancelled`.
+   */
+  outcome?: ApprovalOutcome;
+  /** The exact word `outcome` owes; the view splits the row only on a match. */
+  word?: string;
 }
 
 /** A saved conversation as the picker shows it: the name can be long, the id stays. */
@@ -188,6 +204,8 @@ export interface SessionStatus {
 export interface ApprovalCard {
   kind: 'approval';
   tool: string;
+  /** Core's heading: the situation, never the tool's internal name. */
+  heading: string;
   preview?: string;
   options: string[];
   selected: number;
@@ -477,6 +495,8 @@ export class Session {
   private stopNoticed = false;
   /** The pending approval was answered with Esc: deny, and stop the run. */
   private approvalStopped = false;
+  /** The approval was closed on the user's behalf (Ctrl+C): cancelled, not denied. */
+  private approvalCancelled = false;
   /** Resolves when the setup screen finishes, so `/model add` can wait. */
   private setupResolve: ((result: { saved: boolean; model?: string }) => void) | null = null;
   /** The host's way to report how an ask was answered (D49aq). */
@@ -612,6 +632,27 @@ export class Session {
       historyTokens(this.log) +
       (this.state.streaming.length === 0 ? 0 : estimateTokens(this.state.streaming));
     this.update({ status: this.statusFor(tokens) });
+  }
+
+  /**
+   * The row that records an approval's answer, shaped like the chat panel: the
+   * mark, the sentence core built, and the outcome word the view colours. The
+   * word is kept beside the text as data, so the view never parses a sentence
+   * to find what to colour — and no ANSI is ever stored.
+   */
+  private recordDecision(sentence: string, outcome: ApprovalOutcome): void {
+    const word =
+      outcome === 'session'
+        ? 'allowed for the rest of this session'
+        : outcome;
+    const mark = outcome === 'denied' ? '✕' : outcome === 'cancelled' ? '–' : '✓';
+    this.update({
+      rows: [
+        ...this.state.rows,
+        { id: this.nextRow, kind: 'notice', text: `${mark} ${sentence}`, outcome, word },
+      ],
+    });
+    this.nextRow += 1;
   }
 
   private append(kind: RowKind, text: string, detail?: ToolDetail): void {
@@ -1989,20 +2030,33 @@ export class Session {
               ? 'this file for this session'
               : `${toolWords(request.tool).every} this session`;
     const options = remember ? ['No', 'Yes', `Yes, allow ${grant}`] : ['No', 'Yes'];
-    const doing = toolWords(request.tool).doing;
+    // The heading is the SITUATION, built in core so the card, the plain-line
+    // prompt and the answered row all name the same thing (D49ba).
+    const heading = approvalHeading(request.tool, request.args);
     this.approvalStopped = false;
+    this.approvalCancelled = false;
     this.reportApprovalCard?.(request.tool, 'shown');
     return this.present<number>({
       kind: 'approval',
       tool: request.tool,
+      heading,
       ...(request.preview === undefined ? {} : { preview: request.preview }),
       options,
       selected: 0,
     }).then((choice) => {
       // The decision is its own row: the tool's line says what it did, and
       // this says what the user answered.
+      //
+      // Esc promises "denies and stops the run" in the card's footer, so the
+      // person HAS answered: no. Only a close that takes the choice for them —
+      // Ctrl+C, or a host releasing a waiting card — is "cancelled", because
+      // "denied" would claim they answered when they did not.
       if (this.approvalStopped) {
-        this.append('notice', `Denied and stopped — ${doing}.`);
+        this.recordDecision(approvalAnswered(heading, false), 'denied');
+        return false;
+      }
+      if (this.approvalCancelled) {
+        this.recordDecision(approvalCancelled(heading), 'cancelled');
         return false;
       }
       if (choice === 2) {
@@ -2015,11 +2069,15 @@ export class Session {
         } else if (key !== undefined) {
           this.remembered.add(key);
         }
+        this.recordDecision(approvalAnsweredSession(heading), 'session');
+        return true;
       }
-      const word =
-        choice === 0 ? 'Declined' : choice === 2 ? 'Approved for this session' : 'Approved';
-      this.append('notice', `${word} — ${doing}.`);
-      return choice !== 0;
+      if (choice === 0) {
+        this.recordDecision(approvalAnswered(heading, false), 'denied');
+        return false;
+      }
+      this.recordDecision(approvalAnswered(heading, true), 'allowed');
+      return true;
     });
   }
 
@@ -2201,6 +2259,11 @@ export class Session {
     if (card.kind === 'question' && card.freeText) {
       this.update({ card: { ...card, freeText: false } });
       return;
+    }
+    if (card.kind === 'approval') {
+      // Ctrl+C takes the safe choice for the user; the person did not answer,
+      // so the record below this card says cancelled rather than denied.
+      this.approvalCancelled = true;
     }
     this.settle(
       card.kind === 'question'

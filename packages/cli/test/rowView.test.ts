@@ -1,7 +1,7 @@
 import { renderToString } from 'ink';
 import { createElement } from 'react';
 import { describe, expect, it } from 'vitest';
-import { RowView } from '../src/tui/App.js';
+import { CardView, RowView } from '../src/tui/App.js';
 import type { Row } from '../src/session.js';
 
 const COLUMNS = 60;
@@ -33,6 +33,25 @@ describe('a turn in the transcript', () => {
     }
     // Nothing overflows the terminal.
     expect(lines.every((line) => [...line].length <= COLUMNS)).toBe(true);
+  });
+
+  it('draws the approval card as core\'s situation, not the tool\'s name', () => {
+    const out = renderToString(
+      createElement(CardView, {
+        card: {
+          kind: 'approval',
+          tool: 'write_file',
+          heading: 'Let Plato write note.txt?',
+          options: ['No', 'Yes'],
+          selected: 0,
+        },
+        columns: COLUMNS,
+      }),
+      { columns: COLUMNS },
+    );
+    expect(out).toContain('Let Plato write note.txt?');
+    expect(out).not.toContain('Allow write_file');
+    expect(out).not.toContain('write_file');
   });
 
   it('leaves the other kinds at column 0', () => {

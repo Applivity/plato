@@ -22,7 +22,7 @@ import {
   toStart,
   type EditorState,
 } from '../editor.js';
-import type { Card, Row, Session, SessionStatus, ViewState } from '../session.js';
+import type { ApprovalOutcome, Card, Row, Session, SessionStatus, ViewState } from '../session.js';
 import { formatDuration, statusLine, tokenRate } from './statusLine.js';
 import {
   displayWidth,
@@ -860,6 +860,17 @@ function Header({
   );
 }
 
+/**
+ * The answered approval's word colour, the panel's scheme (D49fs). The session
+ * grant is an allowed outcome, so it takes the same green; its word is longer.
+ */
+const OUTCOME_COLOUR: Record<ApprovalOutcome, 'green' | 'yellow' | 'red'> = {
+  allowed: 'green',
+  denied: 'yellow',
+  cancelled: 'red',
+  session: 'green',
+};
+
 export function RowView({ row, columns }: { row: Row; columns: number }): ReactElement {
   switch (row.kind) {
     case 'user':
@@ -894,8 +905,25 @@ export function RowView({ row, columns }: { row: Row; columns: number }): ReactE
       );
     case 'tool':
       return <Text dimColor>{row.text}</Text>;
-    case 'notice':
-      return <Text dimColor>{row.text}</Text>;
+    case 'notice': {
+      // D49fs: an answered approval records its outcome as data, and only the
+      // word carries the colour — the same scheme as the chat panel: allowed
+      // green, denied yellow, cancelled red. Split only when the tail is
+      // exactly the word the outcome owes, so a stray dash cannot colour the
+      // wrong place. With NO_COLOR the whole row stays plain.
+      const word = row.word;
+      const at = word === undefined ? -1 : row.text.lastIndexOf(` — ${word}`);
+      if (row.outcome === undefined || word === undefined || at === -1) {
+        return <Text dimColor>{row.text}</Text>;
+      }
+      return (
+        <Text>
+          <Text dimColor>{row.text.slice(0, at + 3)}</Text>
+          <Text color={COLOURS ? OUTCOME_COLOUR[row.outcome] : undefined}>{word}</Text>
+          <Text dimColor>{row.text.slice(at + 3 + word.length)}</Text>
+        </Text>
+      );
+    }
     case 'inbound':
       // D49cq: a message from another session is neither the user's turn nor a
       // notice; blue and the ↳ glyph say where it came from.
@@ -1349,7 +1377,7 @@ function capLines(text: string, limit: number): string {
   return `${lines.slice(0, limit).join('\n')}\n… ${lines.length - limit} more lines`;
 }
 
-function CardView({
+export function CardView({
   card,
   columns,
 }: {
@@ -1376,7 +1404,8 @@ function CardView({
     >
       {card.kind === 'approval' ? (
         <>
-          <Text bold>Allow {card.tool}?</Text>
+          {/* D49ba: the situation, built in core — never the tool's name. */}
+          <Text bold>{card.heading}</Text>
           {card.preview !== undefined ? (
             <Text dimColor>{capLines(card.preview, 12)}</Text>
           ) : null}

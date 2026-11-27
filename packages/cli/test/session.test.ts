@@ -216,11 +216,14 @@ describe('approval card', () => {
     await waitForCard(active, 'approval');
     active.cardConfirm();
     await done;
-    expect(
-      active
-        .getSnapshot()
-        .rows.filter((row) => row.kind === 'notice' && row.text === 'Declined — writing a file.'),
-    ).toHaveLength(1);
+    const decisions = active
+      .getSnapshot()
+      .rows.filter((row) => row.kind === 'notice' && row.outcome !== undefined);
+    expect(decisions).toHaveLength(1);
+    // The same shape as the chat panel: mark, the situation, the word.
+    expect(decisions[0]?.text).toBe('✕ Let Plato write note.txt — denied');
+    expect(decisions[0]?.outcome).toBe('denied');
+    expect(decisions[0]?.word).toBe('denied');
   });
 
   it('records an approval in the tool\'s words', async () => {
@@ -238,11 +241,12 @@ describe('approval card', () => {
     active.cardMove(1);
     active.cardConfirm();
     await done;
-    expect(
-      active
-        .getSnapshot()
-        .rows.filter((row) => row.kind === 'notice' && row.text === 'Approved — writing a file.'),
-    ).toHaveLength(1);
+    const decisions = active
+      .getSnapshot()
+      .rows.filter((row) => row.kind === 'notice' && row.outcome !== undefined);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.text).toBe('✓ Let Plato write note.txt — allowed');
+    expect(decisions[0]?.outcome).toBe('allowed');
   });
 
   it('records a session approval in its own words', async () => {
@@ -260,14 +264,16 @@ describe('approval card', () => {
     active.cardMove(2);
     active.cardConfirm();
     await done;
-    expect(
-      active
-        .getSnapshot()
-        .rows.filter(
-          (row) =>
-            row.kind === 'notice' && row.text === 'Approved for this session — writing a file.',
-        ),
-    ).toHaveLength(1);
+    const decisions = active
+      .getSnapshot()
+      .rows.filter((row) => row.kind === 'notice' && row.outcome !== undefined);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.text).toBe(
+      '✓ Let Plato write note.txt — allowed for the rest of this session',
+    );
+    // The session grant is its own outcome, not a wider "allowed".
+    expect(decisions[0]?.outcome).toBe('session');
+    expect(decisions[0]?.word).toBe('allowed for the rest of this session');
   });
 
   it('denies and stops the run in one press, and records it', async () => {
@@ -285,15 +291,64 @@ describe('approval card', () => {
     active.cardStop();
     await done;
     const rows = active.getSnapshot().rows;
-    expect(
-      rows.filter(
-        (row) => row.kind === 'notice' && row.text === 'Denied and stopped — writing a file.',
-      ),
-    ).toHaveLength(1);
+    const decisions = rows.filter((row) => row.kind === 'notice' && row.outcome !== undefined);
+    expect(decisions).toHaveLength(1);
+    // Esc is an answer, not a cancel: the footer promises it denies, and the
+    // person pressed it. Only a close on their behalf reads "cancelled".
+    expect(decisions[0]?.text).toBe('✕ Let Plato write note.txt — denied');
+    expect(decisions[0]?.outcome).toBe('denied');
+    expect(rows.some((row) => row.outcome === 'cancelled')).toBe(false);
     expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: stopped.')).toBe(
       true,
     );
     expect(active.getSnapshot().running).toBe(false);
+    expect(existsSync(join(root, 'note.txt'))).toBe(false);
+  });
+
+  it('asks the situation on the card, never the tool\'s internal name', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Written.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    const card = await waitForCard(active, 'approval');
+    expect(card.kind === 'approval' ? card.heading : undefined).toBe(
+      'Let Plato write note.txt?',
+    );
+    expect(card.kind === 'approval' ? card.heading.includes('write_file') : true).toBe(false);
+    active.cardConfirm();
+    await done;
+  });
+
+  it('records a card closed with Ctrl+C as cancelled, and the run continues', async () => {
+    const root = tempDir('plato-cli-session-root-');
+    const active = session(
+      root,
+      environment(),
+      scripted([
+        { tool: { name: 'write_file', input: { path: 'note.txt', content: 'hello' } } },
+        { text: 'Refused.' },
+      ]),
+    );
+    const done = active.submit('write a file');
+    await waitForCard(active, 'approval');
+    active.cardCancel();
+    await done;
+    const rows = active.getSnapshot().rows;
+    const decisions = rows.filter((row) => row.kind === 'notice' && row.outcome !== undefined);
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]?.text).toBe('– Let Plato write note.txt — cancelled');
+    expect(rows.some((row) => row.outcome === 'denied')).toBe(false);
+    // The safe choice was taken for the user; the run itself was not stopped.
+    expect(active.getSnapshot().running).toBe(false);
+    expect(rows.some((row) => row.kind === 'notice' && row.text === 'Run ended: stopped.')).toBe(
+      false,
+    );
     expect(existsSync(join(root, 'note.txt'))).toBe(false);
   });
 

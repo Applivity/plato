@@ -3,6 +3,7 @@ import {
   AgentBus,
   RunController,
   TranscriptWriter,
+  approvalHeading,
   createProvider,
   createVault,
   modelSupportsReasoning,
@@ -755,7 +756,8 @@ export function createStreamSink(io: RunIo, format: OutputFormat): RunSink {
         noteNoTerminal();
         return false;
       }
-      const answer = await ask(`Allow ${request.tool}? [y/N] `);
+      // The plain line asks the situation too, so no host names the tool (D49ba).
+      const answer = await ask(`${approvalHeading(request.tool, request.args)} [y/N] `);
       return answer !== null && /^(y|yes)$/i.test(answer.trim());
     },
     async askUser(request) {
